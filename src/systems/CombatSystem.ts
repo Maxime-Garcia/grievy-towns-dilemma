@@ -17,6 +17,7 @@ export class CombatSystem {
     const scale = 1 + (level - enemy.baseLevel) * 0.08;
 
     return {
+      ...enemy,
       enemyId: enemy.id,
       instanceId: `${enemy.id}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
       level,
@@ -36,7 +37,7 @@ export class CombatSystem {
       statusEffects: [],
       x: 0,
       y: 0,
-      ...enemy,
+      sprite: undefined,
     };
   }
 

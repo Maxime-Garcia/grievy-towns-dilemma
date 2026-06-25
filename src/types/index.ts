@@ -543,6 +543,7 @@ export interface ActiveEnemy {
   currentMana: number;
   maxMana: number;
   stats: EnemyStats;
+  element: ElementType;
   statusEffects: StatusEffect[];
   x: number;
   y: number;

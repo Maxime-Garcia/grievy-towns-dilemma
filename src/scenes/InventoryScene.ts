@@ -1,5 +1,5 @@
 import { GameScene } from './GameScene';
-import { PlayerState, ItemType, RARITY_COLORS, ItemRarity } from '../types';
+import { PlayerState, Item, ItemType, RARITY_COLORS, ItemRarity } from '../types';
 import { InventorySystem, setInventoryPlayerContext } from '../systems/InventorySystem';
 import { ALL_ITEMS } from '../data/items';
 
@@ -101,7 +101,7 @@ export class InventoryScene extends Phaser.Scene {
       this.add.text(startX, y, label, {
         fontSize: '10px', color: '#666666', fontFamily: 'monospace',
       });
-      const item = this.player.equipment[slot];
+      const item = this.player.equipment[slot] as Item | undefined;
       const name = item ? item.name : '—';
       const color = item ? (RARITY_COLORS[item.rarity] ?? '#ffffff') : '#444444';
       this.add.text(startX + 70, y, name, {
