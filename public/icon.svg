@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" rx="80" fill="#0d0820"/>
+  <!-- Sword blade -->
+  <rect x="240" y="64" width="32" height="256" fill="#e8d080"/>
+  <!-- Blade highlight -->
+  <rect x="240" y="64" width="10" height="256" fill="#f5e8a8"/>
+  <!-- Crossguard -->
+  <rect x="152" y="284" width="208" height="28" fill="#b08030"/>
+  <rect x="152" y="284" width="208" height="10" fill="#d0a040"/>
+  <!-- Handle -->
+  <rect x="228" y="312" width="56" height="108" fill="#7b3f20"/>
+  <rect x="228" y="312" width="16" height="108" fill="#9b5530"/>
+  <!-- Pommel -->
+  <rect x="212" y="420" width="88" height="36" fill="#b08030"/>
+  <rect x="212" y="420" width="88" height="12" fill="#d0a040"/>
+  <!-- Magic sparkles -->
+  <rect x="120" y="130" width="16" height="16" fill="#9b59f0"/>
+  <rect x="128" y="122" width="16" height="16" fill="#0d0820"/>
+  <rect x="128" y="130" width="16" height="16" fill="#0d0820"/>
+  <rect x="120" y="138" width="16" height="16" fill="#0d0820"/>
+  <rect x="376" y="190" width="14" height="14" fill="#59b0f0"/>
+  <rect x="383" y="183" width="14" height="14" fill="#0d0820"/>
+  <rect x="383" y="190" width="14" height="14" fill="#0d0820"/>
+  <rect x="376" y="197" width="14" height="14" fill="#0d0820"/>
+  <rect x="80" y="320" width="12" height="12" fill="#f09050"/>
+  <rect x="86" y="314" width="12" height="12" fill="#0d0820"/>
+  <rect x="86" y="320" width="12" height="12" fill="#0d0820"/>
+  <rect x="80" y="326" width="12" height="12" fill="#0d0820"/>
+</svg>
