@@ -3,6 +3,11 @@ import { LootSystem } from './LootSystem';
 import { ProgressionSystem } from './ProgressionSystem';
 import { ALL_ITEMS } from '../data/items';
 
+let _playerContext: PlayerState | null = null;
+export function setInventoryPlayerContext(player: PlayerState): void {
+  _playerContext = player;
+}
+
 export class InventorySystem {
 
   static equip(player: PlayerState, itemId: string): boolean {

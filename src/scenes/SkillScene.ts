@@ -1,5 +1,5 @@
 import { GameScene } from './GameScene';
-import { PlayerState, EquippedSkills } from '../types';
+import { PlayerState, EquippedSkills, Skill } from '../types';
 import { SkillSystem } from '../systems/SkillSystem';
 import { SKILL_MAP } from '../data/skills';
 
@@ -134,7 +134,7 @@ export class SkillScene extends Phaser.Scene {
     });
   }
 
-  private showSkillTooltip(skill: ReturnType<typeof SKILL_MAP[string]>, sx: number, sy: number) {
+  private showSkillTooltip(skill: Skill | null | undefined, sx: number, sy: number) {
     if (!skill) return;
     const existing = this.children.getByName('skill_tooltip');
     existing?.destroy();

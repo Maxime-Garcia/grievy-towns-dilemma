@@ -103,7 +103,7 @@ export class InventoryScene extends Phaser.Scene {
       });
       const item = this.player.equipment[slot];
       const name = item ? item.name : '—';
-      const color = item ? RARITY_COLORS[item.rarity] : '#444444';
+      const color = item ? (RARITY_COLORS[item.rarity] ?? '#ffffff') : '#444444';
       this.add.text(startX + 70, y, name, {
         fontSize: '10px', color, fontFamily: 'monospace',
       });
