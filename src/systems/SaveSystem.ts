@@ -1,9 +1,36 @@
 import { GameState, SaveData, PlayerState, WorldState, EndingChoice } from '../types';
 import { ProgressionSystem } from './ProgressionSystem';
 
-const SAVE_VERSION = '1.0.0';
+const SAVE_VERSION = '1.1.0';
 const SAVE_KEY_PREFIX = 'gtd_save_';
 const MAX_SLOTS = 3;
+
+// Each entry migrates a save from its key version to the next.
+// Add a new entry here whenever PlayerState, WorldState, or GameState changes.
+const MIGRATION_MAP: Record<string, (state: GameState) => GameState> = {
+  '1.0.0': (state) => ({
+    ...state,
+    version: '1.1.0',
+    player: {
+      ...state.player,
+      totalKills: state.player.totalKills ?? 0,
+      killsWithoutEpic: state.player.killsWithoutEpic ?? 0,
+      killsWithoutLegendary: state.player.killsWithoutLegendary ?? 0,
+      equipment: {
+        ...state.player.equipment,
+        skins: state.player.equipment.skins ?? {},
+      },
+    },
+  }),
+};
+
+function migrate(state: GameState): GameState {
+  let current = state;
+  while (current.version !== SAVE_VERSION && MIGRATION_MAP[current.version]) {
+    current = MIGRATION_MAP[current.version](current);
+  }
+  return current;
+}
 
 export class SaveSystem {
 
@@ -32,8 +59,8 @@ export class SaveSystem {
       const raw = localStorage.getItem(`${SAVE_KEY_PREFIX}${slot}`);
       if (!raw) return null;
       const data: SaveData = JSON.parse(raw);
-      if (data.version !== SAVE_VERSION) return null;
-      return data.gameState;
+      if (!data.version || !data.gameState) return null;
+      return migrate(data.gameState);
     } catch {
       return null;
     }

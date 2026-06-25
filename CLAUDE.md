@@ -49,3 +49,48 @@ npm run dev        # Dev server → localhost:3000
 npm run build      # Production build
 npm run typecheck  # Vérification TypeScript sans build
 ```
+
+---
+
+## Gouvernance du projet
+
+### Stratégie de branches
+
+Ne jamais commiter directement sur `master`. `master` est toujours buildable et jouable.
+
+```
+master           → stable, toujours jouable, CI obligatoire
+feat/<nom>       → nouvelle feature ou système (ex: feat/mobile, feat/crafting-ui)
+content/<nom>    → data uniquement (items, quests, enemies, npcs)
+fix/<nom>        → correction de bug ciblée
+ci/<nom>         → CI/CD, configuration, scripts
+```
+
+Chaque session ouvre sa branche, vérifie `git status` avant de commencer, et merge via PR uniquement après CI verte.
+
+### Types de PR — ne jamais mélanger
+
+| Branche | Contenu autorisé |
+|---------|-----------------|
+| `types/*` | `src/types/index.ts` uniquement |
+| `feat/*` | Un seul système ou feature à la fois |
+| `content/*` | Fichiers `src/data/` uniquement |
+| `fix/*` | Un seul bug, fichiers minimaux |
+
+### Save schema
+
+Toute modification de `PlayerState`, `WorldState` ou `GameState` dans `src/types/index.ts` **oblige** :
+1. Bumper `SAVE_VERSION` dans `SaveSystem.ts` (semver : `1.0.0` → `1.1.0`)
+2. Ajouter une entrée dans `MIGRATION_MAP` avec les valeurs par défaut des nouveaux champs
+
+### Milestones jouables
+
+Tagger après chaque zone complète ou feature majeure :
+```bash
+git tag v<X>.<Y>.0-<description>   # ex: v0.8.0-terravast-zone
+git push --tags
+```
+
+### Gate code-reviewer
+
+Invoquer `code-reviewer` avant toute PR sur `master`. Résoudre tous les BLOCKERs et BUGs avant de merge.
