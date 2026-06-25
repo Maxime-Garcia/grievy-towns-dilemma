@@ -1,0 +1,26 @@
+{
+  "name": "Grievy Town's Dilemma",
+  "short_name": "Grievy Town",
+  "description": "A pixel art RPG — fight, explore, survive the Dilemma",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0d0820",
+  "theme_color": "#1a0a2e",
+  "categories": ["games"],
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
