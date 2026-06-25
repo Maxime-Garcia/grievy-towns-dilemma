@@ -2,7 +2,8 @@ import { defineConfig } from 'vite';
 import path from 'path';
 
 export default defineConfig({
-  base: './',
+  // GitHub Pages requires the repo name as base path; locally './' is fine
+  base: process.env.GITHUB_ACTIONS ? '/grievy-towns-dilemma/' : './',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src')
