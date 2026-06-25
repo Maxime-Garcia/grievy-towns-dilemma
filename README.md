@@ -1,12 +1,215 @@
 # Grievy Town's Dilemma
 
-> *"You woke up on a road you don't remember. Someone found you. The world is ending. And somehow — it's your fault."*
+> *« Tu t'es réveillé sur une route dont tu n'as aucun souvenir. Quelqu'un t'a trouvé. Le monde est en train de mourir. Et d'une certaine façon — c'est ta faute. »*
 
-A 2D top-down action RPG built with Phaser.js 3 and TypeScript. Six elemental zones. A villain who might be right. A hero who is more than they seem.
+Un RPG d'action 2D vue de dessus développé avec Phaser.js 3 et TypeScript. Six zones élémentaires. Un villain qui a peut-être raison. Un héros qui est bien plus qu'il n'y paraît.
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?logo=typescript)
 ![Phaser](https://img.shields.io/badge/Phaser-3.70-orange?logo=phaser)
 ![Vite](https://img.shields.io/badge/Vite-5.0-purple?logo=vite)
+
+---
+
+## Histoire
+
+Tu te réveilles aux abords de **Grievy Town**, sans aucun souvenir. Un bûcheron du nom d'**Aldric** te trouve et te recueille.
+
+Le monde de **Velmara** est gouverné par six divinités élémentaires — Pyrath (Feu), Gorvun (Terre), Sylvael (Vent), Thalymor (Eau), Volkran (Foudre), Crysthea (Glace). Un mage nommé **Malachar** a lancé la *Malédiction du Dénouement*, déstabilisant l'équilibre élémentaire et détruisant lentement le monde.
+
+Tu possèdes l'**Écho Magique** — la capacité de copier et d'absorber les propriétés magiques de toute source que tu rencontres. Cela fait de toi le seul capable d'affronter Malachar. Mais en traversant les six zones élémentaires, quelque chose devient évident : tuer le boss de chaque zone ne fait pas que vaincre un ennemi. Ça *tue un dieu*. Définitivement. Et le monde se dégrade à chaque mort divine.
+
+À la fin, tu découvres la vérité : tu es le **Dieu Suprême** — un être absolu qui a choisi de s'oublier et de vivre en tant que mortel. Malachar le savait. Il voulait que tu te réveilles.
+
+On te donne un choix.
+
+**Restaurer** — Reverse ton essence divine dans le monde. Les six divinités renaissent. Grievy Town se remplit de vie. Tu redeviens ordinaire. C'est suffisant.
+
+**Effacer** — Lâche prise sur tout. Velmara se défait comme un rêve. Quelque part dans le néant qui suit, une forme prend corps. Une route. Un corps. Aucun souvenir. Encore. *(Débloque le New Game+)*
+
+---
+
+## Fonctionnalités
+
+### Combat
+- Action en temps réel vue de dessus — **WASD** pour se déplacer, **Z** pour attaquer, **Espace** pour le dash
+- **6 types élémentaires** avec un cycle de faiblesses : Feu → Eau → Foudre → Terre → Vent → Glace → Feu
+- **4 slots de skills équipables** (Q / E / R / F) — mélange libre entre éléments
+- Effets de statut : Brûlure, Gel, Étourdissement, Ralentissement
+- Régénération HP et mana hors combat
+
+### Progression
+- Montée en niveau par XP avec répartition d'attributs (FOR, VIT, AGI, INT, SAG)
+- Le niveau des ennemis **s'adapte dynamiquement** au joueur — aucun ordre de zone imposé
+- Passif **Soul Echo** : chaque boss tué accorde +3% de dégâts permanents (cumulable jusqu'à ×6)
+
+### Loot & Items
+| Rareté | Taux de drop |
+|--------|-------------|
+| Commun | 60% |
+| Peu commun | 25% |
+| Rare | 10% |
+| Épique | 3,5% |
+| Légendaire | 1% |
+| Mythique | 0,4% |
+| Caché | 0,1% |
+
+- **Système de pity** : 250 kills → drop Épique garanti, 500 kills → drop Légendaire garanti
+- 130+ items : armes, armures, accessoires, consommables, matériaux d'artisanat, items de clé
+- Slots d'équipement : arme, casque, plastron, jambières, bottes, gants, cape, 2× anneau, amulette
+
+### Skills
+- 24 skills au total : 2 par défaut, 3 débloquables par zone élémentaire, 4 cachés
+- **Skills cachés** : Soul Echo (passif), Void Step (téléportation), Prism Burst (burst tous éléments), Don d'Elara (régén HP)
+- Les skills se méritent — pas d'achat. Vide une zone, parle à un PNJ caché, ou complète une quête
+
+### Quêtes
+- **7 quêtes principales** enchaînées sur toute l'histoire
+- **8 quêtes secondaires** avec lore et récompenses significatives
+- **8 quêtes Fedex** données par les habitants de Grievy Town (livraison, collecte, chasse)
+
+### Dégradation du monde
+À mesure que tu vides chaque zone et que sa divinité tombe, le monde se désature visuellement. À 6/6 zones vidées, la caméra est entièrement grise. Le monde sait ce que tu as fait.
+
+### Sauvegarde
+- 3 emplacements de sauvegarde avec sauvegarde automatique toutes les 3 minutes
+- New Game+ (fin Effacer) : ennemis plus durs, toutes les zones montent en difficulté, Prism Burst disponible dès le niveau 1
+
+---
+
+## Le monde — Velmara
+
+| Zone | Élément | Boss | Lore |
+|------|---------|------|------|
+| Grievy Town | Neutre | — | Ville de départ. Aldric le bûcheron. Quelque chose cloche ici. |
+| Ignis Reach | 🔥 Feu | Pyrath | Hautes terres volcaniques. Routes d'obsidienne. L'incendie ne s'est pas arrêté depuis des décennies. |
+| Terravast | 🌍 Terre | Gorvun | Réseau de grottes ancestral. Formations cristallines. Ruines d'une civilisation enfouie. |
+| Zephyr Peaks | 💨 Vent | Sylvael | Îles flottantes. Tempêtes éternelles. Le vent se souvient de choses que les gens ont oubliées. |
+| Abyssmar | 💧 Eau | Thalymor | Ville noyée. Ruines de corail. La mer l'a engloutie il y a cent ans et ne l'a jamais rendue. |
+| Volterra | ⚡ Foudre | Volkran | Plaines métalliques. Machines brisées. Un empire a essayé de domestiquer la foudre et a échoué. |
+| Glaciem | ❄️ Glace | Crysthea | Toundra gelée. Grottes de glace. Quelqu'un vit ici seul depuis très, très longtemps. |
+| La Flèche de Malachar | 🌑 Ténèbres | Malachar | Une tour qui ne devrait pas exister. Au sommet : l'homme qui a tout déclenché. Et la vérité. |
+
+---
+
+## PNJs
+
+| Nom | Rôle | Emplacement |
+|-----|------|-------------|
+| **Aldric** | Bûcheron qui trouve le héros | Grievy Town |
+| **Mira** | Herboriste, en sait plus qu'elle ne dit | Grievy Town |
+| **Theron** | Forgeron, vieux soldat | Grievy Town |
+| **Frère Ovan** | Moine archiviste, documente le Dénouement | Grievy Town |
+| **Liria** | Fille de l'aubergiste, donne des quêtes Fedex | Grievy Town |
+| **Kelvar** | Garde de la ville, pragmatique et sceptique | Grievy Town |
+| **Ysolde** | Marchande, gère l'économie du loot | Grievy Town |
+| **Elara** | Ermite cachée dans les grottes de Glaciem | Glaciem |
+
+---
+
+## Contrôles
+
+| Touche | Action |
+|--------|--------|
+| WASD / Flèches directionnelles | Se déplacer |
+| Z | Attaquer |
+| Espace | Dash (1,5s de recharge, 0,3s d'invincibilité) |
+| Q / E / R / F | Utiliser un skill équipé |
+| I | Ouvrir l'inventaire |
+| K | Ouvrir le menu des skills |
+
+---
+
+## Stack technique
+
+- **[Phaser.js 3.70](https://phaser.io/)** — moteur de jeu 2D, physique arcade, rendu de tilemaps
+- **[TypeScript 5](https://www.typescriptlang.org/)** — mode strict sur l'ensemble du projet
+- **[Vite 5](https://vitejs.dev/)** — serveur de développement et outil de build
+- Tous les assets visuels générés de façon procédurale via Canvas API — aucun PNG externe requis pour jouer
+- Tilemaps : format Tiled JSON (8 zones, 40×30 tuiles de 32×32px chacune)
+- Système de sauvegarde : `localStorage` avec 3 emplacements et versionnage
+
+---
+
+## Lancer le projet
+
+```bash
+git clone https://github.com/Maxime-Garcia/grievy-towns-dilemma.git
+cd grievy-towns-dilemma
+npm install
+npm run dev
+```
+
+Ouvrir [http://localhost:3000](http://localhost:3000).
+
+```bash
+npm run build      # Build de production → dist/
+npm run typecheck  # Vérification TypeScript
+```
+
+---
+
+## Structure du projet
+
+```
+src/
+├── types/          # Interfaces et enums TypeScript (source de vérité)
+├── data/           # Données du jeu : zones, ennemis, items, skills, quêtes, PNJs
+├── systems/        # Logique pure : combat, loot, progression, quêtes, dialogue, sauvegardes
+├── scenes/         # Scènes Phaser : Boot, Menu, Jeu, HUD, Dialogue, Inventaire, Fin
+└── utils/          # PlaceholderAssets — génération procédurale de textures
+
+assets/
+├── maps/           # 8 tilemaps Tiled JSON
+└── (tuiles, sprites, audio — à venir)
+
+agents/
+└── PIPELINE.md     # Documentation du pipeline multi-agents
+
+.claude/agents/
+└── code-reviewer.md  # Agent d'audit qualité automatisé
+```
+
+---
+
+## Pipeline d'agents
+
+Ce projet a été construit et est maintenu à l'aide d'un **pipeline multi-agents Claude Code** :
+
+- **Agent Design** — équilibrage, conception des zones, décisions scénaristiques
+- **Agent Contenu** — données TypeScript (quêtes, items, ennemis, dialogues)
+- **Agent Dev** — implémentation Phaser/TypeScript
+- **Agent Asset** — prompts Stable Diffusion pour les sprites pixel art
+- **Agent QA** — simulation de loot, validation des chaînes de quêtes, vérification des assets
+- **Code Reviewer** — audit automatisé après chaque modification (TypeScript, cohérence des données, cycle de vie Phaser, balance)
+
+Voir [`agents/PIPELINE.md`](agents/PIPELINE.md) pour la documentation complète.
+
+---
+
+## Crédits
+
+- Game design, code & scénario — Maxime Garcia
+- Musiques — *à venir*
+
+---
+
+## Roadmap
+
+- [ ] Vrais assets pixel art (sprites, tilesets)
+- [ ] Intégration des musiques
+- [ ] Effets sonores
+- [ ] Contrôles tactiles mobile
+- [ ] Build web / sortie sur itch.io
+
+---
+
+---
+
+# Grievy Town's Dilemma *(English)*
+
+> *"You woke up on a road you don't remember. Someone found you. The world is ending. And somehow — it's your fault."*
+
+A 2D top-down action RPG built with Phaser.js 3 and TypeScript. Six elemental zones. A villain who might be right. A hero who is more than they seem.
 
 ---
 
