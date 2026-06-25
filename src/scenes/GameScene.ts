@@ -183,7 +183,7 @@ export class GameScene extends Phaser.Scene {
     const nearest = this.findNearestEnemy(80);
     if (!nearest) return;
 
-    const activeEnemy = this.activeEnemies.get(nearest.instanceId);
+    const activeEnemy = this.activeEnemies.get(nearest.name);
     if (!activeEnemy) return;
 
     const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
@@ -200,7 +200,7 @@ export class GameScene extends Phaser.Scene {
     if (!SkillSystem.canUseSkill(this.gameState.player, skillId, this.cooldowns)) return;
 
     const nearest = this.findNearestEnemy(skill.range ?? 200);
-    const activeEnemy = nearest ? this.activeEnemies.get(nearest.instanceId) : undefined;
+    const activeEnemy = nearest ? this.activeEnemies.get(nearest.name) : undefined;
 
     const result = CombatSystem.playerSkill(this.gameState.player, skill, activeEnemy);
     if (result) {
@@ -219,7 +219,7 @@ export class GameScene extends Phaser.Scene {
   // ── ENEMY AI ─────────────────────────────────────────────────
 
   private tickEnemyAI(dt: number) {
-    this.enemies.children.each((go: Phaser.GameObjects.GameObject) => {
+    this.enemies.children.getArray().forEach((go: Phaser.GameObjects.GameObject) => {
       const sprite = go as Phaser.Physics.Arcade.Sprite;
       const active = this.activeEnemies.get(sprite.name);
       if (!active) return;
@@ -370,7 +370,7 @@ export class GameScene extends Phaser.Scene {
     let nearest: Phaser.Physics.Arcade.Sprite | undefined;
     let minDist = maxRange;
 
-    this.enemies.children.each((go: Phaser.GameObjects.GameObject) => {
+    this.enemies.children.getArray().forEach((go: Phaser.GameObjects.GameObject) => {
       const sprite = go as Phaser.Physics.Arcade.Sprite;
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, sprite.x, sprite.y);
       if (dist < minDist) { minDist = dist; nearest = sprite; }
@@ -600,7 +600,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tickXpOrbs() {
-    this.xpOrbs.children.each((go: Phaser.GameObjects.GameObject) => {
+    this.xpOrbs.children.getArray().forEach((go: Phaser.GameObjects.GameObject) => {
       const sprite = go as Phaser.Physics.Arcade.Sprite;
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, sprite.x, sprite.y);
       if (dist < this.XP_ATTRACT_RANGE) {
