@@ -1,11 +1,11 @@
 import {
   PlayerState, Enemy, ActiveEnemy, DamageResult,
-  StatusEffect, ElementType, ELEMENT_WEAKNESS, Skill
+  StatusEffect, ElementType, ELEMENT_WEAKNESS, DARK_MULTIPLIER, WEAKNESS_MULTIPLIER, Skill
 } from '../types';
 import { ProgressionSystem, SCALED_ENEMY_LEVEL } from './ProgressionSystem';
 import { SKILL_MAP } from '../data/skills';
 
-const ELEMENTAL_ADVANTAGE = 1.25;
+const ELEMENTAL_ADVANTAGE = WEAKNESS_MULTIPLIER;
 const ELEMENTAL_DISADVANTAGE = 0.80;
 const CRIT_MULTIPLIER = 1.5;
 
@@ -78,7 +78,7 @@ export class CombatSystem {
     const critRoll = Math.random() < ProgressionSystem.critChance(player);
     const mult = critRoll ? CRIT_MULTIPLIER : 1.0;
 
-    const elemMult = this.elementalMultiplier(skill.element, target as unknown as Enemy);
+    const elemMult = CombatSystem.elementalMultiplier(skill.element, target);
 
     const soulBonus = CombatSystem.getSoulEchoBonus(player);
     const magicDmg = Math.floor(rawMagic * (100 / (100 + target.stats.baseMagicDef)) * mult * elemMult * soulBonus);
@@ -133,9 +133,12 @@ export class CombatSystem {
     return dotDamage;
   }
 
-  // Elemental multiplier
-  static elementalMultiplier(skillElement: ElementType | undefined, enemy: Enemy): number {
+  // Elemental multiplier — DARK is super-effective against all non-DARK/non-DIVINE elements
+  static elementalMultiplier(skillElement: ElementType | undefined, enemy: { element: ElementType }): number {
     if (!skillElement || skillElement === ElementType.NEUTRAL) return 1.0;
+    if (skillElement === ElementType.DARK && enemy.element !== ElementType.DARK && enemy.element !== ElementType.DIVINE) {
+      return DARK_MULTIPLIER;
+    }
     if (ELEMENT_WEAKNESS[enemy.element] === skillElement) return ELEMENTAL_ADVANTAGE;
     if (ELEMENT_WEAKNESS[skillElement] === enemy.element) return ELEMENTAL_DISADVANTAGE;
     return 1.0;

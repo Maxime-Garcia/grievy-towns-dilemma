@@ -23,12 +23,17 @@ export class GameScene extends Phaser.Scene {
   private layers: Phaser.Tilemaps.TilemapLayer[] = [];
 
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+  // AZERTY: Z(haut) Q(gauche) S(bas) D(droite)
   private wasd!: { up: Phaser.Input.Keyboard.Key; down: Phaser.Input.Keyboard.Key; left: Phaser.Input.Keyboard.Key; right: Phaser.Input.Keyboard.Key };
-  private skillKeys!: { q: Phaser.Input.Keyboard.Key; e: Phaser.Input.Keyboard.Key; r: Phaser.Input.Keyboard.Key; f: Phaser.Input.Keyboard.Key };
+  // Compétences AZERTY: A / E / R / F
+  private skillKeys!: { a: Phaser.Input.Keyboard.Key; e: Phaser.Input.Keyboard.Key; r: Phaser.Input.Keyboard.Key; f: Phaser.Input.Keyboard.Key };
   private attackKey!: Phaser.Input.Keyboard.Key;
   private dashKey!: Phaser.Input.Keyboard.Key;
   private inventoryKey!: Phaser.Input.Keyboard.Key;
   private skillMenuKey!: Phaser.Input.Keyboard.Key;
+
+  private xpOrbs!: Phaser.Physics.Arcade.Group;
+  private readonly XP_ATTRACT_RANGE = 96;
 
   private activeEnemies: Map<string, ActiveEnemy> = new Map();
   private cooldowns: Record<string, number> = {};
@@ -51,6 +56,7 @@ export class GameScene extends Phaser.Scene {
     this.createPlayer();
     this.createEnemiesForZone(zone.id);
     this.createNPCsForZone(zone.id);
+    this.createXpOrbsGroup();
     this.setupInput();
     this.setupCamera();
     this.setupPhysics();
@@ -81,6 +87,7 @@ export class GameScene extends Phaser.Scene {
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
 
     this.tickEnemyAI(dt);
+    this.tickXpOrbs();
 
     // Out of combat regen (every 2s when no enemy aggro)
     if (this.activeEnemies.size === 0 && time - this.lastRegenTime > 2000) {
@@ -160,7 +167,7 @@ export class GameScene extends Phaser.Scene {
   private handleSkillInput() {
     const slots = this.gameState.player.equippedSkills;
     const pairs: [Phaser.Input.Keyboard.Key, string | null][] = [
-      [this.skillKeys.q, slots.slot1],
+      [this.skillKeys.a, slots.slot1],
       [this.skillKeys.e, slots.slot2],
       [this.skillKeys.r, slots.slot3],
       [this.skillKeys.f, slots.slot4],
@@ -274,11 +281,8 @@ export class GameScene extends Phaser.Scene {
       this.events.emit('item_looted', { item, quantity });
     }
 
-    // Award XP
-    const { leveled, newLevel } = ProgressionSystem.addXp(this.gameState.player, loot.xp);
-    if (leveled) {
-      this.events.emit('level_up', newLevel);
-    }
+    // Spawn XP orbs — collectés par magnétisme, XP accordé à l'overlap
+    this.spawnXpOrbs(sprite.x, sprite.y, loot.xp);
 
     // Quest tracking
     const questCompleted = QuestSystem.onEnemyKilled(this.gameState.player, activeEnemy.enemyId);
@@ -502,20 +506,23 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setupInput() {
-    this.cursors     = this.input.keyboard!.createCursorKeys();
+    this.cursors = this.input.keyboard!.createCursorKeys();
+    // Clavier AZERTY : Z haut, Q gauche, S bas, D droite
     this.wasd = {
-      up:    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+      up:    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z),
       down:  this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S),
-      left:  this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+      left:  this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Q),
       right: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
     };
+    // Compétences : A / E / R / F (AZERTY)
     this.skillKeys = {
-      q: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Q),
+      a: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A),
       e: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.E),
       r: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.R),
       f: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.F),
     };
-    this.attackKey      = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
+    // Attaque : W | Dash : ESPACE | Inventaire : I | Compétences : K
+    this.attackKey      = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W);
     this.dashKey        = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.inventoryKey   = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.I);
     this.skillMenuKey   = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.K);
@@ -553,6 +560,63 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.collider(this.player, this.enemies);
   }
 
+  // ── XP ORBS (Vampire Survivors style) ───────────────────────
+
+  private createXpOrbsGroup() {
+    this.xpOrbs = this.physics.add.group();
+    this.physics.add.overlap(this.player, this.xpOrbs, (_player, orb) => {
+      const sprite = orb as Phaser.Physics.Arcade.Sprite;
+      const xpValue = sprite.getData('xpValue') as number ?? 1;
+      sprite.destroy();
+      const { leveled, newLevel } = ProgressionSystem.addXp(this.gameState.player, xpValue);
+      if (leveled) this.events.emit('level_up', newLevel);
+      this.events.emit('player_update', this.gameState.player);
+    });
+  }
+
+  private spawnXpOrbs(x: number, y: number, totalXp: number) {
+    const orbCount = Math.min(8, Math.max(1, Math.floor(totalXp / 20)));
+    const xpPerOrb = Math.floor(totalXp / orbCount);
+
+    for (let i = 0; i < orbCount; i++) {
+      const ox = x + Phaser.Math.Between(-20, 20);
+      const oy = y + Phaser.Math.Between(-20, 20);
+      const orb = this.physics.add.sprite(ox, oy, 'xp_orb');
+      orb.setDepth(3);
+      orb.setDisplaySize(10, 10);
+      orb.setData('xpValue', xpPerOrb);
+      orb.setData('attracting', false);
+      (orb.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+      this.xpOrbs.add(orb);
+
+      // Tiny color circle fallback if no sprite
+      if (!this.textures.exists('xp_orb')) {
+        const gfx = this.add.graphics().setDepth(3);
+        gfx.fillStyle(0x88ffaa, 1);
+        gfx.fillCircle(ox, oy, 5);
+        this.time.delayedCall(8000, () => gfx.destroy());
+      }
+    }
+  }
+
+  private tickXpOrbs() {
+    this.xpOrbs.children.each((go: Phaser.GameObjects.GameObject) => {
+      const sprite = go as Phaser.Physics.Arcade.Sprite;
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, sprite.x, sprite.y);
+      if (dist < this.XP_ATTRACT_RANGE) {
+        sprite.setData('attracting', true);
+        const angle = Phaser.Math.Angle.Between(sprite.x, sprite.y, this.player.x, this.player.y);
+        const speed = Math.min(200, 80 + (this.XP_ATTRACT_RANGE - dist) * 2);
+        (sprite.body as Phaser.Physics.Arcade.Body).setVelocity(
+          Math.cos(angle) * speed,
+          Math.sin(angle) * speed
+        );
+      } else if (!sprite.getData('attracting')) {
+        (sprite.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+      }
+    });
+  }
+
   shutdown() {
     this.input.keyboard?.removeAllKeys(true);
     this.events.removeAllListeners();
@@ -567,6 +631,7 @@ export class GameScene extends Phaser.Scene {
     this.gameState.player.position     = { x: 200, y: 200 };
     this.activeEnemies.clear();
     this.layers = [];
+    this.xpOrbs.clear(true, true);
 
     SaveSystem.save(this.gameState, this.gameState.saveSlot);
     this.scene.restart({ gameState: this.gameState });

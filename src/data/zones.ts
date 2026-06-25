@@ -187,6 +187,228 @@ export const ZONES: Zone[] = [
     musicKey: 'music_malachars_spire',
     lore: 'The Spire was always there. On the eastern edge of Grievy Town, past the old mill. Malachar built it over twenty years. The townspeople assumed it was a scholar\'s tower. No one asked questions. No one thought to. Now the tower pulses with dark energy and the town it once overlooked is nearly empty.',
     worldPosition: { x: 400, y: 300 }
+  },
+
+  // ── VILLES D'IGNIS REACH ─────────────────────────────────────
+
+  {
+    id: 'ashford',
+    name: 'Ashford',
+    description: 'Un refuge construit derrière des murs d\'obsidienne, là où la lave ne coule pas encore.',
+    element: ElementType.FIRE,
+    recommendedLevel: 8,
+    mapKey: 'map_ashford',
+    enemies: [],
+    bossId: '',
+    divine: DIVINES.pyrath,
+    unlockedSkills: [],
+    materials: ['ember_core', 'obsidian_shard', 'volcanic_ash'],
+    ambientColor: 0xff5500,
+    musicKey: 'music_ignis_reach',
+    lore: 'Les survivants d\'Ignis Reach se sont regroupés ici. Ils savent faire du feu, du fer, et tenir bon. Ce ne sont pas des gens qui abandonnent facilement. Ce sont des gens qui connaissent les cendres.',
+    worldPosition: { x: 360, y: 540 }
+  },
+  {
+    id: 'pyrath_crossing',
+    name: 'Pyrath\'s Crossing',
+    description: 'Un ancien carrefour de pèlerinage devenu camp de marché pour les réfugiés du feu.',
+    element: ElementType.FIRE,
+    recommendedLevel: 9,
+    mapKey: 'map_pyrath_crossing',
+    enemies: [],
+    bossId: '',
+    divine: DIVINES.pyrath,
+    unlockedSkills: [],
+    materials: ['ember_core', 'pyrath_scale'],
+    ambientColor: 0xff4400,
+    musicKey: 'music_ignis_reach',
+    lore: 'Pyrath\'s Crossing fut le dernier point de rassemblement avant la montée des flammes. Certains attendaient encore là, les yeux tournés vers le volcan. Certains attendaient toujours quelque chose.',
+    worldPosition: { x: 430, y: 505 }
+  },
+
+  // ── VILLES DE TERRAVAST ──────────────────────────────────────
+
+  {
+    id: 'deepdelve',
+    name: 'Deepdelve',
+    description: 'Ville minière creusée dans les canyon profonds. Cristaux partout, même sur les murs des maisons.',
+    element: ElementType.EARTH,
+    recommendedLevel: 10,
+    mapKey: 'map_deepdelve',
+    enemies: [],
+    bossId: '',
+    divine: DIVINES.gorvun,
+    unlockedSkills: [],
+    materials: ['terravast_crystal', 'ancient_stone_rune', 'cave_moss', 'iron_ore'],
+    ambientColor: 0x775533,
+    musicKey: 'music_terravast',
+    lore: 'Deepdelve exista avant Terravast. Les mineurs ne creusaient pas par besoin — ils creusaient parce que la terre les appelait. Depuis le tremblement, elle appelle différemment.',
+    worldPosition: { x: 170, y: 440 }
+  },
+  {
+    id: 'stone_watch',
+    name: 'Stone Watch',
+    description: 'Ville défensive construite sur le rebord d\'un canyon. L\'un des rares endroits stables de Terravast.',
+    element: ElementType.EARTH,
+    recommendedLevel: 11,
+    mapKey: 'map_stone_watch',
+    enemies: [],
+    bossId: '',
+    divine: DIVINES.gorvun,
+    unlockedSkills: [],
+    materials: ['terravast_crystal', 'ancient_stone_rune', 'ruin_colossus_core'],
+    ambientColor: 0x886644,
+    musicKey: 'music_terravast',
+    lore: 'Depuis Stone Watch, on peut voir les ruines s\'effondrer et se reformer en dessous. Les gardes ont appris à ne plus s\'habituer à aucune vue — elle change toujours avant le prochain matin.',
+    worldPosition: { x: 230, y: 395 }
+  },
+
+  // ── VILLES DE ZEPHYR PEAKS ───────────────────────────────────
+
+  {
+    id: 'windherald',
+    name: 'Windherald',
+    description: 'La plus grande île flottante encore stable. Les bâtiments sont ancrés par des chaînes dans la roche.',
+    element: ElementType.WIND,
+    recommendedLevel: 12,
+    mapKey: 'map_windherald',
+    enemies: [],
+    bossId: '',
+    divine: DIVINES.sylvael,
+    unlockedSkills: [],
+    materials: ['zephyr_feather', 'stormstone', 'cloudweave_silk'],
+    ambientColor: 0x99ccee,
+    musicKey: 'music_zephyr_peaks',
+    lore: 'Windherald tient à des chaînes. Ses habitants savent que c\'est une métaphore autant qu\'un fait. Ils tiennent aussi. Quelques-uns, du moins.',
+    worldPosition: { x: 370, y: 65 }
+  },
+  {
+    id: 'cloudspire',
+    name: 'Cloudspire',
+    description: 'Petit avant-poste accroché à une falaise — le seul accès aux temples de nuage du sommet.',
+    element: ElementType.WIND,
+    recommendedLevel: 13,
+    mapKey: 'map_cloudspire',
+    enemies: [],
+    bossId: '',
+    divine: DIVINES.sylvael,
+    unlockedSkills: [],
+    materials: ['zephyr_feather', 'cloudweave_silk', 'sylvael_plume'],
+    ambientColor: 0xbbddff,
+    musicKey: 'music_zephyr_peaks',
+    lore: 'Cloudspire n\'est pas vraiment une ville. C\'est un endroit où les gens refusent de descendre. Le vent est différent ici — on dirait qu\'il vous demande quelque chose.',
+    worldPosition: { x: 430, y: 55 }
+  },
+
+  // ── VILLES D'ABYSSMAR ────────────────────────────────────────
+
+  {
+    id: 'saltmourn',
+    name: 'Saltmourn',
+    description: 'Camp de réfugiés d\'Abyssmar construit sur ce qui reste du port. Odeur de sel et de naufrage.',
+    element: ElementType.WATER,
+    recommendedLevel: 14,
+    mapKey: 'map_saltmourn',
+    enemies: [],
+    bossId: '',
+    divine: DIVINES.thalymor,
+    unlockedSkills: [],
+    materials: ['deep_coral', 'sea_glass', 'pearl'],
+    ambientColor: 0x004477,
+    musicKey: 'music_abyssmar',
+    lore: 'Saltmourn pue la mer et le désespoir. C\'est aussi le seul endroit en dessous de la ligne des hautes eaux où on peut encore allumer un feu sans que quelqu\'un vous en soit reconnaissant.',
+    worldPosition: { x: 600, y: 400 }
+  },
+  {
+    id: 'the_wreck',
+    name: 'The Wreck',
+    description: 'Village bâti dans les coques empilées de navires échoués. Entrée vers les ruines sous-marines.',
+    element: ElementType.WATER,
+    recommendedLevel: 15,
+    mapKey: 'map_the_wreck',
+    enemies: [],
+    bossId: '',
+    divine: DIVINES.thalymor,
+    unlockedSkills: [],
+    materials: ['deep_coral', 'drowned_relic', 'sea_glass', 'thalymor_scale'],
+    ambientColor: 0x002244,
+    musicKey: 'music_abyssmar',
+    lore: 'Les navires qui constituent The Wreck viennent de cinq siècles de navigation. Certains étaient là avant Abyssmar existait. Quelqu\'un a tout compté. Ce n\'est pas rassurant.',
+    worldPosition: { x: 640, y: 440 }
+  },
+
+  // ── VILLES DE VOLTERRA ───────────────────────────────────────
+
+  {
+    id: 'the_circuit',
+    name: 'The Circuit',
+    description: 'District industriel préservé. Les machines Volterra tournent encore — pour l\'instant.',
+    element: ElementType.LIGHTNING,
+    recommendedLevel: 16,
+    mapKey: 'map_the_circuit',
+    enemies: [],
+    bossId: '',
+    divine: DIVINES.volkran,
+    unlockedSkills: [],
+    materials: ['storm_shard', 'charged_metal', 'storm_glass'],
+    ambientColor: 0x550077,
+    musicKey: 'music_volterra',
+    lore: 'The Circuit est ce qu\'il reste de la ville haute de Volterra. Les ingénieurs qui restaient ont barricadé les relais. Les machines font encore leur travail. Personne n\'est sûr combien de temps.',
+    worldPosition: { x: 600, y: 165 }
+  },
+  {
+    id: 'sparks_rest',
+    name: 'Spark\'s Rest',
+    description: 'Bourgade en lisière de la plaine de Volterra, loin des arcs électriques les plus meurtriers.',
+    element: ElementType.LIGHTNING,
+    recommendedLevel: 17,
+    mapKey: 'map_sparks_rest',
+    enemies: [],
+    bossId: '',
+    divine: DIVINES.volkran,
+    unlockedSkills: [],
+    materials: ['storm_shard', 'charged_metal', 'thunder_rune', 'volt_hound_pelt'],
+    ambientColor: 0x330055,
+    musicKey: 'music_volterra',
+    lore: 'Spark\'s Rest. Le nom est ironique — personne ne se repose quand Volkran se décharge à trois cents mètres. Mais les habitants ont appris à dormir avec le bruit.',
+    worldPosition: { x: 645, y: 200 }
+  },
+
+  // ── VILLES DE GLACIEM ────────────────────────────────────────
+
+  {
+    id: 'frostveil',
+    name: 'Frostveil',
+    description: 'Ville taillée dans la glace sous un glacier géant. Température stable. Très froide, mais stable.',
+    element: ElementType.ICE,
+    recommendedLevel: 18,
+    mapKey: 'map_frostveil',
+    enemies: [],
+    bossId: '',
+    divine: DIVINES.crysthea,
+    unlockedSkills: [],
+    materials: ['glaciem_ice_shard', 'ancient_frost_rune', 'icebloom_flower'],
+    ambientColor: 0x88ccee,
+    musicKey: 'music_glaciem',
+    lore: 'Frostveil ne voit jamais le soleil. Mais ses habitants savent compter les étoiles. Certains disent que Crysthea les a mises là exprès. Comme archive. Comme mémoire.',
+    worldPosition: { x: 160, y: 165 }
+  },
+  {
+    id: 'last_hearth',
+    name: 'The Last Hearth',
+    description: 'Caverne géothermique dans Glaciem. Le seul endroit chaud à des kilomètres à la ronde.',
+    element: ElementType.ICE,
+    recommendedLevel: 19,
+    mapKey: 'map_last_hearth',
+    enemies: [],
+    bossId: '',
+    divine: DIVINES.crysthea,
+    unlockedSkills: [],
+    materials: ['glaciem_ice_shard', 'ancient_frost_rune', 'frozen_essence', 'frost_wolf_pelt'],
+    ambientColor: 0x99bbdd,
+    musicKey: 'music_glaciem',
+    lore: 'The Last Hearth est le dernier feu allumé de Glaciem. Ceux qui y sont restés ont une raison. Ils ne la donnent pas facilement.',
+    worldPosition: { x: 205, y: 200 }
   }
 ];
 

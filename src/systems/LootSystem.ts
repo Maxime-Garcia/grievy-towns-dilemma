@@ -1,6 +1,43 @@
-import { LootEntry, Item, ItemRarity, PlayerState } from '../types';
+import { LootEntry, Item, ItemRarity, ItemType, ElementType, PlayerState, Weapon, Armor } from '../types';
 import { ALL_ITEMS } from '../data/items';
 import { RARITY_DROP_RATES } from '../types';
+
+// Elements that can be assigned randomly at drop (excludes NEUTRAL which is the baseline)
+const RANDOM_ELEMENTS: ElementType[] = [
+  ElementType.NEUTRAL,
+  ElementType.FIRE,
+  ElementType.EARTH,
+  ElementType.WIND,
+  ElementType.WATER,
+  ElementType.LIGHTNING,
+  ElementType.ICE,
+  ElementType.DARK,
+];
+
+// Weight table: NEUTRAL is most common, DARK is rare
+const ELEMENT_WEIGHTS = [30, 12, 12, 12, 12, 12, 12, 3];
+
+function rollRandomElement(): ElementType {
+  const total = ELEMENT_WEIGHTS.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < ELEMENT_WEIGHTS.length; i++) {
+    r -= ELEMENT_WEIGHTS[i];
+    if (r <= 0) return RANDOM_ELEMENTS[i];
+  }
+  return ElementType.NEUTRAL;
+}
+
+function applyRandomElement(item: Item): Item {
+  if (item.type !== ItemType.WEAPON && item.type !== ItemType.HELM &&
+      item.type !== ItemType.CHEST && item.type !== ItemType.LEGS &&
+      item.type !== ItemType.BOOTS && item.type !== ItemType.GLOVES &&
+      item.type !== ItemType.CAPE) {
+    return item;
+  }
+  const element = rollRandomElement();
+  // Shallow clone to avoid mutating the template
+  return { ...item, element } as Item;
+}
 
 const PITY_EPIC      = 250;
 const PITY_LEGENDARY = 500;
@@ -49,7 +86,8 @@ export class LootSystem {
 
       if (roll <= entry.dropRate) {
         const qty = Math.floor(entry.minQty + Math.random() * (entry.maxQty - entry.minQty + 1));
-        items.push({ item, quantity: qty });
+        const droppedItem = applyRandomElement(item);
+        items.push({ item: droppedItem, quantity: qty });
 
         if ([ItemRarity.EPIC, ItemRarity.LEGENDARY, ItemRarity.MYTHIC, ItemRarity.HIDDEN].includes(item.rarity)) {
           player.killsWithoutEpic = 0;

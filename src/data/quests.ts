@@ -336,6 +336,561 @@ export const QUESTS: Quest[] = [
     rewards: { xp: 40, gold: 15, items: [{ itemId: 'minor_health_potion', quantity: 2 }] },
     lore: 'It\'s a small thing. In a world falling apart, sometimes a small thing is enough.'
   },
+
+  // ── NOUVELLES VILLES : SIDE QUESTS ─────────────────────────────
+
+  // Ashford
+  {
+    id: 'sq_ash_01_pyrath_relic',
+    name: 'La Relique de Pyrath',
+    description: 'Brenn pense qu\'une relique du culte de Pyrath est enfouie dans les ruines au nord. Elle changerait la qualité de ses forges.',
+    type: QuestType.SIDE,
+    giverId: 'brenn',
+    objectives: [
+      { id: 'obj1', description: 'Fouiller les ruines du culte de Pyrath', type: 'EXPLORE', targetId: 'ignis_reach', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Vaincre le Gardien de la relique', type: 'KILL', targetId: 'pyrath_guardian', quantity: 1, current: 0, completed: false },
+      { id: 'obj3', description: 'Rapporter la relique à Brenn', type: 'DELIVER', targetId: 'brenn', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 500, gold: 200, items: [{ itemId: 'ember_core', quantity: 8 }, { itemId: 'iron_sword', quantity: 1 }] },
+    unlockCondition: { level: 8 },
+    lore: 'Pyrath était adoré avant d\'être combattu. Les forgerons d\'antan utilisaient ses reliques pour préparer les métaux. Brenn veut faire pareil.'
+  },
+  {
+    id: 'sq_ash_02_the_ash_fever',
+    name: 'La Fièvre des Cendres',
+    description: 'Une maladie mystérieuse se propage dans les camps de réfugiés. Vareth pense savoir comment la traiter, si on lui rapporte les bons matériaux.',
+    type: QuestType.SIDE,
+    giverId: 'ember_doc',
+    objectives: [
+      { id: 'obj1', description: 'Collecter 5 Noyaux d\'Ember profonds', type: 'COLLECT', targetId: 'ember_core', quantity: 5, current: 0, completed: false },
+      { id: 'obj2', description: 'Collecter 3 Herbes de Lune', type: 'COLLECT', targetId: 'moonpetal_herb', quantity: 3, current: 0, completed: false },
+      { id: 'obj3', description: 'Rapporter les matériaux à Vareth', type: 'DELIVER', targetId: 'ember_doc', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 450, gold: 150, items: [{ itemId: 'elixir_of_vitality', quantity: 2 }] },
+    unlockCondition: { level: 8 },
+    lore: 'La cendre pénètre les poumons. Vareth dit qu\'elle peut aussi guérir, si on sait quoi chercher.'
+  },
+  // Pyrath's Crossing
+  {
+    id: 'sq_pyrath_01_scale_hunter',
+    name: 'La Chasse aux Écailles',
+    description: 'Keld a besoin d\'écailles de Pyrath pour forger sa meilleure œuvre. Elles se trouvent sur les Wyrms des profondeurs.',
+    type: QuestType.SIDE,
+    giverId: 'pyrath_smith',
+    objectives: [
+      { id: 'obj1', description: 'Tuer 6 Wyrms de Braise', type: 'KILL', targetId: 'ember_wyrm', quantity: 6, current: 0, completed: false },
+      { id: 'obj2', description: 'Récupérer 4 Écailles de Pyrath', type: 'COLLECT', targetId: 'pyrath_scale', quantity: 4, current: 0, completed: false },
+      { id: 'obj3', description: 'Rapporter les écailles à Keld', type: 'DELIVER', targetId: 'pyrath_smith', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 550, gold: 220, items: [{ itemId: 'magma_greatsword', quantity: 1 }] },
+    unlockCondition: { level: 9 },
+    lore: 'Pyrath couvre ses créatures de ses propres écailles. En récolter est une forme d\'impiété. Keld s\'en fiche.'
+  },
+  // Deepdelve
+  {
+    id: 'sq_deepdelve_01_crystal_forge',
+    name: 'La Forge de Cristal',
+    description: 'Gorak a découvert une recette oubliée qui demande des cristaux d\'une qualité qu\'il n\'a plus. Il faut aller les chercher dans les galeries les plus profondes.',
+    type: QuestType.SIDE,
+    giverId: 'deepdelve_smith',
+    objectives: [
+      { id: 'obj1', description: 'Atteindre les galeries du niveau 3', type: 'EXPLORE', targetId: 'terravast', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Collecter 10 Cristaux de Terravast de qualité', type: 'COLLECT', targetId: 'terravast_crystal', quantity: 10, current: 0, completed: false },
+      { id: 'obj3', description: 'Rapporter les cristaux à Gorak', type: 'DELIVER', targetId: 'deepdelve_smith', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 600, gold: 250, items: [{ itemId: 'colossus_greatsword', quantity: 1 }] },
+    unlockCondition: { level: 10, zoneCleared: ElementType.EARTH },
+    lore: 'Les cristaux de surface manquent de profondeur. Ceux du fond portent l\'empreinte de Gorvun lui-même.'
+  },
+  // Stone Watch
+  {
+    id: 'sq_stonewatch_01_colossus_heart',
+    name: 'Le Cœur du Colosse',
+    description: 'Brilda a besoin d\'un cœur de Colosse de Ruine pour forger une armure digne du nom. Ces créatures rôdent au nord.',
+    type: QuestType.SIDE,
+    giverId: 'stonewatch_smith',
+    objectives: [
+      { id: 'obj1', description: 'Tuer un Colosse de Ruine majeur', type: 'KILL', targetId: 'ruin_colossus_major', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Récupérer le Cœur du Colosse', type: 'COLLECT', targetId: 'ruin_colossus_core', quantity: 1, current: 0, completed: false },
+      { id: 'obj3', description: 'Rapporter le cœur à Brilda', type: 'DELIVER', targetId: 'stonewatch_smith', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 650, gold: 280, items: [{ itemId: 'crystal_chest', quantity: 1 }] },
+    unlockCondition: { level: 11 },
+    lore: 'Les Colosses de Ruine n\'ont pas de cœur au sens propre. Mais ils ont quelque chose qui bat dedans. Brilda appelle ça un cœur.'
+  },
+  // Windherald
+  {
+    id: 'sq_wind_01_feather_blade',
+    name: 'La Lame de Plumes',
+    description: 'Ayle a besoin de plumes de Sylvael pour créer une lame jamais vue. Ces plumes ne se ramassent pas — elles se gagnent.',
+    type: QuestType.SIDE,
+    giverId: 'windherald_smith',
+    objectives: [
+      { id: 'obj1', description: 'Atteindre le temple de Sylvael', type: 'EXPLORE', targetId: 'zephyr_peaks', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Tuer 4 Harpies Sylvael gardiennes', type: 'KILL', targetId: 'sylvael_harpy', quantity: 4, current: 0, completed: false },
+      { id: 'obj3', description: 'Récupérer 2 Plumes de Sylvael', type: 'COLLECT', targetId: 'sylvael_plume', quantity: 2, current: 0, completed: false },
+      { id: 'obj4', description: 'Rapporter les plumes à Ayle', type: 'DELIVER', targetId: 'windherald_smith', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 700, gold: 300, items: [{ itemId: 'phoenix_bow', quantity: 1 }] },
+    unlockCondition: { level: 12, zoneCleared: ElementType.WIND },
+    lore: 'Sylvael donne ses plumes à ceux qui savent les demander. Ayle préfère une approche plus directe.'
+  },
+  // Cloudspire
+  {
+    id: 'sq_cloud_01_phoenix_materials',
+    name: 'Les Matériaux du Phénix',
+    description: 'Tevan peut créer l\'arc le plus puissant du monde — si on lui rapporte ce qu\'il faut. Des matériaux disséminés dans les hauteurs.',
+    type: QuestType.SIDE,
+    giverId: 'cloudspire_smith',
+    objectives: [
+      { id: 'obj1', description: 'Récupérer 3 Plumes de Sylvael', type: 'COLLECT', targetId: 'sylvael_plume', quantity: 3, current: 0, completed: false },
+      { id: 'obj2', description: 'Récupérer 8 Pierres de Tempête', type: 'COLLECT', targetId: 'stormstone', quantity: 8, current: 0, completed: false },
+      { id: 'obj3', description: 'Rapporter tout à Tevan', type: 'DELIVER', targetId: 'cloudspire_smith', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 750, gold: 350, items: [{ itemId: 'sky_titan_bow', quantity: 1 }] },
+    unlockCondition: { level: 13, zoneCleared: ElementType.WIND },
+    lore: 'Un arc forgé au sommet avec des matériaux du sommet. Ce n\'est pas de la superstition. C\'est de l\'artisanat.'
+  },
+  // Saltmourn
+  {
+    id: 'sq_salt_01_coral_armor',
+    name: 'L\'Armure de Corail',
+    description: 'Dorn peut forger une armure de corail des profondeurs, résistante comme de l\'acier. Il lui faut des matériaux rares.',
+    type: QuestType.SIDE,
+    giverId: 'saltmourn_smith',
+    objectives: [
+      { id: 'obj1', description: 'Plonger dans les ruines inondées', type: 'EXPLORE', targetId: 'abyssmar', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Tuer 5 Chevaliers Noyés gardiens', type: 'KILL', targetId: 'drowned_knight', quantity: 5, current: 0, completed: false },
+      { id: 'obj3', description: 'Récolter 8 morceaux de Corail des Profondeurs', type: 'COLLECT', targetId: 'deep_coral', quantity: 8, current: 0, completed: false },
+      { id: 'obj4', description: 'Rapporter à Dorn', type: 'DELIVER', targetId: 'saltmourn_smith', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 800, gold: 350, items: [{ itemId: 'coral_chest', quantity: 1 }] },
+    unlockCondition: { level: 14, zoneCleared: ElementType.WATER },
+    lore: 'Le corail des profondeurs se durcit à l\'air libre. Dorn le sait. Le problème c\'est d\'aller le chercher.'
+  },
+  // The Wreck
+  {
+    id: 'sq_wreck_01_leviathan_forge',
+    name: 'La Forge du Léviathan',
+    description: 'Boro a découvert les plans d\'une armure légendaire dans une épave submergée. Il lui manque les matériaux de Thalymor.',
+    type: QuestType.SIDE,
+    giverId: 'wreck_smith',
+    objectives: [
+      { id: 'obj1', description: 'Localiser l\'épave du Roi des Mers', type: 'EXPLORE', targetId: 'abyssmar', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Tuer le Gardien des profondeurs', type: 'KILL', targetId: 'thalymor_guardian', quantity: 1, current: 0, completed: false },
+      { id: 'obj3', description: 'Récupérer 2 Écailles de Thalymor', type: 'COLLECT', targetId: 'thalymor_scale', quantity: 2, current: 0, completed: false },
+      { id: 'obj4', description: 'Rapporter à Boro', type: 'DELIVER', targetId: 'wreck_smith', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 900, gold: 400, items: [{ itemId: 'abyssal_chest', quantity: 1 }] },
+    unlockCondition: { level: 15, zoneCleared: ElementType.WATER },
+    lore: 'Thalymor armait ses champions avec ses propres écailles. Boro pense pouvoir reproduire ce travail. Avec les bonnes pièces.'
+  },
+  // The Circuit
+  {
+    id: 'sq_circuit_01_storm_forge',
+    name: 'La Forge des Tempêtes',
+    description: 'Rek maîtrise une technique unique : forger avec la foudre de Volkran. Il lui faut des matériaux conducteurs de qualité.',
+    type: QuestType.SIDE,
+    giverId: 'circuit_smith',
+    objectives: [
+      { id: 'obj1', description: 'Trouver le générateur central de Volterra', type: 'EXPLORE', targetId: 'volterra', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Tuer 4 Golems Électriques gardiens', type: 'KILL', targetId: 'electric_golem', quantity: 4, current: 0, completed: false },
+      { id: 'obj3', description: 'Récupérer 10 unités de Métal Chargé', type: 'COLLECT', targetId: 'charged_metal', quantity: 10, current: 0, completed: false },
+      { id: 'obj4', description: 'Rapporter à Rek', type: 'DELIVER', targetId: 'circuit_smith', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 950, gold: 420, items: [{ itemId: 'storm_plate', quantity: 1 }] },
+    unlockCondition: { level: 16, zoneCleared: ElementType.LIGHTNING },
+    lore: 'La foudre est outil quand on sait la tenir. Rek sait la tenir.'
+  },
+  // Spark's Rest
+  {
+    id: 'sq_sparks_01_thunder_weapons',
+    name: 'Les Armes du Tonnerre',
+    description: 'Thun peut forger des armes imprégnées de la foudre de Volkran. Il lui faut des composants rares du réseau électrique.',
+    type: QuestType.SIDE,
+    giverId: 'sparks_smith',
+    objectives: [
+      { id: 'obj1', description: 'Infiltrer le nœud de réseau principal', type: 'EXPLORE', targetId: 'volterra', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Vaincre le Drake du Tonnerre gardien', type: 'KILL', targetId: 'thunder_drake', quantity: 1, current: 0, completed: false },
+      { id: 'obj3', description: 'Récupérer 6 Bobines de Volkran', type: 'COLLECT', targetId: 'volkran_coil', quantity: 6, current: 0, completed: false },
+      { id: 'obj4', description: 'Rapporter à Thun', type: 'DELIVER', targetId: 'sparks_smith', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 1000, gold: 450, items: [{ itemId: 'storm_herald_plate', quantity: 1 }] },
+    unlockCondition: { level: 17, zoneCleared: ElementType.LIGHTNING },
+    lore: 'Volkran s\'est fragmenté dans son réseau. Ces fragments ont encore quelque chose de lui. Thun veut le capturer dans du métal.'
+  },
+  // Frostveil
+  {
+    id: 'sq_frost_01_crysthea_forge',
+    name: 'La Forge de Crysthea',
+    description: 'Celd connaît une technique de forge transmise par Crysthea elle-même. Il faut des splinters de la divinité pour la pratiquer.',
+    type: QuestType.SIDE,
+    giverId: 'frostveil_smith',
+    objectives: [
+      { id: 'obj1', description: 'Atteindre le sanctuaire intérieur de Glaciem', type: 'EXPLORE', targetId: 'glaciem', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Vaincre 3 Titans de Permafrost', type: 'KILL', targetId: 'permafrost_titan', quantity: 3, current: 0, completed: false },
+      { id: 'obj3', description: 'Récolter 2 Splinters de Crysthea', type: 'COLLECT', targetId: 'crysthea_splinter', quantity: 2, current: 0, completed: false },
+      { id: 'obj4', description: 'Rapporter à Celd', type: 'DELIVER', targetId: 'frostveil_smith', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 1100, gold: 500, items: [{ itemId: 'glaciem_guardian_chest', quantity: 1 }] },
+    unlockCondition: { level: 18, zoneCleared: ElementType.ICE },
+    lore: 'Crysthea donnait des fragments d\'elle-même aux forgerons dignes de confiance. Celd est peut-être le dernier à connaître la technique.'
+  },
+  // The Last Hearth
+  {
+    id: 'sq_hearth_01_titan_heart',
+    name: 'Le Cœur du Titan',
+    description: 'Torak peut forger l\'ultime épée de Glaciem. Il lui faut le cœur d\'un Dragon de Cristal — une créature quasi-mythique.',
+    type: QuestType.SIDE,
+    giverId: 'lasthearth_smith',
+    objectives: [
+      { id: 'obj1', description: 'Trouver le nid des Dragons de Cristal', type: 'EXPLORE', targetId: 'glaciem', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Vaincre le Dragon de Cristal Alpha', type: 'BOSS', targetId: 'crystal_dragon_alpha', quantity: 1, current: 0, completed: false },
+      { id: 'obj3', description: 'Récupérer le Cœur du Dragon de Cristal', type: 'COLLECT', targetId: 'crystal_dragon_heart', quantity: 1, current: 0, completed: false },
+      { id: 'obj4', description: 'Rapporter à Torak', type: 'DELIVER', targetId: 'lasthearth_smith', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 1500, gold: 700, items: [{ itemId: 'titan_greatsword', quantity: 1 }] },
+    unlockCondition: { level: 19, zoneCleared: ElementType.ICE },
+    lore: 'Les Dragons de Cristal ne meurent pas de vieillesse. Ils deviennent la glace. Vaincre l\'un d\'eux prend quelque chose du monde. Torak le sait.'
+  },
+
+  // ── NOUVELLES VILLES : FEDEX QUESTS ────────────────────────────
+
+  // Ashford
+  {
+    id: 'fq_ash_01_forge_order',
+    name: 'La Commande du Forgeron',
+    description: 'Brenn a reçu une commande urgente mais il manque de matériaux. Il a besoin de noyaux d\'Ember.',
+    type: QuestType.FEDEX,
+    giverId: 'brenn',
+    objectives: [
+      { id: 'obj1', description: 'Collecter 8 Noyaux d\'Ember', type: 'COLLECT', targetId: 'ember_core', quantity: 8, current: 0, completed: false },
+      { id: 'obj2', description: 'Livrer les noyaux à Brenn', type: 'DELIVER', targetId: 'brenn', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 200, gold: 100, items: [{ itemId: 'iron_chest', quantity: 1 }] },
+  },
+  {
+    id: 'fq_ash_02_ash_delivery',
+    name: 'La Livraison de Cendres',
+    description: 'Solenne attend une livraison de cendres purifiées du cratère nord. Le porteur n\'est pas revenu.',
+    type: QuestType.FEDEX,
+    giverId: 'solenne',
+    objectives: [
+      { id: 'obj1', description: 'Aller au cratère nord', type: 'EXPLORE', targetId: 'ignis_reach', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Trouver le porteur disparu', type: 'EXPLORE', targetId: 'ignis_reach', quantity: 1, current: 0, completed: false },
+      { id: 'obj3', description: 'Rapporter les cendres à Solenne', type: 'DELIVER', targetId: 'solenne', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 180, gold: 90, items: [{ itemId: 'volcanic_ash', quantity: 10 }] },
+  },
+  {
+    id: 'fq_ash_03_ember_cure',
+    name: 'Le Remède de la Fièvre',
+    description: 'Vareth a besoin de noyaux d\'Ember des profondeurs pour préparer un remède contre la fièvre des cendres.',
+    type: QuestType.FEDEX,
+    giverId: 'ember_doc',
+    objectives: [
+      { id: 'obj1', description: 'Collecter 5 Noyaux d\'Ember profonds', type: 'COLLECT', targetId: 'ember_core', quantity: 5, current: 0, completed: false },
+      { id: 'obj2', description: 'Rapporter à Vareth', type: 'DELIVER', targetId: 'ember_doc', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 220, gold: 110, items: [{ itemId: 'antidote', quantity: 5 }] },
+  },
+  // Pyrath's Crossing
+  {
+    id: 'fq_pyrath_01_lava_samples',
+    name: 'Échantillons de Lave',
+    description: 'Ila paie bien pour des échantillons de lave profonde — les vrais, pas les superficiels.',
+    type: QuestType.FEDEX,
+    giverId: 'crossing_merchant',
+    objectives: [
+      { id: 'obj1', description: 'Collecter 5 Échantillons de lave profonde', type: 'COLLECT', targetId: 'volcanic_ash', quantity: 5, current: 0, completed: false },
+      { id: 'obj2', description: 'Livrer à Ila', type: 'DELIVER', targetId: 'crossing_merchant', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 200, gold: 120 },
+  },
+  {
+    id: 'fq_pyrath_02_brew_fire',
+    name: 'Distillation de Cendres',
+    description: 'Pyrion veut tester une nouvelle distillation avec de la cendre des hauteurs d\'Ignis Reach.',
+    type: QuestType.FEDEX,
+    giverId: 'crossing_alchemist',
+    objectives: [
+      { id: 'obj1', description: 'Collecter 8 unités de Cendre volcanique des hauteurs', type: 'COLLECT', targetId: 'volcanic_ash', quantity: 8, current: 0, completed: false },
+      { id: 'obj2', description: 'Livrer à Pyrion', type: 'DELIVER', targetId: 'crossing_alchemist', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 190, gold: 100, items: [{ itemId: 'elixir_of_vitality', quantity: 2 }] },
+  },
+  // Deepdelve
+  {
+    id: 'fq_deep_01_ore_run',
+    name: 'Course au Minerai',
+    description: 'Gorak manque de minerai de fer. La galerie est trop dangereuse en ce moment pour ses ouvriers.',
+    type: QuestType.FEDEX,
+    giverId: 'deepdelve_smith',
+    objectives: [
+      { id: 'obj1', description: 'Collecter 10 unités de Minerai de fer', type: 'COLLECT', targetId: 'iron_ore', quantity: 10, current: 0, completed: false },
+      { id: 'obj2', description: 'Livrer à Gorak', type: 'DELIVER', targetId: 'deepdelve_smith', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 180, gold: 90 },
+  },
+  {
+    id: 'fq_deep_02_gem_trade',
+    name: 'Le Commerce des Gemmes',
+    description: 'Duru a besoin de gemmes des couches profondes — trop dangereux pour elle.',
+    type: QuestType.FEDEX,
+    giverId: 'deepdelve_merchant',
+    objectives: [
+      { id: 'obj1', description: 'Collecter 5 Cristaux de Terravast profonds', type: 'COLLECT', targetId: 'terravast_crystal', quantity: 5, current: 0, completed: false },
+      { id: 'obj2', description: 'Livrer à Duru', type: 'DELIVER', targetId: 'deepdelve_merchant', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 200, gold: 130, items: [{ itemId: 'health_potion', quantity: 3 }] },
+  },
+  {
+    id: 'fq_deep_03_mossbrew',
+    name: 'La Mousse des Profondeurs',
+    description: 'Sable a besoin de mousse des galeries profondes pour ses distillations.',
+    type: QuestType.FEDEX,
+    giverId: 'deepdelve_alchemist',
+    objectives: [
+      { id: 'obj1', description: 'Collecter 10 Mousses des cavernes profondes', type: 'COLLECT', targetId: 'cave_moss', quantity: 10, current: 0, completed: false },
+      { id: 'obj2', description: 'Livrer à Sable', type: 'DELIVER', targetId: 'deepdelve_alchemist', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 185, gold: 95, items: [{ itemId: 'antidote', quantity: 4 }] },
+  },
+  // Stone Watch
+  {
+    id: 'fq_stone_01_rune_delivery',
+    name: 'La Livraison de Runes',
+    description: 'Orvin attend un colis de runes anciennes depuis Deepdelve. La messagère n\'est pas arrivée.',
+    type: QuestType.FEDEX,
+    giverId: 'stonewatch_merchant',
+    objectives: [
+      { id: 'obj1', description: 'Aller à Deepdelve chercher le colis', type: 'EXPLORE', targetId: 'terravast', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Retrouver la messagère', type: 'TALK', targetId: 'missing_messenger', quantity: 1, current: 0, completed: false },
+      { id: 'obj3', description: 'Livrer les runes à Orvin', type: 'DELIVER', targetId: 'stonewatch_merchant', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 250, gold: 130, items: [{ itemId: 'ancient_stone_rune', quantity: 4 }] },
+  },
+  {
+    id: 'fq_stone_02_cave_brew',
+    name: 'Herbes Souterraines',
+    description: 'Petra a besoin de mousse des grottes profondes pour ses potions.',
+    type: QuestType.FEDEX,
+    giverId: 'stonewatch_alchemist',
+    objectives: [
+      { id: 'obj1', description: 'Collecter 10 Mousses des cavernes', type: 'COLLECT', targetId: 'cave_moss', quantity: 10, current: 0, completed: false },
+      { id: 'obj2', description: 'Livrer à Petra', type: 'DELIVER', targetId: 'stonewatch_alchemist', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 200, gold: 100, items: [{ itemId: 'health_potion', quantity: 3 }] },
+  },
+  // Windherald
+  {
+    id: 'fq_wind_01_storm_harvest',
+    name: 'La Récolte des Tempêtes',
+    description: 'Cira cherche des pierres de tempête des îles les plus éloignées — les plus chargées.',
+    type: QuestType.FEDEX,
+    giverId: 'windherald_merchant',
+    objectives: [
+      { id: 'obj1', description: 'Collecter 6 Pierres de Tempête chargées', type: 'COLLECT', targetId: 'stormstone', quantity: 6, current: 0, completed: false },
+      { id: 'obj2', description: 'Livrer à Cira', type: 'DELIVER', targetId: 'windherald_merchant', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 250, gold: 140, items: [{ itemId: 'mana_potion', quantity: 3 }] },
+  },
+  {
+    id: 'fq_wind_02_cloud_brew',
+    name: 'Essences de Nuage',
+    description: 'Zael a besoin d\'essences des nuages proches du sommet pour ses expériences.',
+    type: QuestType.FEDEX,
+    giverId: 'windherald_alchemist',
+    objectives: [
+      { id: 'obj1', description: 'Atteindre les couches hautes de Zephyr Peaks', type: 'EXPLORE', targetId: 'zephyr_peaks', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Collecter 5 Essences de nuage', type: 'COLLECT', targetId: 'cloudweave_silk', quantity: 5, current: 0, completed: false },
+      { id: 'obj3', description: 'Livrer à Zael', type: 'DELIVER', targetId: 'windherald_alchemist', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 260, gold: 150, items: [{ itemId: 'mana_potion', quantity: 3 }] },
+  },
+  // Cloudspire
+  {
+    id: 'fq_cloud_01_plume_run',
+    name: 'La Course des Plumes',
+    description: 'Liss attend une livraison de plumes depuis Windherald. Le messager est en retard.',
+    type: QuestType.FEDEX,
+    giverId: 'cloudspire_merchant',
+    objectives: [
+      { id: 'obj1', description: 'Aller à Windherald récupérer les plumes', type: 'EXPLORE', targetId: 'zephyr_peaks', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Collecter 15 Plumes de Zephyr', type: 'COLLECT', targetId: 'zephyr_feather', quantity: 15, current: 0, completed: false },
+      { id: 'obj3', description: 'Livrer à Liss', type: 'DELIVER', targetId: 'cloudspire_merchant', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 270, gold: 145 },
+  },
+  {
+    id: 'fq_cloud_02_altitude_brew',
+    name: 'Pierres du Sommet',
+    description: 'Ara a besoin de pierres de tempête du sommet le plus haut — pas celles des îles basses.',
+    type: QuestType.FEDEX,
+    giverId: 'cloudspire_alchemist',
+    objectives: [
+      { id: 'obj1', description: 'Collecter 6 Pierres de Tempête du sommet', type: 'COLLECT', targetId: 'stormstone', quantity: 6, current: 0, completed: false },
+      { id: 'obj2', description: 'Livrer à Ara', type: 'DELIVER', targetId: 'cloudspire_alchemist', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 250, gold: 140, items: [{ itemId: 'major_mana_potion', quantity: 2 }] },
+  },
+  // Saltmourn
+  {
+    id: 'fq_salt_01_tide_map',
+    name: 'La Carte des Marées',
+    description: 'Vera a besoin d\'une carte des courants, perdue dans les ruines du port. Les Chevaliers Noyés y patrouillent.',
+    type: QuestType.FEDEX,
+    giverId: 'saltmourn_merchant',
+    objectives: [
+      { id: 'obj1', description: 'Fouiller les ruines du port', type: 'EXPLORE', targetId: 'abyssmar', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Vaincre 4 Chevaliers Noyés gardiens', type: 'KILL', targetId: 'drowned_knight', quantity: 4, current: 0, completed: false },
+      { id: 'obj3', description: 'Récupérer la carte des courants', type: 'COLLECT', targetId: 'saltmourn_tide_map', quantity: 1, current: 0, completed: false },
+      { id: 'obj4', description: 'Livrer à Vera', type: 'DELIVER', targetId: 'saltmourn_merchant', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 320, gold: 170, items: [{ itemId: 'health_potion', quantity: 4 }] },
+  },
+  {
+    id: 'fq_salt_02_depth_brew',
+    name: 'Corail des Profondeurs',
+    description: 'Cora a besoin de corail des vraies profondeurs pour ses potions marines.',
+    type: QuestType.FEDEX,
+    giverId: 'saltmourn_alchemist',
+    objectives: [
+      { id: 'obj1', description: 'Collecter 5 morceaux de Corail profond', type: 'COLLECT', targetId: 'deep_coral', quantity: 5, current: 0, completed: false },
+      { id: 'obj2', description: 'Livrer à Cora', type: 'DELIVER', targetId: 'saltmourn_alchemist', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 280, gold: 150, items: [{ itemId: 'antidote', quantity: 4 }] },
+  },
+  // The Wreck
+  {
+    id: 'fq_wreck_01_relic_run',
+    name: 'Reliques Noyées',
+    description: 'Sirenne a besoin de reliques noyées du quartier est. C\'est inondé.',
+    type: QuestType.FEDEX,
+    giverId: 'wreck_merchant',
+    objectives: [
+      { id: 'obj1', description: 'Fouiller le quartier est inondé', type: 'EXPLORE', targetId: 'abyssmar', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Récupérer 3 Reliques Noyées', type: 'COLLECT', targetId: 'drowned_relic', quantity: 3, current: 0, completed: false },
+      { id: 'obj3', description: 'Livrer à Sirenne', type: 'DELIVER', targetId: 'wreck_merchant', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 300, gold: 165, items: [{ itemId: 'deep_coral', quantity: 5 }] },
+  },
+  {
+    id: 'fq_wreck_02_sea_distillation',
+    name: 'Perles des Courants',
+    description: 'Narin cherche des perles des courants profonds — pas du fond, du milieu.',
+    type: QuestType.FEDEX,
+    giverId: 'wreck_alchemist',
+    objectives: [
+      { id: 'obj1', description: 'Collecter 5 Perles des courants profonds', type: 'COLLECT', targetId: 'pearl', quantity: 5, current: 0, completed: false },
+      { id: 'obj2', description: 'Livrer à Narin', type: 'DELIVER', targetId: 'wreck_alchemist', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 290, gold: 160, items: [{ itemId: 'mana_potion', quantity: 3 }] },
+  },
+  // The Circuit
+  {
+    id: 'fq_circuit_01_component_run',
+    name: 'Course aux Composants',
+    description: 'Volt a besoin de bobines de Volkran depuis le générateur central. C\'est gardé par les Spark Imps.',
+    type: QuestType.FEDEX,
+    giverId: 'circuit_merchant',
+    objectives: [
+      { id: 'obj1', description: 'Atteindre le générateur central', type: 'EXPLORE', targetId: 'volterra', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Vaincre 5 Spark Imps', type: 'KILL', targetId: 'spark_imp', quantity: 5, current: 0, completed: false },
+      { id: 'obj3', description: 'Récupérer 4 Bobines de Volkran', type: 'COLLECT', targetId: 'volkran_coil', quantity: 4, current: 0, completed: false },
+      { id: 'obj4', description: 'Livrer à Volt', type: 'DELIVER', targetId: 'circuit_merchant', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 340, gold: 185, items: [{ itemId: 'charged_metal', quantity: 6 }] },
+  },
+  {
+    id: 'fq_circuit_02_spark_brew',
+    name: 'Verre de Tempête',
+    description: 'Elka a besoin de verre de tempête de la plaine principale pour ses expériences.',
+    type: QuestType.FEDEX,
+    giverId: 'circuit_alchemist',
+    objectives: [
+      { id: 'obj1', description: 'Collecter 6 morceaux de Verre de Tempête', type: 'COLLECT', targetId: 'storm_glass', quantity: 6, current: 0, completed: false },
+      { id: 'obj2', description: 'Livrer à Elka', type: 'DELIVER', targetId: 'circuit_alchemist', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 300, gold: 170, items: [{ itemId: 'full_elixir', quantity: 1 }] },
+  },
+  // Spark's Rest
+  {
+    id: 'fq_sparks_01_pelt_trade',
+    name: 'Fourrures de Volt Hound',
+    description: 'Hessa paie bien pour 6 pelages de Volt Hound. En échange, de bonnes munitions.',
+    type: QuestType.FEDEX,
+    giverId: 'sparks_merchant',
+    objectives: [
+      { id: 'obj1', description: 'Tuer 6 Volt Hounds', type: 'KILL', targetId: 'volt_hound', quantity: 6, current: 0, completed: false },
+      { id: 'obj2', description: 'Collecter 6 Pelages de Volt Hound', type: 'COLLECT', targetId: 'volt_hound_pelt', quantity: 6, current: 0, completed: false },
+      { id: 'obj3', description: 'Livrer à Hessa', type: 'DELIVER', targetId: 'sparks_merchant', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 310, gold: 175, items: [{ itemId: 'thunder_rune', quantity: 4 }] },
+  },
+  {
+    id: 'fq_sparks_02_chain_brew',
+    name: 'Éclats Chargés',
+    description: 'Gale a besoin d\'éclats de tempête des zones les plus chargées.',
+    type: QuestType.FEDEX,
+    giverId: 'sparks_alchemist',
+    objectives: [
+      { id: 'obj1', description: 'Collecter 8 Éclats de Tempête', type: 'COLLECT', targetId: 'storm_shard', quantity: 8, current: 0, completed: false },
+      { id: 'obj2', description: 'Livrer à Gale', type: 'DELIVER', targetId: 'sparks_alchemist', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 300, gold: 165, items: [{ itemId: 'major_mana_potion', quantity: 2 }] },
+  },
+  // Frostveil
+  {
+    id: 'fq_frost_01_ice_harvest',
+    name: 'La Récolte du Givre',
+    description: 'Sola a besoin de fleurs de givre des grottes du nord.',
+    type: QuestType.FEDEX,
+    giverId: 'frostveil_merchant',
+    objectives: [
+      { id: 'obj1', description: 'Atteindre les grottes du nord de Glaciem', type: 'EXPLORE', targetId: 'glaciem', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Collecter 8 Fleurs de Givre', type: 'COLLECT', targetId: 'icebloom_flower', quantity: 8, current: 0, completed: false },
+      { id: 'obj3', description: 'Livrer à Sola', type: 'DELIVER', targetId: 'frostveil_merchant', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 320, gold: 180, items: [{ itemId: 'frozen_essence', quantity: 3 }] },
+  },
+  {
+    id: 'fq_frost_02_glaciem_brew',
+    name: 'Essence des Profondeurs',
+    description: 'Lyse a besoin d\'essence gelée des couches profondes.',
+    type: QuestType.FEDEX,
+    giverId: 'frostveil_alchemist',
+    objectives: [
+      { id: 'obj1', description: 'Collecter 5 Essences Gelées profondes', type: 'COLLECT', targetId: 'frozen_essence', quantity: 5, current: 0, completed: false },
+      { id: 'obj2', description: 'Livrer à Lyse', type: 'DELIVER', targetId: 'frostveil_alchemist', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 310, gold: 175, items: [{ itemId: 'elixir_of_arcana', quantity: 2 }] },
+  },
+  // The Last Hearth
+  {
+    id: 'fq_hearth_01_wolf_hunt',
+    name: 'La Chasse aux Loups',
+    description: 'Les loups de givre s\'approchent trop du dernier foyer. Bera veut qu\'on les repousse.',
+    type: QuestType.FEDEX,
+    giverId: 'lasthearth_merchant',
+    objectives: [
+      { id: 'obj1', description: 'Tuer 8 Loups de Givre', type: 'KILL', targetId: 'frost_wolf', quantity: 8, current: 0, completed: false },
+      { id: 'obj2', description: 'Rapporter à Bera', type: 'DELIVER', targetId: 'lasthearth_merchant', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 350, gold: 200, items: [{ itemId: 'frost_wolf_pelt', quantity: 3 }] },
+  },
+  {
+    id: 'fq_hearth_02_warmth_brew',
+    name: 'Chaleur en Bouteille',
+    description: 'Meld a besoin de fleurs de givre des grottes profondes pour distiller sa chaleur en fiole.',
+    type: QuestType.FEDEX,
+    giverId: 'lasthearth_alchemist',
+    objectives: [
+      { id: 'obj1', description: 'Collecter 10 Fleurs de Givre profondes', type: 'COLLECT', targetId: 'icebloom_flower', quantity: 10, current: 0, completed: false },
+      { id: 'obj2', description: 'Livrer à Meld', type: 'DELIVER', targetId: 'lasthearth_alchemist', quantity: 1, current: 0, completed: false },
+    ],
+    rewards: { xp: 340, gold: 195, items: [{ itemId: 'full_elixir', quantity: 1 }] },
+  },
 ];
 
 export const QUEST_MAP: Record<string, Quest> = Object.fromEntries(QUESTS.map(q => [q.id, q]));

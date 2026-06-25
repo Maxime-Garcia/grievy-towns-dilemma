@@ -31,11 +31,18 @@ On te donne un choix.
 ## Fonctionnalités
 
 ### Combat
-- Action en temps réel vue de dessus — **WASD** pour se déplacer, **Z** pour attaquer, **Espace** pour le dash
-- **6 types élémentaires** avec un cycle de faiblesses : Feu → Eau → Foudre → Terre → Vent → Glace → Feu
-- **4 slots de skills équipables** (Q / E / R / F) — mélange libre entre éléments
+- Action en temps réel vue de dessus — clavier **AZERTY** : **ZQSD** pour se déplacer, **W** pour attaquer, **Espace** pour le dash
+- **7 types élémentaires** : Feu, Terre, Vent, Eau, Foudre, Glace, **Neutre** (aucune faiblesse)
+- **Magie Noire** : super-efficace (×1,5) contre tous les éléments non-Sombre et non-Divin
+- **4 slots de skills équipables** (A / E / R / F) — mélange libre entre éléments
 - Effets de statut : Brûlure, Gel, Étourdissement, Ralentissement
 - Régénération HP et mana hors combat
+- **Orbes d'XP** style Vampire Survivors : les ennemis lâchent des orbes qui s'aimantent vers le joueur
+
+### Interface
+- **Barres HP/MP style SAO** : barres horizontales colorées avec gradient, HP change de couleur à <50% et <25% comme dans Sword Art Online
+- Barre XP en bas d'écran
+- Notifications de loot, level-up et quêtes
 
 ### Progression
 - Montée en niveau par XP avec répartition d'attributs (FOR, VIT, AGI, INT, SAG)
@@ -54,8 +61,16 @@ On te donne un choix.
 | Caché | 0,1% |
 
 - **Système de pity** : 250 kills → drop Épique garanti, 500 kills → drop Légendaire garanti
-- 130+ items : armes, armures, accessoires, consommables, matériaux d'artisanat, items de clé
+- **Élément aléatoire au loot** : chaque arme et armure reçoit son élément au moment du drop (Neutre le plus fréquent, Sombre ultra-rare)
+- **Items de rareté Caché** : uniques, avec des passifs puissants (régén sur kill, cooldown nul, dégâts x5 en premier coup…)
 - Slots d'équipement : arme, casque, plastron, jambières, bottes, gants, cape, 2× anneau, amulette
+- **Skins d'équipement** : le Costumier vend des apparences cosmétiques pour les tenues
+
+### Craft style SAO
+- Apporter ses matériaux à l'artisan de la ville, comme Kirito rapportant des cristaux au forgeron
+- **Forgeron** — recettes FORGE : armes et armures élémentaires spéciales
+- **Alchimiste** — recettes BREW : élixirs, antidotes, cristal de résurrection
+- **Costumier** — recettes TAILOR : skins de tenues uniques par zone
 
 ### Skills
 - 24 skills au total : 2 par défaut, 3 débloquables par zone élémentaire, 4 cachés
@@ -64,8 +79,8 @@ On te donne un choix.
 
 ### Quêtes
 - **7 quêtes principales** enchaînées sur toute l'histoire
-- **8 quêtes secondaires** avec lore et récompenses significatives
-- **8 quêtes Fedex** données par les habitants de Grievy Town (livraison, collecte, chasse)
+- **21 quêtes secondaires** avec lore et récompenses significatives (forge de boss, chasse rare, sauvegarde de PNJ)
+- **31 quêtes Fedex** données par les artisans et marchands des villes (livraison, collecte, chasse)
 
 ### Dégradation du monde
 À mesure que tu vides chaque zone et que sa divinité tombe, le monde se désature visuellement. À 6/6 zones vidées, la caméra est entièrement grise. Le monde sait ce que tu as fait.
@@ -78,42 +93,54 @@ On te donne un choix.
 
 ## Le monde — Velmara
 
-| Zone | Élément | Boss | Lore |
-|------|---------|------|------|
-| Grievy Town | Neutre | — | Ville de départ. Aldric le bûcheron. Quelque chose cloche ici. |
-| Ignis Reach | 🔥 Feu | Pyrath | Hautes terres volcaniques. Routes d'obsidienne. L'incendie ne s'est pas arrêté depuis des décennies. |
-| Terravast | 🌍 Terre | Gorvun | Réseau de grottes ancestral. Formations cristallines. Ruines d'une civilisation enfouie. |
-| Zephyr Peaks | 💨 Vent | Sylvael | Îles flottantes. Tempêtes éternelles. Le vent se souvient de choses que les gens ont oubliées. |
-| Abyssmar | 💧 Eau | Thalymor | Ville noyée. Ruines de corail. La mer l'a engloutie il y a cent ans et ne l'a jamais rendue. |
-| Volterra | ⚡ Foudre | Volkran | Plaines métalliques. Machines brisées. Un empire a essayé de domestiquer la foudre et a échoué. |
-| Glaciem | ❄️ Glace | Crysthea | Toundra gelée. Grottes de glace. Quelqu'un vit ici seul depuis très, très longtemps. |
-| La Flèche de Malachar | 🌑 Ténèbres | Malachar | Une tour qui ne devrait pas exister. Au sommet : l'homme qui a tout déclenché. Et la vérité. |
+| Zone | Élément | Boss | Villes | Lore |
+|------|---------|------|--------|------|
+| Grievy Town | Neutre | — | Grievy Town | Ville de départ. Aldric le bûcheron. Quelque chose cloche ici. |
+| Ignis Reach | 🔥 Feu | Pyrath | Ashford · Pyrath's Crossing | Hautes terres volcaniques. Routes d'obsidienne. L'incendie ne s'est pas arrêté depuis des décennies. |
+| Terravast | 🌍 Terre | Gorvun | Deepdelve · Stone Watch | Réseau de grottes ancestral. Formations cristallines. Ruines d'une civilisation enfouie. |
+| Zephyr Peaks | 💨 Vent | Sylvael | Windherald · Cloudspire | Îles flottantes. Tempêtes éternelles. Le vent se souvient de choses que les gens ont oubliées. |
+| Abyssmar | 💧 Eau | Thalymor | Saltmourn · The Wreck | Ville noyée. Ruines de corail. La mer l'a engloutie il y a cent ans et ne l'a jamais rendue. |
+| Volterra | ⚡ Foudre | Volkran | The Circuit · Spark's Rest | Plaines métalliques. Machines brisées. Un empire a essayé de domestiquer la foudre et a échoué. |
+| Glaciem | ❄️ Glace | Crysthea | Frostveil · The Last Hearth | Toundra gelée. Grottes de glace. Quelqu'un vit ici seul depuis très, très longtemps. |
+| La Flèche de Malachar | 🌑 Ténèbres | Malachar | — | Une tour qui ne devrait pas exister. Au sommet : l'homme qui a tout déclenché. Et la vérité. |
 
 ---
 
 ## PNJs
 
-| Nom | Rôle | Emplacement |
-|-----|------|-------------|
-| **Aldric** | Bûcheron qui trouve le héros | Grievy Town |
-| **Mira** | Herboriste, en sait plus qu'elle ne dit | Grievy Town |
-| **Theron** | Forgeron, vieux soldat | Grievy Town |
-| **Frère Ovan** | Moine archiviste, documente le Dénouement | Grievy Town |
-| **Liria** | Fille de l'aubergiste, donne des quêtes Fedex | Grievy Town |
-| **Kelvar** | Garde de la ville, pragmatique et sceptique | Grievy Town |
-| **Ysolde** | Marchande, gère l'économie du loot | Grievy Town |
-| **Elara** | Ermite cachée dans les grottes de Glaciem | Glaciem |
+Le jeu compte plus de **130 PNJs** répartis sur toutes les villes. Chaque ville dispose d'au minimum :
+
+| Rôle | Fonction |
+|------|----------|
+| **Forgeron** | Vend armes et armures, craft FORGE (apporter les matériaux) |
+| **Alchimiste** | Vend potions et consommables, craft BREW |
+| **Costumier** | Vend des skins d'équipement, craft TAILOR |
+| **Marchand** | Vend matériaux, ressources de craft et items divers |
+| PNJs de fond | Réfugiés, gardes, savants, enfants, cuisiniers avec dialogues propres |
+
+**PNJs notables de Grievy Town :**
+
+| Nom | Rôle |
+|-----|------|
+| **Aldric** | Bûcheron qui trouve le héros |
+| **Mira** | Herboriste, en sait plus qu'elle ne dit |
+| **Theron** | Forgeron, vieux soldat |
+| **Frère Ovan** | Moine archiviste, documente le Dénouement |
+| **Liria** | Fille de l'aubergiste |
+| **Kelvar** | Garde de la ville |
+| **Ysolde** | Marchande |
+| **Elara** | Ermite cachée dans les grottes de Glaciem |
 
 ---
 
-## Contrôles
+## Contrôles (AZERTY)
 
 | Touche | Action |
 |--------|--------|
-| WASD / Flèches directionnelles | Se déplacer |
-| Z | Attaquer |
+| Z / Q / S / D | Se déplacer (haut / gauche / bas / droite) |
+| W | Attaquer |
 | Espace | Dash (1,5s de recharge, 0,3s d'invincibilité) |
-| Q / E / R / F | Utiliser un skill équipé |
+| A / E / R / F | Utiliser un skill équipé |
 | I | Ouvrir l'inventaire |
 | K | Ouvrir le menu des skills |
 
@@ -234,11 +261,18 @@ You are given a choice.
 ## Features
 
 ### Combat
-- Real-time top-down action — **WASD** to move, **Z** to attack, **Space** to dash
-- **6 elemental types** with a weakness cycle: Fire → Water → Lightning → Earth → Wind → Ice → Fire
-- **4 equippable skill slots** (Q / E / R / F) — mix and match across elements
+- Real-time top-down action — **AZERTY keyboard**: **ZQSD** to move, **W** to attack, **Space** to dash
+- **7 elemental types**: Fire, Earth, Wind, Water, Lightning, Ice, **Neutral** (no weakness)
+- **Dark magic** is super-effective (×1.5) against all non-Dark and non-Divine elements
+- **4 equippable skill slots** (A / E / R / F) — mix and match across elements
 - Status effects: Burn, Freeze, Stun, Slow
 - Out-of-combat HP and mana regeneration
+- **XP Orbs** Vampire Survivors-style: enemies drop orbs that magnetically attract to the player
+
+### UI
+- **SAO-style HP/MP bars**: horizontal gradient bars, HP changes color below 50% and 25% just like Sword Art Online
+- XP bar at the bottom of the screen
+- Notifications for loot, level-ups, and quests
 
 ### Progression
 - XP-based leveling with attribute allocation (STR, VIT, AGI, INT, WIS)
@@ -257,8 +291,16 @@ You are given a choice.
 | Hidden | 0.1% |
 
 - **Pity system**: 250 kills → guaranteed Epic drop, 500 kills → guaranteed Legendary
-- 130+ items: weapons, armor, accessories, consumables, crafting materials, key items
+- **Element assigned at loot time**: every weapon and armor receives its element when dropped (Neutral most common, Dark ultra-rare)
+- **Hidden rarity items**: unique, with near game-breaking passives (heal on kill, zero cooldown, 5× first-strike damage…)
 - Equipment slots: weapon, helm, chest, legs, boots, gloves, cape, 2× ring, amulet
+- **Equipment skins**: the Costumer NPC sells cosmetic appearances for gear
+
+### SAO-style Crafting
+- Bring materials to the town craftsman, like Kirito bringing crystals to the blacksmith
+- **Blacksmith** — FORGE recipes: special elemental weapons and armor
+- **Alchemist** — BREW recipes: elixirs, antidotes, revival crystals
+- **Costumer** — TAILOR recipes: unique zone-themed appearance skins
 
 ### Skills
 - 24 skills total: 2 default, 3 unlockable per elemental zone, 4 hidden
@@ -267,8 +309,8 @@ You are given a choice.
 
 ### Quests
 - **7 main quests** chained across the full story
-- **8 side quests** with lore and meaningful rewards
-- **8 Fedex quests** from Grievy Town villagers (delivery, collection, kill tasks)
+- **21 side quests** with lore and meaningful rewards (boss forging, rare hunts, NPC rescues)
+- **31 Fedex quests** from town craftsmen and merchants (delivery, collection, hunts)
 
 ### World Degradation
 As you clear each zone and its divinity falls, the world visually desaturates. At 6/6 zones cleared, the camera is fully grey. The world knows what you've done.
@@ -281,42 +323,54 @@ As you clear each zone and its divinity falls, the world visually desaturates. A
 
 ## World — Velmara
 
-| Zone | Element | Boss | Lore |
-|------|---------|------|------|
-| Grievy Town | Neutral | — | Starting town. Aldric the woodcutter. Something feels wrong here. |
-| Ignis Reach | 🔥 Fire | Pyrath | Volcanic highlands. Obsidian roads. The fire hasn't stopped in decades. |
-| Terravast | 🌍 Earth | Gorvun | Ancient cave network. Crystal formations. Ruins of a buried civilization. |
-| Zephyr Peaks | 💨 Wind | Sylvael | Floating islands. Eternal storms. The wind remembers things people forget. |
-| Abyssmar | 💧 Water | Thalymor | Drowned city. Coral ruins. The sea swallowed it a hundred years ago and never gave it back. |
-| Volterra | ⚡ Lightning | Volkran | Metallic plains. Shattered machinery. An empire tried to harness lightning and failed. |
-| Glaciem | ❄️ Ice | Crysthea | Frozen tundra. Ice caves. Someone has been living here alone for a very long time. |
-| Malachar's Spire | 🌑 Dark | Malachar | A tower that shouldn't exist. At the top: the man who started all of this. And the truth. |
+| Zone | Element | Boss | Towns | Lore |
+|------|---------|------|-------|------|
+| Grievy Town | Neutral | — | Grievy Town | Starting town. Aldric the woodcutter. Something feels wrong here. |
+| Ignis Reach | 🔥 Fire | Pyrath | Ashford · Pyrath's Crossing | Volcanic highlands. Obsidian roads. The fire hasn't stopped in decades. |
+| Terravast | 🌍 Earth | Gorvun | Deepdelve · Stone Watch | Ancient cave network. Crystal formations. Ruins of a buried civilization. |
+| Zephyr Peaks | 💨 Wind | Sylvael | Windherald · Cloudspire | Floating islands. Eternal storms. The wind remembers things people forget. |
+| Abyssmar | 💧 Water | Thalymor | Saltmourn · The Wreck | Drowned city. Coral ruins. The sea swallowed it a hundred years ago and never gave it back. |
+| Volterra | ⚡ Lightning | Volkran | The Circuit · Spark's Rest | Metallic plains. Shattered machinery. An empire tried to harness lightning and failed. |
+| Glaciem | ❄️ Ice | Crysthea | Frostveil · The Last Hearth | Frozen tundra. Ice caves. Someone has been living here alone for a very long time. |
+| Malachar's Spire | 🌑 Dark | Malachar | — | A tower that shouldn't exist. At the top: the man who started all of this. And the truth. |
 
 ---
 
 ## NPCs
 
-| Name | Role | Location |
-|------|------|----------|
-| **Aldric** | Woodcutter who finds the hero | Grievy Town |
-| **Mira** | Herbalist, knows more than she says | Grievy Town |
-| **Theron** | Blacksmith, old soldier | Grievy Town |
-| **Brother Ovan** | Archivist monk, documents the Unraveling | Grievy Town |
-| **Liria** | Innkeeper's daughter, gives Fedex quests | Grievy Town |
-| **Kelvar** | Town guard, practical and skeptical | Grievy Town |
-| **Ysolde** | Merchant, tracks the loot economy | Grievy Town |
-| **Elara** | Hidden hermit in the Glaciem ice caves | Glaciem |
+The game features over **130 NPCs** spread across all towns. Each town has at minimum:
+
+| Role | Function |
+|------|----------|
+| **Blacksmith** | Sells weapons and armor, SAO-style FORGE crafting |
+| **Alchemist** | Sells potions and consumables, BREW crafting |
+| **Costumer** | Sells equipment skins, TAILOR crafting |
+| **Merchant** | Sells materials, craft resources, misc items |
+| Background NPCs | Refugees, guards, scholars, children, cooks with their own dialogue |
+
+**Notable NPCs in Grievy Town:**
+
+| Name | Role |
+|------|------|
+| **Aldric** | Woodcutter who finds the hero |
+| **Mira** | Herbalist, knows more than she says |
+| **Theron** | Blacksmith, old soldier |
+| **Brother Ovan** | Archivist monk, documents the Unraveling |
+| **Liria** | Innkeeper's daughter |
+| **Kelvar** | Town guard, practical and skeptical |
+| **Ysolde** | Merchant |
+| **Elara** | Hidden hermit in the Glaciem ice caves |
 
 ---
 
-## Controls
+## Controls (AZERTY keyboard)
 
 | Key | Action |
 |-----|--------|
-| WASD / Arrow keys | Move |
-| Z | Attack |
+| Z / Q / S / D | Move (up / left / down / right) |
+| W | Attack |
 | Space | Dash (1.5s cooldown, 0.3s invincibility) |
-| Q / E / R / F | Use equipped skill |
+| A / E / R / F | Use equipped skill |
 | I | Open inventory |
 | K | Open skill menu |
 

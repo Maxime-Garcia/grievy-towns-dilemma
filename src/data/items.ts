@@ -1,4 +1,4 @@
-import { Weapon, Armor, Accessory, Consumable, Material, KeyItem, ItemRarity, ItemType, WeaponType, ElementType } from '../types';
+import { Weapon, Armor, Accessory, Consumable, Material, KeyItem, Skin, ItemRarity, ItemType, WeaponType, ElementType } from '../types';
 
 // ── WEAPONS ────────────────────────────────────────────────────
 
@@ -184,11 +184,271 @@ export const KEY_ITEMS: KeyItem[] = [
   { id: 'stone_shield_scroll', name: 'Stone Shield Scroll', description: 'An ancient earth-inscription granting shield knowledge.', rarity: ItemRarity.UNCOMMON, type: ItemType.KEY_ITEM, icon: 'item_stone_scroll', value: 80 },
   { id: 'aldric_medallion', name: "Aldric's Medallion", description: "Aldric's old guild medallion, worn and scratched.", rarity: ItemRarity.COMMON, type: ItemType.KEY_ITEM, icon: 'item_aldric_medallion', value: 0 },
   { id: 'family_photo', name: 'Family Photo', description: 'A faded photograph of a family in Ignis Reach — taken before the eruption.', rarity: ItemRarity.COMMON, type: ItemType.KEY_ITEM, icon: 'item_family_photo', value: 0 },
+  // Quest items for new towns
+  { id: 'ashford_seal', name: 'Sceau d\'Ashford', description: 'Preuve de passage par le refuge des cendres.', rarity: ItemRarity.COMMON, type: ItemType.KEY_ITEM, icon: 'item_seal', value: 0 },
+  { id: 'deepdelve_gem', name: 'Gemme de Deepdelve', description: 'Cristal de la mine profonde. Luit dans le noir.', rarity: ItemRarity.UNCOMMON, type: ItemType.KEY_ITEM, icon: 'item_gem', value: 50 },
+  { id: 'saltmourn_tide_map', name: 'Carte des Marées', description: 'Une carte des courants d\'Abyssmar tracée par un vieux marin.', rarity: ItemRarity.COMMON, type: ItemType.KEY_ITEM, icon: 'item_map', value: 0 },
+  { id: 'circuit_blueprint', name: 'Schéma du Circuit', description: 'Plans du réseau électrique de Volterra.', rarity: ItemRarity.UNCOMMON, type: ItemType.KEY_ITEM, icon: 'item_blueprint', value: 80 },
+  // Items requis par les quêtes existantes (fq_08_childstoy, sq_03_crystal_archivist, sq_07_malachars_notes)
+  { id: 'wooden_horse', name: 'Cheval de Bois', description: 'Un jouet sculpté dans du bois de chêne. L\'enfant l\'a perdu dans la vieille grange.', rarity: ItemRarity.COMMON, type: ItemType.KEY_ITEM, icon: 'item_wooden_horse', value: 0 },
+  { id: 'ice_archive_tablet', name: 'Tablette d\'Archive Glaciale', description: 'Une plaque de glace gravée par Crysthea. Porte la mémoire d\'un âge révolu.', rarity: ItemRarity.RARE, type: ItemType.KEY_ITEM, icon: 'item_ice_tablet', value: 200, questId: 'sq_03_crystal_archivist' },
+  { id: 'research_page_fire', name: 'Page de Recherche — Feu', description: 'Notes de Malachar sur Ignis Reach. L\'écriture est précise et froide.', rarity: ItemRarity.UNCOMMON, type: ItemType.KEY_ITEM, icon: 'item_research_page', value: 0, questId: 'sq_07_malachars_notes' },
+  { id: 'research_page_earth', name: 'Page de Recherche — Terre', description: 'Notes de Malachar sur Terravast. Densément annotées.', rarity: ItemRarity.UNCOMMON, type: ItemType.KEY_ITEM, icon: 'item_research_page', value: 0, questId: 'sq_07_malachars_notes' },
+  { id: 'research_page_wind', name: 'Page de Recherche — Vent', description: 'Notes de Malachar sur Zephyr Peaks. Certains mots sont raturés.', rarity: ItemRarity.UNCOMMON, type: ItemType.KEY_ITEM, icon: 'item_research_page', value: 0, questId: 'sq_07_malachars_notes' },
+  { id: 'research_page', name: 'Page de Recherche', description: 'Fragment des notes de Malachar. L\'écriture change vers la fin.', rarity: ItemRarity.UNCOMMON, type: ItemType.KEY_ITEM, icon: 'item_research_page', value: 0, questId: 'sq_07_malachars_notes' },
+];
+
+// ── HIDDEN ITEMS (uniques, quasi game-breaker) ─────────────────
+// Chaque item HIDDEN est unique en son genre avec un passif dévastateur.
+
+export const HIDDEN_WEAPONS: Weapon[] = [
+  {
+    id: 'hidden_void_reaper',
+    name: 'Faucheur du Néant',
+    description: 'Chaque coup fatal rend 15% du HP maximum. Soif de néant.',
+    rarity: ItemRarity.HIDDEN,
+    type: ItemType.WEAPON,
+    icon: 'item_void_reaper',
+    value: 99999,
+    element: ElementType.DARK,
+    weaponType: WeaponType.GREATSWORD,
+    damage: 120,
+    magicDamage: 120,
+    bonusStats: { str: 12, int: 12, agi: 8 },
+    attackSpeed: 0.9,
+    passiveEffect: 'KILL_HEAL_15_PCT',
+    lore: 'Ce n\'est pas une arme. C\'est une décision.',
+  },
+  {
+    id: 'hidden_temporal_blade',
+    name: 'Lame Temporelle',
+    description: 'Les attaques basiques ne consomment aucun temps de recharge. Frappe comme la foudre.',
+    rarity: ItemRarity.HIDDEN,
+    type: ItemType.WEAPON,
+    icon: 'item_temporal_blade',
+    value: 99999,
+    element: ElementType.LIGHTNING,
+    weaponType: WeaponType.SWORD,
+    damage: 95,
+    magicDamage: 95,
+    bonusStats: { agi: 15, str: 10, spd: 8 },
+    attackSpeed: 2.0,
+    passiveEffect: 'NO_ATTACK_COOLDOWN',
+    lore: 'Elle frappe avant que tu aies décidé de frapper.',
+  },
+  {
+    id: 'hidden_world_eater_staff',
+    name: 'Bâton du Dévoreur de Mondes',
+    description: 'Toutes les compétences actives coûtent 0 mana. Le pouvoir de Malachar sans le prix.',
+    rarity: ItemRarity.HIDDEN,
+    type: ItemType.WEAPON,
+    icon: 'item_world_eater',
+    value: 99999,
+    element: ElementType.DARK,
+    weaponType: WeaponType.STAFF,
+    damage: 30,
+    magicDamage: 200,
+    bonusStats: { int: 20, end: 8, vit: 8 },
+    attackSpeed: 1.0,
+    passiveEffect: 'ZERO_MANA_COST',
+    lore: 'Malachar a passé trente ans à comprendre ce principe. Tu le tiens dans les mains.',
+  },
+  {
+    id: 'hidden_first_blade',
+    name: 'Épée Originelle',
+    description: 'Le premier coup de chaque combat inflige 500% des dégâts. Une seule chance.',
+    rarity: ItemRarity.HIDDEN,
+    type: ItemType.WEAPON,
+    icon: 'item_first_blade',
+    value: 99999,
+    weaponType: WeaponType.SWORD,
+    damage: 85,
+    magicDamage: 85,
+    bonusStats: { str: 14, int: 10 },
+    attackSpeed: 1.1,
+    passiveEffect: 'FIRST_STRIKE_500_PCT',
+    lore: 'Il n\'y a pas de deuxième coup. Pas si tu fais bien le premier.',
+  },
+  {
+    id: 'hidden_soul_bow',
+    name: 'Arc des Âmes',
+    description: 'Chaque ennemi tué ajoute +2% aux dégâts permanents (jusqu\'à +200%). Ne se réinitialise pas.',
+    rarity: ItemRarity.HIDDEN,
+    type: ItemType.WEAPON,
+    icon: 'item_soul_bow',
+    value: 99999,
+    element: ElementType.DIVINE,
+    weaponType: WeaponType.BOW,
+    damage: 75,
+    magicDamage: 75,
+    bonusStats: { agi: 12, int: 8, str: 6 },
+    attackSpeed: 1.4,
+    passiveEffect: 'KILL_STACK_DAMAGE',
+    lore: 'Il se souvient de chaque vie qu\'il a prise. Il les collectionne.',
+  },
+];
+
+export const HIDDEN_ARMORS: Armor[] = [
+  {
+    id: 'hidden_undying_plate',
+    name: 'Armure de l\'Indestructible',
+    description: 'Réduit tous les dégâts reçus de 40%. Les coups fatals ont 30% de chance de vous laisser à 1 HP.',
+    rarity: ItemRarity.HIDDEN,
+    type: ItemType.CHEST,
+    icon: 'item_undying_plate',
+    value: 99999,
+    defense: 100,
+    magicDefense: 100,
+    bonusStats: { end: 20, vit: 15 },
+    passiveEffect: 'DMG_REDUCTION_40_DEATH_RESIST',
+    lore: 'Ceux qui l\'ont portée ne se souviennent pas de leur mort. Parce qu\'elle n\'a jamais eu lieu.',
+  },
+  {
+    id: 'hidden_mirror_helm',
+    name: 'Heaume du Miroir',
+    description: 'Renvoie 25% des dégâts magiques reçus à l\'attaquant. Reflète aussi les malédictions.',
+    rarity: ItemRarity.HIDDEN,
+    type: ItemType.HELM,
+    icon: 'item_mirror_helm',
+    value: 99999,
+    defense: 40,
+    magicDefense: 80,
+    bonusStats: { int: 12, magicDef: 20 },
+    passiveEffect: 'MAGIC_REFLECT_25_PCT',
+    lore: 'Ce n\'est pas une protection. C\'est une réponse.',
+  },
+];
+
+export const HIDDEN_ACCESSORIES: Accessory[] = [
+  {
+    id: 'hidden_eternity_ring',
+    name: 'Anneau de l\'Éternité',
+    description: 'HP et Mana se régénèrent à 1% par seconde en permanence, même en combat.',
+    rarity: ItemRarity.HIDDEN,
+    type: ItemType.RING,
+    icon: 'item_eternity_ring',
+    value: 99999,
+    bonusStats: { vit: 15, end: 15, int: 10 },
+    passiveEffect: 'PERMANENT_REGEN_1_PCT_PER_SEC',
+    lore: 'L\'éternité n\'est pas une durée. C\'est une propriété.',
+  },
+  {
+    id: 'hidden_fate_amulet',
+    name: 'Amulette du Destin',
+    description: 'Toutes les compétences actives sont disponibles sans délai de recharge au début de chaque combat.',
+    rarity: ItemRarity.HIDDEN,
+    type: ItemType.AMULET,
+    icon: 'item_fate_amulet',
+    value: 99999,
+    bonusStats: { int: 18, agi: 12 },
+    passiveEffect: 'COMBAT_START_ZERO_CD',
+    lore: 'Le destin n\'attend pas. Et maintenant, toi non plus.',
+  },
+];
+
+// ── SKINS (Costumier) ─────────────────────────────────────────
+
+export const SKINS: Skin[] = [
+  { id: 'skin_ember_cloak',       name: 'Manteau des Cendres',   description: 'Teinté des cendres d\'Ignis Reach. Lueurs rouges sur tissu noir.', rarity: ItemRarity.RARE,   type: ItemType.SKIN, icon: 'skin_ember_cloak',   value: 400,  targetSlot: ItemType.CAPE,  visualKey: 'vis_ember_cloak',   stackable: false },
+  { id: 'skin_crystal_regalia',   name: 'Tenue des Cristaux',    description: 'Éclats de Terravast tissés dans l\'armure. Brille dans l\'obscurité.', rarity: ItemRarity.RARE,   type: ItemType.SKIN, icon: 'skin_crystal_regalia',   value: 450,  targetSlot: ItemType.CHEST, visualKey: 'vis_crystal_regalia', stackable: false },
+  { id: 'skin_storm_vestments',   name: 'Habit des Tempêtes',    description: 'La soie des temples flottants. Ondule sans vent.', rarity: ItemRarity.EPIC,   type: ItemType.SKIN, icon: 'skin_storm_vestments',   value: 700,  targetSlot: ItemType.CHEST, visualKey: 'vis_storm_vestments', stackable: false },
+  { id: 'skin_abyssal_robe',      name: 'Robe Abyssale',         description: 'La profondeur des océans d\'Abyssmar en une robe.', rarity: ItemRarity.EPIC,   type: ItemType.SKIN, icon: 'skin_abyssal_robe',      value: 750,  targetSlot: ItemType.CHEST, visualKey: 'vis_abyssal_robe',   stackable: false },
+  { id: 'skin_frost_shroud',      name: 'Linceul de Givre',      description: 'Fourrure de loup de givre. Craquèle dans le froid.', rarity: ItemRarity.EPIC,   type: ItemType.SKIN, icon: 'skin_frost_shroud',      value: 800,  targetSlot: ItemType.CHEST, visualKey: 'vis_frost_shroud',   stackable: false },
+  { id: 'skin_pilgrim_garb',      name: 'Vêtement du Pèlerin',   description: 'Simple et discret. Celui qui voyage léger voyage loin.', rarity: ItemRarity.UNCOMMON, type: ItemType.SKIN, icon: 'skin_pilgrim_garb', value: 150,  targetSlot: ItemType.CHEST, visualKey: 'vis_pilgrim_garb',   stackable: false },
+  { id: 'skin_divine_vestments',  name: 'Vêtements Divins',      description: 'Tissé à partir des fils de lumière laissés par les divinités.', rarity: ItemRarity.LEGENDARY, type: ItemType.SKIN, icon: 'skin_divine_vestments', value: 3000, targetSlot: ItemType.CHEST, visualKey: 'vis_divine_vestments', stackable: false },
+  { id: 'skin_void_mantle',       name: 'Manteau du Vide',       description: 'Absorbe la lumière. Ne reflète rien.', rarity: ItemRarity.LEGENDARY, type: ItemType.SKIN, icon: 'skin_void_mantle', value: 3500, targetSlot: ItemType.CAPE, visualKey: 'vis_void_mantle', stackable: false },
+  { id: 'skin_lightning_coil_helm', name: 'Casque Spire de Foudre', description: 'Réplique des casques des ingénieurs de Volterra.', rarity: ItemRarity.RARE, type: ItemType.SKIN, icon: 'skin_lightning_helm', value: 500, targetSlot: ItemType.HELM, visualKey: 'vis_lightning_helm', stackable: false },
+  { id: 'skin_glaciem_crown',     name: 'Couronne de Glaciem',   description: 'La glace de Crysthea taillée en couronne.', rarity: ItemRarity.EPIC, type: ItemType.SKIN, icon: 'skin_glaciem_crown', value: 900, targetSlot: ItemType.HELM, visualKey: 'vis_glaciem_crown', stackable: false },
+];
+
+// ── ADDITIONAL WEAPONS (zone-specific, varied elements) ─────────
+
+export const EXTRA_WEAPONS: Weapon[] = [
+  // Fire
+  { id: 'cinder_dagger', name: 'Dague de Braise', description: 'Rapide et brûlante. Laisse une marque.', rarity: ItemRarity.RARE, type: ItemType.WEAPON, icon: 'item_cinder_dagger', value: 420, element: ElementType.FIRE, weaponType: WeaponType.DAGGER, damage: 28, magicDamage: 20, bonusStats: { agi: 4, int: 2 }, attackSpeed: 1.7 },
+  { id: 'pyroclast_bow', name: 'Arc Pyroclaste', description: 'Flèches incandescentes qui explosent à l\'impact.', rarity: ItemRarity.EPIC, type: ItemType.WEAPON, icon: 'item_pyroclast_bow', value: 1900, element: ElementType.FIRE, weaponType: WeaponType.BOW, damage: 60, magicDamage: 50, bonusStats: { agi: 6, int: 4 }, attackSpeed: 1.0 },
+  // Earth
+  { id: 'stone_dagger', name: 'Dague de Pierre', description: 'Taillée dans le cristal de Terravast. Tranchante.', rarity: ItemRarity.RARE, type: ItemType.WEAPON, icon: 'item_stone_dagger', value: 380, element: ElementType.EARTH, weaponType: WeaponType.DAGGER, damage: 30, magicDamage: 12, bonusStats: { str: 3, end: 2 }, attackSpeed: 1.5 },
+  { id: 'seismic_staff', name: 'Sceptre Sismique', description: 'Chaque frappe fait trembler le sol.', rarity: ItemRarity.EPIC, type: ItemType.WEAPON, icon: 'item_seismic_staff', value: 1750, element: ElementType.EARTH, weaponType: WeaponType.STAFF, damage: 10, magicDamage: 88, bonusStats: { int: 7, end: 3 }, attackSpeed: 0.88 },
+  // Wind
+  { id: 'gale_dagger', name: 'Dague du Vent', description: 'Si légère qu\'elle semble flotter.', rarity: ItemRarity.RARE, type: ItemType.WEAPON, icon: 'item_gale_dagger', value: 460, element: ElementType.WIND, weaponType: WeaponType.DAGGER, damage: 20, magicDamage: 25, bonusStats: { agi: 5 }, attackSpeed: 1.8 },
+  { id: 'wind_greatsword', name: 'Espadon des Rafales', description: 'Aussi tranchant que le vent lui-même.', rarity: ItemRarity.RARE, type: ItemType.WEAPON, icon: 'item_wind_greatsword', value: 490, element: ElementType.WIND, weaponType: WeaponType.GREATSWORD, damage: 65, magicDamage: 22, bonusStats: { str: 4, agi: 3 }, attackSpeed: 0.72 },
+  // Water
+  { id: 'tide_staff', name: 'Bâton des Marées', description: 'Pulse comme un courant sous-marin.', rarity: ItemRarity.RARE, type: ItemType.WEAPON, icon: 'item_tide_staff', value: 410, element: ElementType.WATER, weaponType: WeaponType.STAFF, damage: 6, magicDamage: 68, bonusStats: { int: 5, vit: 3 }, attackSpeed: 0.9 },
+  { id: 'coral_sword', name: 'Épée de Corail', description: 'Forgée dans les profondeurs d\'Abyssmar.', rarity: ItemRarity.UNCOMMON, type: ItemType.WEAPON, icon: 'item_coral_sword', value: 200, element: ElementType.WATER, weaponType: WeaponType.SWORD, damage: 26, magicDamage: 14, bonusStats: { end: 2 }, attackSpeed: 1.0 },
+  // Lightning
+  { id: 'arc_sword', name: 'Épée Arc Électrique', description: 'Inflige un choc à chaque touche.', rarity: ItemRarity.RARE, type: ItemType.WEAPON, icon: 'item_arc_sword', value: 440, element: ElementType.LIGHTNING, weaponType: WeaponType.SWORD, damage: 32, magicDamage: 28, bonusStats: { agi: 3, str: 2 }, attackSpeed: 1.15 },
+  { id: 'thunder_bow', name: 'Arc du Tonnerre', description: 'Les flèches laissent une traîne de foudre.', rarity: ItemRarity.EPIC, type: ItemType.WEAPON, icon: 'item_thunder_bow', value: 1850, element: ElementType.LIGHTNING, weaponType: WeaponType.BOW, damage: 52, magicDamage: 55, bonusStats: { agi: 6, int: 4 }, attackSpeed: 1.2 },
+  // Ice
+  { id: 'frost_dagger', name: 'Dague du Givre', description: 'Gèle les plaies qu\'elle inflige.', rarity: ItemRarity.RARE, type: ItemType.WEAPON, icon: 'item_frost_dagger', value: 430, element: ElementType.ICE, weaponType: WeaponType.DAGGER, damage: 22, magicDamage: 26, bonusStats: { agi: 3, int: 3 }, attackSpeed: 1.6 },
+  { id: 'blizzard_greatsword', name: 'Espadon des Blizzards', description: 'Laisse derrière lui un sillage de glace.', rarity: ItemRarity.EPIC, type: ItemType.WEAPON, icon: 'item_blizzard_gs', value: 1650, element: ElementType.ICE, weaponType: WeaponType.GREATSWORD, damage: 90, magicDamage: 40, bonusStats: { str: 7, int: 4, end: 3 }, attackSpeed: 0.62 },
+  // Dark
+  { id: 'shadow_staff', name: 'Sceptre des Ombres', description: 'Semble absorber la lumière environnante.', rarity: ItemRarity.EPIC, type: ItemType.WEAPON, icon: 'item_shadow_staff', value: 2100, element: ElementType.DARK, weaponType: WeaponType.STAFF, damage: 15, magicDamage: 95, bonusStats: { int: 8, agi: 3 }, attackSpeed: 0.95 },
+  { id: 'void_bow', name: 'Arc du Vide', description: 'Les flèches disparaissent. Les ennemis aussi.', rarity: ItemRarity.EPIC, type: ItemType.WEAPON, icon: 'item_void_bow', value: 2200, element: ElementType.DARK, weaponType: WeaponType.BOW, damage: 58, magicDamage: 60, bonusStats: { agi: 7, int: 5 }, attackSpeed: 1.1 },
+  // Divine
+  { id: 'divine_sword', name: 'Épée Sacrée', description: 'Brille d\'une lumière douce. Les démons la fuient.', rarity: ItemRarity.LEGENDARY, type: ItemType.WEAPON, icon: 'item_divine_sword', value: 9500, element: ElementType.DIVINE, weaponType: WeaponType.SWORD, damage: 90, magicDamage: 90, bonusStats: { str: 8, int: 8, vit: 5 }, attackSpeed: 1.1, lore: 'La contre-réponse à Malachar, trouvée trop tard.' },
+];
+
+// ── ADDITIONAL ARMORS ───────────────────────────────────────────
+
+export const EXTRA_ARMORS: Armor[] = [
+  // Legs
+  { id: 'leather_legs', name: 'Jambières de Cuir', description: 'Protection basique pour les jambes.', rarity: ItemRarity.COMMON, type: ItemType.LEGS, icon: 'item_leather_legs', value: 22, defense: 5, magicDefense: 2, bonusStats: {} },
+  { id: 'iron_legs', name: 'Jambières de Fer', description: 'Standard de fer.', rarity: ItemRarity.UNCOMMON, type: ItemType.LEGS, icon: 'item_iron_legs', value: 75, defense: 14, magicDefense: 4, bonusStats: { end: 1 } },
+  { id: 'fire_legs', name: 'Jambières Ignées', description: 'Forgées dans la lave d\'Ignis Reach.', rarity: ItemRarity.RARE, type: ItemType.LEGS, icon: 'item_fire_legs', value: 400, element: ElementType.FIRE, defense: 24, magicDefense: 10, bonusStats: { end: 2, str: 1 } },
+  { id: 'earth_legs', name: 'Braconnières de Pierre', description: 'Terravast crystal layered leg guards.', rarity: ItemRarity.RARE, type: ItemType.LEGS, icon: 'item_earth_legs', value: 420, element: ElementType.EARTH, defense: 30, magicDefense: 8, bonusStats: { end: 3 } },
+  { id: 'wind_legs', name: 'Jambières des Rafales', description: 'Légères comme le vent de Zephyr.', rarity: ItemRarity.RARE, type: ItemType.LEGS, icon: 'item_wind_legs', value: 380, element: ElementType.WIND, defense: 18, magicDefense: 12, bonusStats: { agi: 4 } },
+  { id: 'water_legs', name: 'Jambières Corallines', description: 'Corail d\'Abyssmar, souple et résistant.', rarity: ItemRarity.RARE, type: ItemType.LEGS, icon: 'item_water_legs', value: 390, element: ElementType.WATER, defense: 20, magicDefense: 16, bonusStats: { end: 2, int: 1 } },
+  { id: 'lightning_legs', name: 'Jambières Conductrices', description: 'Conçues pour les terrains électrifiés de Volterra.', rarity: ItemRarity.RARE, type: ItemType.LEGS, icon: 'item_lightning_legs', value: 410, element: ElementType.LIGHTNING, defense: 22, magicDefense: 14, bonusStats: { agi: 3, end: 2 } },
+  { id: 'ice_legs', name: 'Braies Givrées', description: 'La glace de Glaciem ne fond pas.', rarity: ItemRarity.RARE, type: ItemType.LEGS, icon: 'item_ice_legs', value: 430, element: ElementType.ICE, defense: 26, magicDefense: 18, bonusStats: { end: 2, vit: 2 } },
+  // Gloves extra
+  { id: 'leather_gloves', name: 'Gants de Cuir', description: 'Protection basique des mains.', rarity: ItemRarity.COMMON, type: ItemType.GLOVES, icon: 'item_leather_gloves', value: 18, defense: 3, magicDefense: 1, bonusStats: {} },
+  { id: 'iron_gauntlets', name: 'Gantelets de Fer', description: 'Robustes et lourds.', rarity: ItemRarity.UNCOMMON, type: ItemType.GLOVES, icon: 'item_iron_gauntlets', value: 70, defense: 10, magicDefense: 3, bonusStats: { str: 1 } },
+  { id: 'wind_gloves', name: 'Gants des Rafales', description: 'Augmentent la vitesse d\'attaque.', rarity: ItemRarity.RARE, type: ItemType.GLOVES, icon: 'item_wind_gloves', value: 380, element: ElementType.WIND, defense: 12, magicDefense: 8, bonusStats: { agi: 4, spd: 2 } },
+  { id: 'frost_gauntlets', name: 'Gantelets de Givre', description: 'Les ennemis frémissent à leur contact.', rarity: ItemRarity.EPIC, type: ItemType.GLOVES, icon: 'item_frost_gauntlets', value: 1600, element: ElementType.ICE, defense: 24, magicDefense: 18, bonusStats: { int: 5, str: 3 } },
+  // Helms extra
+  { id: 'fire_helm', name: 'Heaume Igné', description: 'La chaleur lui fait comme une couronne.', rarity: ItemRarity.RARE, type: ItemType.HELM, icon: 'item_fire_helm', value: 420, element: ElementType.FIRE, defense: 20, magicDefense: 8, bonusStats: { end: 2 } },
+  { id: 'earth_helm', name: 'Heaume de Terravast', description: 'Crystal sur cuir endurci.', rarity: ItemRarity.RARE, type: ItemType.HELM, icon: 'item_earth_helm', value: 410, element: ElementType.EARTH, defense: 25, magicDefense: 6, bonusStats: { end: 2, str: 1 } },
+  { id: 'wind_helm', name: 'Heaume du Vent', description: 'Aussi aérien qu\'une plume de Sylvael.', rarity: ItemRarity.RARE, type: ItemType.HELM, icon: 'item_wind_helm', value: 390, element: ElementType.WIND, defense: 16, magicDefense: 10, bonusStats: { agi: 3 } },
+  { id: 'water_helm', name: 'Heaume Marin', description: 'Protège aussi sous l\'eau.', rarity: ItemRarity.RARE, type: ItemType.HELM, icon: 'item_water_helm', value: 400, element: ElementType.WATER, defense: 18, magicDefense: 12, bonusStats: { end: 1, int: 2 } },
+  { id: 'lightning_helm', name: 'Heaume du Foudroiement', description: 'Canalise sans griller.', rarity: ItemRarity.RARE, type: ItemType.HELM, icon: 'item_lightning_helm', value: 430, element: ElementType.LIGHTNING, defense: 18, magicDefense: 12, bonusStats: { agi: 2, int: 2 } },
+  { id: 'dark_helm', name: 'Heaume du Vide', description: 'Masque les traits du porteur.', rarity: ItemRarity.EPIC, type: ItemType.HELM, icon: 'item_dark_helm', value: 1500, element: ElementType.DARK, defense: 28, magicDefense: 24, bonusStats: { int: 5, agi: 3 } },
+  // Boots extra
+  { id: 'iron_boots', name: 'Bottes de Fer', description: 'Lourdes mais solides.', rarity: ItemRarity.UNCOMMON, type: ItemType.BOOTS, icon: 'item_iron_boots', value: 65, defense: 8, magicDefense: 3, bonusStats: { end: 1 } },
+  { id: 'fire_boots', name: 'Bottes Ignées', description: 'Ne fondent pas dans la lave.', rarity: ItemRarity.RARE, type: ItemType.BOOTS, icon: 'item_fire_boots', value: 370, element: ElementType.FIRE, defense: 14, magicDefense: 6, bonusStats: { spd: 2, end: 1 } },
+  { id: 'wind_boots', name: 'Bottes du Vent', description: 'La vitesse de marche augmente de 20%.', rarity: ItemRarity.EPIC, type: ItemType.BOOTS, icon: 'item_wind_boots', value: 1500, element: ElementType.WIND, defense: 16, magicDefense: 14, bonusStats: { agi: 5, spd: 5 } },
+  { id: 'void_boots', name: 'Bottes du Vide', description: 'Aucun son de pas. Aucune trace.', rarity: ItemRarity.LEGENDARY, type: ItemType.BOOTS, icon: 'item_void_boots', value: 6500, element: ElementType.DARK, defense: 25, magicDefense: 25, bonusStats: { agi: 8, spd: 6, int: 4 } },
+  // Capes extra
+  { id: 'fire_cape', name: 'Cape de Cendres', description: 'Tissu noir calciné qui protège des flammes.', rarity: ItemRarity.RARE, type: ItemType.CAPE, icon: 'item_fire_cape', value: 360, element: ElementType.FIRE, defense: 12, magicDefense: 14, bonusStats: { end: 2 } },
+  { id: 'earth_cape', name: 'Cape de Rune', description: 'Runes anciennes cousues dans le tissu.', rarity: ItemRarity.RARE, type: ItemType.CAPE, icon: 'item_earth_cape', value: 340, element: ElementType.EARTH, defense: 14, magicDefense: 10, bonusStats: { end: 2, str: 1 } },
+  { id: 'water_cape', name: 'Cape des Profondeurs', description: 'Imperméable à l\'eau et au sang.', rarity: ItemRarity.RARE, type: ItemType.CAPE, icon: 'item_water_cape', value: 350, element: ElementType.WATER, defense: 12, magicDefense: 16, bonusStats: { vit: 2, int: 1 } },
+  { id: 'ice_cape', name: 'Cape du Blizzard', description: 'Absorbe les tempêtes de Glaciem.', rarity: ItemRarity.EPIC, type: ItemType.CAPE, icon: 'item_ice_cape', value: 1400, element: ElementType.ICE, defense: 18, magicDefense: 22, bonusStats: { end: 3, int: 3 } },
+  { id: 'dark_cape', name: 'Cape des Ombres', description: 'Se fond dans l\'obscurité.', rarity: ItemRarity.EPIC, type: ItemType.CAPE, icon: 'item_dark_cape', value: 1600, element: ElementType.DARK, defense: 16, magicDefense: 20, bonusStats: { agi: 5, int: 4 } },
+  { id: 'divine_cape', name: 'Cape de Lumière', description: 'Tissu divin que les ombres fuient.', rarity: ItemRarity.LEGENDARY, type: ItemType.CAPE, icon: 'item_divine_cape', value: 7000, element: ElementType.DIVINE, defense: 22, magicDefense: 35, bonusStats: { vit: 6, int: 5, end: 4 } },
+];
+
+
+// ── EXTRA MATERIALS (needed by new quests/NPCs) ─────────────────
+
+export const EXTRA_MATERIALS: Material[] = [
+  { id: 'moonpetal_herb', name: 'Herbe Lunaire', description: 'Herb rare qui pousse à la lisière des forêts. Utilisée en alchimie.', rarity: ItemRarity.COMMON, type: ItemType.MATERIAL, icon: 'item_moonpetal', value: 8, stackable: true, maxStack: 99 },
+  { id: 'bird_feather', name: 'Plume d\'Oiseau des Bois', description: 'Plume douce d\'un oiseau de forêt.', rarity: ItemRarity.COMMON, type: ItemType.MATERIAL, icon: 'item_bird_feather', value: 5, stackable: true, maxStack: 99 },
+  { id: 'ash_residue', name: 'Résidu de Cendre', description: 'Cendre purifiée par la magie d\'Ignis Reach.', rarity: ItemRarity.COMMON, type: ItemType.MATERIAL, icon: 'item_ash_residue', value: 10, zone: ElementType.FIRE, stackable: true, maxStack: 99 },
+  { id: 'iron_ore', name: 'Minerai de Fer', description: 'Métal brut extrait des mines de Deepdelve.', rarity: ItemRarity.COMMON, type: ItemType.MATERIAL, icon: 'item_iron_ore', value: 12, zone: ElementType.EARTH, stackable: true, maxStack: 99 },
+  { id: 'pearl', name: 'Perle d\'Abyssmar', description: 'Formée dans les profondeurs. Translucide.', rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_pearl', value: 35, zone: ElementType.WATER, stackable: true, maxStack: 50 },
+  { id: 'storm_glass', name: 'Verre de Tempête', description: 'Sable fondu par la foudre de Volterra.', rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_storm_glass', value: 45, zone: ElementType.LIGHTNING, stackable: true, maxStack: 50 },
+  { id: 'icebloom_flower', name: 'Fleur de Givre', description: 'Pousse uniquement dans les anfractuosités gelées de Glaciem.', rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_icebloom', value: 40, zone: ElementType.ICE, stackable: true, maxStack: 50 },
+  { id: 'void_crystal', name: 'Cristal du Vide', description: 'Transparent mais sombre. Ne reflète rien.', rarity: ItemRarity.RARE, type: ItemType.MATERIAL, icon: 'item_void_crystal', value: 160, zone: ElementType.DARK, stackable: true, maxStack: 20 },
+  { id: 'ancient_tome_page', name: 'Page de Tome Ancien', description: 'Fragment d\'un savoir perdu. Ovan en ferait quelque chose.', rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_tome_page', value: 55, stackable: true, maxStack: 30 },
 ];
 
 // ── ITEM REGISTRY ──────────────────────────────────────────────
 
 export const ALL_ITEMS: Record<string, import('../types').Item> = {};
-[...WEAPONS, ...ARMORS, ...ACCESSORIES, ...CONSUMABLES, ...MATERIALS, ...KEY_ITEMS].forEach(item => {
+[
+  ...WEAPONS, ...ARMORS, ...ACCESSORIES, ...CONSUMABLES, ...MATERIALS, ...KEY_ITEMS,
+  ...HIDDEN_WEAPONS, ...HIDDEN_ARMORS, ...HIDDEN_ACCESSORIES,
+  ...SKINS, ...EXTRA_WEAPONS, ...EXTRA_ARMORS, ...EXTRA_MATERIALS,
+].forEach(item => {
   ALL_ITEMS[item.id] = item as import('../types').Item;
 });

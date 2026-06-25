@@ -36,7 +36,8 @@ export enum ItemType {
   AMULET = 'AMULET',
   CONSUMABLE = 'CONSUMABLE',
   MATERIAL = 'MATERIAL',
-  KEY_ITEM = 'KEY_ITEM'
+  KEY_ITEM = 'KEY_ITEM',
+  SKIN = 'SKIN'
 }
 
 export enum WeaponType {
@@ -139,6 +140,7 @@ export interface Weapon extends BaseItem {
   magicDamage: number;
   bonusStats: StatBonus;
   attackSpeed: number;
+  passiveEffect?: string;
 }
 
 export interface Armor extends BaseItem {
@@ -146,6 +148,7 @@ export interface Armor extends BaseItem {
   defense: number;
   magicDefense: number;
   bonusStats: StatBonus;
+  passiveEffect?: string;
 }
 
 export interface Accessory extends BaseItem {
@@ -185,7 +188,27 @@ export interface KeyItem extends BaseItem {
   questId?: string;
 }
 
-export type Item = Weapon | Armor | Accessory | Consumable | Material | KeyItem;
+export interface Skin extends BaseItem {
+  type: ItemType.SKIN;
+  targetSlot: ItemType;
+  visualKey: string;
+  stackable: false;
+}
+
+export interface CraftRecipe {
+  id: string;
+  name: string;
+  craftType: 'FORGE' | 'BREW' | 'TAILOR';
+  resultItemId: string;
+  resultQuantity: number;
+  ingredients: { itemId: string; quantity: number }[];
+  goldCost: number;
+  levelRequired: number;
+  zoneRequired?: ElementType;
+  lore?: string;
+}
+
+export type Item = Weapon | Armor | Accessory | Consumable | Material | KeyItem | Skin;
 
 // ============================================================
 // EQUIPMENT
@@ -202,6 +225,7 @@ export interface Equipment {
   ring1?: Accessory;
   ring2?: Accessory;
   amulet?: Accessory;
+  skins?: Partial<Record<string, string>>;
 }
 
 export interface InventorySlot {
@@ -583,6 +607,8 @@ export type GameEventType =
 // ELEMENTAL AFFINITY (weakness/resistance table)
 // ============================================================
 
+// NEUTRAL has no weakness (it is truly neutral).
+// DARK is super-effective against every non-DARK element (handled in CombatSystem via DARK_MULTIPLIER).
 export const ELEMENT_WEAKNESS: Partial<Record<ElementType, ElementType>> = {
   [ElementType.FIRE]: ElementType.WATER,
   [ElementType.WATER]: ElementType.LIGHTNING,
@@ -592,6 +618,9 @@ export const ELEMENT_WEAKNESS: Partial<Record<ElementType, ElementType>> = {
   [ElementType.ICE]: ElementType.FIRE,
   [ElementType.DARK]: ElementType.DIVINE,
 };
+
+export const DARK_MULTIPLIER = 1.5;
+export const WEAKNESS_MULTIPLIER = 1.5;
 
 export const RARITY_COLORS: Record<ItemRarity, string> = {
   [ItemRarity.COMMON]: '#b0b0b0',

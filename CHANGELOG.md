@@ -5,6 +5,77 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) — versionnag
 
 ---
 
+## [0.7.0] — 2026-06-25 — Expansion majeure : villes, NPCs, quêtes, craft SAO
+
+### Ajouté — Nouvelles villes (12 zones)
+- **`src/data/zones.ts`** : 2 villes par zone élémentaire (mouvement libre dans la zone, chargement entre zones OK)
+  - Ignis Reach : Ashford (Nv8), Pyrath's Crossing (Nv9)
+  - Terravast : Deepdelve (Nv10), Stone Watch (Nv11)
+  - Zephyr Peaks : Windherald (Nv12), Cloudspire (Nv13)
+  - Abyssmar : Saltmourn (Nv14), The Wreck (Nv15)
+  - Volterra : The Circuit (Nv16), Spark's Rest (Nv17)
+  - Glaciem : Frostveil (Nv18), The Last Hearth (Nv19)
+
+### Ajouté — NPCs (120+ nouveaux personnages)
+- **`src/data/npcs.ts`** : 10+ NPCs par nouvelle ville, soit 120+ nouveaux personnages
+  - Chaque ville : Forgeron (vend armes/armures + craft FORGE), Alchimiste (vend potions + craft BREW), Costumier (vend skins + craft TAILOR), Marchand (vend matériaux/consommables)
+  - 6+ NPCs de fond par ville : réfugiés, gardes, savants, enfants, cuisiniers, chasseurs
+  - Dialogues complets avec arbres de choix, triggers de quête, triggers de shop/craft
+  - Ancien tableau `NPCS` renommé `GRIEVY_NPCS` — nouveau tableau `NPCS` regroupe toutes les villes
+
+### Ajouté — Quêtes (36 nouvelles quêtes)
+- **`src/data/quests.ts`** : 13 side quests + 23 fedex quests pour les nouvelles villes
+  - Side quests : récompenses uniques (équipements forgés, items rares) liées aux artisans clés
+  - Fedex quests : collecte de matériaux de zone pour NPCs (forgeron, alchimiste, marchand)
+  - Toutes les quêtes référencées dans les NPCs (questIds) sont maintenant définies
+
+### Ajouté — Système de craft SAO
+- **`src/systems/CraftingSystem.ts`** : craft style Sword Art Online — le joueur rapporte les matériaux à l'artisan
+  - `canCraft()` : vérifie niveau, zone, or, ingrédients
+  - `craft()` : consomme les ingrédients, ajoute l'item résultat
+  - `getAvailableRecipes()` : filtre par craftType ET critères joueur
+- **`src/data/crafting.ts`** : 23 recettes réparties en 3 types
+  - 10 recettes FORGE (Forgeron) : épées, armures élémentaires, lame de Velmara
+  - 7 recettes BREW (Alchimiste) : élixirs, antidotes, cristal de résurrection
+  - 6 recettes TAILOR (Costumier) : skins de tenues thématiques par zone
+
+### Ajouté — Items (60+ nouveaux)
+- **`src/data/items.ts`** : large extension de l'arsenal
+  - 5 armes HIDDEN avec passifs uniques (KILL_HEAL_15_PCT, NO_ATTACK_COOLDOWN, ZERO_MANA_COST, FIRST_STRIKE_500_PCT, KILL_STACK_DAMAGE)
+  - 2 armures HIDDEN + 2 accessoires HIDDEN (passifs quasi game-breaking uniques)
+  - 10 skins (ItemType.SKIN, pour les 6 zones + neutre)
+  - 14 armes élémentaires supplémentaires couvrant tous les éléments
+  - 26 pièces d'armure supplémentaires (jambes, gants, casques, bottes, capes par élément)
+  - 9 nouveaux matériaux de craft (moonpetal_herb, ash_residue, iron_ore, pearl, storm_glass, etc.)
+  - Élément NEUTRAL ajouté — neutre avec tout, pas dans la table de faiblesses
+
+### Ajouté — Mécaniques de combat
+- **`src/systems/CombatSystem.ts`** : DARK super-effectif (×1.5) contre TOUS les éléments non-DARK/non-DIVINE
+- **`src/systems/LootSystem.ts`** : élément assigné aléatoirement au drop (pas dans le template item)
+  - Pondération : NEUTRAL 30%, éléments normaux 12% chacun, DARK 3%
+  - Armes et armures peuvent être n'importe quel élément au loot
+
+### Ajouté — Interface et contrôles
+- **`src/scenes/UIScene.ts`** : barres HP/MP style Sword Art Online
+  - HP bar horizontale (vert → orange <50% → rouge <25%) avec surlignage SAO
+  - MP bar bleue avec surlignage
+  - XP bar violette en bas d'écran
+  - Skill labels AZERTY (A/E/R/F au lieu de Q/E/R/F)
+- **`src/scenes/GameScene.ts`** : clavier AZERTY complet
+  - Déplacement : Z=haut, Q=gauche, S=bas, D=droite
+  - Attaque : W, Dash : Espace
+  - Skills : A/E/R/F (A remplace Q précédent)
+- **`src/scenes/GameScene.ts`** : orbes d'XP style Vampire Survivors
+  - Ennemi tué → spawn d'orbes d'XP (jusqu'à 8 orbes)
+  - Aimantation magnétique vers le joueur dans un rayon de 96px
+  - Collecte par overlap — XP attribué au contact
+
+### Modifié
+- **`src/types/index.ts`** : ajout ItemType.SKIN, interface Skin, interface CraftRecipe (FORGE/BREW/TAILOR), passiveEffect sur Weapon, DARK_MULTIPLIER, WEAKNESS_MULTIPLIER constants
+- **`src/data/npcs.ts`** : `NPCS` (Grievy Town) renommé `GRIEVY_NPCS`, nouveau tableau `NPCS` = toutes les villes
+
+---
+
 ## [0.6.1] — 2026-06-25 — Corrections audit qualité
 
 ### Corrigé — Blockers
