@@ -9,7 +9,8 @@ import { SaveSystem } from '../systems/SaveSystem';
 import { ENEMY_MAP } from '../data/enemies';
 import { ZONE_MAP } from '../data/zones';
 import { NPC_MAP } from '../data/npcs';
-import { getZoneLayout, ZoneLayout } from '../data/zoneMaps';
+import { getZoneLayout, ZoneLayout, LootableObject } from '../data/zoneMaps';
+import { ALL_ITEMS } from '../data/items';
 
 const NPC_COLORS: Record<string, number> = {
   aldric:       0xaaaaaa,
@@ -51,6 +52,8 @@ export class GameScene extends Phaser.Scene {
 
   private xpOrbs!: Phaser.Physics.Arcade.Group;
   private readonly XP_ATTRACT_RANGE = 96;
+  private lootableGroup!: Phaser.Physics.Arcade.StaticGroup;
+  private lootableLooted: Set<string> = new Set();
 
   private activeEnemies: Map<string, ActiveEnemy> = new Map();
   private enemyHpBars: Map<string, { bg: Phaser.GameObjects.Rectangle; bar: Phaser.GameObjects.Rectangle; baseW: number }> = new Map();
@@ -82,6 +85,7 @@ export class GameScene extends Phaser.Scene {
     this.activeEnemies  = new Map();
     this.enemyHpBars    = new Map();
     this.enemyCrowns    = new Map();
+    this.lootableLooted = new Set();
     this.cooldowns      = {};
     this.dashCooldown   = 0;
     this.isDashing      = false;
@@ -99,6 +103,7 @@ export class GameScene extends Phaser.Scene {
     this.createEnemiesForZone(zoneId);
     this.createNPCsForZone(zoneId);
     this.createTeleportOverlaps();
+    this.createLootables();
     this.createXpOrbsGroup();
     this.setupInput();
     this.setupCamera();
@@ -134,9 +139,12 @@ export class GameScene extends Phaser.Scene {
     this.handleAttackInput();
     this.handleSkillInput();
 
-    // NPC interaction hint
-    this.interactHint.setVisible(!!this.nearbyNPC);
-    if (this.nearbyNPC) {
+    // Interaction hint
+    const showHint = !!this.nearbyNPC || !!this.nearbyLootable;
+    this.interactHint.setVisible(showHint);
+    if (showHint) {
+      const hintText = this.nearbyNPC ? '[W] Talk' : '[W] Loot';
+      if (this.interactHint.text !== hintText) this.interactHint.setText(hintText);
       this.interactHint.setPosition(this.player.x, this.player.y - 28);
     }
 
@@ -158,8 +166,9 @@ export class GameScene extends Phaser.Scene {
 
     this.events.emit('player_update', this.gameState.player);
 
-    // Clear nearbyNPC so next frame's overlap sets it fresh
-    this.nearbyNPC = null;
+    // Clear interaction targets — overlap callbacks re-set them next frame if still touching
+    this.nearbyNPC      = null;
+    this.nearbyLootable = null;
   }
 
   // ── MOVEMENT ─────────────────────────────────────────────────
@@ -230,6 +239,8 @@ export class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.attackKey)) {
       if (this.nearbyNPC && !this.isInDialogue) {
         this.startNPCDialogue(this.nearbyNPC);
+      } else if (this.nearbyLootable) {
+        this.interactWithLootable(this.nearbyLootable);
       } else {
         this.performBasicAttack();
       }
@@ -532,7 +543,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawZoneMap() {
-    const { mapWidth, mapHeight, bgColor, pathColor, wallColor, accentColor, walls, teleports } = this.layout;
+    const { mapWidth, mapHeight, bgColor, pathColor, wallColor, accentColor, walls, paths, teleports } = this.layout;
     const zoneId = this.gameState.player.currentZone;
 
     const gfx = this.add.graphics().setDepth(0);
@@ -541,11 +552,10 @@ export class GameScene extends Phaser.Scene {
     gfx.fillStyle(bgColor);
     gfx.fillRect(0, 0, mapWidth, mapHeight);
 
-    // Paths for Grievy Town
-    if (zoneId === 'grievy_town') {
+    // Paths (drawn over background, below walls)
+    if (paths.length > 0) {
       gfx.fillStyle(pathColor);
-      gfx.fillRect(720, 0, 160, mapHeight);   // N-S road
-      gfx.fillRect(0,   540, mapWidth, 120);  // E-W road
+      for (const p of paths) gfx.fillRect(p.x, p.y, p.w, p.h);
     }
 
     // Accent details (lava, water, crystals, etc.)
@@ -556,15 +566,11 @@ export class GameScene extends Phaser.Scene {
 
     // Wall buildings/rocks
     gfx.fillStyle(wallColor);
-    for (const w of walls) {
-      gfx.fillRect(w.x, w.y, w.w, w.h);
-    }
+    for (const w of walls) gfx.fillRect(w.x, w.y, w.w, w.h);
 
-    // Building detail lines
+    // Wall outlines
     gfx.lineStyle(1, 0x000000, 0.35);
-    for (const w of walls) {
-      gfx.strokeRect(w.x, w.y, w.w, w.h);
-    }
+    for (const w of walls) gfx.strokeRect(w.x, w.y, w.w, w.h);
 
     // Teleport zone highlights
     for (const tp of teleports) {
@@ -572,13 +578,7 @@ export class GameScene extends Phaser.Scene {
       gfx.fillRect(tp.x, tp.y, tp.w, tp.h);
       gfx.lineStyle(1, 0x44ff88, 0.6);
       gfx.strokeRect(tp.x, tp.y, tp.w, tp.h);
-    }
-
-    // Teleport labels
-    for (const tp of teleports) {
-      const cx = tp.x + tp.w / 2;
-      const cy = tp.y + tp.h / 2;
-      this.add.text(cx, cy, tp.label, {
+      this.add.text(tp.x + tp.w / 2, tp.y + tp.h / 2, tp.label, {
         fontSize: '9px', color: '#88ffaa', fontFamily: 'monospace',
         stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5).setDepth(1);
@@ -587,15 +587,15 @@ export class GameScene extends Phaser.Scene {
     // Wall physics (static bodies)
     this.wallGroup = this.physics.add.staticGroup();
     for (const w of walls) {
-      const cx = w.x + w.w / 2;
-      const cy = w.y + w.h / 2;
+      const cx  = w.x + w.w / 2;
+      const cy  = w.y + w.h / 2;
       const img = this.wallGroup.create(cx, cy, '_px') as Phaser.Physics.Arcade.Image;
       img.setVisible(false);
       (img.body as Phaser.Physics.Arcade.StaticBody).setSize(w.w, w.h);
       img.refreshBody();
     }
 
-    // Set world / camera bounds
+    // Physics / camera bounds
     this.physics.world.setBounds(0, 0, mapWidth, mapHeight);
     this.cameras.main.setBounds(0, 0, mapWidth, mapHeight);
   }
@@ -895,6 +895,88 @@ export class GameScene extends Phaser.Scene {
         (sprite.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
       }
     });
+  }
+
+  // ── LOOTABLES ────────────────────────────────────────────────
+
+  private readonly LOOTABLE_COLORS: Record<LootableObject['type'], number> = {
+    chest:   0xddaa44,
+    plant:   0x44aa44,
+    mineral: 0x8888cc,
+    shrine:  0xddaaff,
+  };
+
+  private createLootables() {
+    this.lootableGroup = this.physics.add.staticGroup();
+    for (const lo of this.layout.lootables) {
+      if (this.lootableLooted.has(lo.id)) continue;
+      const key = `loot_${lo.type}`;
+      this.ensureTexture(key, this.LOOTABLE_COLORS[lo.type], 20, 20);
+      const sprite = this.physics.add.staticImage(lo.x, lo.y, key);
+      sprite.setDisplaySize(20, 20);
+      sprite.setName(lo.id);
+      sprite.setDepth(3);
+      (sprite.body as Phaser.Physics.Arcade.StaticBody).setSize(20, 20);
+      sprite.refreshBody();
+      this.lootableGroup.add(sprite);
+
+      // Small label
+      this.add.text(lo.x, lo.y - 16, lo.type, {
+        fontSize: '8px', color: '#ffeeaa', fontFamily: 'monospace',
+        stroke: '#000000', strokeThickness: 2,
+      }).setOrigin(0.5, 1).setDepth(4);
+
+      // Overlap to detect proximity
+      this.physics.add.overlap(this.player, sprite, () => {
+        this.nearbyLootable = lo.id;
+      });
+    }
+  }
+
+  private interactWithLootable(lootableId: string) {
+    const lo = this.layout.lootables.find(l => l.id === lootableId);
+    if (!lo) return;
+
+    this.lootableLooted.add(lootableId);
+
+    // Find and destroy the sprite
+    const sprite = this.lootableGroup.getChildren().find(
+      (c) => (c as Phaser.Physics.Arcade.Image).name === lootableId,
+    ) as Phaser.Physics.Arcade.Image | undefined;
+    if (sprite) sprite.destroy();
+
+    // Gold reward
+    const gold = lo.goldMin !== undefined
+      ? Phaser.Math.Between(lo.goldMin, lo.goldMax ?? lo.goldMin)
+      : 0;
+    if (gold > 0) this.gameState.player.gold += gold;
+
+    // Item reward (1 random from pool)
+    if (lo.itemPool.length > 0) {
+      const itemId = lo.itemPool[Math.floor(Math.random() * lo.itemPool.length)];
+      const item   = ALL_ITEMS[itemId];
+      if (item) {
+        LootSystem.addToInventory(this.gameState.player, item, 1);
+        this.events.emit('item_looted', { item, quantity: 1 });
+        const typeLabel = lo.type === 'chest' ? '[Coffre]' : lo.type === 'plant' ? '[Plante]' : lo.type === 'mineral' ? '[Mineral]' : '[Sanctuaire]';
+        this.events.emit('show_notification', `${typeLabel} ${item.name}${gold > 0 ? ` +${gold}G` : ''}`);
+      } else if (gold > 0) {
+        this.events.emit('show_notification', `+${gold} pièces d'or`);
+      }
+    } else if (gold > 0) {
+      this.events.emit('show_notification', `+${gold} pièces d'or`);
+    }
+
+    // Shrine: restore some HP/Mana
+    if (lo.type === 'shrine') {
+      this.gameState.player.stats.hp   = Math.min(this.gameState.player.stats.maxHp,   this.gameState.player.stats.hp   + Math.floor(this.gameState.player.stats.maxHp   * 0.3));
+      this.gameState.player.stats.mana = Math.min(this.gameState.player.stats.maxMana, this.gameState.player.stats.mana + Math.floor(this.gameState.player.stats.maxMana * 0.3));
+    }
+
+    this.events.emit('player_update', this.gameState.player);
+
+    const completions = QuestSystem.onItemCollected(this.gameState.player, lo.id, 1);
+    if (completions.length > 0) this.handleQuestCompletions(completions);
   }
 
   // ── ZONE TRAVEL ──────────────────────────────────────────────
