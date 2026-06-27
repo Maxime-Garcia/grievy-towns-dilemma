@@ -388,14 +388,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   public goToMainMenu() {
-    for (const key of ['PauseScene', 'InventoryScene', 'SkillScene', 'DialogueScene', 'ShopScene', 'UIScene']) {
-      if (this.scene.isActive(key) || this.scene.isPaused(key)) this.scene.stop(key);
-    }
-    this.physics.world.resume();
-    // Defer one tick so the current frame finishes before the scene transition
-    this.time.delayedCall(0, () => {
-      this.scene.start('MainMenuScene');
-    });
+    // Fade out first, then navigate — avoids stopping scenes mid-frame
+    this.physics.world.pause();
+    this.cameras.main.once(
+      Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
+      () => {
+        for (const key of ['PauseScene', 'InventoryScene', 'SkillScene', 'DialogueScene', 'ShopScene', 'UIScene']) {
+          if (this.scene.isActive(key) || this.scene.isPaused(key)) this.scene.stop(key);
+        }
+        this.time.delayedCall(0, () => this.scene.start('MainMenuScene'));
+      },
+    );
+    this.cameras.main.fade(300, 0, 0, 0);
   }
 
   public applyKeyBindings(b: KeyBindings) {
@@ -872,15 +876,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onPlayerDeath() {
+    if (this.isTraveling) return;
+    this.isTraveling = true;
     this.gameState.player.deaths++;
     this.gameState.player.stats.hp = Math.floor(this.gameState.player.stats.maxHp * 0.5);
 
-    this.cameras.main.fade(500, 0, 0, 0, false, (_cam: unknown, progress: number) => {
-      if (progress === 1) {
-        this.gameState.player.position = { x: 0, y: 0 };
-        this.performZoneTransition(this.gameState.player.currentZone, 0, 0);
-      }
-    });
+    this.physics.world.pause();
+    this.cameras.main.once(
+      Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
+      () => {
+        this.time.delayedCall(0, () => {
+          this.gameState.player.position = { x: 0, y: 0 };
+          this.performZoneTransition(this.gameState.player.currentZone, 0, 0);
+        });
+      },
+    );
+    this.cameras.main.fade(500, 0, 0, 0);
   }
 
   private handleQuestCompletions(questIds: string[]) {
@@ -1439,17 +1450,23 @@ export class GameScene extends Phaser.Scene {
       (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
     }
 
+    // Pause physics immediately so no step runs on objects we're about to destroy
+    this.physics.world.pause();
+
     for (const key of ['PauseScene', 'InventoryScene', 'SkillScene', 'DialogueScene', 'ShopScene']) {
       if (this.scene.isActive(key) || this.scene.isPaused(key)) {
         try { this.scene.stop(key); } catch (_) {}
       }
     }
 
-    this.cameras.main.fade(400, 0, 0, 0, false,
-      (_cam: unknown, progress: number) => {
-        if (progress === 1) this.performZoneTransition(zoneId, targetX, targetY);
-      },
+    // FADE_OUT_COMPLETE fires exactly once, outside Phaser's render cycle.
+    // delayedCall(0) defers to the next tick so we are fully clear of all
+    // camera/physics internal state before touching any game objects.
+    this.cameras.main.once(
+      Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
+      () => { this.time.delayedCall(0, () => this.performZoneTransition(zoneId, targetX, targetY)); },
     );
+    this.cameras.main.fade(400, 0, 0, 0);
   }
 
   private destroyCurrentZoneObjects() {
@@ -1525,6 +1542,8 @@ export class GameScene extends Phaser.Scene {
     this.setupPhysics();
     this.createProjectileGroup();
 
+    // Physics was paused in travelToZone/onPlayerDeath — safe to resume now
+    this.physics.world.resume();
     this.isTraveling = false;
 
     this.events.emit('player_update', this.gameState.player);

@@ -147,13 +147,11 @@ export class IntroScene extends Phaser.Scene {
     this.lineIndex++;
     if (this.lineIndex >= this.pages.length) {
       this.canAdvance = false;
-      this.cameras.main.fade(600, 0, 0, 0, false,
-        (_cam: unknown, progress: number) => {
-          if (progress === 1) {
-            this.scene.start('GameScene', { gameState: this.gameState });
-          }
-        },
+      this.cameras.main.once(
+        Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
+        () => { this.scene.start('GameScene', { gameState: this.gameState }); },
       );
+      this.cameras.main.fade(600, 0, 0, 0);
     } else {
       this.renderPage();
     }
