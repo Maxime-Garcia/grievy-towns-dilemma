@@ -284,6 +284,7 @@ export interface Skill {
   unlockCondition?: SkillUnlockCondition;
   isDefault?: boolean;
   isHidden?: boolean;
+  isProjectile?: boolean;
   lore?: string;
 }
 
@@ -336,6 +337,13 @@ export interface Enemy {
   attackRange: number;
   moveSpeed: number;
   lore?: string;
+  // ── Behavior system ────────────────────────────────────────────
+  /** AI pattern for this enemy. Defaults to 'chaser' when absent. */
+  behavior?: 'chaser' | 'patrol' | 'ranged' | 'charger' | 'summoner';
+  /** Hex color of projectile (0xRRGGBB). Only used when behavior === 'ranged'. */
+  projectileColor?: number;
+  /** Patrol radius in pixels. Used when behavior === 'patrol'. */
+  patrolRadius?: number;
 }
 
 // ============================================================

@@ -7,10 +7,13 @@ const MAX_SLOTS = 3;
 
 // Each entry migrates a save from its key version to the next.
 // Add a new entry here whenever PlayerState, WorldState, or GameState changes.
+const FRESH_WORLD: WorldState = { clearedZones: [], degradationLevel: 0, malacharDefeated: false };
+
 const MIGRATION_MAP: Record<string, (state: GameState) => GameState> = {
   '1.0.0': (state) => ({
     ...state,
     version: '1.1.0',
+    world: (state as any).world ?? { ...FRESH_WORLD },
     player: {
       ...state.player,
       totalKills: state.player.totalKills ?? 0,
@@ -25,6 +28,7 @@ const MIGRATION_MAP: Record<string, (state: GameState) => GameState> = {
   '1.1.0': (state) => ({
     ...state,
     version: '1.2.0',
+    world: (state as any).world ?? { ...FRESH_WORLD },
     player: {
       ...state.player,
       questProgress: (state.player as any).questProgress ?? {},
