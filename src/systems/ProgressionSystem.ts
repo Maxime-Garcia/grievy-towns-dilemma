@@ -150,7 +150,7 @@ export class ProgressionSystem {
       activeQuests: ['mq_00_awakening'],
       completedQuests: [],
       currentZone: 'grievy_town',
-      position: { x: 400, y: 300 },
+      position: { x: 0, y: 0 },
       flags: {},
       playtime: 0,
       deaths: 0,
@@ -159,6 +159,7 @@ export class ProgressionSystem {
       killsWithoutLegendary: 0,
       isNewGamePlus: false,
       ngPlusCount: 0,
+      questProgress: {},
     };
   }
 }

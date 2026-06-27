@@ -85,7 +85,7 @@ export class LootSystem {
       }
 
       if (roll <= entry.dropRate) {
-        const qty = Math.floor(entry.minQty + Math.random() * (entry.maxQty - entry.minQty + 1));
+        const qty = Math.floor(Math.random() * (entry.maxQty - entry.minQty + 1)) + entry.minQty;
         const droppedItem = applyRandomElement(item);
         items.push({ item: droppedItem, quantity: qty });
 
@@ -97,6 +97,10 @@ export class LootSystem {
         }
       }
     }
+
+    // Reset pity if no eligible item existed in this enemy's loot table
+    if (pityEpicForced)   player.killsWithoutEpic      = 0;
+    if (pityLegendForced) player.killsWithoutLegendary = 0;
 
     return { items, gold, xp: Math.max(1, scaledXp) };
   }

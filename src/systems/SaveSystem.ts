@@ -1,7 +1,7 @@
 import { GameState, SaveData, PlayerState, WorldState, EndingChoice } from '../types';
 import { ProgressionSystem } from './ProgressionSystem';
 
-const SAVE_VERSION = '1.1.0';
+const SAVE_VERSION = '1.2.0';
 const SAVE_KEY_PREFIX = 'gtd_save_';
 const MAX_SLOTS = 3;
 
@@ -20,6 +20,14 @@ const MIGRATION_MAP: Record<string, (state: GameState) => GameState> = {
         ...state.player.equipment,
         skins: state.player.equipment.skins ?? {},
       },
+    },
+  }),
+  '1.1.0': (state) => ({
+    ...state,
+    version: '1.2.0',
+    player: {
+      ...state.player,
+      questProgress: (state.player as any).questProgress ?? {},
     },
   }),
 };
@@ -83,7 +91,7 @@ export class SaveSystem {
     localStorage.removeItem(`${SAVE_KEY_PREFIX}${slot}`);
   }
 
-  static createNewGame(playerName: string): GameState {
+  static createNewGame(playerName: string, slot = 0): GameState {
     const player = ProgressionSystem.createFreshPlayer(playerName);
     const world: WorldState = {
       clearedZones: [],
@@ -93,14 +101,14 @@ export class SaveSystem {
     return {
       player,
       world,
-      saveSlot: 0,
+      saveSlot: slot,
       saveTimestamp: Date.now(),
       version: SAVE_VERSION,
     };
   }
 
   static createNewGamePlus(previous: GameState, choice: EndingChoice): GameState {
-    const fresh = this.createNewGame(previous.player.name);
+    const fresh = this.createNewGame(previous.player.name, previous.saveSlot);
     fresh.player.isNewGamePlus = true;
     fresh.player.ngPlusCount   = previous.player.ngPlusCount + 1;
     if (choice === EndingChoice.ERASE) {

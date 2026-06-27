@@ -10,8 +10,10 @@ export class DialogueScene extends Phaser.Scene {
   private speakerText!: Phaser.GameObjects.Text;
   private bodyText!: Phaser.GameObjects.Text;
   private choiceTexts: Phaser.GameObjects.Text[] = [];
+  private choiceKeys:  Phaser.Input.Keyboard.Key[] = [];
   private portrait!: Phaser.GameObjects.Image;
   private advanceKey!: Phaser.Input.Keyboard.Key;
+  private escKey!: Phaser.Input.Keyboard.Key;
 
   constructor() { super({ key: 'DialogueScene' }); }
 
@@ -46,9 +48,10 @@ export class DialogueScene extends Phaser.Scene {
     });
 
     this.advanceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
+    this.escKey     = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER).on('down', () => this.advance());
 
-    this.add.text(W - 40, H - 30, '[Z] continue', {
+    this.add.text(W - 40, H - 30, '[Z] continue   [Échap] fermer', {
       fontSize: '9px', color: '#666655', fontFamily: 'monospace',
     }).setOrigin(1, 0);
 
@@ -56,18 +59,28 @@ export class DialogueScene extends Phaser.Scene {
   }
 
   update() {
+    if (Phaser.Input.Keyboard.JustDown(this.escKey)) {
+      this.closeDialogue();
+      return;
+    }
     if (Phaser.Input.Keyboard.JustDown(this.advanceKey)) {
       this.advance();
     }
+  }
+
+  shutdown() {
+    this.input.keyboard?.removeAllKeys(true);
   }
 
   private renderCurrentLine() {
     const line = DialogueSystem.getCurrentLine(this.session, this.player);
     if (!line) { this.closeDialogue(); return; }
 
-    // Clear old choices
+    // Clear old choices and their keyboard listeners
     this.choiceTexts.forEach(t => t.destroy());
     this.choiceTexts = [];
+    this.choiceKeys.forEach(k => k.removeAllListeners());
+    this.choiceKeys = [];
 
     this.speakerText.setText(line.speaker);
     this.bodyText.setText(line.text);
@@ -89,12 +102,21 @@ export class DialogueScene extends Phaser.Scene {
           this.renderCurrentLine();
         });
 
-        // Keyboard shortcut
-        const numKey = this.input.keyboard!.addKey(`${i + 1}` as any);
-        numKey.once('down', () => {
-          DialogueSystem.advance(this.session, this.player, i);
-          this.renderCurrentLine();
-        });
+        // Keyboard shortcut (1–4)
+        const numKeyCodes = [
+          Phaser.Input.Keyboard.KeyCodes.ONE,
+          Phaser.Input.Keyboard.KeyCodes.TWO,
+          Phaser.Input.Keyboard.KeyCodes.THREE,
+          Phaser.Input.Keyboard.KeyCodes.FOUR,
+        ];
+        if (numKeyCodes[i] !== undefined) {
+          const numKey = this.input.keyboard!.addKey(numKeyCodes[i]);
+          numKey.once('down', () => {
+            DialogueSystem.advance(this.session, this.player, i);
+            this.renderCurrentLine();
+          });
+          this.choiceKeys.push(numKey);
+        }
 
         this.choiceTexts.push(txt);
       });
@@ -104,7 +126,12 @@ export class DialogueScene extends Phaser.Scene {
   private advance() {
     if (this.session.finished) { this.closeDialogue(); return; }
     const line = DialogueSystem.getCurrentLine(this.session, this.player);
-    if (line?.choices) return; // Wait for choice selection
+    if (!line) { this.closeDialogue(); return; }
+    if (line.choices) {
+      const filtered = DialogueSystem.getFilteredChoices(line, this.player) ?? [];
+      if (filtered.length > 0) return; // Waiting for player to pick a choice
+      // All choices filtered out — advance anyway to avoid softlock
+    }
     DialogueSystem.advance(this.session, this.player);
     this.renderCurrentLine();
   }

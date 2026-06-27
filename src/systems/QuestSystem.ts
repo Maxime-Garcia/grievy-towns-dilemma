@@ -1,5 +1,9 @@
 import { Quest, QuestStatus, QuestObjective, PlayerState, ElementType } from '../types';
 import { QUEST_MAP } from '../data/quests';
+import { ALL_ITEMS } from '../data/items';
+import { LootSystem } from './LootSystem';
+import { ProgressionSystem } from './ProgressionSystem';
+import { SkillSystem } from './SkillSystem';
 
 export class QuestSystem {
 
@@ -38,7 +42,7 @@ export class QuestSystem {
       .map(id => {
         const quest = QUEST_MAP[id];
         if (!quest) return null;
-        const stored = (player as any)._questProgress?.[id] ?? quest.objectives;
+        const stored = player.questProgress?.[id] ?? quest.objectives;
         return { quest, objectives: stored };
       })
       .filter(Boolean) as Array<{ quest: Quest; objectives: QuestObjective[] }>;
@@ -56,12 +60,12 @@ export class QuestSystem {
       const quest = QUEST_MAP[questId];
       if (!quest) continue;
 
-      if (!(player as any)._questProgress) (player as any)._questProgress = {};
-      if (!(player as any)._questProgress[questId]) {
-        (player as any)._questProgress[questId] = JSON.parse(JSON.stringify(quest.objectives));
+      if (!player.questProgress) player.questProgress = {};
+      if (!player.questProgress[questId]) {
+        player.questProgress[questId] = JSON.parse(JSON.stringify(quest.objectives));
       }
 
-      const objectives: QuestObjective[] = (player as any)._questProgress[questId];
+      const objectives: QuestObjective[] = player.questProgress[questId];
       let updated = false;
 
       for (const obj of objectives) {
@@ -90,6 +94,18 @@ export class QuestSystem {
 
     player.activeQuests   = player.activeQuests.filter(id => id !== questId);
     player.completedQuests.push(questId);
+
+    // Deliver rewards
+    const r = quest.rewards;
+    if (r.gold)  player.gold += r.gold;
+    if (r.xp)    ProgressionSystem.addXp(player, r.xp);
+    if (r.items) {
+      for (const entry of r.items) {
+        const item = ALL_ITEMS[entry.itemId];
+        if (item) LootSystem.addToInventory(player, item, entry.quantity);
+      }
+    }
+    if (r.skillUnlock) SkillSystem.unlockSkill(player, r.skillUnlock);
 
     if (quest.followupQuestId) {
       const followup = QUEST_MAP[quest.followupQuestId];

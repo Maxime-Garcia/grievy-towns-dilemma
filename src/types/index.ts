@@ -498,6 +498,7 @@ export interface PlayerState {
   killsWithoutLegendary: number;
   isNewGamePlus: boolean;
   ngPlusCount: number;
+  questProgress: Record<string, QuestObjective[]>;
 }
 
 // ============================================================
@@ -547,6 +548,7 @@ export interface ActiveEnemy {
   statusEffects: StatusEffect[];
   x: number;
   y: number;
+  isElite?: boolean;
   sprite?: Phaser.GameObjects.Sprite;
 }
 
