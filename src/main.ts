@@ -3,6 +3,7 @@ import { BootScene }      from './scenes/BootScene';
 import { PreloaderScene } from './scenes/PreloaderScene';
 import { MainMenuScene }  from './scenes/MainMenuScene';
 import { NameInputScene } from './scenes/NameInputScene';
+import { IntroScene }     from './scenes/IntroScene';
 import { GameScene }      from './scenes/GameScene';
 import { UIScene }        from './scenes/UIScene';
 import { DialogueScene }  from './scenes/DialogueScene';
@@ -25,7 +26,7 @@ const config: Phaser.Types.Core.GameConfig = {
     default: 'arcade',
     arcade: {
       gravity: { x: 0, y: 0 },
-      debug: import.meta.env.DEV,
+      debug: false,
     },
   },
   scene: [
@@ -33,6 +34,7 @@ const config: Phaser.Types.Core.GameConfig = {
     PreloaderScene,
     MainMenuScene,
     NameInputScene,
+    IntroScene,
     GameScene,
     UIScene,
     DialogueScene,

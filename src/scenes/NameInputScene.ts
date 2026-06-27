@@ -2,26 +2,34 @@ import { SaveSystem } from '../systems/SaveSystem';
 
 export class NameInputScene extends Phaser.Scene {
   private nameInput!: HTMLInputElement;
+  private slot = 0;
 
   constructor() { super({ key: 'NameInputScene' }); }
+
+  init(data: { slot?: number }) {
+    this.slot = data?.slot ?? 0;
+  }
 
   create() {
     const w = this.cameras.main.width;
     const h = this.cameras.main.height;
 
-    this.add.text(w / 2, 140, 'You wake up.', {
+    this.add.text(w / 2, 130, 'You wake up.', {
       fontSize: '18px', color: '#ccbbaa', fontFamily: 'monospace',
     }).setOrigin(0.5);
 
-    this.add.text(w / 2, 175, 'You do not know your name.', {
+    this.add.text(w / 2, 165, 'You do not know your name.', {
       fontSize: '14px', color: '#998877', fontFamily: 'monospace',
     }).setOrigin(0.5);
 
-    this.add.text(w / 2, 220, 'Choose one.', {
+    this.add.text(w / 2, 200, 'Choose one.', {
       fontSize: '13px', color: '#776655', fontFamily: 'monospace',
     }).setOrigin(0.5);
 
-    // HTML input element overlaid on the canvas
+    this.add.text(w / 2, 230, `[ Save Slot ${this.slot + 1} ]`, {
+      fontSize: '11px', color: '#554433', fontFamily: 'monospace',
+    }).setOrigin(0.5);
+
     this.nameInput = document.createElement('input');
     Object.assign(this.nameInput.style, {
       position: 'absolute',
@@ -66,8 +74,9 @@ export class NameInputScene extends Phaser.Scene {
     const name = this.nameInput.value.trim() || 'Stranger';
     this.cleanupInput();
 
-    const gameState = SaveSystem.createNewGame(name);
-    this.scene.start('GameScene', { gameState });
+    const gameState = SaveSystem.createNewGame(name, this.slot);
+    SaveSystem.save(gameState, this.slot);
+    this.scene.start('IntroScene', { gameState });
   }
 
   private cleanupInput() {
