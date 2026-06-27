@@ -177,10 +177,8 @@ export class PauseScene extends Phaser.Scene {
       window.removeEventListener('keydown', this.rebindListener);
       this.rebindListener = null;
     }
-    this.scene.stop();
-    this.gameScene.scene.stop('UIScene');
-    this.gameScene.scene.stop();
-    this.scene.start('MainMenuScene');
+    // Déléguer à GameScene (scène active) pour une transition propre
+    this.gameScene.goToMainMenu();
   }
 
   private resume() {

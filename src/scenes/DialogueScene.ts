@@ -51,6 +51,15 @@ export class DialogueScene extends Phaser.Scene {
     this.escKey     = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER).on('down', () => this.advance());
 
+    // Bouton fermeture (×)
+    const closeBtn = this.add.text(W - 28, H - 178, '×', {
+      fontSize: '18px', color: '#ff8866', fontFamily: 'monospace',
+      stroke: '#000000', strokeThickness: 2,
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(10);
+    closeBtn.on('pointerover', () => closeBtn.setStyle({ color: '#ffccaa' }));
+    closeBtn.on('pointerout',  () => closeBtn.setStyle({ color: '#ff8866' }));
+    closeBtn.on('pointerdown', () => this.closeDialogue());
+
     this.add.text(W - 40, H - 30, '[Z] continue   [Échap] fermer', {
       fontSize: '9px', color: '#666655', fontFamily: 'monospace',
     }).setOrigin(1, 0);

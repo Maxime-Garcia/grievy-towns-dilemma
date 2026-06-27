@@ -80,6 +80,8 @@ export class GameScene extends Phaser.Scene {
 
   init(data: { gameState?: GameState }) {
     this.gameState = data?.gameState ?? SaveSystem.createNewGame('Héros');
+    // Spells non fonctionnels pour l'instant — vider les slots équipés
+    this.gameState.player.equippedSkills = { slot1: null, slot2: null, slot3: null, slot4: null };
     this.isTraveling    = false;
     this.isInDialogue   = false;
     this.nearbyNPC      = null;
@@ -122,6 +124,9 @@ export class GameScene extends Phaser.Scene {
 
     this.scene.launch('UIScene', { gameScene: this });
 
+    // Fade-in après chaque transition de zone (le fade-out laisse la caméra noire)
+    this.cameras.main.fadeIn(300);
+
     const zone = ZONE_MAP[zoneId];
     if (zone) {
       const completed = QuestSystem.onZoneEntered(this.gameState.player, zoneId);
@@ -138,8 +143,16 @@ export class GameScene extends Phaser.Scene {
     this.playtimeAccumulator += dt;
     this.gameState.player.playtime += dt;
 
-    // nearbyNPC is set by overlap callbacks (which run before update in preUpdate)
-    // We read it here and clear it at the end so next frame's overlap can set it fresh
+    // NPC proximity via distance (le collider empêche le vrai overlap physique)
+    this.nearbyNPC = null;
+    this.npcs.getChildren().forEach((go: Phaser.GameObjects.GameObject) => {
+      const sprite = go as Phaser.Physics.Arcade.Image;
+      const npcId  = sprite.getData('npcId') as string | null;
+      if (!npcId) return;
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, sprite.x, sprite.y);
+      if (dist < 42) this.nearbyNPC = npcId;
+    });
+
     this.handleMovement(dt);
     this.handleAttackInput();
     this.handleSkillInput();
@@ -171,8 +184,7 @@ export class GameScene extends Phaser.Scene {
 
     this.events.emit('player_update', this.gameState.player);
 
-    // Clear interaction targets — overlap callbacks re-set them next frame if still touching
-    this.nearbyNPC      = null;
+    // nearbyNPC est recalculé en début d'update — seulement nearbyLootable à vider ici
     this.nearbyLootable = null;
   }
 
@@ -327,7 +339,15 @@ export class GameScene extends Phaser.Scene {
 
   public openSkills() {
     if (this.scene.isActive('SkillScene')) return;
-    this.scene.launch('SkillScene', { player: this.gameState.player });
+    this.scene.launch('SkillScene', { gameScene: this });
+  }
+
+  public goToMainMenu() {
+    for (const key of ['PauseScene', 'InventoryScene', 'SkillScene', 'DialogueScene', 'ShopScene', 'UIScene']) {
+      if (this.scene.isActive(key) || this.scene.isPaused(key)) this.scene.stop(key);
+    }
+    this.physics.world.resume();
+    this.scene.start('MainMenuScene');
   }
 
   public applyKeyBindings(b: KeyBindings) {
@@ -851,6 +871,7 @@ export class GameScene extends Phaser.Scene {
       sprite.setDisplaySize(28, 28);
       (sprite.body as Phaser.Physics.Arcade.StaticBody).setSize(24, 24);
       sprite.setDepth(4);
+      sprite.setData('npcId', npc.id);
       sprite.refreshBody();
       this.npcs.add(sprite);
 
@@ -859,11 +880,7 @@ export class GameScene extends Phaser.Scene {
         fontSize: '9px', color: '#ffee88', fontFamily: 'monospace',
         stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5, 1).setDepth(5);
-
-      // Overlap sets nearbyNPC — interaction key is checked in update()
-      this.physics.add.overlap(this.player, sprite, () => {
-        this.nearbyNPC = npc.id;
-      });
+      // nearbyNPC est détecté par distance dans update() — pas d'overlap nécessaire
     }
   }
 
