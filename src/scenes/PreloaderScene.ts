@@ -1,3 +1,6 @@
+import Phaser from 'phaser';
+import { parseTMXtoTiledJSON } from '../utils/TMXParser';
+
 export class PreloaderScene extends Phaser.Scene {
   constructor() { super({ key: 'PreloaderScene' }); }
 
@@ -37,29 +40,46 @@ export class PreloaderScene extends Phaser.Scene {
       pct.destroy();
     });
 
-    // All image/spritesheet assets (tilesets, player, enemies, NPCs, UI, skills, logo)
-    // are already generated as canvas textures by BootScene → generatePlaceholderAssets().
-    // We only need to load the tilemap JSON files here.
-    const maps = [
-      'grievy_town',
-      'ignis_reach',
-      'terravast',
-      'zephyr_peaks',
-      'abyssmar',
-      'volterra',
-      'glaciem',
-      'malachars_spire',
-    ];
-    maps.forEach(m => {
-      try {
-        this.load.tilemapTiledJSON(`map_${m}`, `assets/maps/${m}.json`);
-      } catch {
-        // Map file not present yet — game handles missing maps gracefully
+    // Full Kenney RPG tileset — used by real Tiled maps
+    this.load.image('rpg-full', 'assets/kenneys/rpg-full.png');
+
+    // Real Tiled TMX maps loaded as text — parsed into Tiled JSON in create()
+    this.load.text('tmx_town_raw',    'assets/maps/town.tmx');
+    this.load.text('tmx_volcano_raw', 'assets/maps/volcano.tmx');
+    this.load.text('tmx_swamp_raw',   'assets/maps/swamp.tmx');
+    this.load.text('tmx_air_raw',     'assets/maps/air.tmx');
+    this.load.text('tmx_sea_raw',     'assets/maps/sea.tmx');
+
+    // Legacy JSON tilemaps (fallback for zones without a TMX)
+    // Failed fetches (404) fire loaderror, which Phaser handles gracefully — no try/catch needed.
+    this.load.on('loaderror', (file: Phaser.Loader.File) => {
+      if (file.key.startsWith('map_')) {
+        // JSON map not found — GameScene falls back to drawFallbackFloor()
       }
+    });
+    ['grievy_town', 'ignis_reach', 'terravast', 'zephyr_peaks',
+      'abyssmar', 'volterra', 'glaciem', 'malachars_spire'].forEach(m => {
+      this.load.tilemapTiledJSON(`map_${m}`, `assets/maps/${m}.json`);
     });
   }
 
   create() {
+    // Parse loaded TMX text files into Tiled JSON and inject into the tilemap cache
+    const tmxEntries: Array<[string, string]> = [
+      ['tmx_town',    'tmx_town_raw'],
+      ['tmx_volcano', 'tmx_volcano_raw'],
+      ['tmx_swamp',   'tmx_swamp_raw'],
+      ['tmx_air',     'tmx_air_raw'],
+      ['tmx_sea',     'tmx_sea_raw'],
+    ];
+    for (const [cacheKey, textKey] of tmxEntries) {
+      const xmlText = this.cache.text.get(textKey) as string | null;
+      if (!xmlText) continue;
+      const json = parseTMXtoTiledJSON(xmlText);
+      if (!json) continue;
+      this.cache.tilemap.add(cacheKey, { format: Phaser.Tilemaps.Formats.TILED_JSON, data: json });
+    }
+
     this.scene.start('MainMenuScene');
   }
 }

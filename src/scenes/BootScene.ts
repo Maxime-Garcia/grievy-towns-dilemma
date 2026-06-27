@@ -1,24 +1,42 @@
-import { generatePlaceholderAssets } from '../utils/PlaceholderAssets';
+import Phaser from 'phaser';
+import {
+  generatePlaceholderAssets,
+  assembleTilesets,
+  applyKenneyTiles,
+  applyKenneyCharacters,
+  REAL_ASSET_MANIFEST,
+} from '../utils/PlaceholderAssets';
 
 export class BootScene extends Phaser.Scene {
   constructor() { super({ key: 'BootScene' }); }
 
+  preload() {
+    // Silently attempt to load real PNG assets.
+    // Any that fail are caught by the error handler and ignored — placeholders fill the gaps.
+    this.load.on('loaderror', () => {});
+
+    for (const { key, path, type, frameWidth, frameHeight, spacing, margin } of REAL_ASSET_MANIFEST) {
+      if (type === 'spritesheet' && frameWidth && frameHeight) {
+        this.load.spritesheet(key, path, { frameWidth, frameHeight, spacing: spacing ?? 0, margin: margin ?? 0 });
+      } else {
+        this.load.image(key, path);
+      }
+    }
+  }
+
   create() {
-    const { width: W, height: H } = this.cameras.main;
-
-    // Black background
-    this.cameras.main.setBackgroundColor(0x000000);
-
-    const label = this.add.text(W / 2, H / 2, 'Generating assets...', {
-      fontSize: '16px',
-      color: '#ffffff',
-      fontFamily: 'monospace',
-    }).setOrigin(0.5);
-
-    // Generate all placeholder textures synchronously
+    // 1. Generate canvas placeholders for every key not loaded from a real file
     generatePlaceholderAssets(this);
 
-    label.destroy();
+    // 2. Override tile placeholders with Kenney frames — MUST run before assembleTilesets
+    applyKenneyTiles(this);
+
+    // 3. Assemble zone tilesets from individual tile textures (Kenney or placeholder)
+    assembleTilesets(this);
+
+    // 4. Override player + NPC placeholders with Kenney character sprites
+    applyKenneyCharacters(this);
+
     this.scene.start('PreloaderScene');
   }
 }

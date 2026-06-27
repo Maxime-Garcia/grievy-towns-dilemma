@@ -228,50 +228,79 @@ function makePlayerSheet(): HTMLCanvasElement {
   const canvas = makeCanvas(384, 32);
   const ctx    = canvas.getContext('2d')!;
 
-  const frameW = 32;
+  function drawFrame(fx: number, legL: number, legR: number, armL: number, armR: number) {
+    const x = fx;
 
-  for (let i = 0; i < 12; i++) {
-    const x   = i * frameW;
-    const isIdle = i < 4;
+    // Ground shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath();
+    ctx.ellipse(x + 16, 31, 9, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
 
-    // Base fill
-    const alpha = isIdle ? 0.75 + i * 0.08 : 1.0;
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle   = isIdle ? '#55cc55' : '#33aa33';
-    ctx.fillRect(x, 0, frameW, frameW);
-    ctx.globalAlpha = 1;
+    // Legs
+    ctx.fillStyle = '#2244aa';
+    ctx.fillRect(x + 11, 20 + Math.max(0, legL), 5, 10 - Math.max(0, legL));
+    ctx.fillStyle = '#1a3388';
+    ctx.fillRect(x + 16, 20 + Math.max(0, legR), 5, 10 - Math.max(0, legR));
 
-    // Border
-    ctx.strokeStyle = isIdle ? '#88ee88' : '#55bb55';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x + 0.5, 0.5, frameW - 1, frameW - 1);
+    // Boots
+    ctx.fillStyle = '#3d2211';
+    ctx.fillRect(x + 10, 28, 6, 3);
+    ctx.fillRect(x + 16, 28, 6, 3);
 
-    if (!isIdle) {
-      // Arrow indicating walk direction (alternates left/right)
-      const walkFrame = i - 4; // 0-7
-      const dir       = walkFrame % 2 === 0 ? 1 : -1;
-      ctx.fillStyle   = '#ffffff';
-      ctx.beginPath();
-      const cx = x + 16;
-      const cy = 16;
-      if (dir > 0) {
-        ctx.moveTo(cx - 6, cy - 5);
-        ctx.lineTo(cx + 6, cy);
-        ctx.lineTo(cx - 6, cy + 5);
-      } else {
-        ctx.moveTo(cx + 6, cy - 5);
-        ctx.lineTo(cx - 6, cy);
-        ctx.lineTo(cx + 6, cy + 5);
-      }
-      ctx.closePath();
-      ctx.fill();
-    } else {
-      // Idle: small dot to show breathing
-      ctx.fillStyle   = '#aaffaa';
-      ctx.beginPath();
-      ctx.arc(x + 16, 16, 3 + i * 0.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    // Torso
+    ctx.fillStyle = '#3a9a3a';
+    ctx.fillRect(x + 10, 12, 12, 10);
+
+    // Belt
+    ctx.fillStyle = '#5a3011';
+    ctx.fillRect(x + 10, 20, 12, 2);
+
+    // Left arm
+    ctx.fillStyle = '#3a9a3a';
+    ctx.fillRect(x + 6, 13 + armL, 4, 8);
+
+    // Right arm + sword
+    ctx.fillStyle = '#3a9a3a';
+    ctx.fillRect(x + 22, 13 - armR, 4, 8);
+    ctx.fillStyle = '#d0d0d0';
+    ctx.fillRect(x + 25, 8 - armR, 2, 13);
+    ctx.fillStyle = '#cc8800';
+    ctx.fillRect(x + 22, 19 - armR, 8, 2);
+
+    // Head
+    ctx.fillStyle = '#f0c080';
+    ctx.fillRect(x + 12, 4, 8, 8);
+
+    // Hair
+    ctx.fillStyle = '#5a3311';
+    ctx.fillRect(x + 11, 3, 10, 4);
+    ctx.fillRect(x + 10, 5, 2, 4);
+
+    // Eyes
+    ctx.fillStyle = '#1a0800';
+    ctx.fillRect(x + 13, 8, 2, 2);
+    ctx.fillRect(x + 17, 8, 2, 2);
+
+    // Cape
+    ctx.fillStyle = '#883311';
+    ctx.fillRect(x + 9, 12, 3, 8);
+  }
+
+  // Idle frames (0-3): slight breathing bob
+  const idleBob = [0, 0, -1, 0];
+  for (let i = 0; i < 4; i++) {
+    drawFrame(i * 32, idleBob[i], idleBob[i], 0, 0);
+  }
+
+  // Walk frames (4-11): leg + arm swing
+  const walk: [number, number, number, number][] = [
+    [-2, 2,  1, -1], [-4, 4,  2, -2], [-2, 2,  1, -1], [0, 0, 0, 0],
+    [ 2,-2, -1,  1], [ 4,-4, -2,  2], [ 2,-2, -1,  1], [0, 0, 0, 0],
+  ];
+  for (let i = 0; i < 8; i++) {
+    const [lL, lR, aL, aR] = walk[i];
+    drawFrame((4 + i) * 32, lL, lR, aL, aR);
   }
 
   return canvas;
@@ -356,23 +385,415 @@ function makePortraitBg(): HTMLCanvasElement {
   return canvas;
 }
 
+// ── Element-themed enemy sprite ───────────────────────────────────────────────
+
+function makeEnemyCanvas(element: string, label: string, w = 32, h = 32): HTMLCanvasElement {
+  const canvas = makeCanvas(w, h);
+  const ctx    = canvas.getContext('2d')!;
+  const cx = w / 2, cy = h / 2;
+
+  const SHAPES: Record<string, { color: number; shape: string }> = {
+    FIRE:      { color: 0xcc2200, shape: 'flame'   },
+    EARTH:     { color: 0x553311, shape: 'block'   },
+    WIND:      { color: 0x7799cc, shape: 'wisp'    },
+    WATER:     { color: 0x003377, shape: 'drop'    },
+    LIGHTNING: { color: 0x5500aa, shape: 'zap'     },
+    ICE:       { color: 0x88ccff, shape: 'crystal' },
+    DARK:      { color: 0x220033, shape: 'shadow'  },
+  };
+  const cfg = SHAPES[element] ?? { color: 0x555566, shape: 'block' };
+  const c   = cfg.color;
+
+  switch (cfg.shape) {
+    case 'flame': {
+      ctx.fillStyle = hex(c);
+      ctx.beginPath();
+      ctx.moveTo(cx, 2);
+      ctx.bezierCurveTo(cx + 11, cy - 4, cx + 10, cy + 4, cx, h - 2);
+      ctx.bezierCurveTo(cx - 10, cy + 4, cx - 11, cy - 4, cx, 2);
+      ctx.fill();
+      ctx.fillStyle = '#ff8844';
+      ctx.beginPath();
+      ctx.moveTo(cx, 6);
+      ctx.bezierCurveTo(cx + 5, cy - 1, cx + 5, cy + 2, cx, h - 8);
+      ctx.bezierCurveTo(cx - 5, cy + 2, cx - 5, cy - 1, cx, 6);
+      ctx.fill();
+      break;
+    }
+    case 'block': {
+      ctx.fillStyle = hex(c);
+      ctx.fillRect(3, 3, w - 6, h - 6);
+      ctx.fillStyle = hex(lighter(c, 0x303030));
+      ctx.fillRect(3, 3, w - 6, 4);
+      ctx.fillRect(3, 3, 4, h - 6);
+      ctx.fillStyle = hex(darken(c, 0.5));
+      ctx.fillRect(w - 7, 3, 4, h - 6);
+      ctx.fillRect(3, h - 7, w - 6, 4);
+      break;
+    }
+    case 'wisp': {
+      for (let i = 3; i >= 0; i--) {
+        ctx.globalAlpha = 0.3 + i * 0.18;
+        ctx.fillStyle = hex(lighter(c, i * 0x1a1a1a));
+        ctx.beginPath();
+        ctx.ellipse(cx + (i % 2 === 0 ? 2 : -2), cy, cx - 2 - i * 2, cy - 2 - i * 1, 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      break;
+    }
+    case 'drop': {
+      ctx.fillStyle = hex(c);
+      ctx.beginPath();
+      ctx.moveTo(cx, 2);
+      ctx.bezierCurveTo(cx + 12, cy, cx + 11, h - 4, cx, h - 2);
+      ctx.bezierCurveTo(cx - 11, h - 4, cx - 12, cy, cx, 2);
+      ctx.fill();
+      ctx.fillStyle = hex(lighter(c, 0x446688));
+      ctx.beginPath();
+      ctx.ellipse(cx - 3, cy - 2, 4, 5, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'zap': {
+      ctx.fillStyle = hex(darken(c, 0.6));
+      ctx.fillRect(2, 2, w - 4, h - 4);
+      ctx.fillStyle = '#ffdd22';
+      ctx.beginPath();
+      ctx.moveTo(cx + 4, 3);
+      ctx.lineTo(cx - 2, cy - 1);
+      ctx.lineTo(cx + 3, cy - 1);
+      ctx.lineTo(cx - 4, h - 3);
+      ctx.lineTo(cx + 2, cy + 3);
+      ctx.lineTo(cx - 3, cy + 3);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case 'crystal': {
+      ctx.fillStyle = hex(c);
+      ctx.beginPath();
+      ctx.moveTo(cx, 2);
+      ctx.lineTo(w - 3, cy);
+      ctx.lineTo(cx, h - 2);
+      ctx.lineTo(3, cy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = hex(lighter(c, 0x404040));
+      ctx.beginPath();
+      ctx.moveTo(cx, 2);
+      ctx.lineTo(w - 3, cy);
+      ctx.lineTo(cx, cy - 2);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case 'shadow': {
+      ctx.fillStyle = hex(c);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, cx - 2, cy - 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#aa00ff';
+      ctx.beginPath();
+      ctx.ellipse(cx - 5, cy - 2, 3, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(cx + 5, cy - 2, 3, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+  }
+
+  const fs = label.length > 2 ? 7 : 8;
+  ctx.font      = `bold ${fs}px monospace`;
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor  = '#000000';
+  ctx.shadowBlur   = 3;
+  ctx.fillText(label, cx, h - 5);
+  ctx.shadowBlur   = 0;
+
+  return canvas;
+}
+
+// ── NPC sprite ────────────────────────────────────────────────────────────────
+
+function makeNPCCanvas(color: number, initial: string): HTMLCanvasElement {
+  const canvas = makeCanvas(32, 32);
+  const ctx    = canvas.getContext('2d')!;
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.ellipse(16, 31, 8, 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Robe
+  ctx.fillStyle = hex(color);
+  ctx.fillRect(10, 13, 12, 14);
+  ctx.fillStyle = hex(darken(color, 0.7));
+  ctx.fillRect(6, 14, 4, 8);
+  ctx.fillRect(22, 14, 4, 8);
+
+  // Head
+  ctx.fillStyle = '#f0c080';
+  ctx.fillRect(11, 4, 10, 10);
+  ctx.fillStyle = hex(darken(color, 0.55));
+  ctx.fillRect(10, 3, 12, 4);
+
+  // Eyes
+  ctx.fillStyle = '#1a0800';
+  ctx.fillRect(13, 8, 2, 2);
+  ctx.fillRect(17, 8, 2, 2);
+
+  // Initial label in body
+  ctx.font      = 'bold 8px monospace';
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor  = '#000000';
+  ctx.shadowBlur   = 2;
+  ctx.fillText(initial.charAt(0), 16, 21);
+  ctx.shadowBlur   = 0;
+
+  return canvas;
+}
+
+// ── XP orb ────────────────────────────────────────────────────────────────────
+
+function makeXpOrb(): HTMLCanvasElement {
+  const canvas = makeCanvas(12, 12);
+  const ctx    = canvas.getContext('2d')!;
+
+  const grad = ctx.createRadialGradient(5, 5, 1, 6, 6, 6);
+  grad.addColorStop(0,   '#ffffff');
+  grad.addColorStop(0.4, '#88ffaa');
+  grad.addColorStop(1,   'rgba(30, 150, 60, 0)');
+
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(6, 6, 5, 0, Math.PI * 2);
+  ctx.fill();
+
+  return canvas;
+}
+
+// ── Real-asset manifest ───────────────────────────────────────────────────────
+// Drop matching PNG files in public/assets/ to override the placeholder for that key.
+
+export interface AssetEntry {
+  key: string;
+  path: string;
+  type: 'image' | 'spritesheet';
+  frameWidth?: number;
+  frameHeight?: number;
+  spacing?: number;
+  margin?: number;
+}
+
+export const REAL_ASSET_MANIFEST: AssetEntry[] = [
+  // Kenney spritesheets — 16×16 tiles, 1px spacing
+  { key: 'kenney_chars', path: 'assets/kenneys/characters/Spritesheet/roguelikeChar_transparent.png',         type: 'spritesheet', frameWidth: 16, frameHeight: 16, spacing: 1 },
+  { key: 'kenney_dun',   path: 'assets/kenneys/caves-dungeons/Spritesheet/roguelikeDungeon_transparent.png',  type: 'spritesheet', frameWidth: 16, frameHeight: 16, spacing: 1 },
+
+  // Individual rpg-base 64×64 tiles — used as source for tile assembly
+  { key: 'rpgbase_003', path: 'assets/kenneys/rpg-base/PNG/rpgTile003.png', type: 'image' },
+  { key: 'rpgbase_013', path: 'assets/kenneys/rpg-base/PNG/rpgTile013.png', type: 'image' },
+  { key: 'rpgbase_015', path: 'assets/kenneys/rpg-base/PNG/rpgTile015.png', type: 'image' },
+  { key: 'rpgbase_050', path: 'assets/kenneys/rpg-base/PNG/rpgTile050.png', type: 'image' },
+  { key: 'rpgbase_060', path: 'assets/kenneys/rpg-base/PNG/rpgTile060.png', type: 'image' },
+  { key: 'rpgbase_110', path: 'assets/kenneys/rpg-base/PNG/rpgTile110.png', type: 'image' },
+  { key: 'rpgbase_120', path: 'assets/kenneys/rpg-base/PNG/rpgTile120.png', type: 'image' },
+  { key: 'rpgbase_130', path: 'assets/kenneys/rpg-base/PNG/rpgTile130.png', type: 'image' },
+  { key: 'rpgbase_160', path: 'assets/kenneys/rpg-base/PNG/rpgTile160.png', type: 'image' },
+  { key: 'rpgbase_180', path: 'assets/kenneys/rpg-base/PNG/rpgTile180.png', type: 'image' },
+  { key: 'rpgbase_200', path: 'assets/kenneys/rpg-base/PNG/rpgTile200.png', type: 'image' },
+
+  // Player spritesheet — 12 frames × 32×32 px in a single row (384×32 PNG)
+  { key: 'player', path: 'assets/sprites/player.png', type: 'spritesheet', frameWidth: 32, frameHeight: 32 },
+
+  // Individual tiles — any size PNG, auto-assembled into 256×256 tilesets at boot
+  // Destination: public/assets/tiles/{zone}_{type}.png
+  { key: 'tile_town_floor',           path: 'assets/tiles/town_floor.png',           type: 'image' },
+  { key: 'tile_town_wall',            path: 'assets/tiles/town_wall.png',            type: 'image' },
+  { key: 'tile_town_special',         path: 'assets/tiles/town_special.png',         type: 'image' },
+  { key: 'tile_town_path',            path: 'assets/tiles/town_path.png',            type: 'image' },
+  { key: 'tile_town_deco',            path: 'assets/tiles/town_deco.png',            type: 'image' },
+  { key: 'tile_fire_floor',           path: 'assets/tiles/fire_floor.png',           type: 'image' },
+  { key: 'tile_fire_wall',            path: 'assets/tiles/fire_wall.png',            type: 'image' },
+  { key: 'tile_fire_special',         path: 'assets/tiles/fire_special.png',         type: 'image' },
+  { key: 'tile_fire_path',            path: 'assets/tiles/fire_path.png',            type: 'image' },
+  { key: 'tile_fire_deco',            path: 'assets/tiles/fire_deco.png',            type: 'image' },
+  { key: 'tile_earth_floor',          path: 'assets/tiles/earth_floor.png',          type: 'image' },
+  { key: 'tile_earth_wall',           path: 'assets/tiles/earth_wall.png',           type: 'image' },
+  { key: 'tile_earth_special',        path: 'assets/tiles/earth_special.png',        type: 'image' },
+  { key: 'tile_earth_path',           path: 'assets/tiles/earth_path.png',           type: 'image' },
+  { key: 'tile_earth_deco',           path: 'assets/tiles/earth_deco.png',           type: 'image' },
+  { key: 'tile_wind_floor',           path: 'assets/tiles/wind_floor.png',           type: 'image' },
+  { key: 'tile_wind_wall',            path: 'assets/tiles/wind_wall.png',            type: 'image' },
+  { key: 'tile_wind_special',         path: 'assets/tiles/wind_special.png',         type: 'image' },
+  { key: 'tile_wind_path',            path: 'assets/tiles/wind_path.png',            type: 'image' },
+  { key: 'tile_wind_deco',            path: 'assets/tiles/wind_deco.png',            type: 'image' },
+  { key: 'tile_water_floor',          path: 'assets/tiles/water_floor.png',          type: 'image' },
+  { key: 'tile_water_wall',           path: 'assets/tiles/water_wall.png',           type: 'image' },
+  { key: 'tile_water_special',        path: 'assets/tiles/water_special.png',        type: 'image' },
+  { key: 'tile_water_path',           path: 'assets/tiles/water_path.png',           type: 'image' },
+  { key: 'tile_water_deco',           path: 'assets/tiles/water_deco.png',           type: 'image' },
+  { key: 'tile_lightning_floor',      path: 'assets/tiles/lightning_floor.png',      type: 'image' },
+  { key: 'tile_lightning_wall',       path: 'assets/tiles/lightning_wall.png',       type: 'image' },
+  { key: 'tile_lightning_special',    path: 'assets/tiles/lightning_special.png',    type: 'image' },
+  { key: 'tile_lightning_path',       path: 'assets/tiles/lightning_path.png',       type: 'image' },
+  { key: 'tile_lightning_deco',       path: 'assets/tiles/lightning_deco.png',       type: 'image' },
+  { key: 'tile_ice_floor',            path: 'assets/tiles/ice_floor.png',            type: 'image' },
+  { key: 'tile_ice_wall',             path: 'assets/tiles/ice_wall.png',             type: 'image' },
+  { key: 'tile_ice_special',          path: 'assets/tiles/ice_special.png',          type: 'image' },
+  { key: 'tile_ice_path',             path: 'assets/tiles/ice_path.png',             type: 'image' },
+  { key: 'tile_ice_deco',             path: 'assets/tiles/ice_deco.png',             type: 'image' },
+  { key: 'tile_dark_floor',           path: 'assets/tiles/dark_floor.png',           type: 'image' },
+  { key: 'tile_dark_wall',            path: 'assets/tiles/dark_wall.png',            type: 'image' },
+  { key: 'tile_dark_special',         path: 'assets/tiles/dark_special.png',         type: 'image' },
+  { key: 'tile_dark_path',            path: 'assets/tiles/dark_path.png',            type: 'image' },
+  { key: 'tile_dark_deco',            path: 'assets/tiles/dark_deco.png',            type: 'image' },
+
+  // Enemies — 32×32 PNG per enemy
+  { key: 'enemy_ember_wyrm',       path: 'assets/sprites/enemies/ember_wyrm.png',       type: 'image' },
+  { key: 'enemy_lava_golem',       path: 'assets/sprites/enemies/lava_golem.png',       type: 'image' },
+  { key: 'enemy_cinder_sprite',    path: 'assets/sprites/enemies/cinder_sprite.png',    type: 'image' },
+  { key: 'enemy_ash_revenant',     path: 'assets/sprites/enemies/ash_revenant.png',     type: 'image' },
+  { key: 'enemy_magma_titan',      path: 'assets/sprites/enemies/magma_titan.png',      type: 'image' },
+  { key: 'enemy_stone_crawler',    path: 'assets/sprites/enemies/stone_crawler.png',    type: 'image' },
+  { key: 'enemy_crystal_golem',    path: 'assets/sprites/enemies/crystal_golem.png',    type: 'image' },
+  { key: 'enemy_cave_lurker',      path: 'assets/sprites/enemies/cave_lurker.png',      type: 'image' },
+  { key: 'enemy_terravast_serpent',path: 'assets/sprites/enemies/terravast_serpent.png',type: 'image' },
+  { key: 'enemy_ruin_colossus',    path: 'assets/sprites/enemies/ruin_colossus.png',    type: 'image' },
+  { key: 'enemy_gale_harpy',       path: 'assets/sprites/enemies/gale_harpy.png',       type: 'image' },
+  { key: 'enemy_storm_eagle',      path: 'assets/sprites/enemies/storm_eagle.png',      type: 'image' },
+  { key: 'enemy_wind_wraith',      path: 'assets/sprites/enemies/wind_wraith.png',      type: 'image' },
+  { key: 'enemy_cyclone_sprite',   path: 'assets/sprites/enemies/cyclone_sprite.png',   type: 'image' },
+  { key: 'enemy_sky_titan',        path: 'assets/sprites/enemies/sky_titan.png',        type: 'image' },
+  { key: 'enemy_tide_crawler',     path: 'assets/sprites/enemies/tide_crawler.png',     type: 'image' },
+  { key: 'enemy_sea_wraith',       path: 'assets/sprites/enemies/sea_wraith.png',       type: 'image' },
+  { key: 'enemy_coral_golem',      path: 'assets/sprites/enemies/coral_golem.png',      type: 'image' },
+  { key: 'enemy_depth_serpent',    path: 'assets/sprites/enemies/depth_serpent.png',    type: 'image' },
+  { key: 'enemy_drowned_knight',   path: 'assets/sprites/enemies/drowned_knight.png',   type: 'image' },
+  { key: 'enemy_spark_imp',        path: 'assets/sprites/enemies/spark_imp.png',        type: 'image' },
+  { key: 'enemy_thunder_drake',    path: 'assets/sprites/enemies/thunder_drake.png',    type: 'image' },
+  { key: 'enemy_chain_revenant',   path: 'assets/sprites/enemies/chain_revenant.png',   type: 'image' },
+  { key: 'enemy_volt_hound',       path: 'assets/sprites/enemies/volt_hound.png',       type: 'image' },
+  { key: 'enemy_storm_herald',     path: 'assets/sprites/enemies/storm_herald.png',     type: 'image' },
+  { key: 'enemy_frost_wolf',       path: 'assets/sprites/enemies/frost_wolf.png',       type: 'image' },
+  { key: 'enemy_ice_golem',        path: 'assets/sprites/enemies/ice_golem.png',        type: 'image' },
+  { key: 'enemy_blizzard_wraith',  path: 'assets/sprites/enemies/blizzard_wraith.png',  type: 'image' },
+  { key: 'enemy_permafrost_titan', path: 'assets/sprites/enemies/permafrost_titan.png', type: 'image' },
+  { key: 'enemy_crystal_dragon',   path: 'assets/sprites/enemies/crystal_dragon.png',   type: 'image' },
+  { key: 'enemy_dark_revenant',    path: 'assets/sprites/enemies/dark_revenant.png',    type: 'image' },
+  { key: 'enemy_shadow_construct', path: 'assets/sprites/enemies/shadow_construct.png', type: 'image' },
+  { key: 'enemy_void_sentinel',    path: 'assets/sprites/enemies/void_sentinel.png',    type: 'image' },
+
+  // NPCs — 32×32 PNG per NPC
+  { key: 'npc_aldric',       path: 'assets/sprites/npcs/aldric.png',       type: 'image' },
+  { key: 'npc_mira',         path: 'assets/sprites/npcs/mira.png',         type: 'image' },
+  { key: 'npc_theron',       path: 'assets/sprites/npcs/theron.png',       type: 'image' },
+  { key: 'npc_brother_ovan', path: 'assets/sprites/npcs/brother_ovan.png', type: 'image' },
+  { key: 'npc_liria',        path: 'assets/sprites/npcs/liria.png',        type: 'image' },
+  { key: 'npc_kelvar',       path: 'assets/sprites/npcs/kelvar.png',       type: 'image' },
+  { key: 'npc_ysolde',       path: 'assets/sprites/npcs/ysolde.png',       type: 'image' },
+  { key: 'npc_elara',        path: 'assets/sprites/npcs/elara.png',        type: 'image' },
+
+  // NPC portraits — 80×80 PNG
+  { key: 'portrait_aldric',       path: 'assets/sprites/portraits/aldric.png',       type: 'image' },
+  { key: 'portrait_mira',         path: 'assets/sprites/portraits/mira.png',         type: 'image' },
+  { key: 'portrait_theron',       path: 'assets/sprites/portraits/theron.png',       type: 'image' },
+  { key: 'portrait_brother_ovan', path: 'assets/sprites/portraits/brother_ovan.png', type: 'image' },
+  { key: 'portrait_liria',        path: 'assets/sprites/portraits/liria.png',        type: 'image' },
+  { key: 'portrait_kelvar',       path: 'assets/sprites/portraits/kelvar.png',       type: 'image' },
+  { key: 'portrait_ysolde',       path: 'assets/sprites/portraits/ysolde.png',       type: 'image' },
+  { key: 'portrait_elara',        path: 'assets/sprites/portraits/elara.png',        type: 'image' },
+
+  // Bosses — 64×64 PNG
+  { key: 'boss_pyrath',   path: 'assets/sprites/bosses/pyrath.png',   type: 'image' },
+  { key: 'boss_gorvun',   path: 'assets/sprites/bosses/gorvun.png',   type: 'image' },
+  { key: 'boss_sylvael',  path: 'assets/sprites/bosses/sylvael.png',  type: 'image' },
+  { key: 'boss_thalymor', path: 'assets/sprites/bosses/thalymor.png', type: 'image' },
+  { key: 'boss_volkran',  path: 'assets/sprites/bosses/volkran.png',  type: 'image' },
+  { key: 'boss_crysthea', path: 'assets/sprites/bosses/crysthea.png', type: 'image' },
+  { key: 'boss_malachar', path: 'assets/sprites/bosses/malachar.png', type: 'image' },
+
+  // Divine forms — 48×48 PNG
+  { key: 'divine_pyrath',   path: 'assets/sprites/divines/pyrath.png',   type: 'image' },
+  { key: 'divine_gorvun',   path: 'assets/sprites/divines/gorvun.png',   type: 'image' },
+  { key: 'divine_sylvael',  path: 'assets/sprites/divines/sylvael.png',  type: 'image' },
+  { key: 'divine_thalymor', path: 'assets/sprites/divines/thalymor.png', type: 'image' },
+  { key: 'divine_volkran',  path: 'assets/sprites/divines/volkran.png',  type: 'image' },
+  { key: 'divine_crysthea', path: 'assets/sprites/divines/crysthea.png', type: 'image' },
+
+  // Skill icons — 32×32 PNG
+  { key: 'skill_dash',            path: 'assets/sprites/skills/dash.png',            type: 'image' },
+  { key: 'skill_echo_strike',     path: 'assets/sprites/skills/echo_strike.png',     type: 'image' },
+  { key: 'skill_fireball',        path: 'assets/sprites/skills/fireball.png',        type: 'image' },
+  { key: 'skill_flame_dash',      path: 'assets/sprites/skills/flame_dash.png',      type: 'image' },
+  { key: 'skill_inferno_burst',   path: 'assets/sprites/skills/inferno_burst.png',   type: 'image' },
+  { key: 'skill_stone_shield',    path: 'assets/sprites/skills/stone_shield.png',    type: 'image' },
+  { key: 'skill_seismic_slam',    path: 'assets/sprites/skills/seismic_slam.png',    type: 'image' },
+  { key: 'skill_terra_surge',     path: 'assets/sprites/skills/terra_surge.png',     type: 'image' },
+  { key: 'skill_gale_step',       path: 'assets/sprites/skills/gale_step.png',       type: 'image' },
+  { key: 'skill_tornado_spin',    path: 'assets/sprites/skills/tornado_spin.png',    type: 'image' },
+  { key: 'skill_skyward_strike',  path: 'assets/sprites/skills/skyward_strike.png',  type: 'image' },
+  { key: 'skill_tidal_wave',      path: 'assets/sprites/skills/tidal_wave.png',      type: 'image' },
+  { key: 'skill_healing_current', path: 'assets/sprites/skills/healing_current.png', type: 'image' },
+  { key: 'skill_frost_lance',     path: 'assets/sprites/skills/frost_lance.png',     type: 'image' },
+  { key: 'skill_thunder_bolt',    path: 'assets/sprites/skills/thunder_bolt.png',    type: 'image' },
+  { key: 'skill_chain_lightning', path: 'assets/sprites/skills/chain_lightning.png', type: 'image' },
+  { key: 'skill_volt_dash',       path: 'assets/sprites/skills/volt_dash.png',       type: 'image' },
+  { key: 'skill_frost_nova',      path: 'assets/sprites/skills/frost_nova.png',      type: 'image' },
+  { key: 'skill_blizzard',        path: 'assets/sprites/skills/blizzard.png',        type: 'image' },
+  { key: 'skill_ice_barrier',     path: 'assets/sprites/skills/ice_barrier.png',     type: 'image' },
+  { key: 'skill_soul_echo',       path: 'assets/sprites/skills/soul_echo.png',       type: 'image' },
+  { key: 'skill_void_step',       path: 'assets/sprites/skills/void_step.png',       type: 'image' },
+  { key: 'skill_prism_burst',     path: 'assets/sprites/skills/prism_burst.png',     type: 'image' },
+  { key: 'skill_elaras_gift',     path: 'assets/sprites/skills/elaras_gift.png',     type: 'image' },
+
+  // UI elements
+  { key: 'ui_panel',       path: 'assets/sprites/ui/panel.png',       type: 'image' },
+  { key: 'ui_slot',        path: 'assets/sprites/ui/slot.png',        type: 'image' },
+  { key: 'ui_portrait_bg', path: 'assets/sprites/ui/portrait_bg.png', type: 'image' },
+  { key: 'ui_healthbar',   path: 'assets/sprites/ui/healthbar.png',   type: 'image' },
+  { key: 'ui_manabar',     path: 'assets/sprites/ui/manabar.png',     type: 'image' },
+
+  // Misc
+  { key: 'xp_orb', path: 'assets/sprites/xp_orb.png', type: 'image' },
+  { key: 'logo',   path: 'assets/sprites/logo.png',   type: 'image' },
+];
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export function generatePlaceholderAssets(scene: Phaser.Scene): void {
 
-  // ── Tilesets ──────────────────────────────────────────────────
-  const TILESETS: Record<string, number> = {
-    tiles_town:      0x664422,
-    tiles_fire:      0xff3300,
-    tiles_earth:     0x553311,
-    tiles_wind:      0xaaccff,
-    tiles_water:     0x003377,
-    tiles_lightning: 0x440066,
-    tiles_ice:       0x88ccff,
-    tiles_dark:      0x110011,
-  };
-  for (const [key, color] of Object.entries(TILESETS)) {
-    addCanvas(scene, key, makeTileset(color));
+  // ── Individual tiles (assembled into tilesets by assembleTilesets()) ──────
+  const ZONE_COLORS: Array<[string, number]> = [
+    ['town',      0x664422],
+    ['fire',      0xff3300],
+    ['earth',     0x553311],
+    ['wind',      0xaaccff],
+    ['water',     0x003377],
+    ['lightning', 0x440066],
+    ['ice',       0x88ccff],
+    ['dark',      0x110011],
+  ];
+  const TILE_TYPES  = ['floor', 'wall', 'special', 'path', 'deco'] as const;
+  const TILE_LABELS = ['FL',    'WL',   'SP',      'PT',   'DC'];
+  for (const [zone, color] of ZONE_COLORS) {
+    const tints = [
+      color,
+      darken(color, 0.55),
+      lighter(color, 0x1a1a40),
+      lighter(color, 0x202020),
+      lighter(color, 0x101010),
+    ];
+    for (let i = 0; i < TILE_TYPES.length; i++) {
+      addCanvas(scene, `tile_${zone}_${TILE_TYPES[i]}`, makeSprite(tints[i], TILE_LABELS[i], 64, 64));
+    }
   }
 
   // ── Player spritesheet ────────────────────────────────────────
@@ -389,88 +810,48 @@ export function generatePlaceholderAssets(scene: Phaser.Scene): void {
     }
   }
 
-  // ── Enemy sprites (32×32) ────────────────────────────────────
+  // ── XP orb ───────────────────────────────────────────────────
+  addCanvas(scene, 'xp_orb', makeXpOrb());
 
-  // Fire zone enemies
-  const fireEnemies: [string, string][] = [
-    ['enemy_ember_wyrm',      'EW'],
-    ['enemy_lava_golem',      'LG'],
-    ['enemy_cinder_sprite',   'CS'],
-    ['enemy_ash_revenant',    'AR'],
-    ['enemy_magma_titan',     'MT'],
+  // ── Enemy sprites (32×32) — element-themed shapes ────────────
+  const ENEMIES: [string, string, string][] = [
+    // key,                         element,     label
+    ['enemy_ember_wyrm',      'FIRE',      'EW'],
+    ['enemy_lava_golem',      'FIRE',      'LG'],
+    ['enemy_cinder_sprite',   'FIRE',      'CS'],
+    ['enemy_ash_revenant',    'FIRE',      'AR'],
+    ['enemy_magma_titan',     'FIRE',      'MT'],
+    ['enemy_stone_crawler',   'EARTH',     'SC'],
+    ['enemy_crystal_golem',   'EARTH',     'CG'],
+    ['enemy_cave_lurker',     'EARTH',     'CL'],
+    ['enemy_terravast_serpent','EARTH',    'TS'],
+    ['enemy_ruin_colossus',   'EARTH',     'RC'],
+    ['enemy_gale_harpy',      'WIND',      'GH'],
+    ['enemy_storm_eagle',     'WIND',      'SE'],
+    ['enemy_wind_wraith',     'WIND',      'WW'],
+    ['enemy_cyclone_sprite',  'WIND',      'CY'],
+    ['enemy_sky_titan',       'WIND',      'ST'],
+    ['enemy_tide_crawler',    'WATER',     'TC'],
+    ['enemy_sea_wraith',      'WATER',     'SW'],
+    ['enemy_coral_golem',     'WATER',     'CG'],
+    ['enemy_depth_serpent',   'WATER',     'DS'],
+    ['enemy_drowned_knight',  'WATER',     'DK'],
+    ['enemy_spark_imp',       'LIGHTNING', 'SI'],
+    ['enemy_thunder_drake',   'LIGHTNING', 'TD'],
+    ['enemy_chain_revenant',  'LIGHTNING', 'CR'],
+    ['enemy_volt_hound',      'LIGHTNING', 'VH'],
+    ['enemy_storm_herald',    'LIGHTNING', 'SH'],
+    ['enemy_frost_wolf',      'ICE',       'FW'],
+    ['enemy_ice_golem',       'ICE',       'IG'],
+    ['enemy_blizzard_wraith', 'ICE',       'BW'],
+    ['enemy_permafrost_titan','ICE',       'PT'],
+    ['enemy_crystal_dragon',  'ICE',       'CD'],
+    ['enemy_dark_revenant',   'DARK',      'DR'],
+    ['enemy_shadow_construct','DARK',      'SC'],
+    ['enemy_void_sentinel',   'DARK',      'VS'],
   ];
-  for (const [key, label] of fireEnemies) {
-    addCanvas(scene, key, makeSprite(0xcc2200, label, 32, 32));
-  }
-
-  // Earth zone enemies
-  const earthEnemies: [string, string][] = [
-    ['enemy_stone_crawler',     'SC'],
-    ['enemy_crystal_golem',     'CG'],
-    ['enemy_cave_lurker',       'CL'],
-    ['enemy_terravast_serpent', 'TS'],
-    ['enemy_ruin_colossus',     'RC'],
-  ];
-  for (const [key, label] of earthEnemies) {
-    addCanvas(scene, key, makeSprite(0x553311, label, 32, 32));
-  }
-
-  // Wind zone enemies
-  const windEnemies: [string, string][] = [
-    ['enemy_gale_harpy',      'GH'],
-    ['enemy_storm_eagle',     'SE'],
-    ['enemy_wind_wraith',     'WW'],
-    ['enemy_cyclone_sprite',  'CY'],
-    ['enemy_sky_titan',       'ST'],
-  ];
-  for (const [key, label] of windEnemies) {
-    addCanvas(scene, key, makeSprite(0x7799cc, label, 32, 32));
-  }
-
-  // Water zone enemies
-  const waterEnemies: [string, string][] = [
-    ['enemy_tide_crawler',   'TC'],
-    ['enemy_sea_wraith',     'SW'],
-    ['enemy_coral_golem',    'CG'],
-    ['enemy_depth_serpent',  'DS'],
-    ['enemy_drowned_knight', 'DK'],
-  ];
-  for (const [key, label] of waterEnemies) {
-    addCanvas(scene, key, makeSprite(0x003377, label, 32, 32));
-  }
-
-  // Lightning zone enemies
-  const lightningEnemies: [string, string][] = [
-    ['enemy_spark_imp',       'SI'],
-    ['enemy_thunder_drake',   'TD'],
-    ['enemy_chain_revenant',  'CR'],
-    ['enemy_volt_hound',      'VH'],
-    ['enemy_storm_herald',    'SH'],
-  ];
-  for (const [key, label] of lightningEnemies) {
-    addCanvas(scene, key, makeSprite(0x440066, label, 32, 32));
-  }
-
-  // Ice zone enemies
-  const iceEnemies: [string, string][] = [
-    ['enemy_frost_wolf',        'FW'],
-    ['enemy_ice_golem',         'IG'],
-    ['enemy_blizzard_wraith',   'BW'],
-    ['enemy_permafrost_titan',  'PT'],
-    ['enemy_crystal_dragon',    'CD'],
-  ];
-  for (const [key, label] of iceEnemies) {
-    addCanvas(scene, key, makeSprite(0x88ccff, label, 32, 32));
-  }
-
-  // Dark zone enemies
-  const darkEnemies: [string, string][] = [
-    ['enemy_dark_revenant',    'DR'],
-    ['enemy_shadow_construct', 'SC'],
-    ['enemy_void_sentinel',    'VS'],
-  ];
-  for (const [key, label] of darkEnemies) {
-    addCanvas(scene, key, makeSprite(0x220033, label, 32, 32));
+  for (const [key, element, label] of ENEMIES) {
+    addCanvas(scene, key, makeEnemyCanvas(element, label));
   }
 
   // ── Bosses (64×64) with gold border ─────────────────────────
@@ -500,7 +881,7 @@ export function generatePlaceholderAssets(scene: Phaser.Scene): void {
     addCanvas(scene, key, makeBoss(color, label, 48));
   }
 
-  // ── NPC sprites (32×32) ──────────────────────────────────────
+  // ── NPC sprites (32×32) — humanoid figures ───────────────────
   const NPCS: [string, number, string][] = [
     ['npc_aldric',       0x664422, 'A'],
     ['npc_mira',         0xcc3344, 'M'],
@@ -511,8 +892,8 @@ export function generatePlaceholderAssets(scene: Phaser.Scene): void {
     ['npc_ysolde',       0xccaa22, 'Y'],
     ['npc_elara',        0x88bbcc, 'E'],
   ];
-  for (const [key, color, label] of NPCS) {
-    addCanvas(scene, key, makeSprite(color, label, 32, 32));
+  for (const [key, color, initial] of NPCS) {
+    addCanvas(scene, key, makeNPCCanvas(color, initial));
   }
 
   // ── NPC portraits (80×80) ────────────────────────────────────
@@ -570,4 +951,223 @@ export function generatePlaceholderAssets(scene: Phaser.Scene): void {
 
   // ── Logo ──────────────────────────────────────────────────────
   addCanvas(scene, 'logo', makeLogo());
+}
+
+// ── Tileset assembler ─────────────────────────────────────────────────────────
+/**
+ * Builds each zone's 256×256 tileset texture from 5 individual tile PNGs.
+ * Call this in BootScene.create() AFTER generatePlaceholderAssets() so every
+ * tile key is guaranteed to exist (real PNG or placeholder).
+ * Accepts any source image size — scales each tile to 16×16 when drawing.
+ */
+export function assembleTilesets(scene: Phaser.Scene): void {
+  const ZONES: Array<[string, string]> = [
+    ['town',      'tiles_town'],
+    ['fire',      'tiles_fire'],
+    ['earth',     'tiles_earth'],
+    ['wind',      'tiles_wind'],
+    ['water',     'tiles_water'],
+    ['lightning', 'tiles_lightning'],
+    ['ice',       'tiles_ice'],
+    ['dark',      'tiles_dark'],
+  ];
+  const TYPES = ['floor', 'wall', 'special', 'path', 'deco'];
+
+  for (const [zone, tilesetKey] of ZONES) {
+    const canvas = makeCanvas(256, 256);
+    const ctx    = canvas.getContext('2d')!;
+
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(0, 0, 256, 256);
+
+    for (let i = 0; i < TYPES.length; i++) {
+      const tileKey = `tile_${zone}_${TYPES[i]}`;
+      if (!scene.textures.exists(tileKey)) continue;
+      const src = scene.textures.get(tileKey).getSourceImage();
+      ctx.drawImage(src as CanvasImageSource, i * 16, 0, 16, 16);
+    }
+
+    if (scene.textures.exists(tilesetKey)) scene.textures.remove(tilesetKey);
+    scene.textures.addCanvas(tilesetKey, canvas);
+  }
+}
+
+// ── Kenney tile extractor ─────────────────────────────────────────────────────
+/**
+ * Replaces placeholder tile_{zone}_{type} textures with verified Kenney tiles.
+ *
+ * Sources:
+ *  - 'base' : individual rpg-base 64×64 PNGs (loaded via REAL_ASSET_MANIFEST)
+ *  - 'dun'  : frame extracted from kenney_dun spritesheet (28 cols × 17 rows)
+ *
+ * Frame formula for dun: row * 28 + col
+ * Only overrides textures that are still canvas placeholders (real user PNGs win).
+ * Must be called BEFORE assembleTilesets().
+ */
+export function applyKenneyTiles(scene: Phaser.Scene): void {
+  const DUN_COLS = 28;
+
+  type TileSrc =
+    | { kind: 'base'; key: string }
+    | { kind: 'dun';  row: number; col: number };
+
+  // Visually verified mappings.
+  // fire / wind / lightning have no matching Kenney tiles → kept as coloured canvas placeholders.
+  const ZONE_TILES: Record<string, Record<string, TileSrc>> = {
+    town: {
+      floor:   { kind: 'base', key: 'rpgbase_003' },  // solid green grass
+      wall:    { kind: 'base', key: 'rpgbase_060' },  // blue-grey brick wall
+      special: { kind: 'base', key: 'rpgbase_050' },  // stone/cream interior floor
+      path:    { kind: 'base', key: 'rpgbase_120' },  // light tan dirt path
+      deco:    { kind: 'base', key: 'rpgbase_160' },  // small green bush
+    },
+    earth: {
+      floor:   { kind: 'dun',  row: 2, col: 8 },      // grey stone interior
+      wall:    { kind: 'dun',  row: 2, col: 6 },      // stone wall top-edge
+      special: { kind: 'base', key: 'rpgbase_110' },  // dark grey stone
+      path:    { kind: 'base', key: 'rpgbase_120' },  // dirt path
+      deco:    { kind: 'dun',  row: 0, col: 1 },      // cave decoration
+    },
+    water: {
+      floor:   { kind: 'base', key: 'rpgbase_013' },  // solid teal water
+      wall:    { kind: 'base', key: 'rpgbase_060' },  // stone wall at water edge
+      special: { kind: 'dun',  row: 12, col: 3 },     // blue water variant
+      path:    { kind: 'base', key: 'rpgbase_050' },  // stone path through water
+      deco:    { kind: 'base', key: 'rpgbase_200' },  // full green tree
+    },
+    ice: {
+      floor:   { kind: 'base', key: 'rpgbase_015' },  // white/ice tile
+      wall:    { kind: 'dun',  row: 2, col: 7 },      // grey stone wall
+      special: { kind: 'dun',  row: 12, col: 4 },     // blue/ice interior
+      path:    { kind: 'base', key: 'rpgbase_050' },  // stone path on ice
+      deco:    { kind: 'base', key: 'rpgbase_180' },  // tree/bush
+    },
+    dark: {
+      floor:   { kind: 'base', key: 'rpgbase_130' },  // very dark diagonal
+      wall:    { kind: 'dun',  row: 1, col: 19 },     // dark charcoal tile
+      special: { kind: 'base', key: 'rpgbase_110' },  // dark grey stone
+      path:    { kind: 'dun',  row: 2, col: 8 },      // grey stone path
+      deco:    { kind: 'dun',  row: 0, col: 2 },      // cave deco item
+    },
+  };
+
+  const TYPES = ['floor', 'wall', 'special', 'path', 'deco'] as const;
+
+  function copyBaseTexture(srcKey: string, destKey: string): void {
+    if (!scene.textures.exists(srcKey)) return;
+    const src    = scene.textures.get(srcKey).getSourceImage() as CanvasImageSource;
+    const canvas = document.createElement('canvas');
+    canvas.width = 64; canvas.height = 64;
+    const ctx = canvas.getContext('2d')!;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(src, 0, 0, 64, 64);
+    if (scene.textures.exists(destKey)) scene.textures.remove(destKey);
+    scene.textures.addCanvas(destKey, canvas);
+  }
+
+  function extractDunFrame(row: number, col: number, destKey: string): void {
+    if (!scene.textures.exists('kenney_dun')) return;
+    const texture = scene.textures.get('kenney_dun');
+    const frame   = texture.get(row * DUN_COLS + col);
+    const canvas  = document.createElement('canvas');
+    canvas.width  = 16; canvas.height = 16;
+    const ctx = canvas.getContext('2d')!;
+    ctx.imageSmoothingEnabled = false;
+    if (frame) {
+      ctx.drawImage(
+        frame.source.image as HTMLImageElement,
+        frame.cutX, frame.cutY, frame.cutWidth, frame.cutHeight,
+        0, 0, 16, 16
+      );
+    }
+    if (scene.textures.exists(destKey)) scene.textures.remove(destKey);
+    scene.textures.addCanvas(destKey, canvas);
+  }
+
+  for (const [zone, types] of Object.entries(ZONE_TILES)) {
+    for (const type of TYPES) {
+      const src     = types[type];
+      if (!src) continue;
+      const destKey = `tile_${zone}_${type}`;
+
+      // Skip if a real user PNG was loaded (texture source is not a canvas)
+      const existing = scene.textures.get(destKey);
+      if (existing?.source?.[0] && !existing.source[0].isCanvas) continue;
+
+      if (src.kind === 'base') {
+        copyBaseTexture(src.key, destKey);
+      } else {
+        extractDunFrame(src.row, src.col, destKey);
+      }
+    }
+  }
+}
+
+// ── Kenney character extractor ────────────────────────────────────────────────
+/**
+ * Replaces placeholder player + NPC textures with real sprites from the
+ * Kenney roguelike character sheet (kenney_chars, loaded in BootScene.preload).
+ * Silently skips if the sheet failed to load.
+ *
+ * Frame indices: row * 54 + col  (54 columns, 16×16 tiles, 1px spacing)
+ * Adjust CHAR_MAP to pick different characters from the sheet.
+ */
+export function applyKenneyCharacters(scene: Phaser.Scene): void {
+  if (!scene.textures.exists('kenney_chars')) return;
+
+  const COLS = 54; // columns in the kenney sheet
+
+  // [destKey, row, col] — change col/row to pick a different character
+  const CHAR_MAP: Array<[string, number, number]> = [
+    ['npc_aldric',       0, 0],
+    ['npc_mira',         1, 0],
+    ['npc_theron',       2, 0],
+    ['npc_brother_ovan', 3, 0],
+    ['npc_liria',        4, 0],
+    ['npc_kelvar',       5, 0],
+    ['npc_ysolde',       6, 0],
+  ];
+  // Player row/col — separate because it needs a 12-frame spritesheet canvas
+  const PLAYER_ROW = 7;
+  const PLAYER_COL = 0;
+
+  function drawFrame(ctx: CanvasRenderingContext2D, row: number, col: number, destX: number, destY: number, size: number) {
+    const texture = scene.textures.get('kenney_chars');
+    const frame = texture.get(row * COLS + col);
+    if (!frame) return;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(
+      frame.source.image as HTMLImageElement,
+      frame.cutX, frame.cutY, frame.cutWidth, frame.cutHeight,
+      destX, destY, size, size
+    );
+  }
+
+  // Replace static NPC textures (32×32)
+  for (const [key, row, col] of CHAR_MAP) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 32;
+    canvas.height = 32;
+    drawFrame(canvas.getContext('2d')!, row, col, 0, 0, 32);
+    if (scene.textures.exists(key)) scene.textures.remove(key);
+    scene.textures.addCanvas(key, canvas);
+  }
+
+  // Replace player as 12-frame spritesheet only if no real player.png was loaded
+  // (detect canvas placeholder by checking source type)
+  const playerTex = scene.textures.get('player');
+  const playerIsCanvas = playerTex?.source?.[0]?.isCanvas ?? true;
+  if (playerIsCanvas) {
+    const sheet = document.createElement('canvas');
+    sheet.width = 384; // 12 × 32
+    sheet.height = 32;
+    const ctx = sheet.getContext('2d')!;
+    for (let i = 0; i < 12; i++) {
+      drawFrame(ctx, PLAYER_ROW, PLAYER_COL, i * 32, 0, 32);
+    }
+    if (scene.textures.exists('player')) scene.textures.remove('player');
+    scene.textures.addCanvas('player', sheet);
+    const tex = scene.textures.get('player');
+    for (let i = 0; i < 12; i++) tex.add(i, 0, i * 32, 0, 32, 32);
+  }
 }
