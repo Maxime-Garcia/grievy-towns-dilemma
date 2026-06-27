@@ -50,6 +50,7 @@ export class GameScene extends Phaser.Scene {
   private dashKey!: Phaser.Input.Keyboard.Key;
   private inventoryKey!: Phaser.Input.Keyboard.Key;
   private skillMenuKey!: Phaser.Input.Keyboard.Key;
+  private escKey!: Phaser.Input.Keyboard.Key;
 
   private xpOrbs!: Phaser.Physics.Arcade.Group;
   private readonly XP_ATTRACT_RANGE = 96;
@@ -878,8 +879,9 @@ export class GameScene extends Phaser.Scene {
       r: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.R),
       f: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.F),
     };
-    // ESC → pause menu (persistent handler, cleaned up by shutdown's removeAllKeys)
-    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC).on('down', () => {
+    // ESC → pause menu (stored ref, cleaned up by shutdown's removeAllKeys)
+    this.escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    this.escKey.on('down', () => {
       if (!this.isInDialogue && !this.scene.isActive('PauseScene')) {
         this.setPaused(true);
         this.scene.launch('PauseScene', { gameScene: this });
@@ -978,17 +980,20 @@ export class GameScene extends Phaser.Scene {
       sprite.refreshBody();
       this.lootableGroup.add(sprite);
 
-      // Small label
       this.add.text(lo.x, lo.y - 16, lo.type, {
         fontSize: '8px', color: '#ffeeaa', fontFamily: 'monospace',
         stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5, 1).setDepth(4);
-
-      // Overlap to detect proximity
-      this.physics.add.overlap(this.player, sprite, () => {
-        this.nearbyLootable = lo.id;
-      });
     }
+
+    // Single group overlap — sprite.name holds the lootable ID
+    this.physics.add.overlap(
+      this.player,
+      this.lootableGroup,
+      (_player, obj) => {
+        this.nearbyLootable = (obj as Phaser.Physics.Arcade.Image).name;
+      },
+    );
   }
 
   private interactWithLootable(lootableId: string) {

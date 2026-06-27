@@ -224,9 +224,9 @@ export class UIScene extends Phaser.Scene {
   }
 
   private onItemLooted({ item, quantity }: { item: any; quantity: number }) {
-    const colorMap: Partial<Record<string, string>> = RARITY_COLORS as any;
-    const color = colorMap[item.rarity] ?? '#ffffff';
-    if (item.rarity !== 'COMMON') {
+    const colorMap: Partial<Record<ItemRarity, string>> = RARITY_COLORS;
+    const color = colorMap[item.rarity as ItemRarity] ?? '#ffffff';
+    if (item.rarity !== ItemRarity.COMMON) {
       this.pushNotif(`[${item.rarity}] ${item.name} ×${quantity}`, color);
     }
   }
