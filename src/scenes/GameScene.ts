@@ -64,22 +64,25 @@ export class GameScene extends Phaser.Scene {
   private playtimeAccumulator = 0;
   private lastRegenTime = 0;
 
-  // NPC interaction tracking
+  // Interaction tracking
   private nearbyNPC: string | null = null;
+  private nearbyLootable: string | null = null;
   private interactHint!: Phaser.GameObjects.Text;
 
   constructor() { super({ key: 'GameScene' }); }
 
   init(data: { gameState?: GameState }) {
     this.gameState = data?.gameState ?? SaveSystem.createNewGame('Héros');
-    this.isTraveling = false;
-    this.nearbyNPC = null;
-    this.activeEnemies = new Map();
-    this.cooldowns = {};
-    this.dashCooldown = 0;
-    this.isDashing = false;
-    this.lastDirX = 0;
-    this.lastDirY = 1;
+    this.isTraveling    = false;
+    this.isInDialogue   = false;
+    this.nearbyNPC      = null;
+    this.nearbyLootable = null;
+    this.activeEnemies  = new Map();
+    this.cooldowns      = {};
+    this.dashCooldown   = 0;
+    this.isDashing      = false;
+    this.lastDirX       = 0;
+    this.lastDirY       = 1;
   }
 
   create() {
@@ -861,6 +864,8 @@ export class GameScene extends Phaser.Scene {
   shutdown() {
     this.time.removeAllEvents();
     this.input.keyboard?.removeAllKeys(true);
-    this.events.removeAllListeners();
+    // Do NOT call events.removeAllListeners() — it strips Phaser's internal
+    // lifecycle listeners (physics, tweens, input) registered on sys.events,
+    // which prevents the scene from resuming after scene.restart().
   }
 }
