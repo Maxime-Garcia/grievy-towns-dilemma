@@ -99,12 +99,19 @@ export class DialogueScene extends Phaser.Scene {
           this.renderCurrentLine();
         });
 
-        // Keyboard shortcut
-        const numKey = this.input.keyboard!.addKey(`${i + 1}` as any);
-        numKey.once('down', () => {
-          DialogueSystem.advance(this.session, this.player, i);
-          this.renderCurrentLine();
-        });
+        // Keyboard shortcut (1–4)
+        const numKeyCodes = [
+          Phaser.Input.Keyboard.KeyCodes.ONE,
+          Phaser.Input.Keyboard.KeyCodes.TWO,
+          Phaser.Input.Keyboard.KeyCodes.THREE,
+          Phaser.Input.Keyboard.KeyCodes.FOUR,
+        ];
+        if (numKeyCodes[i] !== undefined) {
+          this.input.keyboard!.addKey(numKeyCodes[i]).once('down', () => {
+            DialogueSystem.advance(this.session, this.player, i);
+            this.renderCurrentLine();
+          });
+        }
 
         this.choiceTexts.push(txt);
       });

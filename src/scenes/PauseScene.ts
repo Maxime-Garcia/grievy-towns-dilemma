@@ -22,11 +22,14 @@ export class PauseScene extends Phaser.Scene {
 
   create() {
     this.renderUI();
-    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC).once('down', () => this.resume());
   }
 
   private renderUI() {
     this.children.removeAll(true);
+    // Re-register ESC after every render (removeAll destroys nothing but prior once() is now stale)
+    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC)
+      .removeAllListeners()
+      .once('down', () => this.resume());
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
 

@@ -196,6 +196,9 @@ export const KEY_ITEMS: KeyItem[] = [
   { id: 'research_page_earth', name: 'Page de Recherche — Terre', description: 'Notes de Malachar sur Terravast. Densément annotées.', rarity: ItemRarity.UNCOMMON, type: ItemType.KEY_ITEM, icon: 'item_research_page', value: 0, questId: 'sq_07_malachars_notes' },
   { id: 'research_page_wind', name: 'Page de Recherche — Vent', description: 'Notes de Malachar sur Zephyr Peaks. Certains mots sont raturés.', rarity: ItemRarity.UNCOMMON, type: ItemType.KEY_ITEM, icon: 'item_research_page', value: 0, questId: 'sq_07_malachars_notes' },
   { id: 'research_page', name: 'Page de Recherche', description: 'Fragment des notes de Malachar. L\'écriture change vers la fin.', rarity: ItemRarity.UNCOMMON, type: ItemType.KEY_ITEM, icon: 'item_research_page', value: 0, questId: 'sq_07_malachars_notes' },
+  // Lootable zone findings
+  { id: 'dark_tome',       name: 'Tome des Ombres',   description: 'Contient des rites que Malachar ne voulait pas qu\'on retrouve.', rarity: ItemRarity.RARE, type: ItemType.KEY_ITEM, icon: 'item_dark_tome',       value: 500 },
+  { id: 'malachar_notes',  name: 'Notes de Malachar', description: 'Griffonnages en marge d\'un journal de recherche.',               rarity: ItemRarity.RARE, type: ItemType.KEY_ITEM, icon: 'item_malachar_notes',  value: 500 },
 ];
 
 // ── HIDDEN ITEMS (uniques, quasi game-breaker) ─────────────────
@@ -387,6 +390,12 @@ export const EXTRA_WEAPONS: Weapon[] = [
   { id: 'void_bow', name: 'Arc du Vide', description: 'Les flèches disparaissent. Les ennemis aussi.', rarity: ItemRarity.EPIC, type: ItemType.WEAPON, icon: 'item_void_bow', value: 2200, element: ElementType.DARK, weaponType: WeaponType.BOW, damage: 58, magicDamage: 60, bonusStats: { agi: 7, int: 5 }, attackSpeed: 1.1 },
   // Divine
   { id: 'divine_sword', name: 'Épée Sacrée', description: 'Brille d\'une lumière douce. Les démons la fuient.', rarity: ItemRarity.LEGENDARY, type: ItemType.WEAPON, icon: 'item_divine_sword', value: 9500, element: ElementType.DIVINE, weaponType: WeaponType.SWORD, damage: 90, magicDamage: 90, bonusStats: { str: 8, int: 8, vit: 5 }, attackSpeed: 1.1, lore: 'La contre-réponse à Malachar, trouvée trop tard.' },
+  // Zone chest rewards (referenced by zoneMaps lootable pools)
+  { id: 'wind_bow',      name: 'Arc des Sommets',     description: 'Léger comme l\'air de Zephyr Peaks.',       rarity: ItemRarity.UNCOMMON, type: ItemType.WEAPON, icon: 'item_wind_bow',      value: 220, element: ElementType.WIND,      weaponType: WeaponType.BOW,   damage: 30, magicDamage: 18, bonusStats: { agi: 3 }, attackSpeed: 1.3 },
+  { id: 'water_staff',   name: 'Bâton des Abysses',   description: 'Murmure de l\'eau profonde.',               rarity: ItemRarity.UNCOMMON, type: ItemType.WEAPON, icon: 'item_water_staff',   value: 200, element: ElementType.WATER,     weaponType: WeaponType.STAFF, damage: 4,  magicDamage: 40, bonusStats: { int: 3 }, attackSpeed: 0.9 },
+  { id: 'thunder_staff', name: 'Sceptre de Foudre',   description: 'Attire les éclairs de Volterra.',           rarity: ItemRarity.UNCOMMON, type: ItemType.WEAPON, icon: 'item_thunder_staff', value: 240, element: ElementType.LIGHTNING, weaponType: WeaponType.STAFF, damage: 5,  magicDamage: 45, bonusStats: { int: 4 }, attackSpeed: 0.9 },
+  { id: 'frost_staff',   name: 'Sceptre de Givre',    description: 'Chaque frappe refroidit l\'adversaire.',    rarity: ItemRarity.UNCOMMON, type: ItemType.WEAPON, icon: 'item_frost_staff',   value: 230, element: ElementType.ICE,       weaponType: WeaponType.STAFF, damage: 4,  magicDamage: 42, bonusStats: { int: 3, vit: 1 }, attackSpeed: 0.88 },
+  { id: 'earth_tome',    name: 'Tome de la Terre',    description: 'Recueil de sorts géomantiques de Terravast.',rarity: ItemRarity.UNCOMMON, type: ItemType.WEAPON, icon: 'item_earth_tome',    value: 210, element: ElementType.EARTH,     weaponType: WeaponType.STAFF, damage: 4,  magicDamage: 38, bonusStats: { int: 3, end: 1 }, attackSpeed: 0.85 },
 ];
 
 // ── ADDITIONAL ARMORS ───────────────────────────────────────────
@@ -425,8 +434,19 @@ export const EXTRA_ARMORS: Armor[] = [
   { id: 'ice_cape', name: 'Cape du Blizzard', description: 'Absorbe les tempêtes de Glaciem.', rarity: ItemRarity.EPIC, type: ItemType.CAPE, icon: 'item_ice_cape', value: 1400, element: ElementType.ICE, defense: 18, magicDefense: 22, bonusStats: { end: 3, int: 3 } },
   { id: 'dark_cape', name: 'Cape des Ombres', description: 'Se fond dans l\'obscurité.', rarity: ItemRarity.EPIC, type: ItemType.CAPE, icon: 'item_dark_cape', value: 1600, element: ElementType.DARK, defense: 16, magicDefense: 20, bonusStats: { agi: 5, int: 4 } },
   { id: 'divine_cape', name: 'Cape de Lumière', description: 'Tissu divin que les ombres fuient.', rarity: ItemRarity.LEGENDARY, type: ItemType.CAPE, icon: 'item_divine_cape', value: 7000, element: ElementType.DIVINE, defense: 22, magicDefense: 35, bonusStats: { vit: 6, int: 5, end: 4 } },
+  // Zone chest rewards (referenced by zoneMaps lootable pools)
+  { id: 'volcanic_armor',   name: 'Armure Volcanique',  description: 'Forgée dans le magma d\'Ignis Reach.',    rarity: ItemRarity.RARE, type: ItemType.CHEST, icon: 'item_fire_chest',     value: 450, element: ElementType.FIRE,      defense: 28, magicDefense: 10, bonusStats: { end: 2, str: 2 } },
+  { id: 'lightning_armor',  name: 'Armure du Tonnerre', description: 'Conduit l\'électricité sans dommage.',    rarity: ItemRarity.RARE, type: ItemType.CHEST, icon: 'item_storm_plate',    value: 480, element: ElementType.LIGHTNING, defense: 24, magicDefense: 18, bonusStats: { end: 2, agi: 2 } },
+  { id: 'crystal_armor',    name: 'Armure de Cristal',  description: 'Crystallisation de l\'énergie de Glaciem.',rarity: ItemRarity.RARE, type: ItemType.CHEST, icon: 'item_glaciem_chest',  value: 500, element: ElementType.ICE,       defense: 30, magicDefense: 20, bonusStats: { end: 3, vit: 1 } },
 ];
 
+
+// ── SHOP ARMORS (referenced by shops.ts) ──────────────────────
+const SHOP_ARMORS: Armor[] = [
+  { id: 'leather_armor', name: 'Armure de Cuir', description: 'Armure légère en cuir tanné. Fiable pour débuter.', rarity: ItemRarity.COMMON, type: ItemType.CHEST, icon: 'item_leather_chest', value: 55, defense: 8, magicDefense: 3, bonusStats: {} },
+  { id: 'chainmail',     name: 'Cotte de Mailles', description: 'Mailles de fer entrelacées. Bonne protection sans surpoids.', rarity: ItemRarity.UNCOMMON, type: ItemType.CHEST, icon: 'item_iron_chest', value: 160, defense: 18, magicDefense: 5, bonusStats: { end: 1 } },
+  { id: 'iron_shield',   name: 'Bouclier de Fer', description: 'Bouclier robuste forgé à Grievy Town.', rarity: ItemRarity.COMMON, type: ItemType.CHEST, icon: 'item_glacial_shield', value: 70, defense: 12, magicDefense: 2, bonusStats: {} },
+];
 
 // ── EXTRA MATERIALS (needed by new quests/NPCs) ─────────────────
 
@@ -440,6 +460,38 @@ export const EXTRA_MATERIALS: Material[] = [
   { id: 'icebloom_flower', name: 'Fleur de Givre', description: 'Pousse uniquement dans les anfractuosités gelées de Glaciem.', rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_icebloom', value: 40, zone: ElementType.ICE, stackable: true, maxStack: 50 },
   { id: 'void_crystal', name: 'Cristal du Vide', description: 'Transparent mais sombre. Ne reflète rien.', rarity: ItemRarity.RARE, type: ItemType.MATERIAL, icon: 'item_void_crystal', value: 160, zone: ElementType.DARK, stackable: true, maxStack: 20 },
   { id: 'ancient_tome_page', name: 'Page de Tome Ancien', description: 'Fragment d\'un savoir perdu. Ovan en ferait quelque chose.', rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_tome_page', value: 55, stackable: true, maxStack: 30 },
+
+  // ── Zone lootable materials ──────────────────────────────────
+  { id: 'herb',             name: 'Herbe Sauvage',       description: 'Plante médicinale commune.',                       rarity: ItemRarity.COMMON,   type: ItemType.MATERIAL, icon: 'item_herb',           value: 5,   stackable: true, maxStack: 99 },
+  { id: 'wild_root',        name: 'Racine Sauvage',       description: 'Racine arrachée du sol de Grievy Town.',          rarity: ItemRarity.COMMON,   type: ItemType.MATERIAL, icon: 'item_wild_root',      value: 4,   stackable: true, maxStack: 99 },
+  { id: 'rope',             name: 'Corde',                description: 'Corde tressée. Toujours utile.',                  rarity: ItemRarity.COMMON,   type: ItemType.MATERIAL, icon: 'item_rope',           value: 8,   stackable: true, maxStack: 20 },
+  { id: 'coal',             name: 'Charbon',              description: 'Combustible de base pour la forge.',              rarity: ItemRarity.COMMON,   type: ItemType.MATERIAL, icon: 'item_coal',           value: 6,   zone: ElementType.FIRE,      stackable: true, maxStack: 99 },
+  { id: 'obsidian_shard',   name: 'Éclat d\'Obsidienne', description: 'Verre volcanique tranchant.',                     rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_obsidian',       value: 22,  zone: ElementType.FIRE,      stackable: true, maxStack: 50 },
+  { id: 'fire_crystal',     name: 'Cristal de Feu',       description: 'Cristallisation d\'énergie ignée.',               rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_fire_crystal',   value: 35,  zone: ElementType.FIRE,      stackable: true, maxStack: 50 },
+  { id: 'ash_herb',         name: 'Herbe des Cendres',    description: 'Pousse dans les coulées de lave refroidies.',     rarity: ItemRarity.COMMON,   type: ItemType.MATERIAL, icon: 'item_ash_herb',       value: 10,  zone: ElementType.FIRE,      stackable: true, maxStack: 99 },
+  { id: 'fire_essence',     name: 'Essence de Feu',       description: 'Concentration pure de magie ignée.',              rarity: ItemRarity.RARE,     type: ItemType.MATERIAL, icon: 'item_fire_essence',   value: 80,  zone: ElementType.FIRE,      stackable: true, maxStack: 20 },
+  { id: 'earth_crystal',    name: 'Cristal de Terre',     description: 'Formé par millennia de pression tellurique.',     rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_earth_crystal',  value: 30,  zone: ElementType.EARTH,     stackable: true, maxStack: 50 },
+  { id: 'deepstone',        name: 'Pierre Profonde',       description: 'Roche dense extraite des couches inférieures.',  rarity: ItemRarity.COMMON,   type: ItemType.MATERIAL, icon: 'item_deepstone',      value: 15,  zone: ElementType.EARTH,     stackable: true, maxStack: 99 },
+  { id: 'mana_crystal',     name: 'Cristal de Mana',      description: 'Pur concentré d\'énergie magique.',               rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_mana_crystal',   value: 40,  stackable: true, maxStack: 30 },
+  { id: 'ancient_rune',     name: 'Rune Ancienne',         description: 'Glyphe gravé par une civilisation disparue.',    rarity: ItemRarity.RARE,     type: ItemType.MATERIAL, icon: 'item_ancient_rune',   value: 90,  zone: ElementType.EARTH,     stackable: true, maxStack: 10 },
+  { id: 'cave_mushroom',    name: 'Champignon des Caves',  description: 'Bioluminescent, légèrement toxique cru.',        rarity: ItemRarity.COMMON,   type: ItemType.MATERIAL, icon: 'item_cave_mushroom',  value: 7,   zone: ElementType.EARTH,     stackable: true, maxStack: 99 },
+  { id: 'wind_crystal',     name: 'Cristal de Vent',       description: 'Condensation de courants d\'air magique.',       rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_wind_crystal',   value: 32,  zone: ElementType.WIND,      stackable: true, maxStack: 50 },
+  { id: 'skystone',         name: 'Pierre du Ciel',        description: 'Météorite tombée sur Zephyr Peaks.',              rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_skystone',       value: 45,  zone: ElementType.WIND,      stackable: true, maxStack: 30 },
+  { id: 'wind_flower',      name: 'Fleur du Vent',         description: 'Pétales qui flottent sans tomber.',              rarity: ItemRarity.COMMON,   type: ItemType.MATERIAL, icon: 'item_wind_flower',    value: 9,   zone: ElementType.WIND,      stackable: true, maxStack: 99 },
+  { id: 'cloud_herb',       name: 'Herbe Nuageuse',        description: 'Légère comme une brise, arôme de montagne.',    rarity: ItemRarity.COMMON,   type: ItemType.MATERIAL, icon: 'item_cloud_herb',     value: 8,   zone: ElementType.WIND,      stackable: true, maxStack: 99 },
+  { id: 'phoenix_feather',  name: 'Plume de Phénix',       description: 'Relique rarissime, chaude au toucher.',          rarity: ItemRarity.RARE,     type: ItemType.MATERIAL, icon: 'item_phoenix_feather',value: 200, zone: ElementType.WIND,      stackable: true, maxStack: 5  },
+  { id: 'sea_kelp',         name: 'Varech Marin',          description: 'Algue des profondeurs d\'Abyssmar.',             rarity: ItemRarity.COMMON,   type: ItemType.MATERIAL, icon: 'item_sea_kelp',       value: 6,   zone: ElementType.WATER,     stackable: true, maxStack: 99 },
+  { id: 'thalymor_shard',   name: 'Éclat de Thalymor',     description: 'Fragment de l\'exosquelette du Léviathan.',      rarity: ItemRarity.RARE,     type: ItemType.MATERIAL, icon: 'item_thalymor_shard', value: 120, zone: ElementType.WATER,     stackable: true, maxStack: 10 },
+  { id: 'deep_coral',       name: 'Corail Profond',        description: 'Corail vivant de l\'Abysse.',                    rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_deep_coral',     value: 25,  zone: ElementType.WATER,     stackable: true, maxStack: 50 },
+  { id: 'leviathan_scale',  name: 'Écaille de Léviathan',  description: 'Armure naturelle arrachée au colosse abyssal.', rarity: ItemRarity.EPIC,     type: ItemType.MATERIAL, icon: 'item_leviathan_scale',value: 350, zone: ElementType.WATER,     stackable: true, maxStack: 5  },
+  { id: 'volt_crystal',     name: 'Cristal Voltaïque',     description: 'Conduit l\'électricité sans résistance.',        rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_volt_crystal',   value: 38,  zone: ElementType.LIGHTNING, stackable: true, maxStack: 50 },
+  { id: 'copper_coil',      name: 'Bobine de Cuivre',      description: 'Composant des installations de Volterra.',      rarity: ItemRarity.COMMON,   type: ItemType.MATERIAL, icon: 'item_copper_coil',    value: 12,  zone: ElementType.LIGHTNING, stackable: true, maxStack: 99 },
+  { id: 'refined_copper',   name: 'Cuivre Raffiné',        description: 'Alliage conducteur de haute qualité.',          rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_refined_copper', value: 28,  zone: ElementType.LIGHTNING, stackable: true, maxStack: 50 },
+  { id: 'glaciem_ice_shard',name: 'Éclat de Glace Éternelle', description: 'Glace de Glaciem qui ne fond jamais.',       rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_glaciem_ice',    value: 35,  zone: ElementType.ICE,       stackable: true, maxStack: 50 },
+  { id: 'frozen_essence',   name: 'Essence Gelée',         description: 'Magie de Glaciem compressée en cristal.',       rarity: ItemRarity.RARE,     type: ItemType.MATERIAL, icon: 'item_frozen_essence', value: 85,  zone: ElementType.ICE,       stackable: true, maxStack: 20 },
+  { id: 'ancient_frost_rune', name: 'Rune de Givre Ancien', description: 'Rune gravée dans la glace par l\'archiviste.', rarity: ItemRarity.RARE,     type: ItemType.MATERIAL, icon: 'item_frost_rune',     value: 100, zone: ElementType.ICE,       stackable: true, maxStack: 10 },
+  { id: 'void_shard',       name: 'Éclat du Vide',         description: 'Matière sombre arrachée à la Flèche.',           rarity: ItemRarity.EPIC,     type: ItemType.MATERIAL, icon: 'item_void_shard',     value: 300, zone: ElementType.DARK,      stackable: true, maxStack: 5  },
+  { id: 'chaos_crystal',    name: 'Cristal du Chaos',      description: 'Stabilisé par magie seulement — éphémère.',     rarity: ItemRarity.EPIC,     type: ItemType.MATERIAL, icon: 'item_chaos_crystal',  value: 400, zone: ElementType.DARK,      stackable: true, maxStack: 5  },
 ];
 
 // ── ITEM REGISTRY ──────────────────────────────────────────────
@@ -448,7 +500,7 @@ export const ALL_ITEMS: Record<string, import('../types').Item> = {};
 [
   ...WEAPONS, ...ARMORS, ...ACCESSORIES, ...CONSUMABLES, ...MATERIALS, ...KEY_ITEMS,
   ...HIDDEN_WEAPONS, ...HIDDEN_ARMORS, ...HIDDEN_ACCESSORIES,
-  ...SKINS, ...EXTRA_WEAPONS, ...EXTRA_ARMORS, ...EXTRA_MATERIALS,
+  ...SKINS, ...EXTRA_WEAPONS, ...EXTRA_ARMORS, ...EXTRA_MATERIALS, ...SHOP_ARMORS,
 ].forEach(item => {
   ALL_ITEMS[item.id] = item as import('../types').Item;
 });

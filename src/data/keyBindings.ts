@@ -21,7 +21,7 @@ export const DEFAULT_BINDINGS: KeyBindings = {
   left:      Phaser.Input.Keyboard.KeyCodes.Q,
   right:     Phaser.Input.Keyboard.KeyCodes.D,
   attack:    Phaser.Input.Keyboard.KeyCodes.W,
-  dash:      Phaser.Input.Keyboard.KeyCodes.SHIFT,
+  dash:      Phaser.Input.Keyboard.KeyCodes.SPACE,
   skill1:    Phaser.Input.Keyboard.KeyCodes.ONE,
   skill2:    Phaser.Input.Keyboard.KeyCodes.TWO,
   skill3:    Phaser.Input.Keyboard.KeyCodes.THREE,

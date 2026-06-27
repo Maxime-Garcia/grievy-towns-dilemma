@@ -337,6 +337,25 @@ export class GameScene extends Phaser.Scene {
     };
     this.attackKey = kb.addKey(b.attack);
     this.dashKey   = kb.addKey(b.dash);
+    this.skillKeys = {
+      a: kb.addKey(b.skill1),
+      e: kb.addKey(b.skill2),
+      r: kb.addKey(b.skill3),
+      f: kb.addKey(b.skill4),
+    };
+    // Rewire inventory / skill menu keys with their handlers
+    this.inventoryKey?.removeAllListeners();
+    this.skillMenuKey?.removeAllListeners();
+    this.inventoryKey = kb.addKey(b.inventory);
+    this.skillMenuKey = kb.addKey(b.skills);
+    this.inventoryKey.on('down', () => {
+      if (this.scene.isActive('InventoryScene')) this.scene.stop('InventoryScene');
+      else this.scene.launch('InventoryScene', { gameScene: this });
+    });
+    this.skillMenuKey.on('down', () => {
+      if (this.scene.isActive('SkillScene')) this.scene.stop('SkillScene');
+      else this.scene.launch('SkillScene', { gameScene: this });
+    });
   }
 
   // ── NPC ──────────────────────────────────────────────────────
@@ -859,32 +878,15 @@ export class GameScene extends Phaser.Scene {
       r: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.R),
       f: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.F),
     };
-    this.attackKey    = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W);
-    this.dashKey      = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    this.inventoryKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.I);
-    this.skillMenuKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.K);
+    // ESC → pause menu (persistent handler, cleaned up by shutdown's removeAllKeys)
     this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC).on('down', () => {
       if (!this.isInDialogue && !this.scene.isActive('PauseScene')) {
         this.setPaused(true);
         this.scene.launch('PauseScene', { gameScene: this });
       }
     });
-
-    this.inventoryKey.on('down', () => {
-      if (this.scene.isActive('InventoryScene')) {
-        this.scene.stop('InventoryScene');
-      } else {
-        this.scene.launch('InventoryScene', { gameScene: this });
-      }
-    });
-
-    this.skillMenuKey.on('down', () => {
-      if (this.scene.isActive('SkillScene')) {
-        this.scene.stop('SkillScene');
-      } else {
-        this.scene.launch('SkillScene', { gameScene: this });
-      }
-    });
+    // Remaining keys (attack, dash, inventory, skill menu, skill slots)
+    // are all wired by applyKeyBindings() called right after setupInput().
   }
 
   private setupCamera() {
