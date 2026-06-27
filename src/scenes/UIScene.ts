@@ -165,6 +165,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private onPlayerUpdate(player: PlayerState) {
+    if (!this.sys.isActive()) return;
     const W = this.cameras.main.width;
 
     this.playerNameText.setText(player.name);

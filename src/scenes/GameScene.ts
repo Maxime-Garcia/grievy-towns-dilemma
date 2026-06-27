@@ -390,13 +390,23 @@ export class GameScene extends Phaser.Scene {
   public goToMainMenu() {
     if (this.isTraveling) return;
     this.isTraveling = true;
-    // Fade out first, then navigate — avoids stopping scenes mid-frame
     this.physics.world.pause();
+
+    // Stop overlay scenes immediately so they don't render during the fade
+    for (const key of ['PauseScene', 'InventoryScene', 'SkillScene', 'DialogueScene', 'ShopScene']) {
+      if (this.scene.isActive(key) || this.scene.isPaused(key)) this.scene.stop(key);
+    }
+
+    // GameScene may be paused (called from PauseScene). Camera.update() doesn't run
+    // on a paused scene, so FADE_OUT_COMPLETE would never fire. Resume the scene so
+    // the camera can animate — isTraveling=true blocks all gameplay side-effects.
+    if (this.scene.isPaused()) this.scene.resume();
+
     this.cameras.main.once(
       Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
       () => {
-        for (const key of ['PauseScene', 'InventoryScene', 'SkillScene', 'DialogueScene', 'ShopScene', 'UIScene']) {
-          if (this.scene.isActive(key) || this.scene.isPaused(key)) this.scene.stop(key);
+        if (this.scene.isActive('UIScene') || this.scene.isPaused('UIScene')) {
+          this.scene.stop('UIScene');
         }
         this.time.delayedCall(0, () => this.scene.start('MainMenuScene'));
       },
@@ -1547,7 +1557,9 @@ export class GameScene extends Phaser.Scene {
 
     // Physics was paused in travelToZone/onPlayerDeath — safe to resume now
     this.physics.world.resume();
-    this.isTraveling = false;
+    // isTraveling stays true here — cleared in FADE_IN_COMPLETE (300ms later).
+    // Clearing it early lets teleport overlaps fire on the very next physics step,
+    // which immediately triggers another fade-out and causes the black-screen loop.
 
     this.events.emit('player_update', this.gameState.player);
 
@@ -1560,13 +1572,17 @@ export class GameScene extends Phaser.Scene {
     }
 
     // cameras.main.fade() leaves a persistent black overlay (alpha=1) even after
-    // FADE_OUT_COMPLETE fires. A rectangle+tween is rendered BELOW that overlay
-    // so the screen stays black. fadeIn() properly clears the camera's own overlay.
+    // FADE_OUT_COMPLETE fires. fadeIn() reverses the effect properly.
+    // isTraveling is cleared only once the fade-in completes so teleport overlaps
+    // cannot retrigger while the screen is still animating in.
+    this.cameras.main.once(
+      Phaser.Cameras.Scene2D.Events.FADE_IN_COMPLETE,
+      () => { this.isTraveling = false; },
+    );
     this.cameras.main.fadeIn(300, 0, 0, 0);
 
     } catch (err) {
       console.error('[GameScene] performZoneTransition threw:', err);
-      // Recovery: always resume so the game is not permanently frozen
       try { this.physics.world.resume(); } catch (_) {}
       this.isTraveling = false;
       this.cameras.main.fadeIn(300, 0, 0, 0);
