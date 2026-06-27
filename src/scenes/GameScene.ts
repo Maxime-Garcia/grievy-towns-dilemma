@@ -301,6 +301,10 @@ export class GameScene extends Phaser.Scene {
     SkillSystem.startCooldown(this.cooldowns, skillId);
   }
 
+  // ── PUBLIC API FOR SUBSCENES ─────────────────────────────────
+
+  public setShopOpen(open: boolean) { this.isInDialogue = open; }
+
   // ── NPC ──────────────────────────────────────────────────────
 
   private startNPCDialogue(npcId: string) {
@@ -312,12 +316,12 @@ export class GameScene extends Phaser.Scene {
       player: this.gameState.player,
       onClose: () => {
         this.isInDialogue = false;
-        // Handle dialogue triggers
         const flags = this.gameState.player.flags;
+
         if (flags['save_game']) {
           delete flags['save_game'];
           SaveSystem.save(this.gameState, this.gameState.saveSlot);
-          this.events.emit('show_notification', 'Game saved.');
+          this.events.emit('show_notification', 'Partie sauvegardée.');
         }
         if (flags['rest_inn']) {
           delete flags['rest_inn'];
@@ -326,8 +330,20 @@ export class GameScene extends Phaser.Scene {
             this.gameState.player.stats.hp   = this.gameState.player.stats.maxHp;
             this.gameState.player.stats.mana = this.gameState.player.stats.maxMana;
             this.events.emit('player_update', this.gameState.player);
-            this.events.emit('show_notification', 'Rested. HP and Mana fully restored.');
+            this.events.emit('show_notification', 'Repos terminé — PV et Mana restaurés.');
+          } else {
+            this.events.emit('show_notification', 'Or insuffisant. (20 G)');
           }
+        }
+
+        // open_shop / open_shop_<npcId>: set by NPC dialogue trigger
+        const shopFlagKey = Object.keys(flags).find(k => k === 'open_shop' || k.startsWith('open_shop_'));
+        if (shopFlagKey) {
+          // Derive npcId from flag name (open_shop_theron → theron) or fall back to current npc
+          const shopNpcId = shopFlagKey.startsWith('open_shop_') ? shopFlagKey.slice('open_shop_'.length) : npcId;
+          delete flags[shopFlagKey];
+          this.isInDialogue = true;
+          this.scene.launch('ShopScene', { gameScene: this, npcId: shopNpcId });
         }
       },
     });
