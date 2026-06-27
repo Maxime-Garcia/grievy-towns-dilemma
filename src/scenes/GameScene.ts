@@ -388,6 +388,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   public goToMainMenu() {
+    if (this.isTraveling) return;
+    this.isTraveling = true;
     // Fade out first, then navigate — avoids stopping scenes mid-frame
     this.physics.world.pause();
     this.cameras.main.once(
@@ -1518,6 +1520,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private performZoneTransition(zoneId: string, targetX: number, targetY: number) {
+    try {
     this.gameState.player.currentZone = zoneId;
     this.gameState.player.position    = { x: targetX, y: targetY };
     this.layout = getZoneLayout(zoneId);
@@ -1556,15 +1559,18 @@ export class GameScene extends Phaser.Scene {
       this.events.emit('zone_entered', zone);
     }
 
-    const { width: W, height: H } = this.cameras.main;
-    const fadeRect = this.add.rectangle(W / 2, H / 2, W, H, 0x000000)
-      .setDepth(999).setScrollFactor(0);
-    this.tweens.add({
-      targets: fadeRect,
-      alpha: 0,
-      duration: 300,
-      onComplete: () => fadeRect.destroy(),
-    });
+    // cameras.main.fade() leaves a persistent black overlay (alpha=1) even after
+    // FADE_OUT_COMPLETE fires. A rectangle+tween is rendered BELOW that overlay
+    // so the screen stays black. fadeIn() properly clears the camera's own overlay.
+    this.cameras.main.fadeIn(300, 0, 0, 0);
+
+    } catch (err) {
+      console.error('[GameScene] performZoneTransition threw:', err);
+      // Recovery: always resume so the game is not permanently frozen
+      try { this.physics.world.resume(); } catch (_) {}
+      this.isTraveling = false;
+      this.cameras.main.fadeIn(300, 0, 0, 0);
+    }
   }
 
   shutdown() {
