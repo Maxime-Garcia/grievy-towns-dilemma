@@ -53,6 +53,8 @@ export class GameScene extends Phaser.Scene {
   private readonly XP_ATTRACT_RANGE = 96;
 
   private activeEnemies: Map<string, ActiveEnemy> = new Map();
+  private enemyHpBars: Map<string, { bg: Phaser.GameObjects.Rectangle; bar: Phaser.GameObjects.Rectangle; baseW: number }> = new Map();
+  private enemyCrowns: Map<string, Phaser.GameObjects.Text> = new Map();
   private cooldowns: Record<string, number> = {};
   private dashCooldown = 0;
   private isDashing = false;
@@ -78,6 +80,8 @@ export class GameScene extends Phaser.Scene {
     this.nearbyNPC      = null;
     this.nearbyLootable = null;
     this.activeEnemies  = new Map();
+    this.enemyHpBars    = new Map();
+    this.enemyCrowns    = new Map();
     this.cooldowns      = {};
     this.dashCooldown   = 0;
     this.isDashing      = false;
@@ -354,6 +358,21 @@ export class GameScene extends Phaser.Scene {
 
       const timer = (sprite.getData('attackTimer') ?? 0) - dt;
       sprite.setData('attackTimer', Math.max(0, timer));
+
+      // Update HP bar position and fill
+      const barData = this.enemyHpBars.get(active.instanceId);
+      if (barData) {
+        const dispH  = sprite.displayHeight;
+        const barY   = sprite.y - dispH / 2 - 8;
+        const hpPct  = Math.max(0, active.currentHp / active.maxHp);
+        barData.bg.setPosition(sprite.x, barY);
+        barData.bar.setPosition(sprite.x - barData.baseW / 2, barY);
+        barData.bar.setSize(Math.max(1, barData.baseW * hpPct), 4);
+      }
+      const crown = this.enemyCrowns.get(active.instanceId);
+      if (crown) {
+        crown.setPosition(sprite.x, sprite.y - sprite.displayHeight / 2 - 18);
+      }
     });
   }
 
@@ -364,6 +383,15 @@ export class GameScene extends Phaser.Scene {
     if (!enemyDef) return;
 
     this.activeEnemies.delete(activeEnemy.instanceId);
+
+    const barData = this.enemyHpBars.get(activeEnemy.instanceId);
+    if (barData) { barData.bg.destroy(); barData.bar.destroy(); this.enemyHpBars.delete(activeEnemy.instanceId); }
+    const crown = this.enemyCrowns.get(activeEnemy.instanceId);
+    if (crown) { crown.destroy(); this.enemyCrowns.delete(activeEnemy.instanceId); }
+
+    // XP bonus for elites
+    const xpMult = activeEnemy.isElite ? 2.5 : 1;
+
     sprite.destroy();
 
     const loot = LootSystem.rollLoot(
@@ -377,7 +405,7 @@ export class GameScene extends Phaser.Scene {
       this.events.emit('item_looted', { item, quantity });
     }
 
-    this.spawnXpOrbs(sprite.x, sprite.y, loot.xp);
+    this.spawnXpOrbs(sprite.x, sprite.y, Math.floor(loot.xp * xpMult));
 
     const questCompleted = QuestSystem.onEnemyKilled(this.gameState.player, activeEnemy.enemyId);
     for (const itemLoot of loot.items) {
@@ -666,31 +694,59 @@ export class GameScene extends Phaser.Scene {
     if (!zone || zone.enemies.length === 0) return;
 
     const enemyColor = ZONE_ENEMY_COLORS[zoneId] ?? 0xaa4444;
+    const eliteColor = Phaser.Display.Color.IntegerToColor(enemyColor).brighten(30).color;
     const { mapWidth, mapHeight } = this.layout;
 
     for (const enemyId of zone.enemies) {
       const def = ENEMY_MAP[enemyId];
       if (!def || def.isBoss) continue;
 
-      const texKey = `enemy_${enemyId}`;
+      const texKey      = `enemy_${enemyId}`;
+      const texKeyElite = `enemy_${enemyId}_elite`;
       this.ensureTexture(texKey, enemyColor);
+      this.ensureTexture(texKeyElite, eliteColor, 44, 44);
 
       const count = Math.floor(def.spawnWeight * 4);
       for (let i = 0; i < count; i++) {
-        const ex = Phaser.Math.Between(100, mapWidth - 100);
-        const ey = Phaser.Math.Between(100, mapHeight - 100);
+        const isElite = Math.random() < 0.20;
+        const ex = Phaser.Math.Between(150, mapWidth - 150);
+        const ey = Phaser.Math.Between(150, mapHeight - 150);
 
-        const sprite = this.physics.add.sprite(ex, ey, texKey);
-        sprite.setDisplaySize(28, 28);
-        (sprite.body as Phaser.Physics.Arcade.Body).setSize(24, 24);
+        const sprite = this.physics.add.sprite(ex, ey, isElite ? texKeyElite : texKey);
+        const dispSize = isElite ? 44 : 28;
+        sprite.setDisplaySize(dispSize, dispSize);
+        (sprite.body as Phaser.Physics.Arcade.Body).setSize(dispSize - 4, dispSize - 4);
         sprite.setDepth(4);
 
         const active = CombatSystem.spawnEnemy(def, this.gameState.player.level);
-        active.x = ex;
-        active.y = ey;
+        active.x       = ex;
+        active.y       = ey;
+        active.isElite = isElite;
+        if (isElite) {
+          active.currentHp = Math.floor(active.currentHp * 1.5);
+          active.maxHp     = Math.floor(active.maxHp     * 1.5);
+          active.stats     = { ...active.stats, baseAtk: Math.floor(active.stats.baseAtk * 1.4) };
+        }
         sprite.name = active.instanceId;
         this.activeEnemies.set(active.instanceId, active);
         this.enemies.add(sprite);
+
+        // HP bar (bg + foreground)
+        const barW = dispSize + 4;
+        const barBg  = this.add.rectangle(ex, ey - dispSize / 2 - 8, barW, 6, 0x220000).setDepth(8);
+        const barFg  = this.add.rectangle(
+          ex - barW / 2, ey - dispSize / 2 - 8, barW, 4, isElite ? 0xff8800 : 0xff2222,
+        ).setDepth(9).setOrigin(0, 0.5);
+        this.enemyHpBars.set(active.instanceId, { bg: barBg, bar: barFg, baseW: barW });
+
+        // Crown for elites
+        if (isElite) {
+          const crown = this.add.text(ex, ey - dispSize / 2 - 18, '♛', {
+            fontSize: '12px', color: '#ffdd00',
+            stroke: '#000000', strokeThickness: 2,
+          }).setOrigin(0.5, 1).setDepth(10);
+          this.enemyCrowns.set(active.instanceId, crown);
+        }
       }
     }
   }
