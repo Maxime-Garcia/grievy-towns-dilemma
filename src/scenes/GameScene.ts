@@ -11,6 +11,7 @@ import { ZONE_MAP } from '../data/zones';
 import { NPC_MAP } from '../data/npcs';
 import { getZoneLayout, ZoneLayout, LootableObject } from '../data/zoneMaps';
 import { ALL_ITEMS } from '../data/items';
+import { loadBindings, KeyBindings } from '../data/keyBindings';
 
 const NPC_COLORS: Record<string, number> = {
   aldric:       0xaaaaaa,
@@ -106,6 +107,7 @@ export class GameScene extends Phaser.Scene {
     this.createLootables();
     this.createXpOrbsGroup();
     this.setupInput();
+    this.applyKeyBindings(loadBindings());
     this.setupCamera();
     this.setupPhysics();
 
@@ -304,6 +306,38 @@ export class GameScene extends Phaser.Scene {
   // ── PUBLIC API FOR SUBSCENES ─────────────────────────────────
 
   public setShopOpen(open: boolean) { this.isInDialogue = open; }
+
+  public setPaused(paused: boolean) {
+    if (paused) {
+      this.physics.world.pause();
+      this.scene.pause();
+    } else {
+      this.physics.world.resume();
+      this.scene.resume();
+    }
+  }
+
+  public openInventory() {
+    if (this.scene.isActive('InventoryScene')) return;
+    this.scene.launch('InventoryScene', { player: this.gameState.player, gameState: this.gameState });
+  }
+
+  public openSkills() {
+    if (this.scene.isActive('SkillScene')) return;
+    this.scene.launch('SkillScene', { player: this.gameState.player });
+  }
+
+  public applyKeyBindings(b: KeyBindings) {
+    const kb = this.input.keyboard!;
+    this.wasd = {
+      up:    kb.addKey(b.up),
+      down:  kb.addKey(b.down),
+      left:  kb.addKey(b.left),
+      right: kb.addKey(b.right),
+    };
+    this.attackKey = kb.addKey(b.attack);
+    this.dashKey   = kb.addKey(b.dash);
+  }
 
   // ── NPC ──────────────────────────────────────────────────────
 
@@ -829,6 +863,12 @@ export class GameScene extends Phaser.Scene {
     this.dashKey      = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.inventoryKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.I);
     this.skillMenuKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.K);
+    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC).on('down', () => {
+      if (!this.isInDialogue && !this.scene.isActive('PauseScene')) {
+        this.setPaused(true);
+        this.scene.launch('PauseScene', { gameScene: this });
+      }
+    });
 
     this.inventoryKey.on('down', () => {
       if (this.scene.isActive('InventoryScene')) {

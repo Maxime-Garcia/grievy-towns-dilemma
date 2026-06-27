@@ -11,6 +11,7 @@ import { InventoryScene } from './scenes/InventoryScene';
 import { SkillScene }     from './scenes/SkillScene';
 import { EndingScene }    from './scenes/EndingScene';
 import { ShopScene }      from './scenes/ShopScene';
+import { PauseScene }     from './scenes/PauseScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -43,6 +44,7 @@ const config: Phaser.Types.Core.GameConfig = {
     SkillScene,
     EndingScene,
     ShopScene,
+    PauseScene,
   ],
 };
 
