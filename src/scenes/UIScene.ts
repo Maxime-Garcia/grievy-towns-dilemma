@@ -133,17 +133,19 @@ export class UIScene extends Phaser.Scene {
     this.gameScene.events.on('quest_completed', this.onQuestCompleted,  this);
     this.gameScene.events.on('skill_unlocked',  this.onSkillUnlocked,   this);
     this.gameScene.events.on('zone_cleared',    this.onZoneCleared,     this);
-    this.gameScene.events.on('zone_entered',    this.onZoneEntered,     this);
+    this.gameScene.events.on('zone_entered',      this.onZoneEntered,      this);
+    this.gameScene.events.on('show_notification', this.onShowNotification, this);
   }
 
   shutdown() {
-    this.gameScene.events.off('player_update',   this.onPlayerUpdate,    this);
-    this.gameScene.events.off('level_up',        this.onLevelUp,         this);
-    this.gameScene.events.off('item_looted',     this.onItemLooted,      this);
-    this.gameScene.events.off('quest_completed', this.onQuestCompleted,  this);
-    this.gameScene.events.off('skill_unlocked',  this.onSkillUnlocked,   this);
-    this.gameScene.events.off('zone_cleared',    this.onZoneCleared,     this);
-    this.gameScene.events.off('zone_entered',    this.onZoneEntered,     this);
+    this.gameScene.events.off('player_update',    this.onPlayerUpdate,     this);
+    this.gameScene.events.off('level_up',         this.onLevelUp,          this);
+    this.gameScene.events.off('item_looted',      this.onItemLooted,       this);
+    this.gameScene.events.off('quest_completed',  this.onQuestCompleted,   this);
+    this.gameScene.events.off('skill_unlocked',   this.onSkillUnlocked,    this);
+    this.gameScene.events.off('zone_cleared',     this.onZoneCleared,      this);
+    this.gameScene.events.off('zone_entered',     this.onZoneEntered,      this);
+    this.gameScene.events.off('show_notification',this.onShowNotification, this);
   }
 
   update(_time: number, delta: number) {
@@ -240,6 +242,10 @@ export class UIScene extends Phaser.Scene {
 
   private onZoneCleared(zone: any) {
     this.pushNotif(`${zone.name} — Zone libérée`, '#ff8844');
+  }
+
+  private onShowNotification(msg: string) {
+    this.pushNotif(msg, '#aaddff');
   }
 
   private onZoneEntered(zone: any) {

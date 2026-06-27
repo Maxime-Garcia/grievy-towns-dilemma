@@ -61,7 +61,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       { x: 1564, y: 800,  w: 36,  h: 200, targetZone: 'volterra',     targetX: 100,  targetY: 600,  label: '→ Volterra'     },
       { x: 580,  y: 1164, w: 440, h: 36,  targetZone: 'zephyr_peaks', targetX: 1000, targetY: 100,  label: '↓ Zephyr Peaks' },
       { x: 0,    y: 280,  w: 36,  h: 440, targetZone: 'abyssmar',     targetX: 1880, targetY: 600,  label: '← Abyssmar'     },
-      { x: 0,    y: 800,  w: 36,  h: 200, targetZone: 'glaciem',      targetX: 1880, targetY: 600,  label: '← Glaciem'      },
+      { x: 0,    y: 800,  w: 36,  h: 200, targetZone: 'glaciem',      targetX: 1880, targetY: 700,  label: '← Glaciem'      },
     ],
     spawnX: 800, spawnY: 600,
   },
@@ -162,7 +162,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
     ],
     npcs: [],
     teleports: [
-      { x: W2-40, y: 380, w: 40, h: 440, targetZone: 'grievy_town', targetX: 36, targetY: 600, label: '→ Grievy Town' },
+      { x: W2-40, y: 380, w: 40, h: 440, targetZone: 'grievy_town', targetX: 72, targetY: 600, label: '→ Grievy Town' },
     ],
     spawnX: 100, spawnY: 600,
   },
@@ -186,7 +186,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
     ],
     npcs: [],
     teleports: [
-      { x: W2-40, y: 380, w: 40, h: 440, targetZone: 'grievy_town', targetX: 36, targetY: 900, label: '→ Grievy Town' },
+      { x: W2-40, y: 380, w: 40, h: 440, targetZone: 'grievy_town', targetX: 72, targetY: 900, label: '→ Grievy Town' },
     ],
     spawnX: 100, spawnY: 600,
   },
@@ -212,7 +212,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       { id: 'elara', x: 1000, y: 1000 },
     ],
     teleports: [
-      { x: W2-40, y: 380, w: 40, h: 440, targetZone: 'grievy_town', targetX: 36, targetY: 900, label: '→ Grievy Town' },
+      { x: W2-40, y: 380, w: 40, h: 440, targetZone: 'grievy_town', targetX: 72, targetY: 900, label: '→ Grievy Town' },
     ],
     spawnX: 100, spawnY: 600,
   },
@@ -242,7 +242,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
     ],
     npcs: [],
     teleports: [
-      { x: 880, y: H2-40, w: 240, h: 40, targetZone: 'grievy_town', targetX: 800, targetY: 72, label: '↓ Retreat' },
+      { x: 880, y: H2-40, w: 240, h: 40, targetZone: 'grievy_town', targetX: 800, targetY: 200, label: '↓ Retreat' },
     ],
     spawnX: 1000, spawnY: H2 - 200,
   },

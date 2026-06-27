@@ -108,7 +108,7 @@ export class SaveSystem {
   }
 
   static createNewGamePlus(previous: GameState, choice: EndingChoice): GameState {
-    const fresh = this.createNewGame(previous.player.name);
+    const fresh = this.createNewGame(previous.player.name, previous.saveSlot);
     fresh.player.isNewGamePlus = true;
     fresh.player.ngPlusCount   = previous.player.ngPlusCount + 1;
     if (choice === EndingChoice.ERASE) {

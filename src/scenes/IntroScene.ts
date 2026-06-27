@@ -137,6 +137,11 @@ export class IntroScene extends Phaser.Scene {
     this.hintText.setColor(isLast ? '#887744' : '#444433');
   }
 
+  shutdown() {
+    this.input.keyboard?.removeAllKeys(true);
+    this.input.off('pointerdown');
+  }
+
   private advance() {
     if (!this.canAdvance) return;
     this.lineIndex++;
