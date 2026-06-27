@@ -88,8 +88,10 @@ export class GameScene extends Phaser.Scene {
     this.enemyHpBars    = new Map();
     this.enemyCrowns    = new Map();
     this.lootableLooted = new Set();
-    this.cooldowns      = {};
-    this.dashCooldown   = 0;
+    this.cooldowns           = {};
+    this.dashCooldown        = 0;
+    this.playtimeAccumulator = 0;
+    this.lastAutoSave        = 0;
     this.isDashing      = false;
     this.lastDirX       = 0;
     this.lastDirY       = 1;

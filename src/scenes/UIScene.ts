@@ -1,4 +1,4 @@
-import { PlayerState, ItemRarity, RARITY_COLORS } from '../types';
+import { PlayerState, Item, ItemRarity, RARITY_COLORS } from '../types';
 import { GameScene } from './GameScene';
 import { SKILL_MAP } from '../data/skills';
 import { ZONE_MAP } from '../data/zones';
@@ -223,9 +223,9 @@ export class UIScene extends Phaser.Scene {
     this.pushNotif(`✦ Level ${level} ! ✦`, '#ffffaa');
   }
 
-  private onItemLooted({ item, quantity }: { item: any; quantity: number }) {
+  private onItemLooted({ item, quantity }: { item: Item; quantity: number }) {
     const colorMap: Partial<Record<ItemRarity, string>> = RARITY_COLORS;
-    const color = colorMap[item.rarity as ItemRarity] ?? '#ffffff';
+    const color = colorMap[item.rarity] ?? '#ffffff';
     if (item.rarity !== ItemRarity.COMMON) {
       this.pushNotif(`[${item.rarity}] ${item.name} ×${quantity}`, color);
     }

@@ -348,7 +348,7 @@ export const QUESTS: Quest[] = [
     giverId: 'brenn',
     objectives: [
       { id: 'obj1', description: 'Fouiller les ruines du culte de Pyrath', type: 'EXPLORE', targetId: 'ignis_reach', quantity: 1, current: 0, completed: false },
-      { id: 'obj2', description: 'Vaincre le Gardien de la relique', type: 'KILL', targetId: 'pyrath_guardian', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Vaincre le Titan de Magma gardien', type: 'KILL', targetId: 'magma_titan', quantity: 1, current: 0, completed: false },
       { id: 'obj3', description: 'Rapporter la relique à Brenn', type: 'DELIVER', targetId: 'brenn', quantity: 1, current: 0, completed: false },
     ],
     rewards: { xp: 500, gold: 200, items: [{ itemId: 'ember_core', quantity: 8 }, { itemId: 'iron_sword', quantity: 1 }] },
@@ -427,7 +427,7 @@ export const QUESTS: Quest[] = [
     giverId: 'windherald_smith',
     objectives: [
       { id: 'obj1', description: 'Atteindre le temple de Sylvael', type: 'EXPLORE', targetId: 'zephyr_peaks', quantity: 1, current: 0, completed: false },
-      { id: 'obj2', description: 'Tuer 4 Harpies Sylvael gardiennes', type: 'KILL', targetId: 'sylvael_harpy', quantity: 4, current: 0, completed: false },
+      { id: 'obj2', description: 'Tuer 4 Harpies de Bourrasque gardiennes', type: 'KILL', targetId: 'gale_harpy', quantity: 4, current: 0, completed: false },
       { id: 'obj3', description: 'Récupérer 2 Plumes de Sylvael', type: 'COLLECT', targetId: 'sylvael_plume', quantity: 2, current: 0, completed: false },
       { id: 'obj4', description: 'Rapporter les plumes à Ayle', type: 'DELIVER', targetId: 'windherald_smith', quantity: 1, current: 0, completed: false },
     ],
@@ -477,7 +477,7 @@ export const QUESTS: Quest[] = [
     giverId: 'wreck_smith',
     objectives: [
       { id: 'obj1', description: 'Localiser l\'épave du Roi des Mers', type: 'EXPLORE', targetId: 'abyssmar', quantity: 1, current: 0, completed: false },
-      { id: 'obj2', description: 'Tuer le Gardien des profondeurs', type: 'KILL', targetId: 'thalymor_guardian', quantity: 1, current: 0, completed: false },
+      { id: 'obj2', description: 'Tuer le Chevalier Noyé gardien', type: 'KILL', targetId: 'drowned_knight', quantity: 1, current: 0, completed: false },
       { id: 'obj3', description: 'Récupérer 2 Écailles de Thalymor', type: 'COLLECT', targetId: 'thalymor_scale', quantity: 2, current: 0, completed: false },
       { id: 'obj4', description: 'Rapporter à Boro', type: 'DELIVER', targetId: 'wreck_smith', quantity: 1, current: 0, completed: false },
     ],
@@ -494,7 +494,7 @@ export const QUESTS: Quest[] = [
     giverId: 'circuit_smith',
     objectives: [
       { id: 'obj1', description: 'Trouver le générateur central de Volterra', type: 'EXPLORE', targetId: 'volterra', quantity: 1, current: 0, completed: false },
-      { id: 'obj2', description: 'Tuer 4 Golems Électriques gardiens', type: 'KILL', targetId: 'electric_golem', quantity: 4, current: 0, completed: false },
+      { id: 'obj2', description: 'Tuer 4 Hérauts de Tempête gardiens', type: 'KILL', targetId: 'storm_herald', quantity: 4, current: 0, completed: false },
       { id: 'obj3', description: 'Récupérer 10 unités de Métal Chargé', type: 'COLLECT', targetId: 'charged_metal', quantity: 10, current: 0, completed: false },
       { id: 'obj4', description: 'Rapporter à Rek', type: 'DELIVER', targetId: 'circuit_smith', quantity: 1, current: 0, completed: false },
     ],

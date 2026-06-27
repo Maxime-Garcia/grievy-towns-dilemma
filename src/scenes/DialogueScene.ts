@@ -10,6 +10,7 @@ export class DialogueScene extends Phaser.Scene {
   private speakerText!: Phaser.GameObjects.Text;
   private bodyText!: Phaser.GameObjects.Text;
   private choiceTexts: Phaser.GameObjects.Text[] = [];
+  private choiceKeys:  Phaser.Input.Keyboard.Key[] = [];
   private portrait!: Phaser.GameObjects.Image;
   private advanceKey!: Phaser.Input.Keyboard.Key;
   private escKey!: Phaser.Input.Keyboard.Key;
@@ -75,9 +76,11 @@ export class DialogueScene extends Phaser.Scene {
     const line = DialogueSystem.getCurrentLine(this.session, this.player);
     if (!line) { this.closeDialogue(); return; }
 
-    // Clear old choices
+    // Clear old choices and their keyboard listeners
     this.choiceTexts.forEach(t => t.destroy());
     this.choiceTexts = [];
+    this.choiceKeys.forEach(k => k.removeAllListeners());
+    this.choiceKeys = [];
 
     this.speakerText.setText(line.speaker);
     this.bodyText.setText(line.text);
@@ -107,10 +110,12 @@ export class DialogueScene extends Phaser.Scene {
           Phaser.Input.Keyboard.KeyCodes.FOUR,
         ];
         if (numKeyCodes[i] !== undefined) {
-          this.input.keyboard!.addKey(numKeyCodes[i]).once('down', () => {
+          const numKey = this.input.keyboard!.addKey(numKeyCodes[i]);
+          numKey.once('down', () => {
             DialogueSystem.advance(this.session, this.player, i);
             this.renderCurrentLine();
           });
+          this.choiceKeys.push(numKey);
         }
 
         this.choiceTexts.push(txt);
