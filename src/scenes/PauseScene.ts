@@ -70,8 +70,8 @@ export class PauseScene extends Phaser.Scene {
       this.add.text(W / 2, y, item.label, {
         fontSize: '14px', color: item.color ?? '#ffffff', fontFamily: 'monospace',
       }).setOrigin(0.5);
-      btn.on('pointerover', () => btn.setFillColor(0x222244));
-      btn.on('pointerout',  () => btn.setFillColor(0x111122));
+      btn.on('pointerover', () => btn.setFillStyle(0x222244));
+      btn.on('pointerout',  () => btn.setFillStyle(0x111122));
       btn.on('pointerdown', item.action);
     });
   }

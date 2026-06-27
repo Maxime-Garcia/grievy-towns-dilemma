@@ -595,7 +595,7 @@ export class GameScene extends Phaser.Scene {
 
   private generatePixelTexture() {
     if (!this.textures.exists('_px')) {
-      const g = this.make.graphics({ x: 0, y: 0, add: false });
+      const g = this.make.graphics({ x: 0, y: 0, add: false } as any);
       g.fillStyle(0xffffff);
       g.fillRect(0, 0, 1, 1);
       g.generateTexture('_px', 1, 1);
@@ -605,7 +605,7 @@ export class GameScene extends Phaser.Scene {
 
   private ensureTexture(key: string, color: number, w = 32, h = 32) {
     if (this.textures.exists(key)) return;
-    const g = this.make.graphics({ x: 0, y: 0, add: false });
+    const g = this.make.graphics({ x: 0, y: 0, add: false } as any);
     g.fillStyle(color);
     g.fillRect(2, 2, w - 4, h - 4);
     g.lineStyle(2, 0x000000, 0.5);
@@ -909,7 +909,7 @@ export class GameScene extends Phaser.Scene {
 
   private createXpOrbsGroup() {
     if (!this.textures.exists('xp_orb')) {
-      const g = this.make.graphics({ x: 0, y: 0, add: false });
+      const g = this.make.graphics({ x: 0, y: 0, add: false } as any);
       g.fillStyle(0x88ffee);
       g.fillCircle(5, 5, 5);
       g.generateTexture('xp_orb', 10, 10);
