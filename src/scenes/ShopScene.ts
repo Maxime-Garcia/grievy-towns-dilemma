@@ -81,10 +81,10 @@ export class ShopScene extends Phaser.Scene {
       }).setOrigin(0, 0.5).setDepth(2);
 
       bg.on('pointerover', () => {
-        if (this.gameScene.gameState.player.gold >= entry.price) bg.setFillColor(0x222244);
+        if (this.gameScene.gameState.player.gold >= entry.price) bg.setFillStyle(0x222244);
       });
       bg.on('pointerout', () => {
-        bg.setFillColor(this.gameScene.gameState.player.gold >= entry.price ? 0x111122 : 0x0a0a0a);
+        bg.setFillStyle(this.gameScene.gameState.player.gold >= entry.price ? 0x111122 : 0x0a0a0a);
       });
       bg.on('pointerdown', () => this.buyItem(entry, i));
     });
@@ -122,7 +122,7 @@ export class ShopScene extends Phaser.Scene {
       const price = this.rowPrices[i];
       if (!bg || !name || !price) return;
       const canAfford = player.gold >= e.price;
-      bg.setFillColor(canAfford ? 0x111122 : 0x0a0a0a);
+      bg.setFillStyle(canAfford ? 0x111122 : 0x0a0a0a);
       bg.input!.cursor = canAfford ? 'pointer' : 'default';
       name.setStyle({ color: canAfford ? '#ffffff' : '#665544' });
       price.setStyle({ color: canAfford ? '#ffdd44' : '#554433' });
