@@ -102,10 +102,10 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
 
     // Teleports now lead to route zones, not directly to combat zones
     teleports: [
-      { x: 1060, y: 0,    w: 200, h: 40, targetZone: 'route_stone_path',    targetX: 800,      targetY: H1-80,  label: '↑ Terravast'    },
-      { x: 1060, y: H1-40,w: 200, h: 40, targetZone: 'route_zephyr_trail',  targetX: 800,      targetY: 80,     label: '↓ Zephyr Peaks' },
-      { x: W1-40,y: 240,  w: 40,  h: 400,targetZone: 'route_ember_road',    targetX: 72,       targetY: 640,    label: '→ Ignis Reach'  },
-      { x: W1-40,y: 820,  w: 40,  h: 360,targetZone: 'route_thunder_pass',  targetX: 72,       targetY: 640,    label: '→ Volterra'     },
+      { x: 1060, y: 0,    w: 200, h: 40, targetZone: 'route_stone_path',    targetX: 800,      targetY: 80,     label: '↑ Terravast'    },
+      { x: 1060, y: H1-40,w: 200, h: 40, targetZone: 'route_zephyr_trail',  targetX: 800,      targetY: 1520,   label: '↓ Zephyr Peaks' },
+      { x: W1-40,y: 240,  w: 40,  h: 400,targetZone: 'route_ember_road',    targetX: 120,      targetY: 640,    label: '→ Ignis Reach'  },
+      { x: W1-40,y: 820,  w: 40,  h: 360,targetZone: 'route_thunder_pass',  targetX: 120,      targetY: 640,    label: '→ Volterra'     },
       { x: 0,    y: 240,  w: 40,  h: 400,targetZone: 'route_coastal_road',  targetX: 1560-72,  targetY: 640,    label: '← Abyssmar'     },
       { x: 0,    y: 820,  w: 40,  h: 360,targetZone: 'route_frost_way',     targetX: 1560-72,  targetY: 640,    label: '← Glaciem'      },
     ],
@@ -184,7 +184,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       // Retour vers la route des Braises (qui mène à Grievy Town)
       { x: 0,    y: 380,  w: 40,  h: 440, targetZone: 'route_ember_road',   targetX: 1560-72, targetY: 640,  label: '← Route des Braises' },
       // Connexion vers le Pont de Lave (qui mène à Volterra)
-      { x: 3960, y: 380,  w: 40,  h: 440, targetZone: 'route_lava_bridge',  targetX: 72,      targetY: 640,  label: '→ Pont de Lave'      },
+      { x: 3960, y: 380,  w: 40,  h: 440, targetZone: 'route_lava_bridge',  targetX: 120,     targetY: 640,  label: '→ Pont de Lave'      },
     ],
 
     lootables: [
@@ -262,7 +262,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
 
     teleports: [
       // Retour vers le Chemin de Pierre (qui mène à Grievy Town)
-      { x: 1060, y: 0,    w: 200, h: 40, targetZone: 'route_stone_path', targetX: 800, targetY: H1-80, label: '↑ Chemin de Pierre' },
+      { x: 1060, y: 0,    w: 200, h: 40, targetZone: 'route_stone_path', targetX: 800, targetY: 1520, label: '↑ Chemin de Pierre' },
     ],
 
     lootables: [
@@ -486,7 +486,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
 
     teleports: [
       // Retour vers le Col du Tonnerre (qui mène à Grievy Town)
-      { x: W2-40, y: 1380, w: 40, h: 440, targetZone: 'route_thunder_pass', targetX: 72, targetY: 640, label: '→ Col du Tonnerre' },
+      { x: W2-40, y: 1380, w: 40, h: 440, targetZone: 'route_thunder_pass', targetX: 120, targetY: 640, label: '→ Col du Tonnerre' },
       // Connexion vers le Pont de Lave (qui mène à Ignis Reach)
       { x: W2-40, y: 80,   w: 40, h: 300, targetZone: 'route_lava_bridge',  targetX: 1560-72, targetY: 640, label: '→ Pont de Lave'    },
     ],
@@ -632,7 +632,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
 
     teleports: [
       // Retour vers la Descente des Ombres (qui mène à Glaciem)
-      { x: 1060, y: H2-40, w: 200, h: 40, targetZone: 'route_dark_descent', targetX: 72, targetY: 640, label: '↓ Descente des Ombres' },
+      { x: 1060, y: H2-40, w: 200, h: 40, targetZone: 'route_dark_descent', targetX: 120, targetY: 640, label: '↓ Descente des Ombres' },
     ],
 
     lootables: [
@@ -841,7 +841,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       // Côté Zephyr Peaks (bord nord)
       { x: 640, y: 0,    w: 280, h: 40, targetZone: 'zephyr_peaks', targetX: 1200, targetY: H2-160, label: '↑ Zephyr Peaks' },
       // Côté Grievy Town (bord sud)
-      { x: 640, y: 1560, w: 280, h: 40, targetZone: 'grievy_town',  targetX: 1180, targetY: H1-80,  label: '↓ Grievy Town'  },
+      { x: 640, y: 1560, w: 280, h: 40, targetZone: 'grievy_town',  targetX: 1180, targetY: 1700,   label: '↓ Grievy Town'  },
     ],
 
     lootables: [
@@ -851,7 +851,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       { id: 'rzt_plant_2',   type: 'plant',   x: 980,  y: 1000, itemPool: ['cloud_herb', 'wind_flower'],         goldMin: 6,  goldMax: 14 },
     ],
 
-    spawnX: 800, spawnY: H1-80,
+    spawnX: 800, spawnY: 1520,
   },
 
   // ── ROUTE CÔTIÈRE (Grievy Town ↔ Abyssmar) ───────────────────────────────────
