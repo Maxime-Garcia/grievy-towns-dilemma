@@ -543,6 +543,42 @@ export const ZONES: Zone[] = [
   },
 
   {
+    id: 'route_underground_river',
+    name: 'Rivière Souterraine',
+    description: 'Un réseau de galeries obscures où coule une rivière silencieuse reliant les profondeurs de Terravast aux abysses d\'Abyssmar.',
+    element: ElementType.WATER,
+    recommendedLevel: 15,
+    mapKey: 'map_route_underground_river',
+    enemies: ['cave_lurker', 'tide_crawler'],
+    bossId: '',
+    divine: { id: 'none', name: 'None', title: '', element: ElementType.NEUTRAL, sprite: '', lore: '' },
+    unlockedSkills: [],
+    materials: ['deepstone', 'deep_coral', 'thalymor_shard'],
+    ambientColor: 0x020810,
+    musicKey: 'music_abyssmar',
+    lore: 'Les géologues de Terravast et les pêcheurs d\'Abyssmar savaient tous deux qu\'un réseau de galeries reliait leurs territoires. Ni l\'un ni l\'autre camp ne s\'y aventurait. Ils avaient passé un accord tacite. La rivière qui coulait dans ces galeries charrierait des minerais le matin, et des créatures marines le soir. Cette rivière n\'avait pas de nom. Maintenant elle en a besoin.',
+    worldPosition: { x: 410, y: 420 }
+  },
+
+  {
+    id: 'route_storm_crossing',
+    name: 'Crête de Tempête',
+    description: 'Un col exposé à l\'intersection des vents de Zephyr et de l\'électricité de Volterra. Tempête permanente. Les éclairs ne s\'arrêtent jamais.',
+    element: ElementType.LIGHTNING,
+    recommendedLevel: 18,
+    mapKey: 'map_route_storm_crossing',
+    enemies: ['gale_harpy', 'spark_imp'],
+    bossId: '',
+    divine: { id: 'none', name: 'None', title: '', element: ElementType.NEUTRAL, sprite: '', lore: '' },
+    unlockedSkills: [],
+    materials: ['volt_crystal', 'skystone', 'zephyr_feather'],
+    ambientColor: 0x080830,
+    musicKey: 'music_volterra',
+    lore: 'La Crête de Tempête n\'a jamais été habitée. Elle était simplement là — un col infranchissable que les cartographes indiquaient avec un triangle de danger et passaient à autre chose. Depuis que Sylvael et Volkran ont perdu le contrôle de leurs territoires, les tempêtes et les éclairs se sont mélangés. Ce que traverse le joueur aujourd\'hui n\'est plus un passage. C\'est une collision permanente entre deux puissances qui ont oublié de se contrôler.',
+    worldPosition: { x: 445, y: 220 }
+  },
+
+  {
     id: 'route_dark_descent',
     name: 'Descente des Ombres',
     description: 'Une route creusée dans la glace noire qui descend vers la Flèche de Malachar. Les murs sont translucides. Il y a des formes à l\'intérieur.',
@@ -557,7 +593,7 @@ export const ZONES: Zone[] = [
     ambientColor: 0x110022,
     musicKey: 'music_malachars_spire',
     lore: 'Malachar a construit cette route avant que quiconque comprenne ce qu\'il préparait. Elle part des limites de Glaciem et descend vingt ans de travail souterrain jusqu\'à la base de la Flèche. Les gens de Glaciem croyaient que c\'était un tunnel d\'archive. Crysthea laissait faire. Elle avait tout vu venir. Elle n\'a rien dit.',
-    worldPosition: { x: 290, y: 240 }
+    worldPosition: { x: 290, y: 260 }
   },
 ];
 

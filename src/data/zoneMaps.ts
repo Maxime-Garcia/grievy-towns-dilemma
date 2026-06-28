@@ -102,8 +102,8 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
 
     // Teleports now lead to route zones, not directly to combat zones
     teleports: [
-      { x: 1060, y: 0,    w: 200, h: 40, targetZone: 'route_stone_path',    targetX: 800,      targetY: 80,     label: '↑ Terravast'    },
-      { x: 1060, y: H1-40,w: 200, h: 40, targetZone: 'route_zephyr_trail',  targetX: 800,      targetY: 1520,   label: '↓ Zephyr Peaks' },
+      { x: 1060, y: 0,    w: 200, h: 40, targetZone: 'route_stone_path',    targetX: 800,      targetY: 200,    label: '↑ Terravast'    },
+      { x: 1060, y: H1-40,w: 200, h: 40, targetZone: 'route_zephyr_trail',  targetX: 800,      targetY: 1400,   label: '↓ Zephyr Peaks' },
       { x: W1-40,y: 240,  w: 40,  h: 400,targetZone: 'route_ember_road',    targetX: 120,      targetY: 640,    label: '→ Ignis Reach'  },
       { x: W1-40,y: 820,  w: 40,  h: 360,targetZone: 'route_thunder_pass',  targetX: 120,      targetY: 640,    label: '→ Volterra'     },
       { x: 0,    y: 240,  w: 40,  h: 400,targetZone: 'route_coastal_road',  targetX: 1560-72,  targetY: 640,    label: '← Abyssmar'     },
@@ -262,9 +262,9 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
 
     teleports: [
       // Retour vers le Chemin de Pierre (qui mène à Grievy Town)
-      { x: 1060, y: 0,    w: 200, h: 40, targetZone: 'route_stone_path',         targetX: 800, targetY: 1520, label: '↑ Chemin de Pierre'    },
+      { x: 1060, y: 0,    w: 200, h: 40, targetZone: 'route_stone_path',         targetX: 800, targetY: 1400, label: '↑ Chemin de Pierre'    },
       // Connexion vers la Rivière Souterraine (qui mène à Abyssmar)
-      { x: 0,    y: 1400, w: 40,  h: 200, targetZone: 'route_underground_river', targetX: 1520, targetY: 720, label: '← Rivière Souterraine' },
+      { x: 40,   y: 1400, w: 40,  h: 200, targetZone: 'route_underground_river', targetX: 1200, targetY: 720, label: '← Rivière Souterraine' },
     ],
 
     lootables: [
@@ -337,9 +337,9 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
 
     teleports: [
       // Retour vers le Sentier de Zephyr (qui mène à Grievy Town)
-      { x: 1060,   y: H2-40, w: 200, h: 40,  targetZone: 'route_zephyr_trail',  targetX: 800,      targetY: 80,  label: '↓ Sentier de Zephyr'   },
+      { x: 1060,   y: H2-40, w: 200, h: 40,  targetZone: 'route_zephyr_trail',  targetX: 800,      targetY: 200,  label: '↓ Sentier de Zephyr'   },
       // Connexion vers la Crête de Tempête (qui mène à Volterra)
-      { x: W2-40,  y: 2600,  w: 40,  h: 400, targetZone: 'route_storm_crossing', targetX: 800,     targetY: 80,  label: '→ Crête de Tempête'    },
+      { x: W2-40,  y: 2600,  w: 40,  h: 400, targetZone: 'route_storm_crossing', targetX: 800,     targetY: 200,  label: '→ Crête de Tempête'    },
     ],
 
     lootables: [
@@ -417,7 +417,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       // Retour vers la Route Côtière (qui mène à Grievy Town)
       { x: W2-40, y: 380,        w: 40,  h: 440, targetZone: 'route_coastal_road',     targetX: 1560-72, targetY: 640,  label: '→ Route Côtière'         },
       // Connexion vers la Rivière Souterraine (qui mène à Terravast)
-      { x: 1000,  y: H2-40,      w: 200, h: 40,  targetZone: 'route_underground_river', targetX: 80,     targetY: 720,  label: '↓ Rivière Souterraine'   },
+      { x: 1000,  y: H2-40,      w: 200, h: 40,  targetZone: 'route_underground_river', targetX: 200,    targetY: 720,  label: '↓ Rivière Souterraine'   },
     ],
 
     lootables: [
@@ -496,7 +496,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       // Connexion vers le Pont de Lave (qui mène à Ignis Reach)
       { x: W2-40, y: 80,   w: 40,  h: 300, targetZone: 'route_lava_bridge',    targetX: 1560-72,  targetY: 640, label: '→ Pont de Lave'          },
       // Connexion vers la Crête de Tempête (qui mène à Zephyr Peaks)
-      { x: 2200,  y: 0,    w: 400, h: 40,  targetZone: 'route_storm_crossing', targetX: 800,      targetY: 1520, label: '↑ Crête de Tempête'     },
+      { x: 2200,  y: 40,   w: 400, h: 40,  targetZone: 'route_storm_crossing', targetX: 800,      targetY: 1400, label: '↑ Crête de Tempête'     },
     ],
 
     lootables: [
@@ -790,10 +790,10 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
     npcs: [],
 
     teleports: [
-      // Côté Grievy Town (bord nord)
-      { x: 680, y: 0,    w: 240, h: 40, targetZone: 'grievy_town', targetX: 1180, targetY: 80,     label: '↑ Grievy Town' },
-      // Côté Terravast (bord sud)
-      { x: 680, y: 1560, w: 240, h: 40, targetZone: 'terravast',   targetX: 1200, targetY: H2-80,  label: '↓ Terravast'   },
+      // Côté Grievy Town (40px dans la zone jouable pour éviter le FP-overlap au mur)
+      { x: 680, y: 40,   w: 240, h: 40, targetZone: 'grievy_town', targetX: 1180, targetY: 200,    label: '↑ Grievy Town' },
+      // Côté Terravast (40px dans la zone jouable pour éviter le FP-overlap au mur)
+      { x: 680, y: 1520, w: 240, h: 40, targetZone: 'terravast',   targetX: 1200, targetY: H2-200, label: '↓ Terravast'   },
     ],
 
     lootables: [
@@ -805,7 +805,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       { id: 'rsp_shrine_1',  type: 'shrine',  x: 200,  y: 760,  itemPool: [],                                    goldMin: 15, goldMax: 35 },
     ],
 
-    spawnX: 800, spawnY: 80,
+    spawnX: 800, spawnY: 800,
   },
 
   // ── SENTIER DE ZEPHYR (Grievy Town ↔ Zephyr Peaks) ──────────────────────────
@@ -871,10 +871,10 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
     npcs: [],
 
     teleports: [
-      // Côté Zephyr Peaks (bord nord)
-      { x: 640, y: 0,    w: 280, h: 40, targetZone: 'zephyr_peaks', targetX: 1200, targetY: H2-160, label: '↑ Zephyr Peaks' },
-      // Côté Grievy Town (bord sud)
-      { x: 640, y: 1560, w: 280, h: 40, targetZone: 'grievy_town',  targetX: 1180, targetY: 1700,   label: '↓ Grievy Town'  },
+      // Côté Zephyr Peaks (40px dans la zone jouable)
+      { x: 640, y: 40,   w: 280, h: 40, targetZone: 'zephyr_peaks', targetX: 1200, targetY: H2-160, label: '↑ Zephyr Peaks' },
+      // Côté Grievy Town (40px dans la zone jouable)
+      { x: 640, y: 1520, w: 280, h: 40, targetZone: 'grievy_town',  targetX: 1180, targetY: 1400,   label: '↓ Grievy Town'  },
     ],
 
     lootables: [
@@ -884,7 +884,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       { id: 'rzt_plant_2',   type: 'plant',   x: 980,  y: 1000, itemPool: ['cloud_herb', 'wind_flower'],         goldMin: 6,  goldMax: 14 },
     ],
 
-    spawnX: 800, spawnY: 1520,
+    spawnX: 800, spawnY: 800,
   },
 
   // ── ROUTE CÔTIÈRE (Grievy Town ↔ Abyssmar) ───────────────────────────────────
@@ -1295,10 +1295,10 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
     npcs: [],
 
     teleports: [
-      // Côté Terravast (bord est)
-      { x: 1560, y: 640, w: 40, h: 200, targetZone: 'terravast', targetX: 120,  targetY: 1600, label: '→ Terravast'  },
-      // Côté Abyssmar (bord ouest, niveau bas)
-      { x: 0,    y: 720, w: 40, h: 200, targetZone: 'abyssmar',  targetX: 1200, targetY: 3040, label: '← Abyssmar'   },
+      // Côté Terravast (40px dans la zone jouable)
+      { x: 1520, y: 640, w: 40, h: 200, targetZone: 'terravast', targetX: 500,  targetY: 1100, label: '→ Terravast'  },
+      // Côté Abyssmar (40px dans la zone jouable)
+      { x: 40,   y: 720, w: 40, h: 200, targetZone: 'abyssmar',  targetX: 400,  targetY: 2000, label: '← Abyssmar'   },
     ],
 
     lootables: [
@@ -1308,7 +1308,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       { id: 'rur_chest_1',   type: 'chest',   x: 780,  y: 540,  itemPool: ['minor_health_potion', 'thalymor_shard', 'deepstone'], goldMin: 30, goldMax: 65 },
     ],
 
-    spawnX: 1520, spawnY: 720,
+    spawnX: 800, spawnY: 720,
   },
 
   // ── CRÊTE DE TEMPÊTE (Zephyr Peaks ↔ Volterra) ──────────────────────────────
@@ -1382,10 +1382,10 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
     npcs: [],
 
     teleports: [
-      // Côté Zephyr Peaks (bord nord)
-      { x: 640,  y: 0,    w: 200, h: 40, targetZone: 'zephyr_peaks', targetX: 3840, targetY: 2800, label: '↑ Zephyr Peaks' },
-      // Côté Volterra (bord sud)
-      { x: 640,  y: 1560, w: 200, h: 40, targetZone: 'volterra',     targetX: 2400, targetY: 120,  label: '↓ Volterra'     },
+      // Côté Zephyr Peaks (40px dans la zone jouable)
+      { x: 640,  y: 40,   w: 200, h: 40, targetZone: 'zephyr_peaks', targetX: 2800, targetY: 1350, label: '↑ Zephyr Peaks' },
+      // Côté Volterra (40px dans la zone jouable)
+      { x: 640,  y: 1520, w: 200, h: 40, targetZone: 'volterra',     targetX: 2400, targetY: 120,  label: '↓ Volterra'     },
     ],
 
     lootables: [
@@ -1394,7 +1394,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       { id: 'rsc_chest_1',   type: 'chest',   x: 760,  y: 620,  itemPool: ['minor_health_potion', 'volt_crystal', 'skystone'], goldMin: 28, goldMax: 58 },
     ],
 
-    spawnX: 800, spawnY: 80,
+    spawnX: 800, spawnY: 800,
   },
 };
 
@@ -1417,7 +1417,7 @@ export function getZoneLayout(zoneId: string): ZoneLayout {
       npcs: [],
       lootables: [],
       teleports: [
-        { x: 780, y: 0, w: 200, h: 40, targetZone: 'grievy_town', targetX: 1180, targetY: 80, label: '↑ Grievy Town' },
+        { x: 780, y: 40, w: 200, h: 40, targetZone: 'grievy_town', targetX: 1180, targetY: 200, label: '↑ Grievy Town' },
       ],
     };
   }
