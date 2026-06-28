@@ -251,6 +251,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private onZoneEntered(zone: any) {
+    if (!this.sys.isActive()) return;
     this.zoneText.setText(zone.name);
     this.tweens.add({ targets: this.zoneText, alpha: 1, duration: 400 });
     this.time.delayedCall(3500, () => {

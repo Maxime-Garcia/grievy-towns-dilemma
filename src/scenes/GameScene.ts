@@ -174,7 +174,11 @@ export class GameScene extends Phaser.Scene {
       const completed = QuestSystem.onZoneEntered(this.gameState.player, zoneId);
       if (completed.length > 0) this.handleQuestCompletions(completed);
       this.applyWorldDegradation();
-      this.events.emit('zone_entered', zone);
+      // Defer by one frame: in Phaser 3.90 scene.launch() may run UIScene.create()
+      // synchronously before this line, registering its listener. At that point the
+      // Text canvas is not yet fully committed, so setText() crashes with
+      // "Cannot read properties of null (reading 'drawImage')".
+      this.time.delayedCall(0, () => this.events.emit('zone_entered', zone));
     }
   }
 
@@ -392,26 +396,31 @@ export class GameScene extends Phaser.Scene {
     this.isTraveling = true;
     this.physics.world.pause();
 
-    // Stop overlay scenes immediately so they don't render during the fade
+    // Stop overlay scenes immediately
     for (const key of ['PauseScene', 'InventoryScene', 'SkillScene', 'DialogueScene', 'ShopScene']) {
       if (this.scene.isActive(key) || this.scene.isPaused(key)) this.scene.stop(key);
     }
 
-    // GameScene may be paused (called from PauseScene). Camera.update() doesn't run
-    // on a paused scene, so FADE_OUT_COMPLETE would never fire. Resume the scene so
-    // the camera can animate — isTraveling=true blocks all gameplay side-effects.
-    if (this.scene.isPaused()) this.scene.resume();
+    // GameScene may be paused (called from PauseScene via scene.pause()).
+    // camera.update() only runs on RUNNING scenes, so FADE_OUT_COMPLETE would
+    // never fire if we start the fade while paused. Resume the scene first.
+    // scene.resume() is *queued* (takes effect next frame), so we wrap the
+    // fade in delayedCall(0) — it fires after processQueue() in that same frame,
+    // when GameScene is actually running again.
+    if (this.sys.isPaused()) this.scene.resume();
 
-    this.cameras.main.once(
-      Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
-      () => {
-        if (this.scene.isActive('UIScene') || this.scene.isPaused('UIScene')) {
-          this.scene.stop('UIScene');
-        }
-        this.time.delayedCall(0, () => this.scene.start('MainMenuScene'));
-      },
-    );
-    this.cameras.main.fade(300, 0, 0, 0);
+    this.time.delayedCall(0, () => {
+      this.cameras.main.once(
+        Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
+        () => {
+          if (this.scene.isActive('UIScene') || this.scene.isPaused('UIScene')) {
+            this.scene.stop('UIScene');
+          }
+          this.time.delayedCall(0, () => this.scene.start('MainMenuScene'));
+        },
+      );
+      this.cameras.main.fade(300, 0, 0, 0);
+    });
   }
 
   public applyKeyBindings(b: KeyBindings) {
