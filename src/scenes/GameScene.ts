@@ -62,6 +62,8 @@ export class GameScene extends Phaser.Scene {
   private inventoryKey!: Phaser.Input.Keyboard.Key;
   private skillMenuKey!: Phaser.Input.Keyboard.Key;
   private escKey!: Phaser.Input.Keyboard.Key;
+  private speedBoostKey!: Phaser.Input.Keyboard.Key;
+  private debugSpeedMult = 1;
 
   private xpOrbs!: Phaser.Physics.Arcade.Group;
   private readonly XP_ATTRACT_RANGE = 96;
@@ -239,8 +241,10 @@ export class GameScene extends Phaser.Scene {
   private handleMovement(dt: number) {
     if (this.isDashing) return; // Don't override velocity during dash
 
+    this.debugSpeedMult = this.speedBoostKey?.isDown ? 5 : 1;
+
     const player = this.gameState.player;
-    const speed  = 90 + player.stats.spd * 4;
+    const speed  = (90 + player.stats.spd * 4) * this.debugSpeedMult;
     const body   = this.player.body as Phaser.Physics.Arcade.Body;
     let vx = 0, vy = 0;
 
@@ -1299,6 +1303,8 @@ export class GameScene extends Phaser.Scene {
         this.scene.launch('PauseScene', { gameScene: this });
       }
     });
+    // Debug: hold B to move at 5× speed
+    this.speedBoostKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.B);
     // Remaining keys (attack, dash, inventory, skill menu, skill slots)
     // are all wired by applyKeyBindings() called right after setupInput().
   }

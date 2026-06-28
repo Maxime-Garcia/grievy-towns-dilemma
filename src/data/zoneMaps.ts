@@ -262,7 +262,9 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
 
     teleports: [
       // Retour vers le Chemin de Pierre (qui mène à Grievy Town)
-      { x: 1060, y: 0,    w: 200, h: 40, targetZone: 'route_stone_path', targetX: 800, targetY: 1520, label: '↑ Chemin de Pierre' },
+      { x: 1060, y: 0,    w: 200, h: 40, targetZone: 'route_stone_path',         targetX: 800, targetY: 1520, label: '↑ Chemin de Pierre'    },
+      // Connexion vers la Rivière Souterraine (qui mène à Abyssmar)
+      { x: 0,    y: 1400, w: 40,  h: 200, targetZone: 'route_underground_river', targetX: 1520, targetY: 720, label: '← Rivière Souterraine' },
     ],
 
     lootables: [
@@ -335,7 +337,9 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
 
     teleports: [
       // Retour vers le Sentier de Zephyr (qui mène à Grievy Town)
-      { x: 1060, y: H2-40, w: 200, h: 40, targetZone: 'route_zephyr_trail', targetX: 800, targetY: 80, label: '↓ Sentier de Zephyr' },
+      { x: 1060,   y: H2-40, w: 200, h: 40,  targetZone: 'route_zephyr_trail',  targetX: 800,      targetY: 80,  label: '↓ Sentier de Zephyr'   },
+      // Connexion vers la Crête de Tempête (qui mène à Volterra)
+      { x: W2-40,  y: 2600,  w: 40,  h: 400, targetZone: 'route_storm_crossing', targetX: 800,     targetY: 80,  label: '→ Crête de Tempête'    },
     ],
 
     lootables: [
@@ -411,7 +415,9 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
 
     teleports: [
       // Retour vers la Route Côtière (qui mène à Grievy Town)
-      { x: W2-40, y: 380, w: 40, h: 440, targetZone: 'route_coastal_road', targetX: 1560-72, targetY: 640, label: '→ Route Côtière' },
+      { x: W2-40, y: 380,        w: 40,  h: 440, targetZone: 'route_coastal_road',     targetX: 1560-72, targetY: 640,  label: '→ Route Côtière'         },
+      // Connexion vers la Rivière Souterraine (qui mène à Terravast)
+      { x: 1000,  y: H2-40,      w: 200, h: 40,  targetZone: 'route_underground_river', targetX: 80,     targetY: 720,  label: '↓ Rivière Souterraine'   },
     ],
 
     lootables: [
@@ -486,9 +492,11 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
 
     teleports: [
       // Retour vers le Col du Tonnerre (qui mène à Grievy Town)
-      { x: W2-40, y: 1380, w: 40, h: 440, targetZone: 'route_thunder_pass', targetX: 120, targetY: 640, label: '→ Col du Tonnerre' },
+      { x: W2-40, y: 1380, w: 40,  h: 440, targetZone: 'route_thunder_pass',   targetX: 120,      targetY: 640, label: '→ Col du Tonnerre'      },
       // Connexion vers le Pont de Lave (qui mène à Ignis Reach)
-      { x: W2-40, y: 80,   w: 40, h: 300, targetZone: 'route_lava_bridge',  targetX: 1560-72, targetY: 640, label: '→ Pont de Lave'    },
+      { x: W2-40, y: 80,   w: 40,  h: 300, targetZone: 'route_lava_bridge',    targetX: 1560-72,  targetY: 640, label: '→ Pont de Lave'          },
+      // Connexion vers la Crête de Tempête (qui mène à Zephyr Peaks)
+      { x: 2200,  y: 0,    w: 400, h: 40,  targetZone: 'route_storm_crossing', targetX: 800,      targetY: 1520, label: '↑ Crête de Tempête'     },
     ],
 
     lootables: [
@@ -676,6 +684,13 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       { x: 400, y: 360, w: 600,  h: 80  },
       // Élargissement à l'approche d'Ignis Reach
       { x: 1100,y: 440, w: 500,  h: 320 },
+      // Branche sud — contourne les formations de lave par le bas (carrefour au milieu)
+      { x: 200, y: 760, w: 200,  h: 200 },  // Descente vers le carrefour sud
+      { x: 200, y: 920, w: 900,  h: 160 },  // Couloir bas E-W
+      { x: 1060,y: 760, w: 200,  h: 360 },  // Remontée vers le chemin principal
+      // Carrefour central (jonction nord / sud)
+      { x: 380, y: 720, w: 220,  h: 220 },
+      { x: 1000,y: 680, w: 160,  h: 220 },
     ],
 
     walls: [
@@ -736,9 +751,15 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
     paths: [
       // Chemin principal N-S
       { x: 720, y: 0,    w: 160, h: 1600 },
-      // Bifurcation ouest (ruines)
-      { x: 320, y: 500,  w: 440, h: 160  },
-      { x: 320, y: 500,  w: 160, h: 400  },
+      // Bifurcation ouest (ruines) — agrandie
+      { x: 280, y: 480,  w: 480, h: 200  },
+      { x: 280, y: 480,  w: 160, h: 480  },
+      { x: 280, y: 920,  w: 480, h: 160  },  // Retour vers le chemin principal (bas)
+      // Salle de repos (zone élargie dans les ruines)
+      { x: 100, y: 620,  w: 360, h: 300  },
+      // Passage nord alternatif (contourne par l'est)
+      { x: 880, y: 200,  w: 200, h: 400  },
+      { x: 880, y: 200,  w: 360, h: 160  },
       // Élargissement vers Terravast (bas)
       { x: 600, y: 1200, w: 500, h: 360  },
     ],
@@ -780,6 +801,8 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       { id: 'rsp_plant_1',   type: 'plant',   x: 820,  y: 300,  itemPool: ['cave_mushroom', 'herb'],             goldMin: 5,  goldMax: 12 },
       { id: 'rsp_chest_1',   type: 'chest',   x: 350,  y: 800,  itemPool: ['minor_health_potion', 'deepstone'],  goldMin: 20, goldMax: 45 },
       { id: 'rsp_mineral_2', type: 'mineral', x: 1050, y: 1100, itemPool: ['earth_crystal', 'iron_ore'],         goldMin: 12, goldMax: 25 },
+      // Salle de repos dans les ruines (bifurcation ouest)
+      { id: 'rsp_shrine_1',  type: 'shrine',  x: 200,  y: 760,  itemPool: [],                                    goldMin: 15, goldMax: 35 },
     ],
 
     spawnX: 800, spawnY: 80,
@@ -812,6 +835,16 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       { x: 760,  y: 1280, w: 160,  h: 280  },
       // Élargissement vers Grievy Town (bas)
       { x: 600,  y: 1400, w: 400,  h: 160  },
+      // Branche est — escalade alternative par les falaises
+      { x: 1100, y: 200,  w: 200,  h: 240  },  // Départ de la branche est (depuis le sommet)
+      { x: 1100, y: 400,  w: 400,  h: 160  },  // Traversée vers la falaise
+      { x: 1460, y: 200,  w: 160,  h: 360  },  // Montée le long de la falaise est
+      // Jonction haute (rejoint le sentier principal au sommet)
+      { x: 880,  y: 200,  w: 260,  h: 160  },
+      // Zone panoramique haute (point de vue)
+      { x: 1200, y: 560,  w: 320,  h: 200  },
+      { x: 1200, y: 720,  w: 160,  h: 280  },
+      { x: 1060, y: 880,  w: 300,  h: 160  },  // Jonction bas avec le sentier principal
     ],
 
     walls: [
@@ -1183,6 +1216,185 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
     ],
 
     spawnX: 1520, spawnY: 680,
+  },
+
+  // ── RIVIÈRE SOUTERRAINE (Terravast ↔ Abyssmar) ──────────────────────────────
+  // Un réseau de galeries creusées par l'eau qui relie les profondeurs de la terre
+  // aux abysses marins. L'air est humide, les murs suintent, et une rivière souterraine
+  // traverse la zone du nord au sud dans un fracas sourd.
+  route_underground_river: {
+    mapWidth: 1600, mapHeight: 1600,
+    bgColor: 0x030608, pathColor: 0x0a1825, wallColor: 0x060e18,
+    accentColor: 0x1a4a5a,
+
+    waterAreas: [
+      // Rivière souterraine traversant la zone du nord au sud
+      { x: 760, y: 0,    w: 80,  h: 400  },
+      { x: 720, y: 360,  w: 120, h: 80   },
+      { x: 680, y: 400,  w: 80,  h: 400  },
+      { x: 640, y: 760,  w: 120, h: 80   },
+      { x: 760, y: 800,  w: 80,  h: 400  },
+      { x: 760, y: 1160, w: 120, h: 80   },
+      { x: 800, y: 1200, w: 80,  h: 400  },
+    ],
+
+    paths: [
+      // Couloir principal E-W (niveau d'entrée)
+      { x: 0,   y: 640, w: 1600, h: 200  },
+      // Grande caverne centrale
+      { x: 600, y: 440, w: 400,  h: 560  },
+      // Branche nord (vers les stalactites)
+      { x: 600, y: 160, w: 200,  h: 320  },
+      { x: 400, y: 120, w: 400,  h: 120  },
+      // Branche centrale basse (vers la rivière)
+      { x: 560, y: 840, w: 480,  h: 200  },
+      { x: 680, y: 1000,w: 240,  h: 280  },
+      // Branche sud (effondrement — passage alternatif)
+      { x: 200, y: 800, w: 440,  h: 160  },
+      { x: 200, y: 800, w: 160,  h: 400  },
+      { x: 200, y: 1160,w: 600,  h: 160  },
+      // Couloir est haut (connexion Terravast)
+      { x: 1100,y: 440, w: 500,  h: 280  },
+      // Couloir ouest bas (connexion Abyssmar)
+      { x: 0,   y: 800, w: 300,  h: 200  },
+    ],
+
+    walls: [
+      // Bordures extérieures
+      { x: 0,    y: 0,    w: 1600, h: 40   },
+      { x: 0,    y: 1560, w: 1600, h: 40   },
+      { x: 0,    y: 0,    w: 40,   h: 600  },
+      { x: 0,    y: 1040, w: 40,   h: 560  },
+      { x: 1560, y: 0,    w: 40,   h: 600  },
+      { x: 1560, y: 880,  w: 40,   h: 720  },
+      // Stalactites nord (formations plafond effondrées)
+      { x: 80,   y: 60,   w: 280,  h: 200  },
+      { x: 460,  y: 60,   w: 120,  h: 100  },
+      { x: 860,  y: 60,   w: 220,  h: 160  },
+      { x: 1200, y: 60,   w: 300,  h: 200  },
+      // Rochers centraux divisant la caverne
+      { x: 480,  y: 480,  w: 120,  h: 160  },
+      { x: 1000, y: 520,  w: 160,  h: 120  },
+      { x: 840,  y: 680,  w: 100,  h: 100  },
+      // Effondrement créant des passages alternatifs
+      { x: 380,  y: 640,  w: 200,  h: 60   },
+      { x: 960,  y: 760,  w: 200,  h: 80   },
+      // Formations de pierre est (avant Terravast)
+      { x: 1100, y: 200,  w: 200,  h: 240  },
+      { x: 1380, y: 80,   w: 160,  h: 360  },
+      // Blocs de roche sud
+      { x: 80,   y: 1000, w: 120,  h: 200  },
+      { x: 380,  y: 1060, w: 160,  h: 120  },
+      { x: 880,  y: 1380, w: 260,  h: 160  },
+      { x: 1200, y: 1200, w: 300,  h: 300  },
+      // Paroi entre couloir principal et branche nord
+      { x: 80,   y: 360,  w: 300,  h: 280  },
+      { x: 900,  y: 280,  w: 200,  h: 160  },
+    ],
+
+    npcs: [],
+
+    teleports: [
+      // Côté Terravast (bord est)
+      { x: 1560, y: 640, w: 40, h: 200, targetZone: 'terravast', targetX: 120,  targetY: 1600, label: '→ Terravast'  },
+      // Côté Abyssmar (bord ouest, niveau bas)
+      { x: 0,    y: 720, w: 40, h: 200, targetZone: 'abyssmar',  targetX: 1200, targetY: 3040, label: '← Abyssmar'   },
+    ],
+
+    lootables: [
+      { id: 'rur_mineral_1', type: 'mineral', x: 420,  y: 180,  itemPool: ['deepstone', 'iron_ore', 'earth_crystal'],  goldMin: 18, goldMax: 36 },
+      { id: 'rur_mineral_2', type: 'mineral', x: 1300, y: 500,  itemPool: ['deep_coral', 'thalymor_shard'],            goldMin: 20, goldMax: 40 },
+      { id: 'rur_plant_1',   type: 'plant',   x: 300,  y: 680,  itemPool: ['sea_kelp', 'cave_mushroom'],               goldMin: 8,  goldMax: 18 },
+      { id: 'rur_chest_1',   type: 'chest',   x: 780,  y: 540,  itemPool: ['minor_health_potion', 'thalymor_shard', 'deepstone'], goldMin: 30, goldMax: 65 },
+    ],
+
+    spawnX: 1520, spawnY: 720,
+  },
+
+  // ── CRÊTE DE TEMPÊTE (Zephyr Peaks ↔ Volterra) ──────────────────────────────
+  // La crête orageuse où le vent de Zephyr Peaks rencontre l'électricité de Volterra.
+  // Tempête permanente. Les éclairs frappent les falaises. Le sol tremble à chaque décharge.
+  // Deux chemins — un haut exposé, un bas abrité — se rejoignent dans le chaos central.
+  route_storm_crossing: {
+    mapWidth: 1600, mapHeight: 1600,
+    bgColor: 0x040408, pathColor: 0x151525, wallColor: 0x0a0a1a,
+    accentColor: 0xaacc00,
+
+    waterAreas: [
+      // Bassins électrifiés (eau conductrice, bloquants)
+      { x: 560,  y: 680,  w: 160, h: 120 },
+      { x: 920,  y: 820,  w: 200, h: 140 },
+      { x: 280,  y: 340,  w: 120, h: 100 },
+    ],
+
+    paths: [
+      // Chemin haut (exposé, nord) — du bord nord jusqu'au carrefour central
+      { x: 680,  y: 0,    w: 200, h: 200  },
+      { x: 500,  y: 160,  w: 400, h: 160  },
+      { x: 400,  y: 280,  w: 200, h: 200  },
+      { x: 400,  y: 440,  w: 600, h: 160  },
+      // Chemin bas (abrité, sud) — depuis le bord nord en zigzag
+      { x: 680,  y: 0,    w: 200, h: 120  },
+      { x: 900,  y: 80,   w: 200, h: 200  },
+      { x: 1000, y: 240,  w: 160, h: 300  },
+      { x: 840,  y: 500,  w: 320, h: 160  },
+      // Carrefour central (les deux chemins se rejoignent)
+      { x: 540,  y: 560,  w: 620, h: 200  },
+      // Sortie vers Volterra (bord sud)
+      { x: 640,  y: 720,  w: 200, h: 160  },
+      { x: 560,  y: 840,  w: 360, h: 160  },
+      { x: 680,  y: 960,  w: 200, h: 400  },
+      { x: 580,  y: 1320, w: 400, h: 160  },
+      { x: 680,  y: 1440, w: 200, h: 160  },
+    ],
+
+    walls: [
+      // Bordures extérieures
+      { x: 0,    y: 0,    w: 1600, h: 40   },
+      { x: 0,    y: 1560, w: 1600, h: 40   },
+      { x: 0,    y: 0,    w: 40,   h: 1600 },
+      { x: 1560, y: 0,    w: 40,   h: 1600 },
+      // Falaises délimitant le chemin haut (nord)
+      { x: 80,   y: 60,   w: 520,  h: 200  },
+      { x: 80,   y: 320,  w: 280,  h: 400  },
+      { x: 60,   y: 480,  w: 300,  h: 120  },
+      // Falaises est (entre les deux chemins)
+      { x: 1160, y: 80,   w: 360,  h: 240  },
+      { x: 1200, y: 300,  w: 320,  h: 280  },
+      { x: 1200, y: 600,  w: 300,  h: 200  },
+      // Précipices et débris de pylônes foudroyés (milieu de zone)
+      { x: 440,  y: 600,  w: 100,  h: 80   },
+      { x: 1160, y: 620,  w: 80,   h: 100  },
+      { x: 820,  y: 440,  w: 60,   h: 120  },
+      { x: 680,  y: 360,  w: 80,   h: 80   },
+      // Rochers de falaise (passage vers Volterra, sud)
+      { x: 80,   y: 720,  w: 440,  h: 600  },
+      { x: 80,   y: 1380, w: 460,  h: 160  },
+      { x: 1080, y: 760,  w: 440,  h: 560  },
+      { x: 1060, y: 1380, w: 440,  h: 160  },
+      // Pylônes foudroyés effondrés (obstacles décoratifs bloquants)
+      { x: 340,  y: 220,  w: 60,   h: 120  },
+      { x: 1060, y: 160,  w: 60,   h: 120  },
+      { x: 500,  y: 740,  w: 40,   h: 100  },
+      { x: 1100, y: 900,  w: 40,   h: 100  },
+    ],
+
+    npcs: [],
+
+    teleports: [
+      // Côté Zephyr Peaks (bord nord)
+      { x: 640,  y: 0,    w: 200, h: 40, targetZone: 'zephyr_peaks', targetX: 3840, targetY: 2800, label: '↑ Zephyr Peaks' },
+      // Côté Volterra (bord sud)
+      { x: 640,  y: 1560, w: 200, h: 40, targetZone: 'volterra',     targetX: 2400, targetY: 120,  label: '↓ Volterra'     },
+    ],
+
+    lootables: [
+      { id: 'rsc_mineral_1', type: 'mineral', x: 460,  y: 340,  itemPool: ['skystone', 'volt_crystal'],           goldMin: 16, goldMax: 34 },
+      { id: 'rsc_mineral_2', type: 'mineral', x: 1060, y: 260,  itemPool: ['copper_coil', 'wind_crystal'],        goldMin: 14, goldMax: 30 },
+      { id: 'rsc_chest_1',   type: 'chest',   x: 760,  y: 620,  itemPool: ['minor_health_potion', 'volt_crystal', 'skystone'], goldMin: 28, goldMax: 58 },
+    ],
+
+    spawnX: 800, spawnY: 80,
   },
 };
 
