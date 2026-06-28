@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Velmara — World Map</title>
+<style>
+  body { background: #07080f; margin: 0; padding: 30px; display: flex; flex-direction: column; align-items: center; font-family: 'Courier New', monospace; }
+  h1   { color: #e8d5b0; letter-spacing: 6px; font-size: 14px; margin: 0 0 8px; text-transform: uppercase; }
+  p.sub{ color: #334455; font-size: 9px; margin: 0 0 20px; }
+  p.foot{ color: #334455; font-size: 9px; margin: 12px 0 0; }
+</style>
+</head>
+<body>
+<h1>Velmara — Carte Mondiale</h1>
+<p class="sub">Maintenir B = vitesse ×5 (debug) · Routes pointillées = zones de transition · ★ = route ramifiée</p>
+<svg width="960" height="900" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr"   markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="#445577"/>
+    </marker>
+    <marker id="arr-r" markerWidth="7" markerHeight="7" refX="1" refY="3.5" orient="auto">
+      <polygon points="7 0, 0 3.5, 7 7" fill="#445577"/>
+    </marker>
+    <marker id="arr-f" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="#553366"/>
+    </marker>
+    <marker id="arr-n"  markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="#1a6a5a"/>
+    </marker>
+    <marker id="arr-nr" markerWidth="7" markerHeight="7" refX="1" refY="3.5" orient="auto">
+      <polygon points="7 0, 0 3.5, 7 7" fill="#1a6a5a"/>
+    </marker>
+    <marker id="arr-s"  markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="#7a9900"/>
+    </marker>
+    <marker id="arr-sr" markerWidth="7" markerHeight="7" refX="1" refY="3.5" orient="auto">
+      <polygon points="7 0, 0 3.5, 7 7" fill="#7a9900"/>
+    </marker>
+  </defs>
+
+  <rect width="960" height="900" fill="#07080f" rx="8"/>
+
+  <!-- ── CONNEXIONS VERTICALES CLASSIQUES ── -->
+  <line x1="120" y1="88"  x2="120" y2="132" stroke="#334455" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr-r)"/>
+  <line x1="120" y1="162" x2="120" y2="200" stroke="#334455" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr-r)"/>
+  <line x1="120" y1="268" x2="120" y2="310" stroke="#334455" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr-r)"/>
+  <line x1="120" y1="340" x2="120" y2="376" stroke="#334455" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr-r)"/>
+  <line x1="380" y1="88"  x2="380" y2="132" stroke="#334455" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr-r)"/>
+  <line x1="380" y1="162" x2="380" y2="200" stroke="#334455" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr-r)"/>
+  <line x1="380" y1="268" x2="380" y2="310" stroke="#334455" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr-r)"/>
+  <line x1="380" y1="340" x2="380" y2="376" stroke="#334455" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr-r)"/>
+  <line x1="640" y1="88"  x2="640" y2="132" stroke="#334455" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr-r)"/>
+  <line x1="640" y1="162" x2="640" y2="200" stroke="#334455" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr-r)"/>
+  <line x1="640" y1="268" x2="640" y2="310" stroke="#334455" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr-r)"/>
+  <line x1="640" y1="340" x2="640" y2="376" stroke="#334455" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr-r)"/>
+  <!-- Glaciem → Malachar -->
+  <line x1="120" y1="432" x2="120" y2="472" stroke="#553366" stroke-width="1.5" marker-end="url(#arr-f)"/>
+  <line x1="120" y1="502" x2="120" y2="542" stroke="#553366" stroke-width="1.5" marker-end="url(#arr-f)"/>
+
+  <!-- ── IGNIS ↔ VOLTERRA (route_lava_bridge, far right) ── -->
+  <path d="M 728 60 L 750 60 L 750 406 L 728 406"
+        stroke="#aa4422" stroke-width="1.5" fill="none"
+        marker-end="url(#arr)" marker-start="url(#arr-r)"/>
+  <text x="756" y="240" fill="#cc6633" font-size="9" font-family="monospace" transform="rotate(90,756,240)">route_lava_bridge</text>
+
+  <!-- ── TERRAVAST ↔ ABYSSMAR (route_underground_river) ── -->
+  <path d="M 290 54 Q 248 108 210 54"
+        stroke="#1a6a5a" stroke-width="1.5" fill="none" stroke-dasharray="5,3"
+        marker-end="url(#arr-n)" marker-start="url(#arr-nr)"/>
+  <text x="248" y="100" fill="#1a8a6a" font-size="8" font-family="monospace" text-anchor="middle">underground_river</text>
+
+  <!-- ── ZEPHYR PEAKS ↔ VOLTERRA (route_storm_crossing) ── -->
+  <path d="M 468 406 Q 512 458 572 406"
+        stroke="#7a9900" stroke-width="1.5" fill="none" stroke-dasharray="5,3"
+        marker-end="url(#arr-s)" marker-start="url(#arr-sr)"/>
+  <text x="518" y="470" fill="#99bb00" font-size="8" font-family="monospace" text-anchor="middle">storm_crossing</text>
+
+  <!-- ── ROW 0 — TOP ZONES ── -->
+  <rect x="30"  y="30" width="180" height="58" rx="4" fill="#001133" stroke="#2255dd" stroke-width="1.5"/>
+  <text x="120" y="53"  fill="#4488ff" font-size="12" font-weight="bold" font-family="monospace" text-anchor="middle">ABYSSMAR</text>
+  <text x="120" y="68"  fill="#aabbcc" font-size="9"  font-family="monospace" text-anchor="middle">WATER · Niv. 14</text>
+  <text x="120" y="80"  fill="#334466" font-size="8"  font-family="monospace" text-anchor="middle">Ouest-Haut de GT</text>
+
+  <rect x="290" y="30" width="180" height="58" rx="4" fill="#1a1000" stroke="#996633" stroke-width="1.5"/>
+  <text x="380" y="53"  fill="#ddaa55" font-size="12" font-weight="bold" font-family="monospace" text-anchor="middle">TERRAVAST</text>
+  <text x="380" y="68"  fill="#aabbcc" font-size="9"  font-family="monospace" text-anchor="middle">EARTH · Niv. 10</text>
+  <text x="380" y="80"  fill="#554422" font-size="8"  font-family="monospace" text-anchor="middle">Nord de GT</text>
+
+  <rect x="550" y="30" width="180" height="58" rx="4" fill="#2a0a00" stroke="#cc4400" stroke-width="1.5"/>
+  <text x="640" y="53"  fill="#ff6633" font-size="12" font-weight="bold" font-family="monospace" text-anchor="middle">IGNIS REACH</text>
+  <text x="640" y="68"  fill="#aabbcc" font-size="9"  font-family="monospace" text-anchor="middle">FIRE · Niv. 8</text>
+  <text x="640" y="80"  fill="#553322" font-size="8"  font-family="monospace" text-anchor="middle">Est-Haut de GT</text>
+
+  <!-- ── ROW 1 — TOP ROUTES ── -->
+  <rect x="50"  y="132" width="140" height="30" rx="3" fill="#010815" stroke="#224477" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="120" y="151" fill="#445577" font-size="9" font-family="monospace" text-anchor="middle">route_coastal_road</text>
+  <rect x="310" y="132" width="140" height="30" rx="3" fill="#0d0a04" stroke="#664422" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="380" y="151" fill="#664433" font-size="9" font-family="monospace" text-anchor="middle">route_stone_path ★</text>
+  <rect x="570" y="132" width="140" height="30" rx="3" fill="#140500" stroke="#662200" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="640" y="151" fill="#773322" font-size="9" font-family="monospace" text-anchor="middle">route_ember_road ★</text>
+
+  <!-- ── ROW 2 — GRIEVY TOWN ── -->
+  <rect x="80" y="200" width="600" height="68" rx="6" fill="#0f1825" stroke="#99bbcc" stroke-width="2"/>
+  <text x="380" y="227" fill="#e8d5b0" font-size="16" font-weight="bold" font-family="monospace" text-anchor="middle">GRIEVY TOWN</text>
+  <text x="380" y="244" fill="#667788" font-size="10" font-family="monospace" text-anchor="middle">HUB CENTRAL · NEUTRAL · Niveau 1</text>
+  <text x="380" y="260" fill="#334455" font-size="9"  font-family="monospace" text-anchor="middle">6 connexions : N · S · E-haut · E-bas · O-haut · O-bas</text>
+
+  <!-- ── ROW 3 — BOTTOM ROUTES ── -->
+  <rect x="50"  y="310" width="140" height="30" rx="3" fill="#00080f" stroke="#224466" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="120" y="329" fill="#335566" font-size="9" font-family="monospace" text-anchor="middle">route_frost_way</text>
+  <rect x="310" y="310" width="140" height="30" rx="3" fill="#001a0a" stroke="#224433" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="380" y="329" fill="#335544" font-size="9" font-family="monospace" text-anchor="middle">route_zephyr_trail ★</text>
+  <rect x="570" y="310" width="140" height="30" rx="3" fill="#080014" stroke="#441166" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="640" y="329" fill="#552277" font-size="9" font-family="monospace" text-anchor="middle">route_thunder_pass</text>
+
+  <!-- ── ROW 4 — BOTTOM ZONES ── -->
+  <rect x="30"  y="376" width="180" height="58" rx="4" fill="#001520" stroke="#33aadd" stroke-width="1.5"/>
+  <text x="120" y="399" fill="#55ccee" font-size="12" font-weight="bold" font-family="monospace" text-anchor="middle">GLACIEM</text>
+  <text x="120" y="414" fill="#aabbcc" font-size="9"  font-family="monospace" text-anchor="middle">ICE · Niv. 18</text>
+  <text x="120" y="426" fill="#224455" font-size="8"  font-family="monospace" text-anchor="middle">Ouest-Bas de GT</text>
+
+  <rect x="290" y="376" width="180" height="58" rx="4" fill="#001a0a" stroke="#33aa55" stroke-width="1.5"/>
+  <text x="380" y="399" fill="#44cc66" font-size="12" font-weight="bold" font-family="monospace" text-anchor="middle">ZEPHYR PEAKS</text>
+  <text x="380" y="414" fill="#aabbcc" font-size="9"  font-family="monospace" text-anchor="middle">WIND · Niv. 12</text>
+  <text x="380" y="426" fill="#224433" font-size="8"  font-family="monospace" text-anchor="middle">Sud de GT</text>
+
+  <rect x="550" y="376" width="180" height="58" rx="4" fill="#0a0015" stroke="#9922cc" stroke-width="1.5"/>
+  <text x="640" y="399" fill="#bb44ee" font-size="12" font-weight="bold" font-family="monospace" text-anchor="middle">VOLTERRA</text>
+  <text x="640" y="414" fill="#aabbcc" font-size="9"  font-family="monospace" text-anchor="middle">LIGHTNING · Niv. 16</text>
+  <text x="640" y="426" fill="#441166" font-size="8"  font-family="monospace" text-anchor="middle">Est-Bas de GT</text>
+
+  <!-- ── ROW 5-6 — dark descent + Malachar ── -->
+  <rect x="50"  y="472" width="140" height="30" rx="3" fill="#080008" stroke="#440066" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="120" y="491" fill="#553366" font-size="9" font-family="monospace" text-anchor="middle">route_dark_descent</text>
+  <rect x="30"  y="542" width="180" height="58" rx="4" fill="#080010" stroke="#6600aa" stroke-width="1.5"/>
+  <text x="120" y="565" fill="#9933cc" font-size="11" font-weight="bold" font-family="monospace" text-anchor="middle">MALACHAR'S SPIRE</text>
+  <text x="120" y="580" fill="#aabbcc" font-size="9"  font-family="monospace" text-anchor="middle">DARK · Niv. 25</text>
+  <text x="120" y="592" fill="#330055" font-size="8"  font-family="monospace" text-anchor="middle">Boss final · depuis Glaciem</text>
+
+  <!-- ── PANNEAU NOUVELLES ROUTES (droite) ── -->
+  <rect x="800" y="30" width="148" height="180" rx="4" fill="#0a0c10" stroke="#1a3a2a" stroke-width="1"/>
+  <text x="874" y="50" fill="#1a9a7a" font-size="9" font-weight="bold" font-family="monospace" text-anchor="middle">NOUVELLES ROUTES</text>
+  <rect x="812" y="58" width="124" height="56" rx="3" fill="#030608" stroke="#1a6a5a" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="874" y="75"  fill="#1a8a6a" font-size="8" font-weight="bold" font-family="monospace" text-anchor="middle">underground_river</text>
+  <text x="874" y="88"  fill="#556666" font-size="8" font-family="monospace" text-anchor="middle">TERRAVAST ↔ ABYSSMAR</text>
+  <text x="874" y="100" fill="#334455" font-size="8" font-family="monospace" text-anchor="middle">labyrinthe de cavernes</text>
+  <text x="874" y="110" fill="#1a5a4a" font-size="8" font-family="monospace" text-anchor="middle">4 branches · rivière</text>
+  <rect x="812" y="122" width="124" height="56" rx="3" fill="#040408" stroke="#7a9900" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="874" y="139" fill="#99bb00" font-size="8" font-weight="bold" font-family="monospace" text-anchor="middle">storm_crossing</text>
+  <text x="874" y="152" fill="#556644" font-size="8" font-family="monospace" text-anchor="middle">ZEPHYR ↔ VOLTERRA</text>
+  <text x="874" y="164" fill="#334433" font-size="8" font-family="monospace" text-anchor="middle">crête orageuse</text>
+  <text x="874" y="174" fill="#5a6a00" font-size="8" font-family="monospace" text-anchor="middle">2 chemins parallèles</text>
+  <rect x="812" y="186" width="124" height="18" rx="2" fill="#1a0500" stroke="#aa4422" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="874" y="198" fill="#aa4422" font-size="8" font-family="monospace" text-anchor="middle">lava_bridge IGNIS ↔ VOLTERRA</text>
+
+  <!-- ── LÉGENDE ── -->
+  <rect x="30" y="640" width="918" height="248" rx="4" fill="#0a0c10" stroke="#222233" stroke-width="1"/>
+  <text x="50" y="658" fill="#667788" font-size="9" font-family="monospace" font-weight="bold">ÉLÉMENTS</text>
+  <rect x="50"  y="668" width="10" height="10" fill="#2a0a00" stroke="#cc4400"/>
+  <text x="66"  y="677" fill="#888899" font-size="9" font-family="monospace">FIRE</text>
+  <rect x="105" y="668" width="10" height="10" fill="#1a1000" stroke="#996633"/>
+  <text x="121" y="677" fill="#888899" font-size="9" font-family="monospace">EARTH</text>
+  <rect x="170" y="668" width="10" height="10" fill="#001a0a" stroke="#33aa55"/>
+  <text x="186" y="677" fill="#888899" font-size="9" font-family="monospace">WIND</text>
+  <rect x="228" y="668" width="10" height="10" fill="#001133" stroke="#2255dd"/>
+  <text x="244" y="677" fill="#888899" font-size="9" font-family="monospace">WATER</text>
+  <rect x="295" y="668" width="10" height="10" fill="#0a0015" stroke="#9922cc"/>
+  <text x="311" y="677" fill="#888899" font-size="9" font-family="monospace">LIGHTNING</text>
+  <rect x="386" y="668" width="10" height="10" fill="#001520" stroke="#33aadd"/>
+  <text x="402" y="677" fill="#888899" font-size="9" font-family="monospace">ICE</text>
+  <rect x="436" y="668" width="10" height="10" fill="#080010" stroke="#6600aa"/>
+  <text x="452" y="677" fill="#888899" font-size="9" font-family="monospace">DARK</text>
+  <rect x="490" y="668" width="10" height="10" fill="#0f1825" stroke="#99bbcc"/>
+  <text x="506" y="677" fill="#888899" font-size="9" font-family="monospace">NEUTRAL (Hub)</text>
+
+  <text x="50" y="700" fill="#667788" font-size="9" font-family="monospace" font-weight="bold">CONNEXIONS</text>
+  <line x1="50" y1="712" x2="100" y2="712" stroke="#445577" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr-r)"/>
+  <text x="108" y="716" fill="#445566" font-size="9" font-family="monospace">bidirectionnelle (GT ↔ zone via route)</text>
+  <line x1="50" y1="728" x2="100" y2="728" stroke="#aa4422" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr-r)"/>
+  <text x="108" y="732" fill="#aa4422" font-size="9" font-family="monospace">route_lava_bridge (Ignis ↔ Volterra)</text>
+  <line x1="50" y1="744" x2="100" y2="744" stroke="#553366" stroke-width="1.5" marker-end="url(#arr-f)"/>
+  <text x="108" y="748" fill="#553366" font-size="9" font-family="monospace">unidirectionnelle (Glaciem → Malachar)</text>
+  <line x1="50" y1="760" x2="100" y2="760" stroke="#1a6a5a" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arr-n)" marker-start="url(#arr-nr)"/>
+  <text x="108" y="764" fill="#1a8a6a" font-size="9" font-family="monospace">route_underground_river (Terravast ↔ Abyssmar)  NOUVEAU</text>
+  <line x1="50" y1="776" x2="100" y2="776" stroke="#7a9900" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arr-s)" marker-start="url(#arr-sr)"/>
+  <text x="108" y="780" fill="#99bb00" font-size="9" font-family="monospace">route_storm_crossing (Zephyr ↔ Volterra)  NOUVEAU</text>
+
+  <text x="50" y="804" fill="#667788" font-size="9" font-family="monospace" font-weight="bold">PROGRESSION CONSEILLÉE</text>
+  <text x="50" y="819" fill="#445566" font-size="9" font-family="monospace">GT(1) → Ignis(8) → Terravast(10) → Zephyr(12) → Abyssmar(14) → Volterra(16) → Glaciem(18) → Malachar(25)</text>
+  <text x="50" y="834" fill="#334455" font-size="9" font-family="monospace">Raccourcis transversaux : Ignis↔Volterra · Terravast↔Abyssmar · Zephyr↔Volterra</text>
+
+  <text x="50" y="856" fill="#445577" font-size="9" font-family="monospace" font-weight="bold">ROUTES ENRICHIES (★ = carrefours / chemins alternatifs)</text>
+  <text x="50" y="870" fill="#334455" font-size="9" font-family="monospace">route_ember_road ★   carrefour central + branche sud (contournement)</text>
+  <text x="50" y="884" fill="#334455" font-size="9" font-family="monospace">route_stone_path ★   salle de repos agrandie + passage est alternatif</text>
+  <text x="490" y="870" fill="#334455" font-size="9" font-family="monospace">route_zephyr_trail ★   branche est panoramique (escalade alternative)</text>
+  <text x="490" y="884" fill="#556677" font-size="9" font-family="monospace">[ B ] maintenu = vitesse ×5  pour tester les téléporteurs</text>
+</svg>
+<p class="foot">Ouvrir dans un navigateur · Grievy Town's Dilemma · 10 zones combat · 11 routes de transition</p>
+</body>
+</html>
