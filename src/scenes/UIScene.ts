@@ -1,13 +1,12 @@
 import { PlayerState, Item, ItemRarity, RARITY_COLORS } from '../types';
 import { GameScene } from './GameScene';
 import { SKILL_MAP } from '../data/skills';
-import { ZONE_MAP } from '../data/zones';
+import { UI, drawPanel, drawBar, pxStyle } from '../utils/UITheme';
 
-const BAR_W  = 180;
-const HP_H   = 14;
-const MP_H   = 10;
-const BAR_X  = 48;
-// Y positions calculées dynamiquement depuis le bas — voir create()
+const BAR_W = 178;
+const HP_H  = 16;
+const MP_H  = 9;
+const BAR_X = 42;
 
 export class UIScene extends Phaser.Scene {
   private gameScene!: GameScene;
@@ -20,13 +19,12 @@ export class UIScene extends Phaser.Scene {
   private xpBar!: Phaser.GameObjects.Graphics;
   private playerNameText!: Phaser.GameObjects.Text;
 
-  // Positions du panel (bas-gauche) — calculées dans create()
   private HP_Y!: number;
   private MP_Y!: number;
 
-  private skillSlots: Phaser.GameObjects.Image[]    = [];
-  private skillCdOverlays: Phaser.GameObjects.Graphics[] = [];
-  private skillCdTexts: Phaser.GameObjects.Text[]   = [];
+  private skillSlots: Phaser.GameObjects.Image[]          = [];
+  private skillCdOverlays: Phaser.GameObjects.Graphics[]  = [];
+  private skillCdTexts: Phaser.GameObjects.Text[]         = [];
 
   private notifQueue: string[] = [];
   private notifText!: Phaser.GameObjects.Text;
@@ -43,233 +41,224 @@ export class UIScene extends Phaser.Scene {
   create() {
     const { width: W, height: H } = this.cameras.main;
 
-    // Positions dynamiques depuis le bas (panel bas-gauche)
-    const PANEL_TOP = H - 56;
-    this.HP_Y = PANEL_TOP + 14;
-    this.MP_Y = PANEL_TOP + 32;
-    const NAME_Y = PANEL_TOP + 3;
-    const PANEL_W = BAR_X + BAR_W + 4;
+    // ── Player stat panel (bottom-left) ─────────
+    const PANEL_H   = 66;
+    const PANEL_W   = BAR_X + BAR_W + 8;
+    const PANEL_TOP = H - PANEL_H - 4;
+    this.HP_Y = PANEL_TOP + 22;
+    this.MP_Y = PANEL_TOP + 44;
 
-    // ── Panel fond (bas-gauche) ────────────────
     const panelGfx = this.add.graphics();
-    panelGfx.fillStyle(0x000000, 0.55);
-    panelGfx.fillRoundedRect(6, PANEL_TOP, PANEL_W, 50, 6);
-    panelGfx.lineStyle(1, 0x334466, 1);
-    panelGfx.strokeRoundedRect(6, PANEL_TOP, PANEL_W, 50, 6);
+    drawPanel(panelGfx, 4, PANEL_TOP, PANEL_W, PANEL_H);
 
-    // ── Nom du joueur + niveau ─────────────────
-    this.playerNameText = this.add.text(14, NAME_Y, '', {
-      fontSize: '10px', color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
-    });
-    this.levelText = this.add.text(BAR_X + BAR_W - 2, NAME_Y, '', {
-      fontSize: '10px', color: '#ffdd88', fontFamily: 'monospace',
-    }).setOrigin(1, 0);
+    // Label badges HP / MP
+    this.add.text(10, this.HP_Y + 1, 'HP', pxStyle(7, UI.TXT_GREEN));
+    this.add.text(10, this.MP_Y + 2, 'MP', pxStyle(7, UI.TXT_BLUE));
 
-    // ── HP bar (vert SAO) ──────────────────────
-    this.add.text(14, this.HP_Y + 1, 'HP', {
-      fontSize: '9px', color: '#88ff88', fontFamily: 'monospace', fontStyle: 'bold',
-    });
-    this.hpBar = this.add.graphics();
-    // Texte centré dans la barre (pas à droite)
+    // Player name (top of panel)
+    this.playerNameText = this.add.text(10, PANEL_TOP + 6, '', pxStyle(8, UI.TXT_GOLD));
+
+    // Level (top-right of panel)
+    this.levelText = this.add.text(PANEL_W, PANEL_TOP + 6, '', pxStyle(8, UI.TXT_PARCHMENT))
+      .setOrigin(1, 0);
+
+    // HP bar + centred text
+    this.hpBar  = this.add.graphics();
     this.hpText = this.add.text(BAR_X + BAR_W / 2, this.HP_Y + HP_H / 2, '', {
-      fontSize: '8px', color: '#ffffff', fontFamily: 'monospace',
+      ...pxStyle(7, UI.TXT_WHITE),
       stroke: '#000000', strokeThickness: 2,
     }).setOrigin(0.5).setDepth(1);
 
-    // ── MP bar (bleu SAO) ──────────────────────
-    this.add.text(14, this.MP_Y + 1, 'MP', {
-      fontSize: '9px', color: '#8888ff', fontFamily: 'monospace', fontStyle: 'bold',
-    });
-    this.manaBar = this.add.graphics();
+    // MP bar + centred text
+    this.manaBar  = this.add.graphics();
     this.manaText = this.add.text(BAR_X + BAR_W / 2, this.MP_Y + MP_H / 2, '', {
-      fontSize: '8px', color: '#ffffff', fontFamily: 'monospace',
+      ...pxStyle(7, UI.TXT_WHITE),
       stroke: '#000000', strokeThickness: 2,
     }).setOrigin(0.5).setDepth(1);
 
-    // ── XP bar (bas de l'écran) ───────────────
+    // ── XP bar (bottom strip) ────────────────────
     this.xpBar = this.add.graphics();
 
-    // ── Skill slots (AZERTY: A / E / R / F) ───
-    const slotKeys: string[] = ['A','E','R','F'];
+    // ── Skill slots (centered bottom) ────────────
+    const SLOT_SZ  = 46;
+    const SLOT_GAP = 5;
+    const TOTAL_W  = 4 * SLOT_SZ + 3 * SLOT_GAP;
+    const SX_START = W / 2 - TOTAL_W / 2;
+    const SY       = H - SLOT_SZ - 7;
+    const keys     = ['A', 'E', 'R', 'F'];
+
     for (let i = 0; i < 4; i++) {
-      const sx = W / 2 - 98 + i * 52;
-      const sy = H - 58;
+      const sx = SX_START + i * (SLOT_SZ + SLOT_GAP);
 
-      const bg = this.add.graphics();
-      bg.fillStyle(0x111122, 0.85);
-      bg.fillRoundedRect(sx, sy, 44, 44, 4);
-      bg.lineStyle(1.5, 0x334477, 1);
-      bg.strokeRoundedRect(sx, sy, 44, 44, 4);
+      const slotGfx = this.add.graphics();
+      drawPanel(slotGfx, sx, SY, SLOT_SZ, SLOT_SZ, UI.SLOT_BG);
 
-      const icon = this.add.image(sx + 22, sy + 22, 'skill_dash').setDisplaySize(34, 34);
+      const icon = this.add.image(sx + SLOT_SZ / 2, SY + SLOT_SZ / 2, 'skill_dash')
+        .setDisplaySize(30, 30);
       this.skillSlots.push(icon);
 
       const cdOverlay = this.add.graphics();
       this.skillCdOverlays.push(cdOverlay);
 
-      this.add.text(sx + 3, sy + 3, slotKeys[i], {
-        fontSize: '8px', color: '#6688cc', fontFamily: 'monospace', fontStyle: 'bold',
-      });
+      // Key label badge (top-left corner of slot)
+      const badge = this.add.graphics();
+      badge.fillStyle(0x08080f, 0.88);
+      badge.fillRect(sx + 2, SY + 2, 13, 11);
+      this.add.text(sx + 8, SY + 7, keys[i], pxStyle(6, UI.TXT_GOLD)).setOrigin(0.5);
 
-      const cdText = this.add.text(sx + 22, sy + 22, '', {
-        fontSize: '11px', color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
+      const cdText = this.add.text(sx + SLOT_SZ / 2, SY + SLOT_SZ / 2, '', {
+        ...pxStyle(10, UI.TXT_WHITE),
         stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5);
       this.skillCdTexts.push(cdText);
     }
 
-    // ── Légende touches ────────────────────────
-    this.add.text(W - 12, H - 18, '[I] Inv  [K] Skills  [W] Attaque  [Espace] Dash', {
-      fontSize: '8px', color: '#445566', fontFamily: 'monospace',
-    }).setOrigin(1, 0);
+    // ── Notification (above skill slots) ─────────
+    this.notifText = this.add.text(W / 2, H - SLOT_SZ - 20, '', {
+      ...pxStyle(9, UI.TXT_PARCHMENT, true),
+    }).setOrigin(0.5).setAlpha(0).setDepth(10);
 
-    // ── Notification ──────────────────────────
-    this.notifText = this.add.text(W / 2, H - 110, '', {
-      fontSize: '13px', color: '#ffff88', fontFamily: 'monospace',
-      stroke: '#000000', strokeThickness: 3,
-    }).setOrigin(0.5).setAlpha(0);
+    // ── Zone name (top-right) ─────────────────────
+    this.zoneText = this.add.text(W - 10, 10, '', pxStyle(9, UI.TXT_GOLD))
+      .setOrigin(1, 0).setAlpha(0).setDepth(5);
 
-    // ── Nom de zone (haut-droite) ─────────────
-    this.zoneText = this.add.text(W - 12, 12, '', {
-      fontSize: '11px', color: '#8899bb', fontFamily: 'monospace',
-    }).setOrigin(1, 0).setAlpha(0);
+    // ── Hint (bottom-right) ───────────────────────
+    this.add.text(W - 8, H - 20, '[I] Inv  [K] Skills', pxStyle(6, UI.TXT_HINT))
+      .setOrigin(1, 0);
 
-    this.gameScene.events.on('player_update',   this.onPlayerUpdate,    this);
-    this.gameScene.events.on('level_up',        this.onLevelUp,         this);
-    this.gameScene.events.on('item_looted',     this.onItemLooted,      this);
-    this.gameScene.events.on('quest_completed', this.onQuestCompleted,  this);
-    this.gameScene.events.on('skill_unlocked',  this.onSkillUnlocked,   this);
-    this.gameScene.events.on('zone_cleared',    this.onZoneCleared,     this);
-    this.gameScene.events.on('zone_entered',      this.onZoneEntered,      this);
-    this.gameScene.events.on('show_notification', this.onShowNotification, this);
+    // ── Events ───────────────────────────────────
+    this.gameScene.events.on('player_update',    this.onPlayerUpdate,    this);
+    this.gameScene.events.on('level_up',         this.onLevelUp,         this);
+    this.gameScene.events.on('item_looted',      this.onItemLooted,      this);
+    this.gameScene.events.on('quest_completed',  this.onQuestCompleted,  this);
+    this.gameScene.events.on('skill_unlocked',   this.onSkillUnlocked,   this);
+    this.gameScene.events.on('zone_cleared',     this.onZoneCleared,     this);
+    this.gameScene.events.on('zone_entered',     this.onZoneEntered,     this);
+    this.gameScene.events.on('show_notification',this.onShowNotification,this);
   }
 
   shutdown() {
-    this.gameScene.events.off('player_update',    this.onPlayerUpdate,     this);
-    this.gameScene.events.off('level_up',         this.onLevelUp,          this);
-    this.gameScene.events.off('item_looted',      this.onItemLooted,       this);
-    this.gameScene.events.off('quest_completed',  this.onQuestCompleted,   this);
-    this.gameScene.events.off('skill_unlocked',   this.onSkillUnlocked,    this);
-    this.gameScene.events.off('zone_cleared',     this.onZoneCleared,      this);
-    this.gameScene.events.off('zone_entered',     this.onZoneEntered,      this);
-    this.gameScene.events.off('show_notification',this.onShowNotification, this);
+    this.gameScene.events.off('player_update',    this.onPlayerUpdate,    this);
+    this.gameScene.events.off('level_up',         this.onLevelUp,         this);
+    this.gameScene.events.off('item_looted',      this.onItemLooted,      this);
+    this.gameScene.events.off('quest_completed',  this.onQuestCompleted,  this);
+    this.gameScene.events.off('skill_unlocked',   this.onSkillUnlocked,   this);
+    this.gameScene.events.off('zone_cleared',     this.onZoneCleared,     this);
+    this.gameScene.events.off('zone_entered',     this.onZoneEntered,     this);
+    this.gameScene.events.off('show_notification',this.onShowNotification,this);
   }
 
-  update(_time: number, delta: number) {
+  update(_t: number, delta: number) {
     if (this.notifTimer > 0) {
       this.notifTimer -= delta;
       if (this.notifTimer <= 0) {
-        this.tweens.add({ targets: this.notifText, alpha: 0, duration: 400, onComplete: () => this.showNextNotif() });
+        this.tweens.add({
+          targets: this.notifText,
+          alpha: 0,
+          duration: 400,
+          onComplete: () => this.showNextNotif(),
+        });
       }
     }
   }
 
+  // ── Event handlers ───────────────────────────────
+
   private onPlayerUpdate(player: PlayerState) {
     if (!this.sys.isActive()) return;
-    const W = this.cameras.main.width;
+    const { width: W, height: H } = this.cameras.main;
 
     this.playerNameText.setText(player.name);
     this.levelText.setText(`Lv.${player.level}`);
 
-    // ── HP bar SAO-style ──────────────────────
-    const hpPct = Math.max(0, player.stats.hp / player.stats.maxHp);
-    const hpFill = Math.floor(BAR_W * hpPct);
+    // HP bar
+    const hpPct   = Math.max(0, player.stats.hp / player.stats.maxHp);
+    const hpColor = hpPct > 0.5 ? UI.HP_GREEN : hpPct > 0.25 ? UI.HP_ORANGE : UI.HP_RED;
     this.hpBar.clear();
-    this.hpBar.fillStyle(0x0a1a0a, 1);
-    this.hpBar.fillRect(BAR_X, this.HP_Y, BAR_W, HP_H);
-    const hpColor = hpPct > 0.5 ? 0x22cc44 : hpPct > 0.25 ? 0xddaa11 : 0xcc2211;
-    this.hpBar.fillStyle(hpColor, 1);
-    this.hpBar.fillRect(BAR_X, this.HP_Y, hpFill, HP_H);
-    this.hpBar.fillStyle(0xffffff, 0.12);
-    this.hpBar.fillRect(BAR_X, this.HP_Y, hpFill, Math.floor(HP_H / 3));
-    this.hpBar.lineStyle(1, 0x336633, 1);
-    this.hpBar.strokeRect(BAR_X, this.HP_Y, BAR_W, HP_H);
+    drawBar(this.hpBar, BAR_X, this.HP_Y, BAR_W, HP_H, hpPct, hpColor, UI.HP_BG, UI.HP_SHINE);
     this.hpText.setText(`${player.stats.hp}/${player.stats.maxHp}`);
 
-    // ── MP bar SAO-style ──────────────────────
+    // MP bar
     const mpPct = Math.max(0, player.stats.mana / player.stats.maxMana);
-    const mpFill = Math.floor(BAR_W * mpPct);
     this.manaBar.clear();
-    this.manaBar.fillStyle(0x05050f, 1);
-    this.manaBar.fillRect(BAR_X, this.MP_Y, BAR_W, MP_H);
-    this.manaBar.fillStyle(0x1144cc, 1);
-    this.manaBar.fillRect(BAR_X, this.MP_Y, mpFill, MP_H);
-    this.manaBar.fillStyle(0xffffff, 0.10);
-    this.manaBar.fillRect(BAR_X, this.MP_Y, mpFill, Math.floor(MP_H / 3));
-    this.manaBar.lineStyle(1, 0x224488, 1);
-    this.manaBar.strokeRect(BAR_X, this.MP_Y, BAR_W, MP_H);
+    drawBar(this.manaBar, BAR_X, this.MP_Y, BAR_W, MP_H, mpPct, UI.MP_FILL, UI.MP_BG, UI.MP_SHINE);
     this.manaText.setText(`${player.stats.mana}/${player.stats.maxMana}`);
 
-    // ── XP bar (bas, violet) ──────────────────
+    // XP bar (bottom 4-px strip)
     const xpPct = player.xpToNext > 0 ? player.xp / player.xpToNext : 0;
+    const xpFW  = Math.floor(W * Math.max(0, Math.min(1, xpPct)));
     this.xpBar.clear();
-    this.xpBar.fillStyle(0x110022, 0.9);
-    this.xpBar.fillRect(0, this.cameras.main.height - 5, W, 5);
-    this.xpBar.fillStyle(0x8833cc, 1);
-    this.xpBar.fillRect(0, this.cameras.main.height - 5, Math.floor(W * xpPct), 5);
+    this.xpBar.fillStyle(UI.XP_BG, 1);
+    this.xpBar.fillRect(0, H - 4, W, 4);
+    if (xpFW > 0) {
+      this.xpBar.fillStyle(UI.XP_FILL, 1);
+      this.xpBar.fillRect(0, H - 4, xpFW, 4);
+      this.xpBar.fillStyle(UI.XP_SHINE, 0.3);
+      this.xpBar.fillRect(0, H - 4, xpFW, 2);
+    }
 
-    // ── Skill icons ───────────────────────────
-    const slots = [player.equippedSkills.slot1, player.equippedSkills.slot2, player.equippedSkills.slot3, player.equippedSkills.slot4];
+    // Skill icons
+    const slots = [
+      player.equippedSkills.slot1, player.equippedSkills.slot2,
+      player.equippedSkills.slot3, player.equippedSkills.slot4,
+    ];
     for (let i = 0; i < 4; i++) {
       const skillId = slots[i];
       if (skillId) {
         const skill = SKILL_MAP[skillId];
-        if (skill) {
-          try { this.skillSlots[i].setTexture(skill.icon); } catch {}
-        }
+        if (skill) try { this.skillSlots[i].setTexture(skill.icon); } catch {}
       }
     }
   }
 
   private onLevelUp(level: number) {
-    this.pushNotif(`✦ Level ${level} ! ✦`, '#ffffaa');
+    this.pushNotif(`★ Level ${level} ★`, UI.TXT_GOLD);
   }
 
   private onItemLooted({ item, quantity }: { item: Item; quantity: number }) {
-    const colorMap: Partial<Record<ItemRarity, string>> = RARITY_COLORS;
-    const color = colorMap[item.rarity] ?? '#ffffff';
+    const color = (RARITY_COLORS as Record<string, string>)[item.rarity] ?? '#ffffff';
     if (item.rarity !== ItemRarity.COMMON) {
-      this.pushNotif(`[${item.rarity}] ${item.name} ×${quantity}`, color);
+      this.pushNotif(`${item.name}  ×${quantity}`, color);
     }
   }
 
-  private onQuestCompleted(_questId: string) {
-    this.pushNotif(`Quête accomplie !`, '#ffff88');
+  private onQuestCompleted() {
+    this.pushNotif('Quête accomplie !', UI.TXT_ORANGE);
   }
 
   private onSkillUnlocked(skillId: string) {
     const skill = SKILL_MAP[skillId];
-    if (skill) this.pushNotif(`Compétence : ${skill.name}`, '#aaffff');
+    if (skill) this.pushNotif(`Compétence : ${skill.name}`, UI.TXT_BLUE);
   }
 
-  private onZoneCleared(zone: any) {
-    this.pushNotif(`${zone.name} — Zone libérée`, '#ff8844');
+  private onZoneCleared(zone: { name: string }) {
+    this.pushNotif(`${zone.name} — Libérée`, UI.TXT_GREEN);
   }
 
   private onShowNotification(msg: string) {
-    this.pushNotif(msg, '#aaddff');
+    this.pushNotif(msg, UI.TXT_PARCHMENT);
   }
 
-  private onZoneEntered(zone: any) {
+  private onZoneEntered(zone: { name: string }) {
     if (!this.sys.isActive()) return;
     this.zoneText.setText(zone.name);
     this.tweens.add({ targets: this.zoneText, alpha: 1, duration: 400 });
     this.time.delayedCall(3500, () => {
-      this.tweens.add({ targets: this.zoneText, alpha: 0.35, duration: 1000 });
+      this.tweens.add({ targets: this.zoneText, alpha: 0.4, duration: 1000 });
     });
   }
 
-  private pushNotif(msg: string, color = '#ffff88') {
+  private pushNotif(msg: string, color = UI.TXT_PARCHMENT) {
     this.notifQueue.push(`${color}|${msg}`);
     if (this.notifTimer <= 0) this.showNextNotif();
   }
 
   private showNextNotif() {
-    if (this.notifQueue.length === 0) return;
-    const entry = this.notifQueue.shift()!;
-    const pipeIdx = entry.indexOf('|');
-    const color = entry.slice(0, pipeIdx);
-    const msg   = entry.slice(pipeIdx + 1);
+    if (!this.notifQueue.length) return;
+    const entry  = this.notifQueue.shift()!;
+    const pipe   = entry.indexOf('|');
+    const color  = entry.slice(0, pipe);
+    const msg    = entry.slice(pipe + 1);
     this.notifText.setText(msg).setStyle({ color }).setAlpha(1);
     this.notifTimer = 2500;
   }

@@ -1,16 +1,17 @@
 import { GameScene } from './GameScene';
-import { PlayerState, Item, ItemType, RARITY_COLORS, ItemRarity } from '../types';
+import { PlayerState, Item, ItemType, RARITY_COLORS } from '../types';
 import { InventorySystem, setInventoryPlayerContext } from '../systems/InventorySystem';
 import { ALL_ITEMS } from '../data/items';
+import { UI, drawPanel, pxStyle } from '../utils/UITheme';
 
-const COLS = 8;
-const SLOT = 48;
-const PADDING = 12;
+const COLS    = 8;
+const SLOT    = 48;
+const GRID_X  = 12;
+const GRID_Y  = 52;
 
 export class InventoryScene extends Phaser.Scene {
   private gameScene!: GameScene;
   private player!: PlayerState;
-  private selectedIndex = 0;
 
   constructor() { super({ key: 'InventoryScene' }); }
 
@@ -24,134 +25,159 @@ export class InventoryScene extends Phaser.Scene {
     const H = this.cameras.main.height;
 
     // Dark overlay
-    this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.8);
+    this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88);
 
-    // Title
-    this.add.text(W / 2, 16, 'INVENTORY', {
-      fontSize: '16px', color: '#ffffff', fontFamily: 'monospace',
-    }).setOrigin(0.5, 0);
+    // Main frame
+    const frame = this.add.graphics();
+    drawPanel(frame, 6, 6, W - 12, H - 12);
 
-    this.add.text(W - 16, 16, `Gold: ${this.player.gold}`, {
-      fontSize: '13px', color: '#ffcc44', fontFamily: 'monospace',
-    }).setOrigin(1, 0);
+    // Header title
+    this.add.text(W / 2, 18, 'INVENTAIRE', pxStyle(12, UI.TXT_GOLD, true)).setOrigin(0.5, 0);
 
+    // Header separator
+    const sep = this.add.graphics();
+    sep.lineStyle(1, UI.BORDER_LIT, 0.6);
+    sep.beginPath();
+    sep.moveTo(18, 42);
+    sep.lineTo(W - 18, 42);
+    sep.strokePath();
+
+    // Gold display (top-right)
+    const gldGfx = this.add.graphics();
+    drawPanel(gldGfx, W - 148, 10, 136, 22, UI.SLOT_BG);
+    this.add.text(W - 80, 21, `${this.player.gold} Or`, pxStyle(8, UI.TXT_GOLD)).setOrigin(0.5);
+
+    // Grid + equipment
     this.renderGrid();
-    this.renderEquipment();
+    this.renderEquipment(W);
 
-    // Close button
-    const closeBtn = this.add.text(W / 2, H - 20, '[I] Close', {
-      fontSize: '11px', color: '#888888', fontFamily: 'monospace',
-    }).setOrigin(0.5, 1).setInteractive({ useHandCursor: true });
-    closeBtn.on('pointerdown', () => this.scene.stop());
+    // Footer close hint
+    this.add.text(W / 2, H - 12, '[I] Fermer', pxStyle(7, UI.TXT_HINT))
+      .setOrigin(0.5, 1)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this.scene.stop());
   }
 
   private renderGrid() {
-    const startX = PADDING;
-    const startY = 50;
-
     this.player.inventory.forEach((slot, i) => {
       const col = i % COLS;
       const row = Math.floor(i / COLS);
-      const x = startX + col * SLOT;
-      const y = startY + row * SLOT;
+      const x   = GRID_X + col * SLOT;
+      const y   = GRID_Y + row * SLOT;
+
+      const rarityHex = parseInt(
+        (RARITY_COLORS[slot.item.rarity] ?? '#666666').replace('#', ''), 16
+      );
 
       const bg = this.add.graphics();
-      bg.fillStyle(0x222222); bg.fillRect(x, y, SLOT - 2, SLOT - 2);
-      bg.lineStyle(1, 0x444444); bg.strokeRect(x, y, SLOT - 2, SLOT - 2);
-
-      const rarityColor = parseInt(RARITY_COLORS[slot.item.rarity]?.replace('#', '') ?? 'ffffff', 16);
-      bg.lineStyle(2, rarityColor); bg.strokeRect(x, y, SLOT - 2, SLOT - 2);
+      bg.fillStyle(UI.SLOT_BG, 1);
+      bg.fillRect(x, y, SLOT - 2, SLOT - 2);
+      bg.lineStyle(1, rarityHex, 1);
+      bg.strokeRect(x, y, SLOT - 2, SLOT - 2);
+      bg.lineStyle(1, 0x000000, 0.35);
+      bg.strokeRect(x + 1, y + 1, SLOT - 4, SLOT - 4);
 
       try {
-        this.add.image(x + SLOT / 2 - 1, y + SLOT / 2 - 1, slot.item.icon).setDisplaySize(28, 28);
+        this.add.image(x + SLOT / 2 - 1, y + SLOT / 2 - 1, slot.item.icon)
+          .setDisplaySize(28, 28);
       } catch {}
 
       if (slot.quantity > 1) {
-        this.add.text(x + SLOT - 4, y + SLOT - 4, `${slot.quantity}`, {
-          fontSize: '9px', color: '#ffffff', fontFamily: 'monospace',
-        }).setOrigin(1, 1);
+        this.add.text(x + SLOT - 5, y + SLOT - 5, `${slot.quantity}`, pxStyle(7, UI.TXT_WHITE))
+          .setOrigin(1, 1);
       }
 
-      // Click to show item detail + actions
-      const hitArea = this.add.rectangle(x + SLOT / 2 - 1, y + SLOT / 2 - 1, SLOT - 2, SLOT - 2, 0x000000, 0)
-        .setInteractive({ useHandCursor: true });
-      hitArea.on('pointerdown', () => this.showItemDetail(slot.item.id, i));
-      hitArea.on('pointerover', () => bg.lineStyle(2, 0xffffff));
-      hitArea.on('pointerout',  () => bg.lineStyle(2, rarityColor));
+      const hit = this.add.rectangle(
+        x + SLOT / 2 - 1, y + SLOT / 2 - 1,
+        SLOT - 2, SLOT - 2,
+        0x000000, 0
+      ).setInteractive({ useHandCursor: true });
+
+      hit.on('pointerdown', () => this.showItemDetail(slot.item.id));
+      hit.on('pointerover', () => {
+        bg.lineStyle(2, 0xffffff, 0.9);
+        bg.strokeRect(x, y, SLOT - 2, SLOT - 2);
+      });
+      hit.on('pointerout', () => {
+        bg.lineStyle(1, rarityHex, 1);
+        bg.strokeRect(x, y, SLOT - 2, SLOT - 2);
+      });
     });
   }
 
-  private renderEquipment() {
-    const W = this.cameras.main.width;
-    const startX = W - 180;
-    const startY = 50;
+  private renderEquipment(W: number) {
+    const EX = W - 186;
+    const EY = GRID_Y;
 
-    this.add.text(startX, startY - 14, 'EQUIPMENT', {
-      fontSize: '11px', color: '#aaaaaa', fontFamily: 'monospace',
-    });
+    const panGfx = this.add.graphics();
+    drawPanel(panGfx, EX - 8, EY - 18, 178, 294, UI.SLOT_BG);
+    this.add.text(EX + 81, EY - 12, 'ÉQUIPEMENT', pxStyle(7, UI.TXT_GOLD)).setOrigin(0.5, 0);
 
     const slots: [keyof typeof this.player.equipment, string][] = [
-      ['weapon', 'Weapon'], ['helm', 'Helm'], ['chest', 'Chest'],
-      ['legs', 'Legs'], ['boots', 'Boots'], ['gloves', 'Gloves'],
-      ['cape', 'Cape'], ['ring1', 'Ring 1'], ['ring2', 'Ring 2'], ['amulet', 'Amulet'],
+      ['weapon', 'Arme'],    ['helm',   'Casque'],   ['chest', 'Torse'],
+      ['legs',   'Jambes'],  ['boots',  'Bottes'],   ['gloves', 'Gants'],
+      ['cape',   'Cape'],    ['ring1',  'Anneau 1'], ['ring2',  'Anneau 2'],
+      ['amulet', 'Amulette'],
     ];
 
-    slots.forEach(([slot, label], i) => {
-      const y = startY + i * 26;
-      this.add.text(startX, y, label, {
-        fontSize: '10px', color: '#666666', fontFamily: 'monospace',
-      });
-      const item = this.player.equipment[slot] as Item | undefined;
-      const name = item ? item.name : '—';
-      const color = item ? (RARITY_COLORS[item.rarity] ?? '#ffffff') : '#444444';
-      this.add.text(startX + 70, y, name, {
-        fontSize: '10px', color, fontFamily: 'monospace',
-      });
+    slots.forEach(([key, label], i) => {
+      const y   = EY + 4 + i * 26;
+      const item = this.player.equipment[key] as Item | undefined;
+
+      this.add.text(EX, y, `${label}:`, pxStyle(6, UI.TXT_MUTED));
+
+      const raw  = item?.name ?? '—';
+      const name = raw.length > 12 ? raw.slice(0, 10) + '..' : raw;
+      const col  = item ? (RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT) : UI.TXT_HINT;
+      this.add.text(EX + 72, y, name, pxStyle(6, col));
     });
   }
 
-  private showItemDetail(itemId: string, index: number) {
+  private showItemDetail(itemId: string) {
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
     const item = ALL_ITEMS[itemId];
     if (!item) return;
 
-    // Remove previous detail panel
+    // Destroy any existing detail panel
     this.children.getByName('detail_panel')?.destroy();
 
-    const panel = this.add.container(W / 2, H - 100).setName('detail_panel');
+    const PANEL_W = 490;
+    const PANEL_H = 108;
+    const px      = (W - PANEL_W) / 2;
+    const py      = H - PANEL_H - 10;
+
+    const panel = this.add.container(0, 0).setName('detail_panel').setDepth(20);
+
     const bg = this.add.graphics();
-    bg.fillStyle(0x111111, 0.98);
-    bg.fillRect(-200, -50, 400, 90);
-    bg.lineStyle(1, parseInt(RARITY_COLORS[item.rarity].replace('#', ''), 16));
-    bg.strokeRect(-200, -50, 400, 90);
+    drawPanel(bg, px, py, PANEL_W, PANEL_H);
     panel.add(bg);
 
-    panel.add(this.add.text(-190, -45, `${item.name}`, {
-      fontSize: '13px', color: RARITY_COLORS[item.rarity], fontFamily: 'monospace',
-    }));
-    panel.add(this.add.text(-190, -28, item.description, {
-      fontSize: '10px', color: '#aaaaaa', fontFamily: 'monospace',
-      wordWrap: { width: 380 },
-    }));
+    const rarColor = RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT;
+    panel.add(
+      this.add.text(px + 12, py + 10, `[${item.rarity}]  ${item.name}`, pxStyle(9, rarColor))
+    );
+    panel.add(
+      this.add.text(px + 12, py + 30, item.description, {
+        ...pxStyle(8, UI.TXT_MUTED),
+        wordWrap: { width: PANEL_W - 24 },
+      })
+    );
 
     const actions: string[] = [];
-    if ([ItemType.WEAPON, ItemType.HELM, ItemType.CHEST, ItemType.LEGS,
-         ItemType.BOOTS, ItemType.GLOVES, ItemType.CAPE, ItemType.RING, ItemType.AMULET]
-        .includes(item.type)) {
-      actions.push('[Z] Equip');
-    }
-    if (item.type === ItemType.CONSUMABLE) {
-      actions.push('[Z] Use');
-    }
-    if (item.type !== ItemType.KEY_ITEM) {
-      actions.push(`[X] Sell (${item.value}G)`);
-    }
-    actions.push('[C] Close');
+    const equipTypes = [
+      ItemType.WEAPON, ItemType.HELM, ItemType.CHEST, ItemType.LEGS,
+      ItemType.BOOTS,  ItemType.GLOVES, ItemType.CAPE, ItemType.RING, ItemType.AMULET,
+    ];
+    if (equipTypes.includes(item.type))    actions.push('[Z] Équiper');
+    if (item.type === ItemType.CONSUMABLE) actions.push('[Z] Utiliser');
+    if (item.type !== ItemType.KEY_ITEM)   actions.push(`[X] Vendre (${item.value} Or)`);
+    actions.push('[C] Fermer');
 
-    panel.add(this.add.text(190, 20, actions.join('  '), {
-      fontSize: '10px', color: '#888888', fontFamily: 'monospace',
-    }).setOrigin(1, 1));
+    panel.add(
+      this.add.text(px + PANEL_W - 12, py + PANEL_H - 14, actions.join('   '), pxStyle(7, UI.TXT_HINT))
+        .setOrigin(1, 0)
+    );
 
     const z = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
     const x = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.X);
@@ -167,13 +193,11 @@ export class InventoryScene extends Phaser.Scene {
       panel.destroy();
       this.scene.restart({ gameScene: this.gameScene });
     });
-
     x.once('down', () => {
       InventorySystem.sell(this.player, itemId, 1);
       panel.destroy();
       this.scene.restart({ gameScene: this.gameScene });
     });
-
     c.once('down', () => panel.destroy());
   }
 }
