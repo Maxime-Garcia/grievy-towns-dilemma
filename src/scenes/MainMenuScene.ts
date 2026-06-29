@@ -4,6 +4,7 @@ export class MainMenuScene extends Phaser.Scene {
   constructor() { super({ key: 'MainMenuScene' }); }
 
   create() {
+    this.cameras.main.fadeIn(400, 0, 0, 0);
     const w = this.cameras.main.width;
     const h = this.cameras.main.height;
 

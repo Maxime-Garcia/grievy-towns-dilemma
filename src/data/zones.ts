@@ -409,7 +409,192 @@ export const ZONES: Zone[] = [
     musicKey: 'music_glaciem',
     lore: 'The Last Hearth est le dernier feu allumé de Glaciem. Ceux qui y sont restés ont une raison. Ils ne la donnent pas facilement.',
     worldPosition: { x: 205, y: 200 }
-  }
+  },
+
+  // ── ZONES DE ROUTE ───────────────────────────────────────────────────────────
+  // Zones de transition entre Grievy Town et les zones de combat.
+  // Ennemis de niveau intermédiaire, pas de boss, pas de divinité propre.
+  // ────────────────────────────────────────────────────────────────────────────
+
+  {
+    id: 'route_ember_road',
+    name: 'Route des Braises',
+    description: 'Un chemin poussiéreux entre Grievy Town et Ignis Reach. La chaleur monte à chaque pas. Les cendres volent depuis des semaines.',
+    element: ElementType.FIRE,
+    recommendedLevel: 6,
+    mapKey: 'map_route_ember_road',
+    enemies: ['ember_wyrm', 'cinder_sprite'],
+    bossId: '',
+    divine: { id: 'none', name: 'None', title: '', element: ElementType.NEUTRAL, sprite: '', lore: '' },
+    unlockedSkills: [],
+    materials: ['ember_core', 'obsidian_shard'],
+    ambientColor: 0xcc4411,
+    musicKey: 'music_ignis_reach',
+    lore: 'La Route des Braises était une voie commerciale ordinaire. Les marchands la prenaient pour livrer du charbon et du minerai depuis les forges d\'Ignis Reach jusqu\'à Grievy Town. Les derniers à l\'avoir empruntée sont revenus les sourcils roussis et les yeux vides. Ils n\'ont pas dit ce qu\'ils avaient vu.',
+    worldPosition: { x: 400, y: 410 }
+  },
+
+  {
+    id: 'route_stone_path',
+    name: 'Chemin de Pierre',
+    description: 'Une route de pèlerinage millénaire qui plonge peu à peu sous terre. Les dalles sont fissurées. Des cristaux de terre poussent entre les joints.',
+    element: ElementType.EARTH,
+    recommendedLevel: 8,
+    mapKey: 'map_route_stone_path',
+    enemies: ['stone_crawler', 'cave_lurker'],
+    bossId: '',
+    divine: { id: 'none', name: 'None', title: '', element: ElementType.NEUTRAL, sprite: '', lore: '' },
+    unlockedSkills: [],
+    materials: ['iron_ore', 'deepstone'],
+    ambientColor: 0x554422,
+    musicKey: 'music_terravast',
+    lore: 'Le Chemin de Pierre date d\'avant Terravast lui-même. Des pèlerins venaient marcher ici pour sentir Gorvun respirer sous leurs pieds. Certains disaient que la terre leur répondait. Aujourd\'hui, la terre répond toujours. Ce n\'est plus une réponse paisible.',
+    worldPosition: { x: 300, y: 360 }
+  },
+
+  {
+    id: 'route_zephyr_trail',
+    name: 'Sentier de Zephyr',
+    description: 'Un sentier de montagne qui monte en lacets vers Zephyr Peaks. Le vent y souffle toujours dans la même direction, comme une main qui pousse.',
+    element: ElementType.WIND,
+    recommendedLevel: 10,
+    mapKey: 'map_route_zephyr_trail',
+    enemies: ['gale_harpy', 'cyclone_sprite'],
+    bossId: '',
+    divine: { id: 'none', name: 'None', title: '', element: ElementType.NEUTRAL, sprite: '', lore: '' },
+    unlockedSkills: [],
+    materials: ['skystone', 'zephyr_feather'],
+    ambientColor: 0x445588,
+    musicKey: 'music_zephyr_peaks',
+    lore: 'Les pèlerins qui montaient à Zephyr Peaks commençaient toujours par le Sentier de Zephyr. Ils disaient qu\'à mi-chemin, Sylvael vous regardait. Que vous le sentiez dans la façon dont le vent tournait autour de vous, comme une reconnaissance. Ce qui tourne autour de vous maintenant n\'a rien d\'une reconnaissance.',
+    worldPosition: { x: 400, y: 190 }
+  },
+
+  {
+    id: 'route_coastal_road',
+    name: 'Route Côtière',
+    description: 'Une route en corniche dominant une mer déchaînée. La falaise perd du terrain chaque semaine. La moitié de la route a déjà disparu.',
+    element: ElementType.WATER,
+    recommendedLevel: 12,
+    mapKey: 'map_route_coastal_road',
+    enemies: ['tide_crawler', 'sea_wraith'],
+    bossId: '',
+    divine: { id: 'none', name: 'None', title: '', element: ElementType.NEUTRAL, sprite: '', lore: '' },
+    unlockedSkills: [],
+    materials: ['sea_kelp', 'deep_coral'],
+    ambientColor: 0x113355,
+    musicKey: 'music_abyssmar',
+    lore: 'Avant que la mer monte, la Route Côtière offrait la vue la plus belle de Velmara. Des voyageurs venaient de loin pour y marcher au coucher du soleil. L\'ancienne enseigne d\'une auberge pend encore à mi-chemin, battant dans le vent marin. L\'auberge est sous l\'eau depuis deux mois.',
+    worldPosition: { x: 510, y: 360 }
+  },
+
+  {
+    id: 'route_thunder_pass',
+    name: 'Col du Tonnerre',
+    description: 'Un col montagneux traversé par les lignes électriques abandonnées de Volterra. Les poteaux crépitent encore. Le sol est brûlé par endroits.',
+    element: ElementType.LIGHTNING,
+    recommendedLevel: 14,
+    mapKey: 'map_route_thunder_pass',
+    enemies: ['spark_imp', 'volt_hound'],
+    bossId: '',
+    divine: { id: 'none', name: 'None', title: '', element: ElementType.NEUTRAL, sprite: '', lore: '' },
+    unlockedSkills: [],
+    materials: ['copper_coil', 'volt_crystal'],
+    ambientColor: 0x332200,
+    musicKey: 'music_volterra',
+    lore: 'Le Col du Tonnerre fut le chantier de la vie de Harven Osk, ingénieur en chef de Volterra, qui construisit les lignes de transmission sur vingt ans. Il mourut le jour de l\'inauguration. D\'une décharge. Les habitants de Volterra dirent que Volkran avait voulu l\'embrasser. Personne ne rit à ce moment-là.',
+    worldPosition: { x: 510, y: 240 }
+  },
+
+  {
+    id: 'route_frost_way',
+    name: 'Voie Glaciale',
+    description: 'Une ancienne route commerciale recouverte de givre. Des charrettes abandonnées bordent encore le chemin, leur contenu gelé à l\'intérieur.',
+    element: ElementType.ICE,
+    recommendedLevel: 16,
+    mapKey: 'map_route_frost_way',
+    enemies: ['frost_wolf', 'blizzard_wraith'],
+    bossId: '',
+    divine: { id: 'none', name: 'None', title: '', element: ElementType.NEUTRAL, sprite: '', lore: '' },
+    unlockedSkills: [],
+    materials: ['glaciem_ice_shard', 'frozen_essence'],
+    ambientColor: 0x88aacc,
+    musicKey: 'music_glaciem',
+    lore: 'La Voie Glaciale était la route des fourrures et des archives. Les marchands de Glaciem descendaient une fois par an avec leurs glaces gravées. Les collectionneurs du monde entier attendaient leur arrivée. La dernière caravane n\'est jamais arrivée à Grievy Town. Ses traces s\'arrêtent au milieu de la route. Nettes. Comme si les marchands avaient simplement décidé de ne plus bouger.',
+    worldPosition: { x: 290, y: 240 }
+  },
+
+  {
+    id: 'route_lava_bridge',
+    name: 'Pont de Lave',
+    description: 'Un pont de pierre volcanique suspendu au-dessus d\'une fissure tectonique. Construit il y a deux siècles pour relier les domaines de feu et de foudre.',
+    element: ElementType.FIRE,
+    recommendedLevel: 18,
+    mapKey: 'map_route_lava_bridge',
+    enemies: ['ember_wyrm', 'spark_imp', 'thunder_drake'],
+    bossId: '',
+    divine: { id: 'none', name: 'None', title: '', element: ElementType.NEUTRAL, sprite: '', lore: '' },
+    unlockedSkills: [],
+    materials: ['ember_core', 'volt_crystal', 'obsidian_shard'],
+    ambientColor: 0xdd6600,
+    musicKey: 'music_ignis_reach',
+    lore: 'Le Pont de Lave est l\'un des rares endroits de Velmara où deux divinités se partageaient un territoire sans conflit. Pyrath et Volkran se rencontraient ici, dit-on, une fois par siècle. La pierre garde encore la trace de leurs pas — brûlures et impacts foudroyants côte à côte. Maintenant les deux énergies se mélangent dans les failles. Ce n\'est pas une rencontre. C\'est une collision.',
+    worldPosition: { x: 510, y: 350 }
+  },
+
+  {
+    id: 'route_underground_river',
+    name: 'Rivière Souterraine',
+    description: 'Un réseau de galeries obscures où coule une rivière silencieuse reliant les profondeurs de Terravast aux abysses d\'Abyssmar.',
+    element: ElementType.WATER,
+    recommendedLevel: 15,
+    mapKey: 'map_route_underground_river',
+    enemies: ['cave_lurker', 'tide_crawler'],
+    bossId: '',
+    divine: { id: 'none', name: 'None', title: '', element: ElementType.NEUTRAL, sprite: '', lore: '' },
+    unlockedSkills: [],
+    materials: ['deepstone', 'deep_coral', 'thalymor_shard'],
+    ambientColor: 0x020810,
+    musicKey: 'music_abyssmar',
+    lore: 'Les géologues de Terravast et les pêcheurs d\'Abyssmar savaient tous deux qu\'un réseau de galeries reliait leurs territoires. Ni l\'un ni l\'autre camp ne s\'y aventurait. Ils avaient passé un accord tacite. La rivière qui coulait dans ces galeries charrierait des minerais le matin, et des créatures marines le soir. Cette rivière n\'avait pas de nom. Maintenant elle en a besoin.',
+    worldPosition: { x: 410, y: 420 }
+  },
+
+  {
+    id: 'route_storm_crossing',
+    name: 'Crête de Tempête',
+    description: 'Un col exposé à l\'intersection des vents de Zephyr et de l\'électricité de Volterra. Tempête permanente. Les éclairs ne s\'arrêtent jamais.',
+    element: ElementType.LIGHTNING,
+    recommendedLevel: 18,
+    mapKey: 'map_route_storm_crossing',
+    enemies: ['gale_harpy', 'spark_imp'],
+    bossId: '',
+    divine: { id: 'none', name: 'None', title: '', element: ElementType.NEUTRAL, sprite: '', lore: '' },
+    unlockedSkills: [],
+    materials: ['volt_crystal', 'skystone', 'zephyr_feather'],
+    ambientColor: 0x080830,
+    musicKey: 'music_volterra',
+    lore: 'La Crête de Tempête n\'a jamais été habitée. Elle était simplement là — un col infranchissable que les cartographes indiquaient avec un triangle de danger et passaient à autre chose. Depuis que Sylvael et Volkran ont perdu le contrôle de leurs territoires, les tempêtes et les éclairs se sont mélangés. Ce que traverse le joueur aujourd\'hui n\'est plus un passage. C\'est une collision permanente entre deux puissances qui ont oublié de se contrôler.',
+    worldPosition: { x: 445, y: 220 }
+  },
+
+  {
+    id: 'route_dark_descent',
+    name: 'Descente des Ombres',
+    description: 'Une route creusée dans la glace noire qui descend vers la Flèche de Malachar. Les murs sont translucides. Il y a des formes à l\'intérieur.',
+    element: ElementType.DARK,
+    recommendedLevel: 22,
+    mapKey: 'map_route_dark_descent',
+    enemies: ['frost_wolf', 'dark_revenant', 'shadow_construct'],
+    bossId: '',
+    divine: { id: 'none', name: 'None', title: '', element: ElementType.DARK, sprite: '', lore: '' },
+    unlockedSkills: [],
+    materials: ['void_shard', 'glaciem_ice_shard', 'ancient_frost_rune'],
+    ambientColor: 0x110022,
+    musicKey: 'music_malachars_spire',
+    lore: 'Malachar a construit cette route avant que quiconque comprenne ce qu\'il préparait. Elle part des limites de Glaciem et descend vingt ans de travail souterrain jusqu\'à la base de la Flèche. Les gens de Glaciem croyaient que c\'était un tunnel d\'archive. Crysthea laissait faire. Elle avait tout vu venir. Elle n\'a rien dit.',
+    worldPosition: { x: 290, y: 260 }
+  },
 ];
 
 export const ZONE_MAP: Record<string, Zone> = Object.fromEntries(ZONES.map(z => [z.id, z]));

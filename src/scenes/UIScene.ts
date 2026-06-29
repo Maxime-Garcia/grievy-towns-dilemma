@@ -7,8 +7,7 @@ const BAR_W  = 180;
 const HP_H   = 14;
 const MP_H   = 10;
 const BAR_X  = 48;
-const HP_Y   = 18;
-const MP_Y   = 40;
+// Y positions calculées dynamiquement depuis le bas — voir create()
 
 export class UIScene extends Phaser.Scene {
   private gameScene!: GameScene;
@@ -18,9 +17,12 @@ export class UIScene extends Phaser.Scene {
   private hpText!: Phaser.GameObjects.Text;
   private manaText!: Phaser.GameObjects.Text;
   private levelText!: Phaser.GameObjects.Text;
-  private goldText!: Phaser.GameObjects.Text;
   private xpBar!: Phaser.GameObjects.Graphics;
   private playerNameText!: Phaser.GameObjects.Text;
+
+  // Positions du panel (bas-gauche) — calculées dans create()
+  private HP_Y!: number;
+  private MP_Y!: number;
 
   private skillSlots: Phaser.GameObjects.Image[]    = [];
   private skillCdOverlays: Phaser.GameObjects.Graphics[] = [];
@@ -41,43 +43,48 @@ export class UIScene extends Phaser.Scene {
   create() {
     const { width: W, height: H } = this.cameras.main;
 
-    // ── Panel fond SAO (top-left) ──────────────
+    // Positions dynamiques depuis le bas (panel bas-gauche)
+    const PANEL_TOP = H - 56;
+    this.HP_Y = PANEL_TOP + 14;
+    this.MP_Y = PANEL_TOP + 32;
+    const NAME_Y = PANEL_TOP + 3;
+    const PANEL_W = BAR_X + BAR_W + 4;
+
+    // ── Panel fond (bas-gauche) ────────────────
     const panelGfx = this.add.graphics();
     panelGfx.fillStyle(0x000000, 0.55);
-    panelGfx.fillRoundedRect(6, 6, BAR_X + BAR_W + 12, 58, 6);
+    panelGfx.fillRoundedRect(6, PANEL_TOP, PANEL_W, 50, 6);
     panelGfx.lineStyle(1, 0x334466, 1);
-    panelGfx.strokeRoundedRect(6, 6, BAR_X + BAR_W + 12, 58, 6);
+    panelGfx.strokeRoundedRect(6, PANEL_TOP, PANEL_W, 50, 6);
 
-    // ── Nom du joueur + niveau (style SAO) ────
-    this.playerNameText = this.add.text(14, 10, '', {
+    // ── Nom du joueur + niveau ─────────────────
+    this.playerNameText = this.add.text(14, NAME_Y, '', {
       fontSize: '10px', color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
     });
-    this.levelText = this.add.text(BAR_X + BAR_W - 10, 10, '', {
+    this.levelText = this.add.text(BAR_X + BAR_W - 2, NAME_Y, '', {
       fontSize: '10px', color: '#ffdd88', fontFamily: 'monospace',
     }).setOrigin(1, 0);
 
     // ── HP bar (vert SAO) ──────────────────────
-    const hpLabel = this.add.text(14, HP_Y + 1, 'HP', {
+    this.add.text(14, this.HP_Y + 1, 'HP', {
       fontSize: '9px', color: '#88ff88', fontFamily: 'monospace', fontStyle: 'bold',
     });
     this.hpBar = this.add.graphics();
-    this.hpText = this.add.text(BAR_X + BAR_W + 4, HP_Y, '', {
-      fontSize: '9px', color: '#aaffaa', fontFamily: 'monospace',
-    });
+    // Texte centré dans la barre (pas à droite)
+    this.hpText = this.add.text(BAR_X + BAR_W / 2, this.HP_Y + HP_H / 2, '', {
+      fontSize: '8px', color: '#ffffff', fontFamily: 'monospace',
+      stroke: '#000000', strokeThickness: 2,
+    }).setOrigin(0.5).setDepth(1);
 
     // ── MP bar (bleu SAO) ──────────────────────
-    this.add.text(14, MP_Y + 1, 'MP', {
+    this.add.text(14, this.MP_Y + 1, 'MP', {
       fontSize: '9px', color: '#8888ff', fontFamily: 'monospace', fontStyle: 'bold',
     });
     this.manaBar = this.add.graphics();
-    this.manaText = this.add.text(BAR_X + BAR_W + 4, MP_Y, '', {
-      fontSize: '9px', color: '#aaaaff', fontFamily: 'monospace',
-    });
-
-    // ── Or ────────────────────────────────────
-    this.goldText = this.add.text(14, 56, '', {
-      fontSize: '10px', color: '#ffcc44', fontFamily: 'monospace',
-    });
+    this.manaText = this.add.text(BAR_X + BAR_W / 2, this.MP_Y + MP_H / 2, '', {
+      fontSize: '8px', color: '#ffffff', fontFamily: 'monospace',
+      stroke: '#000000', strokeThickness: 2,
+    }).setOrigin(0.5).setDepth(1);
 
     // ── XP bar (bas de l'écran) ───────────────
     this.xpBar = this.add.graphics();
@@ -158,6 +165,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private onPlayerUpdate(player: PlayerState) {
+    if (!this.sys.isActive()) return;
     const W = this.cameras.main.width;
 
     this.playerNameText.setText(player.name);
@@ -167,19 +175,15 @@ export class UIScene extends Phaser.Scene {
     const hpPct = Math.max(0, player.stats.hp / player.stats.maxHp);
     const hpFill = Math.floor(BAR_W * hpPct);
     this.hpBar.clear();
-    // Fond sombre
     this.hpBar.fillStyle(0x0a1a0a, 1);
-    this.hpBar.fillRect(BAR_X, HP_Y, BAR_W, HP_H);
-    // Remplissage vert SAO (gradient simulé avec deux rectangles)
+    this.hpBar.fillRect(BAR_X, this.HP_Y, BAR_W, HP_H);
     const hpColor = hpPct > 0.5 ? 0x22cc44 : hpPct > 0.25 ? 0xddaa11 : 0xcc2211;
     this.hpBar.fillStyle(hpColor, 1);
-    this.hpBar.fillRect(BAR_X, HP_Y, hpFill, HP_H);
-    // Reflet clair (top highlight)
+    this.hpBar.fillRect(BAR_X, this.HP_Y, hpFill, HP_H);
     this.hpBar.fillStyle(0xffffff, 0.12);
-    this.hpBar.fillRect(BAR_X, HP_Y, hpFill, Math.floor(HP_H / 3));
-    // Bordure
+    this.hpBar.fillRect(BAR_X, this.HP_Y, hpFill, Math.floor(HP_H / 3));
     this.hpBar.lineStyle(1, 0x336633, 1);
-    this.hpBar.strokeRect(BAR_X, HP_Y, BAR_W, HP_H);
+    this.hpBar.strokeRect(BAR_X, this.HP_Y, BAR_W, HP_H);
     this.hpText.setText(`${player.stats.hp}/${player.stats.maxHp}`);
 
     // ── MP bar SAO-style ──────────────────────
@@ -187,13 +191,13 @@ export class UIScene extends Phaser.Scene {
     const mpFill = Math.floor(BAR_W * mpPct);
     this.manaBar.clear();
     this.manaBar.fillStyle(0x05050f, 1);
-    this.manaBar.fillRect(BAR_X, MP_Y, BAR_W, MP_H);
+    this.manaBar.fillRect(BAR_X, this.MP_Y, BAR_W, MP_H);
     this.manaBar.fillStyle(0x1144cc, 1);
-    this.manaBar.fillRect(BAR_X, MP_Y, mpFill, MP_H);
+    this.manaBar.fillRect(BAR_X, this.MP_Y, mpFill, MP_H);
     this.manaBar.fillStyle(0xffffff, 0.10);
-    this.manaBar.fillRect(BAR_X, MP_Y, mpFill, Math.floor(MP_H / 3));
+    this.manaBar.fillRect(BAR_X, this.MP_Y, mpFill, Math.floor(MP_H / 3));
     this.manaBar.lineStyle(1, 0x224488, 1);
-    this.manaBar.strokeRect(BAR_X, MP_Y, BAR_W, MP_H);
+    this.manaBar.strokeRect(BAR_X, this.MP_Y, BAR_W, MP_H);
     this.manaText.setText(`${player.stats.mana}/${player.stats.maxMana}`);
 
     // ── XP bar (bas, violet) ──────────────────
@@ -203,8 +207,6 @@ export class UIScene extends Phaser.Scene {
     this.xpBar.fillRect(0, this.cameras.main.height - 5, W, 5);
     this.xpBar.fillStyle(0x8833cc, 1);
     this.xpBar.fillRect(0, this.cameras.main.height - 5, Math.floor(W * xpPct), 5);
-
-    this.goldText.setText(`⬡ ${player.gold} G`);
 
     // ── Skill icons ───────────────────────────
     const slots = [player.equippedSkills.slot1, player.equippedSkills.slot2, player.equippedSkills.slot3, player.equippedSkills.slot4];
@@ -249,6 +251,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private onZoneEntered(zone: any) {
+    if (!this.sys.isActive()) return;
     this.zoneText.setText(zone.name);
     this.tweens.add({ targets: this.zoneText, alpha: 1, duration: 400 });
     this.time.delayedCall(3500, () => {

@@ -1,0 +1,188 @@
+fileFormatVersion: 2
+guid: 076ed7198bd860a439a9702ced62c25b
+ScriptedImporter:
+  fileIDToRecycleName:
+    100000: _MapPrfab/lumberjack_house
+    100002: _MapPrfab/lumberjack_house/Background
+    100004: _MapPrfab/lumberjack_house/Carpet
+    100006: _MapPrfab/lumberjack_house/Collide
+    100008: _MapPrfab/lumberjack_house/Collide/Collision_Default
+    100010: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon
+    100012: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (1)
+    100014: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (2)
+    100016: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (3)
+    100018: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (4)
+    100020: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (5)
+    100022: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (6)
+    100024: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (7)
+    100026: _MapPrfab/lumberjack_house/Details
+    100028: _MapPrfab/lumberjack_house/Middle
+    100030: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (8)
+    100032: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (9)
+    100034: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (10)
+    100036: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (11)
+    100038: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (12)
+    100040: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (13)
+    100042: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (14)
+    100044: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (15)
+    100046: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (16)
+    100048: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (17)
+    100050: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (18)
+    100052: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (19)
+    100054: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (20)
+    100056: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (21)
+    100058: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (22)
+    100060: _MapPrfab/lumberjack_house/Details/Collision_Default
+    100062: _MapPrfab/lumberjack_house/Details/Collision_Default/Polygon
+    100064: _MapPrfab/lumberjack_house/Details/Collision_Default/Polygon (1)
+    100066: _MapPrfab/lumberjack_house/Details/Collision_Default/Polygon (2)
+    100068: _MapPrfab/lumberjack_house/Middle/Collision_Default
+    100070: _MapPrfab/lumberjack_house/Middle/Collision_Default/Polygon
+    100072: _MapPrfab/lumberjack_house/Middle/Collision_Default/Polygon (1)
+    400000: _MapPrfab/lumberjack_house/Transform
+    400002: _MapPrfab/lumberjack_house/Background/Transform
+    400004: _MapPrfab/lumberjack_house/Carpet/Transform
+    400006: _MapPrfab/lumberjack_house/Collide/Transform
+    400008: _MapPrfab/lumberjack_house/Collide/Collision_Default/Transform
+    400010: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon/Transform
+    400012: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (1)/Transform
+    400014: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (2)/Transform
+    400016: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (3)/Transform
+    400018: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (4)/Transform
+    400020: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (5)/Transform
+    400022: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (6)/Transform
+    400024: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (7)/Transform
+    400026: _MapPrfab/lumberjack_house/Details/Transform
+    400028: _MapPrfab/lumberjack_house/Middle/Transform
+    400030: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (8)/Transform
+    400032: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (9)/Transform
+    400034: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (10)/Transform
+    400036: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (11)/Transform
+    400038: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (12)/Transform
+    400040: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (13)/Transform
+    400042: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (14)/Transform
+    400044: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (15)/Transform
+    400046: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (16)/Transform
+    400048: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (17)/Transform
+    400050: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (18)/Transform
+    400052: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (19)/Transform
+    400054: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (20)/Transform
+    400056: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (21)/Transform
+    400058: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (22)/Transform
+    400060: _MapPrfab/lumberjack_house/Details/Collision_Default/Transform
+    400062: _MapPrfab/lumberjack_house/Details/Collision_Default/Polygon/Transform
+    400064: _MapPrfab/lumberjack_house/Details/Collision_Default/Polygon (1)/Transform
+    400066: _MapPrfab/lumberjack_house/Details/Collision_Default/Polygon (2)/Transform
+    400068: _MapPrfab/lumberjack_house/Middle/Collision_Default/Transform
+    400070: _MapPrfab/lumberjack_house/Middle/Collision_Default/Polygon/Transform
+    400072: _MapPrfab/lumberjack_house/Middle/Collision_Default/Polygon (1)/Transform
+    5000000: _MapPrfab/lumberjack_house/Collide/Collision_Default/Rigidbody2D
+    5000002: _MapPrfab/lumberjack_house/Details/Collision_Default/Rigidbody2D
+    5000004: _MapPrfab/lumberjack_house/Middle/Collision_Default/Rigidbody2D
+    6000000: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon/PolygonCollider2D
+    6000002: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (1)/PolygonCollider2D
+    6000004: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (2)/PolygonCollider2D
+    6000006: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (3)/PolygonCollider2D
+    6000008: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (4)/PolygonCollider2D
+    6000010: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (5)/PolygonCollider2D
+    6000012: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (6)/PolygonCollider2D
+    6000014: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (7)/PolygonCollider2D
+    6000016: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (8)/PolygonCollider2D
+    6000018: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (9)/PolygonCollider2D
+    6000020: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (10)/PolygonCollider2D
+    6000022: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (11)/PolygonCollider2D
+    6000024: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (12)/PolygonCollider2D
+    6000026: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (13)/PolygonCollider2D
+    6000028: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (14)/PolygonCollider2D
+    6000030: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (15)/PolygonCollider2D
+    6000032: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (16)/PolygonCollider2D
+    6000034: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (17)/PolygonCollider2D
+    6000036: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (18)/PolygonCollider2D
+    6000038: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (19)/PolygonCollider2D
+    6000040: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (20)/PolygonCollider2D
+    6000042: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (21)/PolygonCollider2D
+    6000044: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (22)/PolygonCollider2D
+    6000046: _MapPrfab/lumberjack_house/Details/Collision_Default/Polygon/PolygonCollider2D
+    6000048: _MapPrfab/lumberjack_house/Details/Collision_Default/Polygon (1)/PolygonCollider2D
+    6000050: _MapPrfab/lumberjack_house/Details/Collision_Default/Polygon (2)/PolygonCollider2D
+    6000052: _MapPrfab/lumberjack_house/Middle/Collision_Default/Polygon/PolygonCollider2D
+    6000054: _MapPrfab/lumberjack_house/Middle/Collision_Default/Polygon (1)/PolygonCollider2D
+    6600000: _MapPrfab/lumberjack_house/Collide/Collision_Default/CompositeCollider2D
+    6600002: _MapPrfab/lumberjack_house/Details/Collision_Default/CompositeCollider2D
+    6600004: _MapPrfab/lumberjack_house/Middle/Collision_Default/CompositeCollider2D
+    11400000: _MapPrfab/lumberjack_house/MonoBehaviour-SuperTiled2Unity.SuperMap
+    11400002: _MapPrfab/lumberjack_house/MonoBehaviour-SuperTiled2Unity.SuperCustomProperties
+    11400004: _MapPrfab/lumberjack_house/Background/MonoBehaviour-SuperTiled2Unity.SuperTileLayer
+    11400006: _MapPrfab/lumberjack_house/Background/MonoBehaviour-SuperTiled2Unity.SuperCustomProperties
+    11400008: _MapPrfab/lumberjack_house/Background/MonoBehaviour-SuperTiled2Unity.TilemapData
+    11400010: _MapPrfab/lumberjack_house/Carpet/MonoBehaviour-SuperTiled2Unity.SuperTileLayer
+    11400012: _MapPrfab/lumberjack_house/Carpet/MonoBehaviour-SuperTiled2Unity.SuperCustomProperties
+    11400014: _MapPrfab/lumberjack_house/Carpet/MonoBehaviour-SuperTiled2Unity.TilemapData
+    11400016: _MapPrfab/lumberjack_house/Collide/MonoBehaviour-SuperTiled2Unity.SuperTileLayer
+    11400018: _MapPrfab/lumberjack_house/Collide/MonoBehaviour-SuperTiled2Unity.SuperCustomProperties
+    11400020: _MapPrfab/lumberjack_house/Collide/MonoBehaviour-SuperTiled2Unity.TilemapData
+    11400022: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400024: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (1)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400026: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (2)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400028: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (3)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400030: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (4)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400032: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (5)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400034: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (6)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400036: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (7)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400038: _MapPrfab/lumberjack_house/Details/MonoBehaviour-SuperTiled2Unity.SuperTileLayer
+    11400040: _MapPrfab/lumberjack_house/Details/MonoBehaviour-SuperTiled2Unity.SuperCustomProperties
+    11400042: _MapPrfab/lumberjack_house/Details/MonoBehaviour-SuperTiled2Unity.TilemapData
+    11400044: _MapPrfab/lumberjack_house/Middle/MonoBehaviour-SuperTiled2Unity.SuperTileLayer
+    11400046: _MapPrfab/lumberjack_house/Middle/MonoBehaviour-SuperTiled2Unity.SuperCustomProperties
+    11400048: _MapPrfab/lumberjack_house/Middle/MonoBehaviour-SuperTiled2Unity.TilemapData
+    11400050: _superAsset
+    11400052: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (8)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400054: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (9)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400056: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (10)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400058: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (11)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400060: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (12)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400062: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (13)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400064: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (14)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400066: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (15)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400068: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (16)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400070: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (17)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400072: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (18)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400074: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (19)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400076: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (20)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400078: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (21)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400080: _MapPrfab/lumberjack_house/Collide/Collision_Default/Polygon (22)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400082: _MapPrfab/lumberjack_house/Details/Collision_Default/Polygon/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400084: _MapPrfab/lumberjack_house/Details/Collision_Default/Polygon (1)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400086: _MapPrfab/lumberjack_house/Details/Collision_Default/Polygon (2)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400088: _MapPrfab/lumberjack_house/Middle/Collision_Default/Polygon/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    11400090: _MapPrfab/lumberjack_house/Middle/Collision_Default/Polygon (1)/MonoBehaviour-SuperTiled2Unity.SuperColliderComponent
+    100100000: _MapPrfab
+    2569400265252428796: _MapPrfab/lumberjack_house/Grid
+    3664157343022684176: _MapPrfab/lumberjack_house/Background/TilemapRenderer
+    3664157343022684178: _MapPrfab/lumberjack_house/Carpet/TilemapRenderer
+    3664157343022684180: _MapPrfab/lumberjack_house/Collide/TilemapRenderer
+    3664157343022684182: _MapPrfab/lumberjack_house/Details/TilemapRenderer
+    3664157343022684184: _MapPrfab/lumberjack_house/Middle/TilemapRenderer
+    8195094279510102542: _MapPrfab/lumberjack_house/Background/Tilemap
+    8195094279510102544: _MapPrfab/lumberjack_house/Carpet/Tilemap
+    8195094279510102546: _MapPrfab/lumberjack_house/Collide/Tilemap
+    8195094279510102548: _MapPrfab/lumberjack_house/Details/Tilemap
+    8195094279510102550: _MapPrfab/lumberjack_house/Middle/Tilemap
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+  script: {fileID: 11500000, guid: 1fa25d03934ea624a82bf2fcee6f0873, type: 3}
+  errors: []
+  warnings: []
+  missingSortingLayers: []
+  missingLayers: []
+  missingTags: []
+  pixelsPerUnit: 100
+  edgesPerEllipse: 32
+  numberOfObjectsImported: 2
+  tilesAsObjects: 0
+  importSorting: 0
+  isIsometric: 0
+  customImporterClassName: 
+  internalTilesets: []
