@@ -1,0 +1,62 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1045 &1
+EditorBuildSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Scenes:
+  - enabled: 1
+    path: Assets/Scenes/Menu.unity
+    guid: 7fec54f7df4fac24390ad7f8ade50e27
+  - enabled: 1
+    path: Assets/Scenes/Church.unity
+    guid: 90ef62f80df398246b3c268756e2b5e3
+  - enabled: 1
+    path: Assets/Scenes/HouxHouse.unity
+    guid: 056b9c11101515443b25c49c2099e36e
+  - enabled: 1
+    path: Assets/Scenes/LumberjackHouse.unity
+    guid: 05f60465071dee54c82531710049d5f2
+  - enabled: 1
+    path: Assets/Scenes/Shop.unity
+    guid: 6152bc43bdfb893438e903f96077bab9
+  - enabled: 1
+    path: Assets/Scenes/Town.unity
+    guid: acca036a0bfe7804aa0692b8e9530ddb
+  - enabled: 1
+    path: Assets/Scenes/VillagerHouse.unity
+    guid: 414a3debdf155c74f973f18240de3c42
+  - enabled: 1
+    path: Assets/Scenes/GameOver.unity
+    guid: bc83f9a6b63757649b7ee1c46c269643
+  - enabled: 1
+    path: Assets/Scenes/Air.unity
+    guid: 61a5c2881c2d343418770ffb55777588
+  - enabled: 1
+    path: Assets/Scenes/AirBoss.unity
+    guid: de5b302bc62d86e40aac3604f19a3c48
+  - enabled: 1
+    path: Assets/Scenes/Sea.unity
+    guid: e436a555942655f409eaebcb4de1da84
+  - enabled: 1
+    path: Assets/Scenes/SeaBoss.unity
+    guid: e8e3cf31dae861843af796eed546c051
+  - enabled: 1
+    path: Assets/Scenes/Swamp.unity
+    guid: 3e1bf79b52d156c4495b9c56685cbefe
+  - enabled: 1
+    path: Assets/Scenes/SwampBoss.unity
+    guid: d2dad6c04afc12544a32852dcb8bc954
+  - enabled: 1
+    path: Assets/Scenes/Volcano.unity
+    guid: 3e9ee68db51f5e647bd4218e7160a85e
+  - enabled: 1
+    path: Assets/Scenes/VolcanoBoss.unity
+    guid: cefd4fe1f07ca4e4b95b7195ec091e19
+  - enabled: 1
+    path: Assets/Scenes/HouxBoss.unity
+    guid: 2cfb9c11f6ec4094abcb5a709c3c6b25
+  - enabled: 1
+    path: Assets/Scenes/Credits.unity
+    guid: a3dee83ca7107914084591ac68606908
+  m_configObjects: {}
