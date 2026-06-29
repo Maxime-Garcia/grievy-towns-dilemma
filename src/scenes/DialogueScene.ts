@@ -1,19 +1,21 @@
 import { NPC, PlayerState } from '../types';
 import { DialogueSystem, DialogueSession } from '../systems/DialogueSystem';
+import { UI, drawPanel, pxStyle } from '../utils/UITheme';
 
 export class DialogueScene extends Phaser.Scene {
-  private session!: DialogueSession;
-  private player!: PlayerState;
-  private onClose!: () => void;
+  private session!:  DialogueSession;
+  private player!:   PlayerState;
+  private onClose!:  () => void;
 
-  private panel!: Phaser.GameObjects.Graphics;
-  private speakerText!: Phaser.GameObjects.Text;
-  private bodyText!: Phaser.GameObjects.Text;
-  private choiceTexts: Phaser.GameObjects.Text[] = [];
-  private choiceKeys:  Phaser.Input.Keyboard.Key[] = [];
-  private portrait!: Phaser.GameObjects.Image;
-  private advanceKey!: Phaser.Input.Keyboard.Key;
-  private escKey!: Phaser.Input.Keyboard.Key;
+  private panel!:        Phaser.GameObjects.Graphics;
+  private speakerText!:  Phaser.GameObjects.Text;
+  private bodyText!:     Phaser.GameObjects.Text;
+  private choiceTexts:   Phaser.GameObjects.Text[]           = [];
+  private choiceKeys:    Phaser.Input.Keyboard.Key[]         = [];
+  private portrait!:     Phaser.GameObjects.Image;
+  private advanceKey!:   Phaser.Input.Keyboard.Key;
+  private escKey!:       Phaser.Input.Keyboard.Key;
+  private enterKey!:     Phaser.Input.Keyboard.Key;
 
   constructor() { super({ key: 'DialogueScene' }); }
 
@@ -27,68 +29,86 @@ export class DialogueScene extends Phaser.Scene {
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
 
-    // Semi-transparent overlay (bottom third)
+    // ── Background panel (bottom strip) ──────────
+    const PH = 168;         // panel height
+    const PY = H - PH - 6;
+    const PX = 8;
+    const PW = W - 16;
+
     this.panel = this.add.graphics();
-    this.panel.fillStyle(0x111111, 0.92);
-    this.panel.fillRect(20, H - 180, W - 40, 160);
-    this.panel.lineStyle(1, 0x555544);
-    this.panel.strokeRect(20, H - 180, W - 40, 160);
+    drawPanel(this.panel, PX, PY, PW, PH);
 
-    // Portrait area
-    this.portrait = this.add.image(70, H - 100, 'ui_portrait_bg').setDisplaySize(80, 80);
+    // ── Portrait frame ────────────────────────────
+    const PORTRAIT_SIZE = 72;
+    const PORTRAIT_X    = PX + 12;
+    const PORTRAIT_Y    = PY + (PH - PORTRAIT_SIZE) / 2;
 
-    this.speakerText = this.add.text(130, H - 175, '', {
-      fontSize: '13px', color: '#ffdd88', fontFamily: 'monospace',
-      fontStyle: 'bold',
+    // Frame around portrait
+    const portFrame = this.add.graphics();
+    drawPanel(portFrame, PORTRAIT_X - 2, PORTRAIT_Y - 2, PORTRAIT_SIZE + 4, PORTRAIT_SIZE + 4, 0x080810);
+
+    this.portrait = this.add.image(
+      PORTRAIT_X + PORTRAIT_SIZE / 2,
+      PORTRAIT_Y + PORTRAIT_SIZE / 2,
+      'ui_portrait_bg'
+    ).setDisplaySize(PORTRAIT_SIZE, PORTRAIT_SIZE);
+
+    // ── Text area ─────────────────────────────────
+    const TX = PORTRAIT_X + PORTRAIT_SIZE + 14;
+    const TW = PW - (TX - PX) - 10;
+
+    this.speakerText = this.add.text(TX, PY + 12, '', pxStyle(10, UI.TXT_GOLD));
+    this.bodyText    = this.add.text(TX, PY + 32, '', {
+      ...pxStyle(9, UI.TXT_PARCHMENT),
+      wordWrap: { width: TW },
+      lineSpacing: 4,
     });
 
-    this.bodyText = this.add.text(130, H - 155, '', {
-      fontSize: '12px', color: '#ddddcc', fontFamily: 'monospace',
-      wordWrap: { width: W - 180 },
-    });
-
+    // ── Controls ──────────────────────────────────
     this.advanceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
     this.escKey     = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
-    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER).on('down', () => this.advance());
+    this.enterKey   = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+    this.enterKey.on('down', () => this.advance());
 
-    // Bouton fermeture (×)
-    const closeBtn = this.add.text(W - 28, H - 178, '×', {
-      fontSize: '18px', color: '#ff8866', fontFamily: 'monospace',
+    // Close button
+    const closeBtn = this.add.text(PX + PW - 10, PY + 8, '×', {
+      ...pxStyle(14, UI.TXT_RED),
       stroke: '#000000', strokeThickness: 2,
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(10);
-    closeBtn.on('pointerover', () => closeBtn.setStyle({ color: '#ffccaa' }));
-    closeBtn.on('pointerout',  () => closeBtn.setStyle({ color: '#ff8866' }));
+    }).setOrigin(1, 0).setInteractive({ useHandCursor: true }).setDepth(10);
+    closeBtn.on('pointerover', () => closeBtn.setStyle({ color: UI.TXT_ORANGE }));
+    closeBtn.on('pointerout',  () => closeBtn.setStyle({ color: UI.TXT_RED }));
     closeBtn.on('pointerdown', () => this.closeDialogue());
 
-    this.add.text(W - 40, H - 30, '[Z] continue   [Échap] fermer', {
-      fontSize: '9px', color: '#666655', fontFamily: 'monospace',
-    }).setOrigin(1, 0);
+    // Hint
+    this.add.text(PX + PW - 10, H - 10, '[Z] suite   [Échap] fermer', pxStyle(6, UI.TXT_HINT))
+      .setOrigin(1, 1);
 
     this.renderCurrentLine();
   }
 
   update() {
-    if (Phaser.Input.Keyboard.JustDown(this.escKey)) {
-      this.closeDialogue();
-      return;
-    }
-    if (Phaser.Input.Keyboard.JustDown(this.advanceKey)) {
-      this.advance();
-    }
+    if (Phaser.Input.Keyboard.JustDown(this.escKey))     { this.closeDialogue(); return; }
+    if (Phaser.Input.Keyboard.JustDown(this.advanceKey)) { this.advance(); }
   }
 
   shutdown() {
-    this.input.keyboard?.removeAllKeys(true);
+    this.enterKey?.off('down');
+    this.advanceKey?.removeAllListeners();
+    this.escKey?.removeAllListeners();
+    this.choiceKeys.forEach(k => k.off('down'));
+    this.choiceKeys = [];
+    this.input.keyboard?.removeKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+    this.input.keyboard?.removeKey(Phaser.Input.Keyboard.KeyCodes.Z);
+    this.input.keyboard?.removeKey(Phaser.Input.Keyboard.KeyCodes.ESC);
   }
 
   private renderCurrentLine() {
     const line = DialogueSystem.getCurrentLine(this.session, this.player);
     if (!line) { this.closeDialogue(); return; }
 
-    // Clear old choices and their keyboard listeners
     this.choiceTexts.forEach(t => t.destroy());
     this.choiceTexts = [];
-    this.choiceKeys.forEach(k => k.removeAllListeners());
+    this.choiceKeys.forEach(k => k.off('down'));
     this.choiceKeys = [];
 
     this.speakerText.setText(line.speaker);
@@ -97,34 +117,37 @@ export class DialogueScene extends Phaser.Scene {
     try { this.portrait.setTexture(`portrait_${line.speaker.toLowerCase()}`); } catch {}
 
     if (line.choices) {
+      const H        = this.cameras.main.height;
+      const PH       = 168;
+      const PY       = H - PH - 6;
+      const TX       = 8 + 12 + 72 + 14;
       const filtered = DialogueSystem.getFilteredChoices(line, this.player) ?? [];
-      filtered.forEach((choice, i) => {
-        const H = this.cameras.main.height;
-        const txt = this.add.text(130, H - 130 + i * 22, `${i + 1}. ${choice.text}`, {
-          fontSize: '11px', color: '#aaddff', fontFamily: 'monospace',
-        }).setInteractive({ useHandCursor: true });
 
-        txt.on('pointerover', () => txt.setStyle({ color: '#ffffff' }));
-        txt.on('pointerout',  () => txt.setStyle({ color: '#aaddff' }));
+      filtered.forEach((choice, i) => {
+        const cy  = PY + 90 + i * 22;
+        const txt = this.add.text(TX, cy, `▸ ${choice.text}`, pxStyle(9, UI.TXT_BLUE))
+          .setInteractive({ useHandCursor: true });
+
+        txt.on('pointerover', () => txt.setStyle({ color: UI.TXT_WHITE }));
+        txt.on('pointerout',  () => txt.setStyle({ color: UI.TXT_BLUE }));
         txt.on('pointerdown', () => {
           DialogueSystem.advance(this.session, this.player, i);
           this.renderCurrentLine();
         });
 
-        // Keyboard shortcut (1–4)
-        const numKeyCodes = [
+        const numCodes = [
           Phaser.Input.Keyboard.KeyCodes.ONE,
           Phaser.Input.Keyboard.KeyCodes.TWO,
           Phaser.Input.Keyboard.KeyCodes.THREE,
           Phaser.Input.Keyboard.KeyCodes.FOUR,
         ];
-        if (numKeyCodes[i] !== undefined) {
-          const numKey = this.input.keyboard!.addKey(numKeyCodes[i]);
-          numKey.once('down', () => {
+        if (numCodes[i] !== undefined) {
+          const k = this.input.keyboard!.addKey(numCodes[i]);
+          k.once('down', () => {
             DialogueSystem.advance(this.session, this.player, i);
             this.renderCurrentLine();
           });
-          this.choiceKeys.push(numKey);
+          this.choiceKeys.push(k);
         }
 
         this.choiceTexts.push(txt);
@@ -138,8 +161,7 @@ export class DialogueScene extends Phaser.Scene {
     if (!line) { this.closeDialogue(); return; }
     if (line.choices) {
       const filtered = DialogueSystem.getFilteredChoices(line, this.player) ?? [];
-      if (filtered.length > 0) return; // Waiting for player to pick a choice
-      // All choices filtered out — advance anyway to avoid softlock
+      if (filtered.length > 0) return;
     }
     DialogueSystem.advance(this.session, this.player);
     this.renderCurrentLine();

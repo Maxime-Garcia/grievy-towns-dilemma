@@ -37,6 +37,11 @@ Texture keys : catégorie_id                    (ex: enemy_ember_wyrm, npc_aldri
 - `elaras_gift` : son unlock condition référence `'sq_08_find_elara'` (pas `'find_elara'`)
 - Soul Echo : le bonus doit être multiplié dans `playerAttack()` ET `playerSkill()`
 
+## Référence thématique obligatoire
+
+**`INSPIRATIONS.md`** (à la racine) = source de vérité pour le style, le ton, le gamefeel et les inspirations du projet.  
+Tout agent créant du contenu, des effets visuels, des dialogues, des ennemis ou des items **doit le lire en premier**.
+
 ## Architecture agents
 
 - `code-reviewer` → audit complet (6 étapes : TS, données, Phaser lifecycle, balance, saves, rapport)
@@ -65,6 +70,16 @@ content/<nom>    → data uniquement (items, quests, enemies, npcs)
 fix/<nom>        → correction de bug ciblée
 ci/<nom>         → CI/CD, configuration, scripts
 ```
+
+**Workflow automatique à chaque nouvelle session / nouvelle demande :**
+
+1. `git status` — vérifier l'état actuel
+2. Si des modifications non-committées sur `master` → les committer sur une branche dédiée avant de commencer
+3. Créer une branche du type correspondant à la tâche (voir tableau ci-dessus) : `git checkout -b feat/<nom>`
+4. Implémenter, committer au fil des étapes
+5. Clore par un commit final, puis proposer une PR
+
+> **Ce workflow s'applique automatiquement.** L'utilisateur n'a pas à le demander explicitement.
 
 Chaque session ouvre sa branche, vérifie `git status` avant de commencer, et merge via PR uniquement après CI verte.
 
