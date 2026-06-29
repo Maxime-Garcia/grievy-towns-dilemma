@@ -216,7 +216,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private onItemLooted({ item, quantity }: { item: Item; quantity: number }) {
-    const color = (RARITY_COLORS as Record<string, string>)[item.rarity] ?? '#ffffff';
+    const color = RARITY_COLORS[item.rarity] ?? '#ffffff';
     if (item.rarity !== ItemRarity.COMMON) {
       this.pushNotif(`${item.name}  ×${quantity}`, color);
     }

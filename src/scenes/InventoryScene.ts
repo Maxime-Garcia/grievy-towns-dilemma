@@ -16,6 +16,7 @@ export class InventoryScene extends Phaser.Scene {
   constructor() { super({ key: 'InventoryScene' }); }
 
   init(data: { gameScene: GameScene }) {
+    if (!data?.gameScene) return;
     this.gameScene = data.gameScene;
     this.player    = data.gameScene.gameState.player;
   }
@@ -179,9 +180,14 @@ export class InventoryScene extends Phaser.Scene {
         .setOrigin(1, 0)
     );
 
-    const z = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
-    const x = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.X);
-    const c = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.C);
+    // Remove any leftover listeners from a previous detail panel click
+    const KB = this.input.keyboard!;
+    KB.removeKey(Phaser.Input.Keyboard.KeyCodes.Z);
+    KB.removeKey(Phaser.Input.Keyboard.KeyCodes.X);
+    KB.removeKey(Phaser.Input.Keyboard.KeyCodes.C);
+    const z = KB.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
+    const x = KB.addKey(Phaser.Input.Keyboard.KeyCodes.X);
+    const c = KB.addKey(Phaser.Input.Keyboard.KeyCodes.C);
 
     z.once('down', () => {
       setInventoryPlayerContext(this.player);

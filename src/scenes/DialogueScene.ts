@@ -15,6 +15,7 @@ export class DialogueScene extends Phaser.Scene {
   private portrait!:     Phaser.GameObjects.Image;
   private advanceKey!:   Phaser.Input.Keyboard.Key;
   private escKey!:       Phaser.Input.Keyboard.Key;
+  private enterKey!:     Phaser.Input.Keyboard.Key;
 
   constructor() { super({ key: 'DialogueScene' }); }
 
@@ -66,7 +67,8 @@ export class DialogueScene extends Phaser.Scene {
     // ── Controls ──────────────────────────────────
     this.advanceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
     this.escKey     = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
-    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER).on('down', () => this.advance());
+    this.enterKey   = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+    this.enterKey.on('down', () => this.advance());
 
     // Close button
     const closeBtn = this.add.text(PX + PW - 10, PY + 8, '×', {
@@ -90,7 +92,14 @@ export class DialogueScene extends Phaser.Scene {
   }
 
   shutdown() {
-    this.input.keyboard?.removeAllKeys(true);
+    this.enterKey?.off('down');
+    this.advanceKey?.removeAllListeners();
+    this.escKey?.removeAllListeners();
+    this.choiceKeys.forEach(k => k.off('down'));
+    this.choiceKeys = [];
+    this.input.keyboard?.removeKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+    this.input.keyboard?.removeKey(Phaser.Input.Keyboard.KeyCodes.Z);
+    this.input.keyboard?.removeKey(Phaser.Input.Keyboard.KeyCodes.ESC);
   }
 
   private renderCurrentLine() {
@@ -99,7 +108,7 @@ export class DialogueScene extends Phaser.Scene {
 
     this.choiceTexts.forEach(t => t.destroy());
     this.choiceTexts = [];
-    this.choiceKeys.forEach(k => k.removeAllListeners());
+    this.choiceKeys.forEach(k => k.off('down'));
     this.choiceKeys = [];
 
     this.speakerText.setText(line.speaker);

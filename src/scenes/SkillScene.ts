@@ -121,8 +121,13 @@ export class SkillScene extends Phaser.Scene {
       const skillId = this.player.equippedSkills[slot];
       const skill   = skillId ? SKILL_MAP[skillId] : null;
 
+      // When a skill is selected: empty slots pulse with a subtle gold tint to invite dropping,
+      // occupied slots stay darker so the distinction is clear.
+      const slotFill = this.selectedSkillId
+        ? (skill ? 0x14141e : 0x1a1828)
+        : UI.SLOT_BG;
       const bg = this.add.graphics();
-      drawPanel(bg, x, SY, SLOT_W, SLOT_H, this.selectedSkillId ? 0x1a1a28 : UI.SLOT_BG);
+      drawPanel(bg, x, SY, SLOT_W, SLOT_H, slotFill);
 
       // Key label
       this.add.text(x + 5, SY + 5, labels[i], pxStyle(7, UI.TXT_GOLD));
@@ -139,9 +144,9 @@ export class SkillScene extends Phaser.Scene {
           .setOrigin(0.5);
       }
 
-      // Glow hint when a skill is selected
+      // Glow hint when a skill is selected: bright gold on empty slots, dim on occupied
       if (this.selectedSkillId) {
-        bg.lineStyle(1, UI.CORNER, 0.6);
+        bg.lineStyle(1, UI.CORNER, skill ? 0.35 : 0.85);
         bg.strokeRect(x + 1, SY + 1, SLOT_W - 2, SLOT_H - 2);
       }
 
