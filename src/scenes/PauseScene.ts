@@ -304,9 +304,18 @@ export class PauseScene extends Phaser.Scene {
   }
 
   private saveGame() {
-    SaveSystem.save(this.gameScene.gameState, this.gameScene.gameState.saveSlot);
-    this.gameScene.events.emit('show_notification', t('notif.saved'));
-    this.renderUI();
+    const ok = SaveSystem.save(this.gameScene.gameState, this.gameScene.gameState.saveSlot);
+    const W   = this.cameras.main.width;
+    const msg = this.add.text(
+      W / 2, this.cameras.main.height / 2,
+      ok ? `✓  ${t('notif.saved')}` : '✕  Erreur sauvegarde',
+      { ...pxStyle(11, ok ? UI.TXT_GREEN : UI.TXT_RED, true), stroke: '#000000', strokeThickness: 3 }
+    ).setOrigin(0.5).setDepth(50).setAlpha(0);
+
+    this.tweens.add({ targets: msg, alpha: 1, duration: 150 });
+    this.time.delayedCall(1600, () => {
+      this.tweens.add({ targets: msg, alpha: 0, duration: 300, onComplete: () => msg.destroy() });
+    });
   }
 
   private goMainMenu() {
