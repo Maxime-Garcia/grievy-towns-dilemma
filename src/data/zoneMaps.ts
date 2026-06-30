@@ -264,7 +264,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       // Retour vers le Chemin de Pierre (qui mène à Grievy Town)
       { x: 800,  y: H2-40, w: 200, h: 40, targetZone: 'route_stone_path',        targetX: 800, targetY: 200,  label: '↓ Chemin de Pierre'    },
       // Connexion vers la Rivière Souterraine (qui mène à Abyssmar)
-      { x: 40,   y: 1400, w: 40,  h: 200, targetZone: 'route_underground_river', targetX: 1200, targetY: 720, label: '← Rivière Souterraine' },
+      { x: 40,   y: 1400, w: 40,  h: 200, targetZone: 'route_underground_river', targetX: 1480, targetY: 720, label: '← Rivière Souterraine' },
     ],
 
     lootables: [
@@ -492,9 +492,9 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
 
     teleports: [
       // Retour vers le Col du Tonnerre (qui mène à Grievy Town)
-      { x: 40,    y: 1380, w: 40,  h: 440, targetZone: 'route_thunder_pass',   targetX: 1440,     targetY: 640, label: '← Col du Tonnerre'      },
+      { x: 400,   y: 1800, w: 40,  h: 200, targetZone: 'route_thunder_pass',   targetX: 1480,     targetY: 640, label: '← Col du Tonnerre'      },
       // Connexion vers le Pont de Lave (qui mène à Ignis Reach)
-      { x: 40,    y: 80,   w: 40,  h: 300, targetZone: 'route_lava_bridge',    targetX: 1560-72,  targetY: 640, label: '← Pont de Lave'          },
+      { x: 1000,  y: 600,  w: 40,  h: 300, targetZone: 'route_lava_bridge',    targetX: 1480,     targetY: 540, label: '← Pont de Lave'          },
       // Connexion vers la Crête de Tempête (qui mène à Zephyr Peaks)
       { x: 2200,  y: 40,   w: 400, h: 40,  targetZone: 'route_storm_crossing', targetX: 800,      targetY: 1400, label: '↑ Crête de Tempête'     },
     ],
@@ -640,7 +640,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
 
     teleports: [
       // Retour vers la Descente des Ombres (qui mène à Glaciem)
-      { x: 1060, y: 40,    w: 200, h: 40, targetZone: 'route_dark_descent', targetX: 120, targetY: 1400, label: '↑ Descente des Ombres' },
+      { x: 1060, y: 40,    w: 200, h: 40, targetZone: 'route_dark_descent', targetX: 120, targetY: 640,  label: '↑ Descente des Ombres' },
     ],
 
     lootables: [
@@ -997,7 +997,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       // Côté Grievy Town (bord ouest)
       { x: 0,    y: 560, w: 40, h: 240, targetZone: 'grievy_town', targetX: W1-80,  targetY: 920, label: '← Grievy Town' },
       // Côté Volterra (bord est)
-      { x: 1560, y: 560, w: 40, h: 240, targetZone: 'volterra',    targetX: 160,    targetY: 1600, label: '→ Volterra'    },
+      { x: 1560, y: 560, w: 40, h: 240, targetZone: 'volterra',    targetX: 450,    targetY: 1850, label: '→ Volterra'    },
     ],
 
     lootables: [
@@ -1135,7 +1135,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       // Côté Ignis Reach (bord ouest)
       { x: 0,    y: 400, w: 40, h: 280, targetZone: 'ignis_reach', targetX: W2-160, targetY: 600,  label: '← Ignis Reach' },
       // Côté Volterra (bord est)
-      { x: 1560, y: 400, w: 40, h: 280, targetZone: 'volterra',    targetX: 160,    targetY: 200,  label: '→ Volterra'    },
+      { x: 1560, y: 400, w: 40, h: 280, targetZone: 'volterra',    targetX: 1100,   targetY: 800,  label: '→ Volterra'    },
     ],
 
     lootables: [
@@ -1203,7 +1203,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
 
     teleports: [
       // Côté Glaciem (bord ouest)
-      { x: 0,    y: 520, w: 40, h: 240, targetZone: 'glaciem',         targetX: W2-160,  targetY: 400,     label: '← Glaciem'           },
+      { x: 0,    y: 520, w: 40, h: 240, targetZone: 'glaciem',         targetX: W2-160,  targetY: 1600,    label: '← Glaciem'           },
       // Côté Malachar's Spire (bord sud, via le passage descendant)
       { x: 560,  y: 1560,w: 440,h: 40,  targetZone: 'malachars_spire', targetX: 1200,    targetY: 160,     label: '↓ La Flèche de Malachar' },
     ],
