@@ -2,6 +2,7 @@ import { PlayerState, Item, ItemRarity, RARITY_COLORS } from '../types';
 import { GameScene } from './GameScene';
 import { SKILL_MAP } from '../data/skills';
 import { UI, drawPanel, drawBar, pxStyle } from '../utils/UITheme';
+import { t, localizeItem, localizeSkill } from '../i18n';
 
 const BAR_W = 178;
 const HP_H  = 16;
@@ -52,8 +53,8 @@ export class UIScene extends Phaser.Scene {
     drawPanel(panelGfx, 4, PANEL_TOP, PANEL_W, PANEL_H);
 
     // Label badges HP / MP
-    this.add.text(10, this.HP_Y + 1, 'HP', pxStyle(7, UI.TXT_GREEN));
-    this.add.text(10, this.MP_Y + 2, 'MP', pxStyle(7, UI.TXT_BLUE));
+    this.add.text(10, this.HP_Y + 1, t('ui.hp'), pxStyle(7, UI.TXT_GREEN));
+    this.add.text(10, this.MP_Y + 2, t('ui.mp'), pxStyle(7, UI.TXT_BLUE));
 
     // Player name (top of panel)
     this.playerNameText = this.add.text(10, PANEL_TOP + 6, '', pxStyle(8, UI.TXT_GOLD));
@@ -123,7 +124,7 @@ export class UIScene extends Phaser.Scene {
       .setOrigin(1, 0).setAlpha(0).setDepth(5);
 
     // ── Hint (bottom-right) ───────────────────────
-    this.add.text(W - 8, H - 20, '[I] Inv  [K] Skills', pxStyle(6, UI.TXT_HINT))
+    this.add.text(W - 8, H - 20, t('ui.hint'), pxStyle(6, UI.TXT_HINT))
       .setOrigin(1, 0);
 
     // ── Events ───────────────────────────────────
@@ -135,6 +136,7 @@ export class UIScene extends Phaser.Scene {
     this.gameScene.events.on('zone_cleared',     this.onZoneCleared,     this);
     this.gameScene.events.on('zone_entered',     this.onZoneEntered,     this);
     this.gameScene.events.on('show_notification',this.onShowNotification,this);
+    this.gameScene.events.on('language_changed', this.onLanguageChanged,  this);
   }
 
   shutdown() {
@@ -146,6 +148,11 @@ export class UIScene extends Phaser.Scene {
     this.gameScene.events.off('zone_cleared',     this.onZoneCleared,     this);
     this.gameScene.events.off('zone_entered',     this.onZoneEntered,     this);
     this.gameScene.events.off('show_notification',this.onShowNotification,this);
+    this.gameScene.events.off('language_changed', this.onLanguageChanged,  this);
+  }
+
+  private onLanguageChanged() {
+    this.scene.restart({ gameScene: this.gameScene });
   }
 
   update(_t: number, delta: number) {
@@ -169,7 +176,7 @@ export class UIScene extends Phaser.Scene {
     const { width: W, height: H } = this.cameras.main;
 
     this.playerNameText.setText(player.name);
-    this.levelText.setText(`Lv.${player.level}`);
+    this.levelText.setText(`${t('ui.level')}${player.level}`);
 
     // HP bar
     const hpPct   = Math.max(0, player.stats.hp / player.stats.maxHp);
@@ -212,36 +219,37 @@ export class UIScene extends Phaser.Scene {
   }
 
   private onLevelUp(level: number) {
-    this.pushNotif(`★ Level ${level} ★`, UI.TXT_GOLD);
+    this.pushNotif(t('notif.level_up').replace('{level}', String(level)), UI.TXT_GOLD);
   }
 
   private onItemLooted({ item, quantity }: { item: Item; quantity: number }) {
     const color = RARITY_COLORS[item.rarity] ?? '#ffffff';
     if (item.rarity !== ItemRarity.COMMON) {
-      this.pushNotif(`${item.name}  ×${quantity}`, color);
+      this.pushNotif(`${localizeItem(item).name}  ×${quantity}`, color);
     }
   }
 
   private onQuestCompleted() {
-    this.pushNotif('Quête accomplie !', UI.TXT_ORANGE);
+    this.pushNotif(t('notif.quest_done'), UI.TXT_ORANGE);
   }
 
   private onSkillUnlocked(skillId: string) {
     const skill = SKILL_MAP[skillId];
-    if (skill) this.pushNotif(`Compétence : ${skill.name}`, UI.TXT_BLUE);
+    if (skill) this.pushNotif(t('notif.skill_unlocked').replace('{name}', localizeSkill(skill).name), UI.TXT_BLUE);
   }
 
-  private onZoneCleared(zone: { name: string }) {
-    this.pushNotif(`${zone.name} — Libérée`, UI.TXT_GREEN);
+  private onZoneCleared(zone: { id: string; name: string }) {
+    const zoneName = t(`zone.${zone.id}`) || zone.name;
+    this.pushNotif(t('notif.zone_cleared').replace('{name}', zoneName), UI.TXT_GREEN);
   }
 
   private onShowNotification(msg: string) {
     this.pushNotif(msg, UI.TXT_PARCHMENT);
   }
 
-  private onZoneEntered(zone: { name: string }) {
+  private onZoneEntered(zone: { id: string; name: string }) {
     if (!this.sys.isActive()) return;
-    this.zoneText.setText(zone.name);
+    this.zoneText.setText(t(`zone.${zone.id}`) || zone.name);
     this.tweens.add({ targets: this.zoneText, alpha: 1, duration: 400 });
     this.time.delayedCall(3500, () => {
       this.tweens.add({ targets: this.zoneText, alpha: 0.4, duration: 1000 });
