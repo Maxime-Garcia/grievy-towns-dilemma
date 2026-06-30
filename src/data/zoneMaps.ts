@@ -184,7 +184,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       // Retour vers la route des Braises (qui mène à Grievy Town)
       { x: 0,    y: 380,  w: 40,  h: 440, targetZone: 'route_ember_road',   targetX: 1560-72, targetY: 640,  label: '← Route des Braises' },
       // Connexion vers le Pont de Lave (qui mène à Volterra)
-      { x: 3960, y: 380,  w: 40,  h: 440, targetZone: 'route_lava_bridge',  targetX: 120,     targetY: 640,  label: '→ Pont de Lave'      },
+      { x: 3960, y: 380,  w: 40,  h: 440, targetZone: 'route_lava_bridge',  targetX: 80,      targetY: 300,  label: '→ Pont de Lave'      },
     ],
 
     lootables: [
@@ -339,7 +339,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       // Retour vers le Sentier de Zephyr (qui mène à Grievy Town)
       { x: 1060,   y: 40,    w: 200, h: 40,  targetZone: 'route_zephyr_trail',  targetX: 800,      targetY: 1400, label: '↑ Sentier de Zephyr'   },
       // Connexion vers la Crête de Tempête (qui mène à Volterra)
-      { x: W2-40,  y: 2600,  w: 40,  h: 400, targetZone: 'route_storm_crossing', targetX: 800,     targetY: 200,  label: '→ Crête de Tempête'    },
+      { x: W2-40,  y: 2600,  w: 40,  h: 400, targetZone: 'route_storm_crossing', targetX: 80,      targetY: 300,  label: '→ Crête de Tempête'    },
     ],
 
     lootables: [
@@ -493,10 +493,10 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
     teleports: [
       // Retour vers le Col du Tonnerre (qui mène à Grievy Town)
       { x: 400,   y: 1800, w: 40,  h: 200, targetZone: 'route_thunder_pass',   targetX: 1480,     targetY: 640, label: '← Col du Tonnerre'      },
-      // Connexion vers le Pont de Lave (qui mène à Ignis Reach)
-      { x: 1000,  y: 600,  w: 40,  h: 300, targetZone: 'route_lava_bridge',    targetX: 1480,     targetY: 540, label: '← Pont de Lave'          },
-      // Connexion vers la Crête de Tempête (qui mène à Zephyr Peaks)
-      { x: 2200,  y: 40,   w: 400, h: 40,  targetZone: 'route_storm_crossing', targetX: 800,      targetY: 1400, label: '↑ Crête de Tempête'     },
+      // Connexion vers le Pont de Lave (qui mène à Ignis Reach) — bord EST accessible
+      { x: W2-40, y: 1520, w: 40,  h: 200, targetZone: 'route_lava_bridge',    targetX: 80,       targetY: 2820, label: '→ Pont de Lave'          },
+      // Connexion vers la Crête de Tempête (qui mène à Zephyr Peaks) — bord OUEST sous la chambre du boss
+      { x: 40,    y: 1050, w: 40,  h: 300, targetZone: 'route_storm_crossing', targetX: 1480,     targetY: 300, label: '← Crête de Tempête'      },
     ],
 
     lootables: [
@@ -1081,70 +1081,86 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
   // Pyrath et Volkran se partageaient ce territoire — deux types de destruction différents
   // cohabitaient ici. Maintenant ils se mélangent. C'est pire.
   route_lava_bridge: {
-    mapWidth: 1600, mapHeight: 1600,
+    // Zone VERTICALE : Ignis Reach (nord-ouest) → Volterra (sud-ouest via bord EST)
+    // Le joueur entre par le haut-gauche, traverse en S, sort par le bas-gauche.
+    mapWidth: 1200, mapHeight: 3000,
     bgColor: 0x100608, pathColor: 0x2a1408, wallColor: 0x1c0c08,
     accentColor: 0xee8800,
 
     waterAreas: [
-      // Fissure de lave centrale (le vrai pont est étroit)
-      { x: 0,    y: 0,    w: 400,  h: 460  },
-      { x: 0,    y: 660,  w: 400,  h: 940  },
-      { x: 460,  y: 0,    w: 1140, h: 180  },
-      { x: 460,  y: 1420, w: 1140, h: 180  },
-      { x: 1280, y: 180,  w: 320,  h: 1240 },
-      // Projections de lave (flaques)
-      { x: 500,  y: 560,  w: 120,  h: 80   },
-      { x: 900,  y: 700,  w: 100,  h: 80   },
+      // ── Rivière de lave CENTRALE (barrière verticale avec deux ponts) ──────────
+      { x: 400, y: 0,    w: 400, h: 900  },  // Centre-haut (avant pont 1)
+      { x: 400, y: 960,  w: 400, h: 1080 },  // Centre-milieu (entre les deux ponts)
+      { x: 400, y: 2100, w: 400, h: 900  },  // Centre-bas (après pont 2)
+      // ── Lave côté EST (force couloir gauche en haut et en bas) ────────────────
+      { x: 800, y: 0,    w: 400, h: 900  },  // Est-haut : joueur reste à gauche
+      { x: 800, y: 2100, w: 400, h: 900  },  // Est-bas : joueur revient à gauche
+      // ── Lave côté OUEST milieu (force couloir droit entre les ponts) ──────────
+      { x: 0,   y: 960,  w: 400, h: 1080 },  // Ouest-milieu : joueur passe à droite
+      // ── Flaques décoratives ───────────────────────────────────────────────────
+      { x: 100, y: 220,  w: 80,  h: 80   },  // Flaque entrée haut-gauche
+      { x: 220, y: 680,  w: 80,  h: 80   },  // Flaque avant pont 1
+      { x: 900, y: 1200, w: 80,  h: 80   },  // Flaque couloir droit
+      { x: 880, y: 1780, w: 80,  h: 80   },  // Flaque couloir droit bas
+      { x: 180, y: 2400, w: 80,  h: 80   },  // Flaque avant sortie
     ],
 
     paths: [
-      // Le pont en lui-même — étroit et sinueux
-      { x: 360, y: 460, w: 920, h: 200 },
-      // Élargissement côté Ignis Reach
-      { x: 80,  y: 420, w: 360, h: 280 },
-      // Élargissement côté Volterra
-      { x: 1200,y: 420, w: 320, h: 280 },
+      // Couloir GAUCHE haut (entrée depuis Ignis Reach)
+      { x: 0,   y: 0,    w: 400, h: 900  },
+      // PONT 1 — traversée vers la droite (y=900-960, toute la largeur)
+      { x: 0,   y: 900,  w: 1200, h: 60  },
+      // Couloir DROIT milieu
+      { x: 800, y: 960,  w: 400, h: 1080 },
+      // PONT 2 — retour vers la gauche (y=2040-2100, toute la largeur)
+      { x: 0,   y: 2040, w: 1200, h: 60  },
+      // Couloir GAUCHE bas (sortie vers Volterra)
+      { x: 0,   y: 2100, w: 400, h: 900  },
     ],
 
     walls: [
-      // Bordures (remplacées en grande partie par la lave)
-      { x: 0,    y: 0,    w: 40,   h: 500  },
-      { x: 0,    y: 620,  w: 40,   h: 980  },
-      { x: 1560, y: 0,    w: 40,   h: 1600 },
-      // Parapets du pont (garde-fous en pierre volcanique)
-      { x: 360,  y: 420,  w: 920,  h: 40   },
-      { x: 360,  y: 660,  w: 920,  h: 40   },
-      // Ruines de l'ancien relais de garde
-      { x: 120,  y: 440,  w: 120,  h: 120  },
-      { x: 1320, y: 440,  w: 120,  h: 120  },
-      // Colonnes effondrées
-      { x: 580,  y: 440,  w: 60,   h: 60   },
-      { x: 740,  y: 440,  w: 60,   h: 60   },
-      { x: 900,  y: 440,  w: 60,   h: 60   },
-      { x: 1060, y: 440,  w: 60,   h: 60   },
-      // Même chose côté sud
-      { x: 580,  y: 620,  w: 60,   h: 60   },
-      { x: 740,  y: 620,  w: 60,   h: 60   },
-      { x: 900,  y: 620,  w: 60,   h: 60   },
-      { x: 1060, y: 620,  w: 60,   h: 60   },
+      // Parapets du Pont 1 (garde-fous en pierre volcanique)
+      { x: 400, y: 860,  w: 400, h: 40  },  // Parapet nord pont 1
+      { x: 400, y: 960,  w: 400, h: 40  },  // Parapet sud pont 1
+      // Parapets du Pont 2
+      { x: 400, y: 2000, w: 400, h: 40  },  // Parapet nord pont 2
+      { x: 400, y: 2100, w: 400, h: 40  },  // Parapet sud pont 2
+      // Colonnes effondrées sur le Pont 1
+      { x: 460, y: 900,  w: 60,  h: 60  },
+      { x: 580, y: 900,  w: 60,  h: 60  },
+      { x: 700, y: 900,  w: 60,  h: 60  },
+      // Colonnes effondrées sur le Pont 2
+      { x: 460, y: 2040, w: 60,  h: 60  },
+      { x: 580, y: 2040, w: 60,  h: 60  },
+      { x: 700, y: 2040, w: 60,  h: 60  },
+      // Ruines du relais de garde (couloir haut-gauche)
+      { x: 120, y: 340,  w: 120, h: 120 },
+      { x: 260, y: 520,  w: 80,  h: 80  },
+      // Rochers du couloir droit
+      { x: 920, y: 1080, w: 100, h: 80  },
+      { x: 840, y: 1540, w: 80,  h: 80  },
+      { x: 920, y: 1900, w: 100, h: 80  },
+      // Ruines couloir bas-gauche (avant sortie)
+      { x: 120, y: 2480, w: 120, h: 120 },
+      { x: 260, y: 2680, w: 80,  h: 80  },
     ],
 
     npcs: [],
 
     teleports: [
-      // Côté Ignis Reach (bord ouest)
-      { x: 0,    y: 400, w: 40, h: 280, targetZone: 'ignis_reach', targetX: W2-160, targetY: 600,  label: '← Ignis Reach' },
-      // Côté Volterra (bord est)
-      { x: 1560, y: 400, w: 40, h: 280, targetZone: 'volterra',    targetX: 1100,   targetY: 800,  label: '→ Volterra'    },
+      // NORD-OUEST → Ignis Reach (bord gauche, haut)
+      { x: 0, y: 80,   w: 40, h: 340, targetZone: 'ignis_reach', targetX: W2-160, targetY: 600,  label: '← Ignis Reach' },
+      // SUD-OUEST → Volterra (bord gauche, bas) — spawn sur le bord EST de Volterra
+      { x: 0, y: 2620, w: 40, h: 300, targetZone: 'volterra',    targetX: W2-160, targetY: 1560, label: '← Volterra'    },
     ],
 
     lootables: [
-      { id: 'rlb_mineral_1', type: 'mineral', x: 200,  y: 520,  itemPool: ['ember_core', 'obsidian_shard'],     goldMin: 14, goldMax: 30 },
-      { id: 'rlb_mineral_2', type: 'mineral', x: 1300, y: 520,  itemPool: ['volt_crystal', 'copper_coil'],      goldMin: 14, goldMax: 30 },
-      { id: 'rlb_chest_1',   type: 'chest',   x: 780,  y: 530,  itemPool: ['fire_essence', 'volt_crystal', 'minor_health_potion'], goldMin: 35, goldMax: 70 },
+      { id: 'rlb_mineral_1', type: 'mineral', x: 200,  y: 500,  itemPool: ['ember_core', 'obsidian_shard'],                        goldMin: 14, goldMax: 30 },
+      { id: 'rlb_chest_1',   type: 'chest',   x: 900,  y: 1380, itemPool: ['fire_essence', 'volt_crystal', 'minor_health_potion'], goldMin: 35, goldMax: 70 },
+      { id: 'rlb_mineral_2', type: 'mineral', x: 200,  y: 2460, itemPool: ['volt_crystal', 'copper_coil'],                         goldMin: 14, goldMax: 30 },
     ],
 
-    spawnX: 80, spawnY: 540,
+    spawnX: 80, spawnY: 300,
   },
 
   // ── DESCENTE DES OMBRES (Glaciem ↔ Malachar's Spire) ────────────────────────
@@ -1316,85 +1332,80 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
   // Tempête permanente. Les éclairs frappent les falaises. Le sol tremble à chaque décharge.
   // Deux chemins — un haut exposé, un bas abrité — se rejoignent dans le chaos central.
   route_storm_crossing: {
+    // Zone HORIZONTALE : Zephyr Peaks (bord OUEST) → Volterra (bord EST)
+    // Deux chemins parallèles : haut exposé aux éclairs, bas abrité par les falaises.
     mapWidth: 1600, mapHeight: 1600,
     bgColor: 0x040408, pathColor: 0x151525, wallColor: 0x0a0a1a,
     accentColor: 0xaacc00,
 
     waterAreas: [
-      // Bassins électrifiés (eau conductrice, bloquants)
-      { x: 560,  y: 680,  w: 160, h: 120 },
-      { x: 920,  y: 820,  w: 200, h: 140 },
-      { x: 280,  y: 340,  w: 120, h: 100 },
+      // Grand bassin électrifié central (sépare les deux chemins)
+      { x: 0,    y: 480,  w: 1600, h: 640 },  // Barrage électrique (y=480-1120)
+      // Flaques électriques sur le chemin haut (exposé)
+      { x: 200,  y: 200,  w: 80,   h: 80  },
+      { x: 640,  y: 180,  w: 100,  h: 80  },
+      { x: 1100, y: 200,  w: 80,   h: 80  },
+      { x: 1380, y: 160,  w: 80,   h: 80  },
     ],
 
     paths: [
-      // Chemin haut (exposé, nord) — du bord nord jusqu'au carrefour central
-      { x: 680,  y: 0,    w: 200, h: 200  },
-      { x: 500,  y: 160,  w: 400, h: 160  },
-      { x: 400,  y: 280,  w: 200, h: 200  },
-      { x: 400,  y: 440,  w: 600, h: 160  },
-      // Chemin bas (abrité, sud) — depuis le bord nord en zigzag
-      { x: 680,  y: 0,    w: 200, h: 120  },
-      { x: 900,  y: 80,   w: 200, h: 200  },
-      { x: 1000, y: 240,  w: 160, h: 300  },
-      { x: 840,  y: 500,  w: 320, h: 160  },
-      // Carrefour central (les deux chemins se rejoignent)
-      { x: 540,  y: 560,  w: 620, h: 200  },
-      // Sortie vers Volterra (bord sud)
-      { x: 640,  y: 720,  w: 200, h: 160  },
-      { x: 560,  y: 840,  w: 360, h: 160  },
-      { x: 680,  y: 960,  w: 200, h: 400  },
-      { x: 580,  y: 1320, w: 400, h: 160  },
-      { x: 680,  y: 1440, w: 200, h: 160  },
+      // CHEMIN HAUT (exposé à la tempête, plus court, plus dangereux)
+      { x: 0,    y: 140,  w: 1600, h: 320 },
+      // CHEMIN BAS (abrité par les falaises, plus long, plus sûr)
+      { x: 0,    y: 1120, w: 1600, h: 400 },
     ],
 
     walls: [
-      // Bordures extérieures
-      { x: 0,    y: 0,    w: 1600, h: 40   },
-      { x: 0,    y: 1560, w: 1600, h: 40   },
-      { x: 0,    y: 0,    w: 40,   h: 1600 },
-      { x: 1560, y: 0,    w: 40,   h: 1600 },
-      // Falaises délimitant le chemin haut (nord)
-      { x: 80,   y: 60,   w: 520,  h: 200  },
-      { x: 80,   y: 320,  w: 280,  h: 400  },
-      { x: 60,   y: 480,  w: 300,  h: 120  },
-      // Falaises est (entre les deux chemins)
-      { x: 1160, y: 80,   w: 360,  h: 240  },
-      { x: 1200, y: 300,  w: 320,  h: 280  },
-      { x: 1200, y: 600,  w: 300,  h: 200  },
-      // Précipices et débris de pylônes foudroyés (milieu de zone)
-      { x: 440,  y: 600,  w: 100,  h: 80   },
-      { x: 1160, y: 620,  w: 80,   h: 100  },
-      { x: 820,  y: 440,  w: 60,   h: 120  },
-      { x: 680,  y: 360,  w: 80,   h: 80   },
-      // Rochers de falaise (passage vers Volterra, sud)
-      { x: 80,   y: 720,  w: 440,  h: 600  },
-      { x: 80,   y: 1380, w: 460,  h: 160  },
-      { x: 1080, y: 760,  w: 440,  h: 560  },
-      { x: 1060, y: 1380, w: 440,  h: 160  },
-      // Pylônes foudroyés effondrés (obstacles décoratifs bloquants)
-      { x: 340,  y: 220,  w: 60,   h: 120  },
-      { x: 1060, y: 160,  w: 60,   h: 120  },
-      { x: 500,  y: 740,  w: 40,   h: 100  },
-      { x: 1100, y: 900,  w: 40,   h: 100  },
+      // Bordures extérieures (avec ouvertures pour téléporteurs)
+      { x: 0,    y: 0,    w: 1600, h: 40   },  // Bord nord
+      { x: 0,    y: 1560, w: 1600, h: 40   },  // Bord sud
+      { x: 0,    y: 0,    w: 40,   h: 140  },  // Bord ouest : au-dessus chemin haut
+      { x: 0,    y: 460,  w: 40,   h: 660  },  // Bord ouest : entre les deux chemins
+      { x: 0,    y: 1520, w: 40,   h: 80   },  // Bord ouest : sous chemin bas
+      { x: 1560, y: 0,    w: 40,   h: 140  },  // Bord est : au-dessus chemin haut
+      { x: 1560, y: 460,  w: 40,   h: 660  },  // Bord est : entre les deux chemins
+      { x: 1560, y: 1520, w: 40,   h: 80   },  // Bord est : sous chemin bas
+      // Falaises nord (bord supérieur du chemin haut)
+      { x: 80,   y: 60,   w: 400,  h: 80   },
+      { x: 640,  y: 60,   w: 360,  h: 80   },
+      { x: 1160, y: 60,   w: 340,  h: 80   },
+      // Pylônes foudroyés (obstacles sur le chemin haut exposé)
+      { x: 280,  y: 160,  w: 60,   h: 80   },
+      { x: 680,  y: 160,  w: 60,   h: 80   },
+      { x: 1040, y: 160,  w: 60,   h: 80   },
+      { x: 1340, y: 160,  w: 60,   h: 80   },
+      // Falaises protégeant le chemin bas (bord sud)
+      { x: 80,   y: 1480, w: 300,  h: 80   },
+      { x: 600,  y: 1480, w: 300,  h: 80   },
+      { x: 1220, y: 1480, w: 300,  h: 80   },
+      // Rochers de délimitation (transition haut ↔ bassin électrique)
+      { x: 80,   y: 440,  w: 360,  h: 80   },
+      { x: 640,  y: 440,  w: 360,  h: 80   },
+      { x: 1200, y: 440,  w: 300,  h: 80   },
+      // Rochers de délimitation (bassin ↔ chemin bas)
+      { x: 80,   y: 1100, w: 360,  h: 60   },
+      { x: 640,  y: 1100, w: 360,  h: 60   },
+      { x: 1200, y: 1100, w: 300,  h: 60   },
     ],
 
     npcs: [],
 
     teleports: [
-      // Côté Zephyr Peaks (40px dans la zone jouable)
-      { x: 640,  y: 40,   w: 200, h: 40, targetZone: 'zephyr_peaks', targetX: 2800, targetY: 1350, label: '↑ Zephyr Peaks' },
-      // Côté Volterra (40px dans la zone jouable)
-      { x: 640,  y: 1520, w: 200, h: 40, targetZone: 'volterra',     targetX: 2400, targetY: 120,  label: '↓ Volterra'     },
+      // BORD OUEST → Zephyr Peaks (deux entrées : chemin haut et chemin bas)
+      { x: 0, y: 140,  w: 40, h: 320, targetZone: 'zephyr_peaks', targetX: W2-160, targetY: 2800, label: '← Zephyr Peaks' },
+      { x: 0, y: 1120, w: 40, h: 400, targetZone: 'zephyr_peaks', targetX: W2-160, targetY: 2800, label: '← Zephyr Peaks' },
+      // BORD EST → Volterra (deux sorties : chemin haut et chemin bas)
+      { x: 1520, y: 140,  w: 40, h: 320, targetZone: 'volterra', targetX: 160, targetY: 1150, label: '→ Volterra' },
+      { x: 1520, y: 1120, w: 40, h: 400, targetZone: 'volterra', targetX: 160, targetY: 1150, label: '→ Volterra' },
     ],
 
     lootables: [
-      { id: 'rsc_mineral_1', type: 'mineral', x: 460,  y: 340,  itemPool: ['skystone', 'volt_crystal'],           goldMin: 16, goldMax: 34 },
-      { id: 'rsc_mineral_2', type: 'mineral', x: 1060, y: 260,  itemPool: ['copper_coil', 'wind_crystal'],        goldMin: 14, goldMax: 30 },
-      { id: 'rsc_chest_1',   type: 'chest',   x: 760,  y: 620,  itemPool: ['minor_health_potion', 'volt_crystal', 'skystone'], goldMin: 28, goldMax: 58 },
+      { id: 'rsc_mineral_1', type: 'mineral', x: 320,  y: 260,  itemPool: ['skystone', 'volt_crystal'],                           goldMin: 16, goldMax: 34 },
+      { id: 'rsc_mineral_2', type: 'mineral', x: 1280, y: 260,  itemPool: ['copper_coil', 'wind_crystal'],                        goldMin: 14, goldMax: 30 },
+      { id: 'rsc_chest_1',   type: 'chest',   x: 800,  y: 1280, itemPool: ['minor_health_potion', 'volt_crystal', 'skystone'],    goldMin: 28, goldMax: 58 },
     ],
 
-    spawnX: 800, spawnY: 800,
+    spawnX: 80, spawnY: 300,
   },
 };
 
