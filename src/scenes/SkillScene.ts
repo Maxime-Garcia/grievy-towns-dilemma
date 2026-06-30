@@ -3,6 +3,7 @@ import { PlayerState, EquippedSkills, Skill } from '../types';
 import { SkillSystem } from '../systems/SkillSystem';
 import { SKILL_MAP } from '../data/skills';
 import { UI, drawPanel, pxStyle } from '../utils/UITheme';
+import { t, localizeSkill } from '../i18n';
 
 export class SkillScene extends Phaser.Scene {
   private gameScene!:        GameScene;
@@ -28,7 +29,7 @@ export class SkillScene extends Phaser.Scene {
     drawPanel(frame, 6, 6, W - 12, H - 12);
 
     // Title
-    this.add.text(W / 2, 18, 'COMPÉTENCES', pxStyle(12, UI.TXT_GOLD, true)).setOrigin(0.5, 0);
+    this.add.text(W / 2, 18, t('skills.title'), pxStyle(12, UI.TXT_GOLD, true)).setOrigin(0.5, 0);
 
     // Separator
     const sep = this.add.graphics();
@@ -43,12 +44,12 @@ export class SkillScene extends Phaser.Scene {
     this.renderEquippedSlots(W, H);
 
     // Footer hint
-    this.add.text(W / 2, H - 12, '[K] Fermer  ·  Clic = sélectionner  →  Clic slot = équiper', pxStyle(6, UI.TXT_HINT))
+    this.add.text(W / 2, H - 12, t('skills.close_hint'), pxStyle(6, UI.TXT_HINT))
       .setOrigin(0.5, 1);
   }
 
   private renderUnlockedSkills(W: number, _H: number) {
-    this.add.text(18, 50, 'Compétences débloquées', pxStyle(8, UI.TXT_MUTED));
+    this.add.text(18, 50, t('skills.unlocked'), pxStyle(8, UI.TXT_MUTED));
 
     const CELL_W = 78;
     const CELL_H = 66;
@@ -82,7 +83,7 @@ export class SkillScene extends Phaser.Scene {
         this.add.image(x + CELL_W / 2, y + 24, skill.icon).setDisplaySize(28, 28);
       } catch {}
 
-      this.add.text(x + CELL_W / 2, y + 44, skill.name, {
+      this.add.text(x + CELL_W / 2, y + 44, localizeSkill(skill).name, {
         ...pxStyle(6, isSelected ? UI.TXT_GREEN : UI.TXT_MUTED),
         wordWrap: { width: CELL_W - 6 },
         align: 'center',
@@ -111,7 +112,7 @@ export class SkillScene extends Phaser.Scene {
     const SX      = W / 2 - TOTAL_W / 2;
     const SY      = H - SLOT_H - 28;
 
-    this.add.text(W / 2, SY - 14, 'Slots équipés', pxStyle(8, UI.TXT_MUTED)).setOrigin(0.5, 1);
+    this.add.text(W / 2, SY - 14, t('skills.equipped'), pxStyle(8, UI.TXT_MUTED)).setOrigin(0.5, 1);
 
     const slotKeys: (keyof EquippedSkills)[] = ['slot1', 'slot2', 'slot3', 'slot4'];
     const labels = ['A', 'E', 'R', 'F'];
@@ -134,7 +135,7 @@ export class SkillScene extends Phaser.Scene {
 
       if (skill) {
         try { this.add.image(x + SLOT_W / 2, SY + 30, skill.icon).setDisplaySize(28, 28); } catch {}
-        this.add.text(x + SLOT_W / 2, SY + SLOT_H - 10, skill.name, {
+        this.add.text(x + SLOT_W / 2, SY + SLOT_H - 10, localizeSkill(skill).name, {
           ...pxStyle(6, UI.TXT_PARCHMENT),
           wordWrap: { width: SLOT_W - 6 },
           align: 'center',
@@ -176,15 +177,20 @@ export class SkillScene extends Phaser.Scene {
     drawPanel(bg, 0, 0, TW, TH);
     tip.add(bg);
 
-    tip.add(this.add.text(8, 8,  skill.name,        pxStyle(9,  UI.TXT_GOLD)));
-    tip.add(this.add.text(8, 24, skill.description, {
+    const locSkill = localizeSkill(skill);
+    tip.add(this.add.text(8, 8,  locSkill.name,        pxStyle(9,  UI.TXT_GOLD)));
+    tip.add(this.add.text(8, 24, locSkill.description, {
       ...pxStyle(7, UI.TXT_MUTED),
       wordWrap: { width: TW - 16 },
       lineSpacing: 3,
     }));
     tip.add(this.add.text(8, TH - 16,
-      `Mana : ${skill.manaCost}   CD : ${skill.cooldown}s`,
+      `${t('skills.mana')} : ${skill.manaCost}   ${t('skills.cd')} : ${skill.cooldown}s`,
       pxStyle(7, UI.TXT_BLUE)
     ));
+  }
+
+  shutdown() {
+    this.input.keyboard?.removeAllKeys(true);
   }
 }

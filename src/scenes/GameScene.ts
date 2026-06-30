@@ -12,6 +12,7 @@ import { NPC_MAP } from '../data/npcs';
 import { getZoneLayout, ZoneLayout, LootableObject, WaterArea } from '../data/zoneMaps';
 import { ALL_ITEMS } from '../data/items';
 import { loadBindings, KeyBindings } from '../data/keyBindings';
+import { t, localizeItem } from '../i18n';
 
 const ELEMENT_PROJECTILE_COLORS: Partial<Record<ElementType, number>> = {
   [ElementType.FIRE]:      0xff4400,
@@ -474,7 +475,7 @@ export class GameScene extends Phaser.Scene {
         if (flags['save_game']) {
           delete flags['save_game'];
           SaveSystem.save(this.gameState, this.gameState.saveSlot);
-          this.events.emit('show_notification', 'Partie sauvegardée.');
+          this.events.emit('show_notification', t('notif.saved'));
         }
         if (flags['rest_inn']) {
           delete flags['rest_inn'];
@@ -483,9 +484,9 @@ export class GameScene extends Phaser.Scene {
             this.gameState.player.stats.hp   = this.gameState.player.stats.maxHp;
             this.gameState.player.stats.mana = this.gameState.player.stats.maxMana;
             this.events.emit('player_update', this.gameState.player);
-            this.events.emit('show_notification', 'Repos terminé — PV et Mana restaurés.');
+            this.events.emit('show_notification', t('notif.rest_done'));
           } else {
-            this.events.emit('show_notification', 'Or insuffisant. (20 G)');
+            this.events.emit('show_notification', t('notif.rest_no_gold'));
           }
         }
 
@@ -1442,13 +1443,13 @@ export class GameScene extends Phaser.Scene {
       if (item) {
         LootSystem.addToInventory(this.gameState.player, item, 1);
         this.events.emit('item_looted', { item, quantity: 1 });
-        const typeLabel = lo.type === 'chest' ? '[Coffre]' : lo.type === 'plant' ? '[Plante]' : lo.type === 'mineral' ? '[Mineral]' : '[Sanctuaire]';
-        this.events.emit('show_notification', `${typeLabel} ${item.name}${gold > 0 ? ` +${gold}G` : ''}`);
+        const typeKey = `notif.loot_${lo.type}` as const;
+        this.events.emit('show_notification', `${t(typeKey)} ${localizeItem(item).name}${gold > 0 ? ` +${gold}G` : ''}`);
       } else if (gold > 0) {
-        this.events.emit('show_notification', `+${gold} pièces d'or`);
+        this.events.emit('show_notification', t('notif.gold').replace('{gold}', String(gold)));
       }
     } else if (gold > 0) {
-      this.events.emit('show_notification', `+${gold} pièces d'or`);
+      this.events.emit('show_notification', t('notif.gold').replace('{gold}', String(gold)));
     }
 
     // Shrine: restore some HP/Mana

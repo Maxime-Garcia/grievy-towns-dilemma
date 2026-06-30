@@ -1,5 +1,6 @@
 import { SaveSystem } from '../systems/SaveSystem';
 import { UI, drawPanel, pxStyle } from '../utils/UITheme';
+import { t } from '../i18n';
 
 export class MainMenuScene extends Phaser.Scene {
   constructor() { super({ key: 'MainMenuScene' }); }
@@ -26,20 +27,20 @@ export class MainMenuScene extends Phaser.Scene {
       strokeThickness: 4,
     }).setOrigin(0.5);
 
-    this.add.text(W / 2, 52, 'un conte de mémoire, de sacrifice et de dieux brisés', pxStyle(7, UI.TXT_MUTED))
+    this.add.text(W / 2, 52, t('menu.subtitle'), pxStyle(7, UI.TXT_MUTED))
       .setOrigin(0.5);
 
     // ── Buttons ───────────────────────────────────
     const slots      = SaveSystem.listSlots();
     const hasAnySave = slots.some(s => s !== null);
 
-    this.makeBtn(W / 2, 160, 'NOUVELLE PARTIE', () => this.showNewGameMenu(slots));
+    this.makeBtn(W / 2, 160, t('menu.new_game'), () => this.showNewGameMenu(slots));
     if (hasAnySave) {
-      this.makeBtn(W / 2, 216, 'CHARGER', () => this.showLoadMenu(slots));
+      this.makeBtn(W / 2, 216, t('menu.load_save'), () => this.showLoadMenu(slots));
     }
 
     // ── Save slot cards ───────────────────────────
-    this.add.text(W / 2, 276, 'SAUVEGARDES', pxStyle(7, UI.TXT_HINT)).setOrigin(0.5);
+    this.add.text(W / 2, 276, t('menu.save_slots'), pxStyle(7, UI.TXT_HINT)).setOrigin(0.5);
 
     for (let i = 0; i < 3; i++) {
       const s    = slots[i];
@@ -48,17 +49,17 @@ export class MainMenuScene extends Phaser.Scene {
       drawPanel(card, W / 2 - 200, cy, 400, 44, UI.SLOT_BG);
 
       if (s) {
-        this.add.text(W / 2 - 188, cy + 8,  `Slot ${i + 1}`, pxStyle(7, UI.TXT_GOLD));
+        this.add.text(W / 2 - 188, cy + 8,  `${t('menu.slot')} ${i + 1}`, pxStyle(7, UI.TXT_GOLD));
         this.add.text(W / 2 - 188, cy + 24, `${s.playerName}  Lv.${s.level}`, pxStyle(7, UI.TXT_PARCHMENT));
         this.add.text(W / 2 + 190, cy + 8,  `${s.clearedZones}/6 zones`, pxStyle(7, UI.TXT_MUTED)).setOrigin(1, 0);
         this.add.text(W / 2 + 190, cy + 24, SaveSystem.formatPlaytime(s.playtime), pxStyle(7, UI.TXT_MUTED)).setOrigin(1, 0);
       } else {
-        this.add.text(W / 2, cy + 22, `Slot ${i + 1}  —  Vide`, pxStyle(7, UI.TXT_HINT)).setOrigin(0.5);
+        this.add.text(W / 2, cy + 22, `${t('menu.slot')} ${i + 1}  —  ${t('menu.slot.empty')}`, pxStyle(7, UI.TXT_HINT)).setOrigin(0.5);
       }
     }
 
     // ── Footer controls hint ──────────────────────
-    this.add.text(W / 2, H - 14, 'ZQSD / Flèches — déplacement   W — attaque   Espace — dash', pxStyle(6, UI.TXT_HINT))
+    this.add.text(W / 2, H - 14, t('menu.controls'), pxStyle(6, UI.TXT_HINT))
       .setOrigin(0.5, 1);
   }
 
@@ -98,7 +99,7 @@ export class MainMenuScene extends Phaser.Scene {
     elems.push(frame);
 
     elems.push(
-      this.add.text(W / 2, H / 2 - 130, 'CHOISIR UN SLOT', pxStyle(11, UI.TXT_GOLD, true))
+      this.add.text(W / 2, H / 2 - 130, t('menu.select_slot'), pxStyle(11, UI.TXT_GOLD, true))
         .setOrigin(0.5).setDepth(22)
     );
 
@@ -110,8 +111,8 @@ export class MainMenuScene extends Phaser.Scene {
       elems.push(card);
 
       const label = s
-        ? `Slot ${i + 1}  [ÉCRASER]  ${s.playerName} Lv.${s.level}`
-        : `Slot ${i + 1}  —  Nouvelle partie`;
+        ? `${t('menu.slot')} ${i + 1}  [${t('menu.slot.overwrite')}]  ${s.playerName} Lv.${s.level}`
+        : `${t('menu.slot')} ${i + 1}  —  ${t('menu.new_game')}`;
       const col  = s ? UI.TXT_RED : UI.TXT_GREEN;
 
       const btn = this.add.text(W / 2, by + 24, label, pxStyle(8, col))
@@ -125,7 +126,7 @@ export class MainMenuScene extends Phaser.Scene {
       elems.push(btn);
     }
 
-    const cancel = this.add.text(W / 2, H / 2 + 120, '[ ANNULER ]', pxStyle(9, UI.TXT_MUTED))
+    const cancel = this.add.text(W / 2, H / 2 + 120, t('menu.cancel'), pxStyle(9, UI.TXT_MUTED))
       .setOrigin(0.5).setDepth(22).setInteractive({ useHandCursor: true });
     cancel.on('pointerover', () => cancel.setStyle({ color: UI.TXT_RED }));
     cancel.on('pointerout',  () => cancel.setStyle({ color: UI.TXT_MUTED }));
@@ -146,7 +147,7 @@ export class MainMenuScene extends Phaser.Scene {
     elems.push(frame);
 
     elems.push(
-      this.add.text(W / 2, H / 2 - 130, 'CHARGER UNE PARTIE', pxStyle(11, UI.TXT_GOLD, true))
+      this.add.text(W / 2, H / 2 - 130, t('menu.load_title'), pxStyle(11, UI.TXT_GOLD, true))
         .setOrigin(0.5).setDepth(22)
     );
 
@@ -160,7 +161,7 @@ export class MainMenuScene extends Phaser.Scene {
       drawPanel(card, W / 2 - 200, by, 400, 48, UI.SLOT_BG);
       elems.push(card);
 
-      const label = `Slot ${i + 1}  ${s.playerName}  Lv.${s.level}  |  ${s.clearedZones}/6 zones`;
+      const label = `${t('menu.slot')} ${i + 1}  ${s.playerName}  Lv.${s.level}  |  ${s.clearedZones}/6 zones`;
       const btn = this.add.text(W / 2, by + 24, label, pxStyle(8, UI.TXT_GREEN))
         .setOrigin(0.5).setDepth(22).setInteractive({ useHandCursor: true });
       btn.on('pointerover', () => btn.setStyle({ color: UI.TXT_WHITE }));
@@ -177,7 +178,7 @@ export class MainMenuScene extends Phaser.Scene {
       found++;
     }
 
-    const cancel = this.add.text(W / 2, H / 2 + 120, '[ ANNULER ]', pxStyle(9, UI.TXT_MUTED))
+    const cancel = this.add.text(W / 2, H / 2 + 120, t('menu.cancel'), pxStyle(9, UI.TXT_MUTED))
       .setOrigin(0.5).setDepth(22).setInteractive({ useHandCursor: true });
     cancel.on('pointerover', () => cancel.setStyle({ color: UI.TXT_RED }));
     cancel.on('pointerout',  () => cancel.setStyle({ color: UI.TXT_MUTED }));
