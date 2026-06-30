@@ -38,6 +38,15 @@ export const EN: Record<string, string> = {
   'pause.keys.key': 'KEY',
   'pause.keys.reset': 'Reset',
 
+  // ── RARITIES ────────────────────────────────────────────────
+  'rarity.COMMON': 'Common',
+  'rarity.UNCOMMON': 'Uncommon',
+  'rarity.RARE': 'Rare',
+  'rarity.EPIC': 'Epic',
+  'rarity.LEGENDARY': 'Legendary',
+  'rarity.MYTHIC': 'Mythic',
+  'rarity.HIDDEN': 'Hidden',
+
   // ── SETTINGS ────────────────────────────────────────────────
   'settings.section.language': 'LANGUAGE',
   'settings.section.graphics': 'GRAPHICS',
@@ -76,6 +85,7 @@ export const EN: Record<string, string> = {
 
   // ── NOTIFICATIONS ────────────────────────────────────────────
   'notif.saved': 'Game saved.',
+  'notif.save_error': 'Save error (slot {slot})',
   'notif.rest_done': 'Rest complete — HP and Mana restored.',
   'notif.rest_no_gold': 'Not enough gold. (20 G)',
   'notif.gold': '+{gold} gold',

@@ -39,6 +39,15 @@ export const FR: Record<string, string> = {
   'pause.keys.key': 'TOUCHE',
   'pause.keys.reset': 'Réinitialiser',
 
+  // ── RARETÉS ─────────────────────────────────────────────────
+  'rarity.COMMON': 'Commun',
+  'rarity.UNCOMMON': 'Peu commun',
+  'rarity.RARE': 'Rare',
+  'rarity.EPIC': 'Épique',
+  'rarity.LEGENDARY': 'Légendaire',
+  'rarity.MYTHIC': 'Mythique',
+  'rarity.HIDDEN': 'Caché',
+
   // ── PARAMÈTRES ───────────────────────────────────────────────
   'settings.section.language': 'LANGUE',
   'settings.section.graphics': 'GRAPHISMES',
@@ -77,6 +86,7 @@ export const FR: Record<string, string> = {
 
   // ── NOTIFICATIONS ────────────────────────────────────────────
   'notif.saved': 'Partie sauvegardée.',
+  'notif.save_error': 'Erreur de sauvegarde (slot {slot})',
   'notif.rest_done': 'Repos terminé — PV et Mana restaurés.',
   'notif.rest_no_gold': 'Or insuffisant. (20 G)',
   'notif.gold': '+{gold} pièces d\'or',
