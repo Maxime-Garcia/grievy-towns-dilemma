@@ -253,8 +253,8 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       { x: 2020, y: 2850, w: 80,   h: 300  },
       { x: 1100, y: 2850, w: 1000, h: 80   },
       { x: 1100, y: 3070, w: 1000, h: 80   },
-      // Deep south walls
-      { x: 80,   y: 2900, w: 900,  h: 220  },
+      // Deep south walls (trimmed west wall to keep corridor x=780–1100 open for south entry)
+      { x: 80,   y: 2900, w: 700,  h: 220  },
       { x: 2300, y: 2900, w: 1600, h: 220  },
     ],
 
@@ -262,7 +262,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
 
     teleports: [
       // Retour vers le Chemin de Pierre (qui mène à Grievy Town)
-      { x: 1060, y: H2-40, w: 200, h: 40, targetZone: 'route_stone_path',        targetX: 800, targetY: 200,  label: '↓ Chemin de Pierre'    },
+      { x: 800,  y: H2-40, w: 200, h: 40, targetZone: 'route_stone_path',        targetX: 800, targetY: 200,  label: '↓ Chemin de Pierre'    },
       // Connexion vers la Rivière Souterraine (qui mène à Abyssmar)
       { x: 40,   y: 1400, w: 40,  h: 200, targetZone: 'route_underground_river', targetX: 1200, targetY: 720, label: '← Rivière Souterraine' },
     ],
@@ -791,7 +791,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
 
     teleports: [
       // Côté Terravast (nord, bord haut — 40px dans la zone jouable)
-      { x: 680, y: 40,   w: 240, h: 40, targetZone: 'terravast',   targetX: 1200, targetY: H2-160, label: '↑ Terravast'   },
+      { x: 680, y: 40,   w: 240, h: 40, targetZone: 'terravast',   targetX: 900, targetY: 2800,  label: '↑ Terravast'   },
       // Côté Grievy Town (sud, bord bas — 40px dans la zone jouable)
       { x: 680, y: 1520, w: 240, h: 40, targetZone: 'grievy_town', targetX: 1180, targetY: 200,    label: '↓ Grievy Town' },
     ],
