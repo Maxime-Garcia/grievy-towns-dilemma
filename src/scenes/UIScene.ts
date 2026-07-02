@@ -33,6 +33,16 @@ export class UIScene extends Phaser.Scene {
 
   private zoneText!: Phaser.GameObjects.Text;
 
+  private lerpHp          = 1;
+  private lerpMp          = 1;
+  private targetHp        = 1;
+  private targetMp        = 1;
+  private barsInitialized = false;
+  private cachedMaxHp     = 1;
+  private cachedMaxMp     = 1;
+  private cachedHpInt     = 1;
+  private cachedMpInt     = 1;
+
   constructor() { super({ key: 'UIScene' }); }
 
   init(data: { gameScene: GameScene }) {
@@ -167,6 +177,16 @@ export class UIScene extends Phaser.Scene {
         });
       }
     }
+
+    const speed = 8 * (delta / 1000);
+    const prevHp = this.lerpHp;
+    const prevMp = this.lerpMp;
+    this.lerpHp = Phaser.Math.Linear(this.lerpHp, this.targetHp, Math.min(1, speed));
+    this.lerpMp = Phaser.Math.Linear(this.lerpMp, this.targetMp, Math.min(1, speed));
+
+    if (Math.abs(this.lerpHp - prevHp) > 0.001 || Math.abs(this.lerpMp - prevMp) > 0.001) {
+      this.drawLerpedBars();
+    }
   }
 
   // ── Event handlers ───────────────────────────────
@@ -178,20 +198,20 @@ export class UIScene extends Phaser.Scene {
     this.playerNameText.setText(player.name);
     this.levelText.setText(`${t('ui.level')}${player.level}`);
 
-    // HP bar
-    const hpPct   = Math.max(0, player.stats.hp / player.stats.maxHp);
-    const hpColor = hpPct > 0.5 ? UI.HP_GREEN : hpPct > 0.25 ? UI.HP_ORANGE : UI.HP_RED;
-    this.hpBar.clear();
-    drawBar(this.hpBar, BAR_X, this.HP_Y, BAR_W, HP_H, hpPct, hpColor, UI.HP_BG, UI.HP_SHINE);
-    this.hpText.setText(`${player.stats.hp}/${player.stats.maxHp}`);
+    this.targetHp    = Math.max(0, player.stats.hp / player.stats.maxHp);
+    this.targetMp    = Math.max(0, player.stats.mana / player.stats.maxMana);
+    this.cachedMaxHp = player.stats.maxHp;
+    this.cachedMaxMp = player.stats.maxMana;
+    this.cachedHpInt = player.stats.hp;
+    this.cachedMpInt = player.stats.mana;
+    if (!this.barsInitialized) {
+      this.lerpHp = this.targetHp;
+      this.lerpMp = this.targetMp;
+      this.barsInitialized = true;
+      this.drawLerpedBars();
+    }
 
-    // MP bar
-    const mpPct = Math.max(0, player.stats.mana / player.stats.maxMana);
-    this.manaBar.clear();
-    drawBar(this.manaBar, BAR_X, this.MP_Y, BAR_W, MP_H, mpPct, UI.MP_FILL, UI.MP_BG, UI.MP_SHINE);
-    this.manaText.setText(`${player.stats.mana}/${player.stats.maxMana}`);
-
-    // XP bar (bottom 4-px strip)
+    // XP bar (bottom 4-px strip) — no lerp needed
     const xpPct = player.xpToNext > 0 ? player.xp / player.xpToNext : 0;
     const xpFW  = Math.floor(W * Math.max(0, Math.min(1, xpPct)));
     this.xpBar.clear();
@@ -216,6 +236,17 @@ export class UIScene extends Phaser.Scene {
         if (skill) try { this.skillSlots[i].setTexture(skill.icon); } catch {}
       }
     }
+  }
+
+  private drawLerpedBars() {
+    const hpColor = this.lerpHp > 0.5 ? UI.HP_GREEN : this.lerpHp > 0.25 ? UI.HP_ORANGE : UI.HP_RED;
+    this.hpBar.clear();
+    drawBar(this.hpBar, BAR_X, this.HP_Y, BAR_W, HP_H, this.lerpHp, hpColor, UI.HP_BG, UI.HP_SHINE);
+    this.hpText.setText(`${this.cachedHpInt}/${this.cachedMaxHp}`);
+
+    this.manaBar.clear();
+    drawBar(this.manaBar, BAR_X, this.MP_Y, BAR_W, MP_H, this.lerpMp, UI.MP_FILL, UI.MP_BG, UI.MP_SHINE);
+    this.manaText.setText(`${this.cachedMpInt}/${this.cachedMaxMp}`);
   }
 
   private onLevelUp(level: number) {

@@ -290,7 +290,9 @@ export class GameScene extends Phaser.Scene {
     this.isDashing = true;
     body.setVelocity(nx, ny);
 
-    this.player.setAlpha(0.5);
+    this.spawnDashAfterimages();
+
+    this.player.setAlpha(0.6);
     this.tweens.add({
       targets: this.player,
       alpha: 1,
@@ -343,7 +345,18 @@ export class GameScene extends Phaser.Scene {
     const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
     this.showDamageNumber(nearest.x, nearest.y - 20, result.damage, result.isCrit);
 
-    if (result.isKill) this.onEnemyKilled(activeEnemy, nearest);
+    if (result.isCrit) {
+      this.cameras.main.shake(80, 0.003);
+      this.spawnHitParticles(nearest.x, nearest.y, result.element);
+    }
+
+    this.applyHitFeedback(nearest, activeEnemy, result.damage);
+
+    if (result.isKill) {
+      this.onEnemyKilled(activeEnemy, nearest);
+    } else {
+      this.checkStagger(nearest, activeEnemy, result.damage);
+    }
   }
 
   private activateSkill(skillId: string) {
@@ -361,7 +374,16 @@ export class GameScene extends Phaser.Scene {
           this.spawnCosmeticProjectile(this.player.x, this.player.y, nearest.x, nearest.y, skill.element);
         }
         this.showDamageNumber(nearest.x, nearest.y - 20, result.damage, result.isCrit, skill.element);
-        if (result.isKill) this.onEnemyKilled(activeEnemy!, nearest);
+        if (result.isCrit) {
+          this.cameras.main.shake(80, 0.003);
+          this.spawnHitParticles(nearest.x, nearest.y, skill.element);
+        }
+        this.applyHitFeedback(nearest, activeEnemy!, result.damage);
+        if (result.isKill) {
+          this.onEnemyKilled(activeEnemy!, nearest);
+        } else {
+          this.checkStagger(nearest, activeEnemy!, result.damage);
+        }
       }
       if (result.damage === 0 && skill.effect?.healPercent) {
         this.showHealNumber(this.player.x, this.player.y - 20,
@@ -856,10 +878,19 @@ export class GameScene extends Phaser.Scene {
     const crown = this.enemyCrowns.get(activeEnemy.instanceId);
     if (crown) { crown.destroy(); this.enemyCrowns.delete(activeEnemy.instanceId); }
 
-    // XP bonus for elites
-    const xpMult = activeEnemy.isElite ? 2.5 : 1;
+    const xpMult   = activeEnemy.isElite ? 2.5 : 1;
+    const deathX   = sprite.x;
+    const deathY   = sprite.y;
+    const isBoss   = enemyDef.isBoss;
 
-    sprite.destroy();
+    // Remove from physics immediately so it no longer blocks or attacks
+    sprite.disableBody(true, false);
+
+    if (isBoss) {
+      this.playBossDeathSequence(sprite, activeEnemy, enemyDef);
+    } else {
+      this.playEnemyDeathSequence(sprite);
+    }
 
     const loot = LootSystem.rollLoot(
       enemyDef.loot, enemyDef.baseGold, enemyDef.baseXp,
@@ -872,7 +903,7 @@ export class GameScene extends Phaser.Scene {
       this.events.emit('item_looted', { item, quantity });
     }
 
-    this.spawnXpOrbs(sprite.x, sprite.y, Math.floor(loot.xp * xpMult));
+    this.spawnXpOrbs(deathX, deathY, Math.floor(loot.xp * xpMult));
 
     const questCompleted = QuestSystem.onEnemyKilled(this.gameState.player, activeEnemy.enemyId);
     for (const itemLoot of loot.items) {
@@ -880,7 +911,7 @@ export class GameScene extends Phaser.Scene {
     }
     if (questCompleted.length > 0) this.handleQuestCompletions(questCompleted);
 
-    if (enemyDef.isBoss) {
+    if (isBoss) {
       const zone = Object.values(ZONE_MAP).find(z => z.bossId === enemyDef.id);
       if (zone) {
         const zoneCompleted = QuestSystem.onBossKilled(this.gameState.player, enemyDef.id, zone.element as ElementType);
@@ -899,6 +930,73 @@ export class GameScene extends Phaser.Scene {
 
     const hidden = SkillSystem.checkHiddenUnlocks(this.gameState.player);
     hidden.forEach(s => this.events.emit('skill_unlocked', s));
+  }
+
+  private playEnemyDeathSequence(sprite: Phaser.Physics.Arcade.Sprite) {
+    sprite.setTint(0xffffff);
+    this.tweens.add({
+      targets: sprite,
+      alpha: 0,
+      scaleX: 0.4,
+      scaleY: 0.4,
+      duration: 400,
+      ease: 'Power2',
+      onComplete: () => { if (sprite.active) sprite.destroy(); },
+    });
+  }
+
+  private playBossDeathSequence(
+    sprite: Phaser.Physics.Arcade.Sprite,
+    _ae: ActiveEnemy,
+    enemyDef: Enemy,
+  ) {
+    const { width: W, height: H } = this.cameras.main;
+
+    sprite.setTint(0xffffff);
+    this.cameras.main.shake(200, 0.012);
+
+    const aura = this.add.circle(sprite.x, sprite.y, 40, 0xffffff, 0.6).setDepth(30);
+    this.tweens.add({
+      targets: aura,
+      scaleX: 5,
+      scaleY: 5,
+      alpha: 0,
+      duration: 1200,
+      ease: 'Power2',
+      onComplete: () => aura.destroy(),
+    });
+
+    this.time.delayedCall(600, () => {
+      if (sprite.active) {
+        this.tweens.add({
+          targets: sprite,
+          alpha: 0,
+          scaleX: 0.2,
+          scaleY: 0.2,
+          duration: 800,
+          ease: 'Power2',
+          onComplete: () => { if (sprite.active) sprite.destroy(); },
+        });
+      }
+    });
+
+    const bossName = enemyDef.name;
+    const nameLabel = this.add.text(W / 2, H / 2 - 30, bossName, {
+      fontSize: '20px',
+      color: '#ffff00',
+      fontFamily: 'monospace',
+      stroke: '#000000',
+      strokeThickness: 4,
+    }).setScrollFactor(0).setOrigin(0.5).setDepth(200).setAlpha(0);
+
+    this.tweens.add({
+      targets: nameLabel,
+      alpha: 1,
+      duration: 400,
+      hold: 1600,
+      yoyo: true,
+      onComplete: () => nameLabel.destroy(),
+    });
   }
 
   private onPlayerDeath() {
@@ -953,26 +1051,155 @@ export class GameScene extends Phaser.Scene {
     return nearest;
   }
 
+  private spawnDashAfterimages() {
+    const w = this.player.displayWidth;
+    const h = this.player.displayHeight;
+
+    for (let i = 0; i < 3; i++) {
+      this.time.delayedCall(i * 50, () => {
+        const ghost = this.add.rectangle(this.player.x, this.player.y, w, h, 0x44aaff, 0.3)
+          .setDepth(3).setOrigin(0.5);
+        this.tweens.add({
+          targets: ghost,
+          alpha: 0,
+          duration: 200,
+          onComplete: () => ghost.destroy(),
+        });
+      });
+    }
+  }
+
+  private applyHitFeedback(sprite: Phaser.Physics.Arcade.Sprite, _ae: ActiveEnemy, _damage: number) {
+    sprite.setTint(0xffffff);
+    this.time.delayedCall(60, () => { if (sprite.active) sprite.clearTint(); });
+  }
+
+  private checkStagger(sprite: Phaser.Physics.Arcade.Sprite, ae: ActiveEnemy, damage: number) {
+    if (damage / ae.maxHp < 0.30) return;
+
+    sprite.setTint(0xff2222);
+    this.time.delayedCall(120, () => { if (sprite.active) sprite.clearTint(); });
+
+    const body = sprite.body as Phaser.Physics.Arcade.Body | null;
+    if (!body || !body.enable) return;
+    const origMaxVel = body.maxVelocity.x;
+    body.setMaxVelocity(origMaxVel * 0.5);
+    this.time.delayedCall(400, () => {
+      if (sprite.active && sprite.body && (sprite.body as Phaser.Physics.Arcade.Body).enable) {
+        (sprite.body as Phaser.Physics.Arcade.Body).setMaxVelocity(origMaxVel);
+      }
+    });
+  }
+
+  private spawnHitParticles(x: number, y: number, element?: ElementType) {
+    const ELEMENT_HEX: Partial<Record<ElementType, number>> = {
+      [ElementType.FIRE]:      0xff4400,
+      [ElementType.WATER]:     0x2266ff,
+      [ElementType.LIGHTNING]: 0xffee00,
+      [ElementType.ICE]:       0x88ddff,
+      [ElementType.EARTH]:     0x88aa33,
+      [ElementType.WIND]:      0xaaddff,
+      [ElementType.DARK]:      0xaa44ff,
+      [ElementType.DIVINE]:    0xffd700,
+    };
+    const color = element ? (ELEMENT_HEX[element] ?? 0xffffff) : 0xffffff;
+    const count = 6;
+
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 / count) * i;
+      const dist  = Phaser.Math.Between(16, 32);
+      const px    = x + Math.cos(angle) * dist;
+      const py    = y + Math.sin(angle) * dist;
+      const dot   = this.add.circle(x, y, 3, color, 1).setDepth(50);
+      this.tweens.add({
+        targets: dot,
+        x: px, y: py,
+        alpha: 0,
+        scaleX: 0,
+        scaleY: 0,
+        duration: 300,
+        ease: 'Power2',
+        onComplete: () => dot.destroy(),
+      });
+    }
+  }
+
+  private showBossAnnouncement(bossName: string, zoneElement: ElementType) {
+    const ZONE_AURA_COLORS: Partial<Record<ElementType, number>> = {
+      [ElementType.FIRE]:      0xff4400,
+      [ElementType.EARTH]:     0x88aa33,
+      [ElementType.WIND]:      0xaaddff,
+      [ElementType.WATER]:     0x2266ff,
+      [ElementType.LIGHTNING]: 0xffee00,
+      [ElementType.ICE]:       0x88ddff,
+      [ElementType.DARK]:      0xaa44ff,
+      [ElementType.DIVINE]:    0xffd700,
+    };
+    const auraColor = ZONE_AURA_COLORS[zoneElement] ?? 0xffffff;
+    const { width: W, height: H } = this.cameras.main;
+
+    const overlay = this.add.rectangle(W / 2, H / 2, W, H, auraColor, 0)
+      .setScrollFactor(0).setDepth(190);
+    this.tweens.add({
+      targets: overlay,
+      alpha: 0.08,
+      duration: 600,
+      yoyo: true,
+      hold: 1400,
+      onComplete: () => overlay.destroy(),
+    });
+
+    const label = this.add.text(W / 2, H / 2, bossName, {
+      fontSize: '22px',
+      color: '#ffffff',
+      fontFamily: 'monospace',
+      stroke: '#000000',
+      strokeThickness: 5,
+    }).setScrollFactor(0).setOrigin(0.5).setDepth(200).setAlpha(0);
+
+    this.tweens.add({
+      targets: label,
+      alpha: 1,
+      duration: 500,
+      hold: 1400,
+      yoyo: true,
+      onComplete: () => label.destroy(),
+    });
+  }
+
   private showDamageNumber(x: number, y: number, amount: number, isCrit: boolean, element?: ElementType, isEnemy = false) {
     const ELEMENT_COLORS: Partial<Record<ElementType, string>> = {
-      [ElementType.FIRE]: '#ff6622',
-      [ElementType.WATER]: '#4488ff',
-      [ElementType.LIGHTNING]: '#ffee22',
-      [ElementType.ICE]: '#aaeeff',
-      [ElementType.EARTH]: '#aa8844',
-      [ElementType.WIND]: '#aaffcc',
-      [ElementType.DARK]: '#aa44ff',
-      [ElementType.DIVINE]: '#ffd700',
+      [ElementType.FIRE]:      '#ff4400',
+      [ElementType.WATER]:     '#2266ff',
+      [ElementType.LIGHTNING]: '#ffee00',
+      [ElementType.ICE]:       '#88ddff',
+      [ElementType.EARTH]:     '#88aa33',
+      [ElementType.WIND]:      '#aaddff',
+      [ElementType.DARK]:      '#aa44ff',
+      [ElementType.DIVINE]:    '#ffd700',
     };
-    const color = isEnemy ? '#ff4444' : (element ? ELEMENT_COLORS[element] ?? '#ffffff' : '#ffffff');
-    const size  = isCrit ? '18px' : '14px';
+    const color = isEnemy
+      ? '#ff4444'
+      : isCrit
+        ? '#ffff00'
+        : (element ? ELEMENT_COLORS[element] ?? '#ffffff' : '#ffffff');
+    const size = isCrit ? '20px' : '14px';
+    const label = isCrit ? `${amount}!` : `${amount}`;
 
-    const txt = this.add.text(x, y, isCrit ? `${amount}!` : `${amount}`, {
+    const txt = this.add.text(x + Phaser.Math.Between(-6, 6), y, label, {
       fontSize: size, color, fontFamily: 'monospace',
       stroke: '#000000', strokeThickness: 2,
-    }).setDepth(100);
+    }).setDepth(100).setOrigin(0.5, 1);
 
-    this.tweens.add({ targets: txt, y: y - 40, alpha: 0, duration: 900, onComplete: () => txt.destroy() });
+    const floatY = isCrit ? y - 56 : y - 40;
+    this.tweens.add({
+      targets: txt,
+      y: floatY,
+      alpha: 0,
+      duration: isCrit ? 1100 : 900,
+      ease: 'Quad.easeOut',
+      onComplete: () => txt.destroy(),
+    });
   }
 
   private showHealNumber(x: number, y: number, amount: number) {
