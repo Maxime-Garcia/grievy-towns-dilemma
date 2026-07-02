@@ -46,7 +46,8 @@ export class UIScene extends Phaser.Scene {
   constructor() { super({ key: 'UIScene' }); }
 
   init(data: { gameScene: GameScene }) {
-    this.gameScene = data.gameScene;
+    this.gameScene      = data.gameScene;
+    this.barsInitialized = false;
   }
 
   create() {

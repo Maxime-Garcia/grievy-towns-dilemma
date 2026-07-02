@@ -76,6 +76,7 @@ export class GameScene extends Phaser.Scene {
   // Zone-scoped objects destroyed/recreated on each transition
   private zoneGraphics: Phaser.GameObjects.Graphics | null = null;
   private zoneLabels: Phaser.GameObjects.Text[] = [];
+  private bossDeathObjects: Phaser.GameObjects.GameObject[] = [];
   private teleportZoneImages: Phaser.Physics.Arcade.Image[] = [];
   private xpOrbOverlap: Phaser.Physics.Arcade.Collider | null = null;
   private lootableOverlap: Phaser.Physics.Arcade.Collider | null = null;
@@ -956,6 +957,7 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.shake(200, 0.012);
 
     const aura = this.add.circle(sprite.x, sprite.y, 40, 0xffffff, 0.6).setDepth(30);
+    this.bossDeathObjects.push(aura);
     this.tweens.add({
       targets: aura,
       scaleX: 5,
@@ -963,7 +965,7 @@ export class GameScene extends Phaser.Scene {
       alpha: 0,
       duration: 1200,
       ease: 'Power2',
-      onComplete: () => aura.destroy(),
+      onComplete: () => { if (aura.active) aura.destroy(); },
     });
 
     this.time.delayedCall(600, () => {
@@ -988,6 +990,7 @@ export class GameScene extends Phaser.Scene {
       stroke: '#000000',
       strokeThickness: 4,
     }).setScrollFactor(0).setOrigin(0.5).setDepth(200).setAlpha(0);
+    this.bossDeathObjects.push(nameLabel);
 
     this.tweens.add({
       targets: nameLabel,
@@ -995,7 +998,7 @@ export class GameScene extends Phaser.Scene {
       duration: 400,
       hold: 1600,
       yoyo: true,
-      onComplete: () => nameLabel.destroy(),
+      onComplete: () => { if (nameLabel.active) nameLabel.destroy(); },
     });
   }
 
@@ -1054,17 +1057,18 @@ export class GameScene extends Phaser.Scene {
   private spawnDashAfterimages() {
     const w = this.player.displayWidth;
     const h = this.player.displayHeight;
+    const x = this.player.x;
+    const y = this.player.y;
 
     for (let i = 0; i < 3; i++) {
-      this.time.delayedCall(i * 50, () => {
-        const ghost = this.add.rectangle(this.player.x, this.player.y, w, h, 0x44aaff, 0.3)
-          .setDepth(3).setOrigin(0.5);
-        this.tweens.add({
-          targets: ghost,
-          alpha: 0,
-          duration: 200,
-          onComplete: () => ghost.destroy(),
-        });
+      const ghost = this.add.rectangle(x, y, w, h, 0x44aaff, 0.3 - i * 0.08)
+        .setDepth(3).setOrigin(0.5);
+      this.tweens.add({
+        targets: ghost,
+        alpha: 0,
+        duration: 200,
+        delay: i * 50,
+        onComplete: () => ghost.destroy(),
       });
     }
   }
@@ -1407,7 +1411,7 @@ export class GameScene extends Phaser.Scene {
   private createEnemiesForZone(zoneId: string) {
     this.enemies = this.physics.add.group();
     const zone = ZONE_MAP[zoneId];
-    if (!zone || zone.enemies.length === 0) return;
+    if (!zone) return;
 
     const enemyColor = ZONE_ENEMY_COLORS[zoneId] ?? 0xaa4444;
     const eliteColor = Phaser.Display.Color.IntegerToColor(enemyColor).brighten(30).color;
@@ -1463,6 +1467,44 @@ export class GameScene extends Phaser.Scene {
           }).setOrigin(0.5, 1).setDepth(10);
           this.enemyCrowns.set(active.instanceId, crown);
         }
+      }
+    }
+
+    // Boss spawn — only if zone has a boss and it hasn't been cleared yet
+    if (zone.bossId && !this.gameState.player.clearedZones.includes(zoneId)) {
+      const bossDef = ENEMY_MAP[zone.bossId];
+      if (bossDef) {
+        const bx = Math.floor(mapWidth / 2);
+        const by = Math.floor(mapHeight / 2);
+        const bossTexKey = `enemy_${zone.bossId}`;
+        this.ensureTexture(bossTexKey, 0xffd700, 64, 64);
+
+        const bossSprite = this.physics.add.sprite(bx, by, bossTexKey);
+        bossSprite.setDisplaySize(64, 64);
+        (bossSprite.body as Phaser.Physics.Arcade.Body).setSize(60, 60);
+        bossSprite.setDepth(5);
+
+        const activeBoss = CombatSystem.spawnEnemy(bossDef, this.gameState.player.level);
+        activeBoss.x = bx;
+        activeBoss.y = by;
+        bossSprite.name = activeBoss.instanceId;
+        this.activeEnemies.set(activeBoss.instanceId, activeBoss);
+        this.enemies.add(bossSprite);
+
+        const bossBarW = 72;
+        const bossBg = this.add.rectangle(bx, by - 44, bossBarW, 8, 0x220000).setDepth(8);
+        const bossFg = this.add.rectangle(bx - bossBarW / 2, by - 44, bossBarW, 6, 0xffd700)
+          .setDepth(9).setOrigin(0, 0.5);
+        this.enemyHpBars.set(activeBoss.instanceId, { bg: bossBg, bar: bossFg, baseW: bossBarW });
+
+        const crown = this.add.text(bx, by - 52, '* BOSS *', {
+          fontSize: '10px', color: '#ffd700', stroke: '#000000', strokeThickness: 2,
+        }).setOrigin(0.5, 1).setDepth(10);
+        this.enemyCrowns.set(activeBoss.instanceId, crown);
+
+        this.time.delayedCall(1500, () => {
+          this.showBossAnnouncement(bossDef.name, zone.element as ElementType);
+        });
       }
     }
   }
@@ -1770,6 +1812,10 @@ export class GameScene extends Phaser.Scene {
 
     // XP orbs — destroy remaining orbs
     this.xpOrbs.destroy(true);
+
+    // Boss death VFX objects (aura, nameLabel) — may outlive zone transition
+    for (const o of this.bossDeathObjects) { if (o.active) o.destroy(); }
+    this.bossDeathObjects = [];
   }
 
   private performZoneTransition(zoneId: string, targetX: number, targetY: number) {
