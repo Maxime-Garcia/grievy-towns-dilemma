@@ -304,11 +304,13 @@ export class PauseScene extends Phaser.Scene {
   }
 
   private saveGame() {
-    const ok = SaveSystem.save(this.gameScene.gameState, this.gameScene.gameState.saveSlot);
-    const W   = this.cameras.main.width;
-    const msg = this.add.text(
+    const slot = this.gameScene.gameState.saveSlot;
+    const ok   = typeof slot === 'number' && SaveSystem.save(this.gameScene.gameState, slot);
+    console.warn('[SaveSystem] save slot=', slot, 'ok=', ok, 'stored=', localStorage.getItem(`gtd_save_${slot}`)?.slice(0, 60));
+    const W    = this.cameras.main.width;
+    const msg  = this.add.text(
       W / 2, this.cameras.main.height / 2,
-      ok ? `✓  ${t('notif.saved')}` : '✕  Erreur sauvegarde',
+      ok ? t('notif.saved') : t('notif.save_error').replace('{slot}', String(slot)),
       { ...pxStyle(11, ok ? UI.TXT_GREEN : UI.TXT_RED, true), stroke: '#000000', strokeThickness: 3 }
     ).setOrigin(0.5).setDepth(50).setAlpha(0);
 

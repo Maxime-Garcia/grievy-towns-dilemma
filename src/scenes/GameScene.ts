@@ -1401,7 +1401,7 @@ export class GameScene extends Phaser.Scene {
       sprite.refreshBody();
       this.lootableGroup.add(sprite);
 
-      const lootLabel = this.add.text(lo.x, lo.y - 16, lo.type, {
+      const lootLabel = this.add.text(lo.x, lo.y - 16, t(`notif.loot_${lo.type}` as const), {
         fontSize: '8px', color: '#ffeeaa', fontFamily: 'monospace',
         stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5, 1).setDepth(4);

@@ -128,7 +128,7 @@ export class InventoryScene extends Phaser.Scene {
 
       this.add.text(EX, y, `${label}:`, pxStyle(6, UI.TXT_MUTED));
 
-      const raw  = item?.name ?? '—';
+      const raw  = item ? localizeItem(item).name : '—';
       const name = raw.length > 12 ? raw.slice(0, 10) + '..' : raw;
       const col  = item ? (RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT) : UI.TXT_HINT;
       this.add.text(EX + 72, y, name, pxStyle(6, col));
@@ -158,7 +158,7 @@ export class InventoryScene extends Phaser.Scene {
     const rarColor = RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT;
     const locItem  = localizeItem(item);
     panel.add(
-      this.add.text(px + 12, py + 10, `[${item.rarity}]  ${locItem.name}`, pxStyle(9, rarColor))
+      this.add.text(px + 12, py + 10, `[${t(`rarity.${item.rarity}`)}]  ${locItem.name}`, pxStyle(9, rarColor))
     );
     panel.add(
       this.add.text(px + 12, py + 30, locItem.description, {
