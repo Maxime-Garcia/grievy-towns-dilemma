@@ -346,9 +346,11 @@ export class GameScene extends Phaser.Scene {
     const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
     this.showDamageNumber(nearest.x, nearest.y - 20, result.damage, result.isCrit);
 
+    this.spawnHitParticles(nearest.x, nearest.y, result.element);
     if (result.isCrit) {
-      this.cameras.main.shake(80, 0.003);
-      this.spawnHitParticles(nearest.x, nearest.y, result.element);
+      this.cameras.main.shake(120, 0.007);
+    } else {
+      this.cameras.main.shake(40, 0.002);
     }
 
     this.applyHitFeedback(nearest, activeEnemy, result.damage);
@@ -375,9 +377,11 @@ export class GameScene extends Phaser.Scene {
           this.spawnCosmeticProjectile(this.player.x, this.player.y, nearest.x, nearest.y, skill.element);
         }
         this.showDamageNumber(nearest.x, nearest.y - 20, result.damage, result.isCrit, skill.element);
+        this.spawnHitParticles(nearest.x, nearest.y, skill.element);
         if (result.isCrit) {
-          this.cameras.main.shake(80, 0.003);
-          this.spawnHitParticles(nearest.x, nearest.y, skill.element);
+          this.cameras.main.shake(150, 0.009);
+        } else {
+          this.cameras.main.shake(50, 0.003);
         }
         this.applyHitFeedback(nearest, activeEnemy!, result.damage);
         if (result.isKill) {
@@ -934,14 +938,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private playEnemyDeathSequence(sprite: Phaser.Physics.Arcade.Sprite) {
-    sprite.setTint(0xffffff);
+    sprite.setTintFill(0xffffff);
     this.tweens.add({
       targets: sprite,
       alpha: 0,
-      scaleX: 0.4,
-      scaleY: 0.4,
-      duration: 400,
-      ease: 'Power2',
+      scaleX: 0.2,
+      scaleY: 0.2,
+      duration: 350,
+      ease: 'Power3',
       onComplete: () => { if (sprite.active) sprite.destroy(); },
     });
   }
@@ -1074,15 +1078,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private applyHitFeedback(sprite: Phaser.Physics.Arcade.Sprite, _ae: ActiveEnemy, _damage: number) {
-    sprite.setTint(0xffffff);
-    this.time.delayedCall(60, () => { if (sprite.active) sprite.clearTint(); });
+    sprite.setTintFill(0xffffff);
+    this.time.delayedCall(80, () => { if (sprite.active) sprite.clearTint(); });
   }
 
   private checkStagger(sprite: Phaser.Physics.Arcade.Sprite, ae: ActiveEnemy, damage: number) {
-    if (damage / ae.maxHp < 0.30) return;
+    if (damage / ae.maxHp < 0.20) return;
 
-    sprite.setTint(0xff2222);
-    this.time.delayedCall(120, () => { if (sprite.active) sprite.clearTint(); });
+    sprite.setTintFill(0xff3333);
+    this.time.delayedCall(180, () => { if (sprite.active) sprite.clearTint(); });
 
     const body = sprite.body as Phaser.Physics.Arcade.Body | null;
     if (!body || !body.enable) return;
@@ -1107,21 +1111,22 @@ export class GameScene extends Phaser.Scene {
       [ElementType.DIVINE]:    0xffd700,
     };
     const color = element ? (ELEMENT_HEX[element] ?? 0xffffff) : 0xffffff;
-    const count = 6;
+    const count = 8;
 
     for (let i = 0; i < count; i++) {
-      const angle = (Math.PI * 2 / count) * i;
-      const dist  = Phaser.Math.Between(16, 32);
+      const angle = (Math.PI * 2 / count) * i + Phaser.Math.Between(-10, 10) * 0.017;
+      const dist  = Phaser.Math.Between(20, 44);
       const px    = x + Math.cos(angle) * dist;
       const py    = y + Math.sin(angle) * dist;
-      const dot   = this.add.circle(x, y, 3, color, 1).setDepth(50);
+      const size  = Phaser.Math.Between(3, 6);
+      const dot   = this.add.circle(x, y, size, color, 1).setDepth(50);
       this.tweens.add({
         targets: dot,
         x: px, y: py,
         alpha: 0,
         scaleX: 0,
         scaleY: 0,
-        duration: 300,
+        duration: Phaser.Math.Between(200, 380),
         ease: 'Power2',
         onComplete: () => dot.destroy(),
       });
