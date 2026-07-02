@@ -640,7 +640,7 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
 
     teleports: [
       // Retour vers la Descente des Ombres (qui mène à Glaciem)
-      { x: 1060, y: 40,    w: 200, h: 40, targetZone: 'route_dark_descent', targetX: 120, targetY: 640,  label: '↑ Descente des Ombres' },
+      { x: 1060, y: 40,    w: 200, h: 40, targetZone: 'route_dark_descent', targetX: 760, targetY: 1400, label: '↑ Descente des Ombres' },
     ],
 
     lootables: [
