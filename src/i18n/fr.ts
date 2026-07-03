@@ -11,6 +11,14 @@ export const FR: Record<string, string> = {
   'ui.gold': 'Or',
   'ui.hint': '[I] Inv  [K] Compétences  [W] Attaque  [Espace] Dash',
 
+  // ── NAME INPUT SCENE ────────────────────────────────────────
+  'name_input.wake':        'Tu te réveilles.',
+  'name_input.no_name':     'Tu ne te souviens plus de ton nom.',
+  'name_input.choose':      'Choisis-en un.',
+  'name_input.placeholder': 'Ton nom...',
+  'name_input.begin':       'COMMENCER',
+  'name_input.hint':        'Entrée ou clic pour confirmer',
+
   // ── MAINMENU SCENE ──────────────────────────────────────────
   'menu.subtitle': 'Un conte de mémoire, de sacrifice et de dieux brisés',
   'menu.new_game': 'NOUVELLE PARTIE',
