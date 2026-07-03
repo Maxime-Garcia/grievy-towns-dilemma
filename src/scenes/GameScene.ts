@@ -265,7 +265,7 @@ export class GameScene extends Phaser.Scene {
 
     // Acceleration : lerp snappy (~4-5 frames à 90%)
     // Décélération : linéaire à taux fixe — la vitesse reste haute puis coupe net (~440ms, ~24px de glisse)
-    const DECEL_RATE = 250; // px/s²
+    const DECEL_RATE = 390; // px/s²  — ~15px de glisse depuis la vitesse max
     if (targetVx !== 0) {
       this.playerVx = Phaser.Math.Linear(this.playerVx, targetVx, 25 * dt);
     } else {
@@ -322,7 +322,7 @@ export class GameScene extends Phaser.Scene {
       targets: this.player,
       alpha: 1,
       duration: 300,
-      onComplete: () => { this.isDashing = false; this.playerVx = 0; this.playerVy = 0; },
+      onComplete: () => { this.isDashing = false; this.playerVx = nx * 0.33; this.playerVy = ny * 0.33; },
     });
 
     this.cooldowns['dash'] = 1.5;
