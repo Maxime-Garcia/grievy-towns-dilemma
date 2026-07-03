@@ -24,62 +24,11 @@ export class IntroScene extends Phaser.Scene {
   create() {
     this.cameras.main.fadeIn(400, 0, 0, 0);
     const name = this.gameState.player.name;
-    this.pages = [
-      [
-        'In the age before the tremors,',
-        'the world of Velmara was in balance.',
-      ],
-      [
-        'Six beings of immense power shaped the land.',
-        'They claimed territories. They breathed life',
-        'into rock and fire and sea.',
-        'The people lived well under their protection.',
-      ],
-      [
-        'Pyrath, dragon of flame — Ignis Reach.',
-        'Gorvun, titan of earth — Terravast.',
-        'Sylvael, phoenix of wind — Zephyr Peaks.',
-        'Thalymor, leviathan of water — Abyssmar.',
-        'Volkran, colossus of lightning — Volterra.',
-        'Crysthea, keeper of ice — Glaciem.',
-      ],
-      [
-        'Then came Malachar.',
-        '',
-        'A scholar. A believer.',
-        'A man who thought the divine order was a cage.',
-      ],
-      [
-        'He believed elemental power should flow freely.',
-        'He found a way to break it.',
-        '',
-        'He may have been right about the logic.',
-        'He was not right about the consequences.',
-      ],
-      [
-        'The tremors began three weeks ago.',
-        'The zones are tearing themselves apart.',
-        'Refugees pour into Grievy Town from every direction.',
-      ],
-      [
-        'You wake on the east road outside Grievy Town.',
-        'Face down. Breathing. No visible wounds.',
-        '',
-        'You remember nothing.',
-        'Not even your name.',
-      ],
-      [
-        'Grievy Town needs someone who can fight.',
-        'Someone who can enter the elemental zones.',
-        'Someone who can find Malachar',
-        'before there is nothing left to save.',
-      ],
-      [
-        'That someone is you.',
-        '',
-        `— ${name} —`,
-      ],
-    ];
+    this.pages = Array.from({ length: 9 }, (_, i) =>
+      t(`intro.p${i}`)
+        .replace('{name}', `— ${name} —`)
+        .split('\n')
+    );
 
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;

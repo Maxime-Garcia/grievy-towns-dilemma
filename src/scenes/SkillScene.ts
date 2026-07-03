@@ -193,5 +193,6 @@ export class SkillScene extends Phaser.Scene {
 
   shutdown() {
     this.input.keyboard?.removeAllKeys(true);
+    this.gameScene?.setPaused(false);
   }
 }

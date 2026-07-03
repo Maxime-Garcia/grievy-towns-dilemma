@@ -8,7 +8,7 @@ export const EN: Record<string, string> = {
   'ui.mp': 'MP',
   'ui.level': 'Lv.',
   'ui.gold': 'Gold',
-  'ui.hint': '[I] Inv  [K] Skills  [W] Attack  [Space] Dash',
+  'ui.hint': '[I] Inv  [K] Skills  [J] Attack  [Space] Dash',
 
   // ── NAME INPUT SCENE ────────────────────────────────────────
   'name_input.wake':        'You wake up.',
@@ -29,7 +29,7 @@ export const EN: Record<string, string> = {
   'menu.select_slot': 'SELECT SAVE SLOT',
   'menu.load_title': 'LOAD SAVE',
   'menu.cancel': '[ CANCEL ]',
-  'menu.controls': 'ZQSD / Arrows — move   W — attack   SPACE — dash   I — inventory   K — skills',
+  'menu.controls': 'ZQSD / Arrows — move   J — attack   SPACE — dash   I — inventory   K — skills',
 
   // ── PAUSE SCENE ─────────────────────────────────────────────
   'pause.title': 'PAUSE',
@@ -58,6 +58,15 @@ export const EN: Record<string, string> = {
   // ── INTRO SCENE ─────────────────────────────────────────────
   'intro.hint_continue': '[ Z / ENTER — continue ]',
   'intro.hint_begin':    '[ Z / ENTER — begin ]',
+  'intro.p0': 'In the age before the tremors,\nthe world of Velmara was in balance.',
+  'intro.p1': 'Six beings of immense power shaped the land.\nThey claimed territories. They breathed life\ninto rock and fire and sea.\nThe people lived well under their protection.',
+  'intro.p2': 'Pyrath, dragon of flame — Ignis Reach.\nGorvun, titan of earth — Terravast.\nSylvael, phoenix of wind — Zephyr Peaks.\nThalymor, leviathan of water — Abyssmar.\nVolkran, colossus of lightning — Volterra.\nCrysthea, keeper of ice — Glaciem.',
+  'intro.p3': 'Then came Malachar.\n\nA scholar. A believer.\nA man who thought the divine order was a cage.',
+  'intro.p4': 'He believed elemental power should flow freely.\nHe found a way to break it.\n\nHe may have been right about the logic.\nHe was not right about the consequences.',
+  'intro.p5': 'The tremors began three weeks ago.\nThe zones are tearing themselves apart.\nRefugees pour into Grievy Town from every direction.',
+  'intro.p6': 'You wake on the east road outside Grievy Town.\nFace down. Breathing. No visible wounds.\n\nYou remember nothing.\nNot even your name.',
+  'intro.p7': 'Grievy Town needs someone who can fight.\nSomeone who can enter the elemental zones.\nSomeone who can find Malachar\nbefore there is nothing left to save.',
+  'intro.p8': 'That someone is you.\n\n{name}',
 
   // ── ENDING SCENE ─────────────────────────────────────────────
   'ending.thanks':           'Thank you for playing.',
@@ -122,8 +131,8 @@ export const EN: Record<string, string> = {
   'notif.loot_chest': '[Chest]',
   'notif.loot_plant': '[Plant]',
   'notif.loot_mineral': '[Mineral]',
-  'hint.talk': '[W] Talk',
-  'hint.loot': '[W] Loot',
+  'hint.talk': '[J] Talk',
+  'hint.loot': '[J] Loot',
   'notif.loot_shrine': '[Shrine]',
   'notif.level_up': '✦ Level {level}! ✦',
   'notif.quest_done': 'Quest complete!',

@@ -16,8 +16,8 @@ export class InventoryScene extends Phaser.Scene {
 
   constructor() { super({ key: 'InventoryScene' }); }
 
-  init(data: { gameScene: GameScene }) {
-    if (!data?.gameScene) return;
+  init(data?: { gameScene?: GameScene }) {
+    if (!data?.gameScene) { this.scene.stop(); return; }
     this.gameScene = data.gameScene;
     this.player    = data.gameScene.gameState.player;
   }
@@ -62,79 +62,78 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   private renderGrid() {
-    const H          = this.cameras.main.height;
-    const VISIBLE_H  = H - GRID_Y - 30;
-    const GRID_W     = COLS * SLOT + 4;
+    const H         = this.cameras.main.height;
+    const VISIBLE_H = H - GRID_Y - 30;
+    const GRID_W    = COLS * SLOT + 4;
+    const rows      = Math.ceil(this.player.inventory.length / COLS);
+    const contentH  = rows * SLOT;
+    let   scrollY   = 0;
 
-    const rows       = Math.ceil(this.player.inventory.length / COLS);
-    const contentH   = rows * SLOT;
-    let   scrollY    = 0;
+    // Shared geometry mask — clips in screen space
+    const maskGfx = this.make.graphics({ x: 0, y: 0 });
+    maskGfx.fillStyle(0xffffff);
+    maskGfx.fillRect(GRID_X - 2, GRID_Y, GRID_W, VISIBLE_H);
+    const geomMask = maskGfx.createGeometryMask();
 
-    // Container positioned at GRID_Y; children use y relative to that origin
-    const container = this.add.container(0, GRID_Y);
+    // Each entry: game object + its rest-position Y (scrollY=0)
+    type Settable = { setY(y: number): unknown; setMask(m: Phaser.Display.Masks.GeometryMask): unknown };
+    type Scrollable = { obj: Settable; baseY: number };
+    const scrollables: Scrollable[] = [];
+
+    const reg = (go: Settable, y: number) => {
+      go.setMask(geomMask);
+      scrollables.push({ obj: go, baseY: y });
+    };
 
     this.player.inventory.forEach((slot, i) => {
-      const col = i % COLS;
-      const row = Math.floor(i / COLS);
-      const x   = GRID_X + col * SLOT;
-      const y   = row * SLOT;
+      const col    = i % COLS;
+      const row    = Math.floor(i / COLS);
+      const sx     = GRID_X + col * SLOT;
+      const topY   = GRID_Y + row * SLOT;      // top-left Y of this slot at rest
+      const midY   = topY + SLOT / 2 - 1;      // center Y of this slot
 
       const rarityHex = parseInt(
         (RARITY_COLORS[slot.item.rarity] ?? '#666666').replace('#', ''), 16
       );
 
+      // Graphics bg — draws relative to its own y=0; setY positions it in screen space
       const bg = this.add.graphics();
       bg.fillStyle(UI.SLOT_BG, 1);
-      bg.fillRect(x, y, SLOT - 2, SLOT - 2);
+      bg.fillRect(sx, 0, SLOT - 2, SLOT - 2);
       bg.lineStyle(1, rarityHex, 1);
-      bg.strokeRect(x, y, SLOT - 2, SLOT - 2);
+      bg.strokeRect(sx, 0, SLOT - 2, SLOT - 2);
       bg.lineStyle(1, 0x000000, 0.35);
-      bg.strokeRect(x + 1, y + 1, SLOT - 4, SLOT - 4);
-      container.add(bg);
+      bg.strokeRect(sx + 1, 1, SLOT - 4, SLOT - 4);
+      bg.setY(topY);
+      reg(bg, topY);
 
       try {
-        const img = this.add.image(x + SLOT / 2 - 1, y + SLOT / 2 - 1, slot.item.icon)
-          .setDisplaySize(28, 28);
-        container.add(img);
+        const img = this.add.image(sx + SLOT / 2 - 1, midY, slot.item.icon).setDisplaySize(28, 28);
+        reg(img, midY);
       } catch {}
 
       if (slot.quantity > 1) {
-        const qty = this.add.text(x + SLOT - 5, y + SLOT - 5, `${slot.quantity}`, pxStyle(7, UI.TXT_WHITE))
-          .setOrigin(1, 1);
-        container.add(qty);
+        const qtyY = topY + SLOT - 5;
+        const qty  = this.add.text(sx + SLOT - 5, qtyY, `${slot.quantity}`, pxStyle(7, UI.TXT_WHITE)).setOrigin(1, 1);
+        reg(qty, qtyY);
       }
 
-      const hit = this.add.rectangle(
-        x + SLOT / 2 - 1, y + SLOT / 2 - 1,
-        SLOT - 2, SLOT - 2,
-        0x000000, 0
-      ).setInteractive({ useHandCursor: true });
-      container.add(hit);
+      // Hit zone — Phaser Rectangle y is its CENTER (origin 0.5)
+      const hit = this.add.rectangle(sx + SLOT / 2 - 1, midY, SLOT - 2, SLOT - 2, 0x000000, 0)
+        .setInteractive({ useHandCursor: true });
+      reg(hit, midY);
 
       hit.on('pointerdown', () => this.showItemDetail(slot.item.id));
-      hit.on('pointerover', () => {
-        bg.lineStyle(2, 0xffffff, 0.9);
-        bg.strokeRect(x, y, SLOT - 2, SLOT - 2);
-      });
-      hit.on('pointerout', () => {
-        bg.lineStyle(1, rarityHex, 1);
-        bg.strokeRect(x, y, SLOT - 2, SLOT - 2);
-      });
+      hit.on('pointerover', () => { bg.lineStyle(2, 0xffffff, 0.9); bg.strokeRect(sx, 0, SLOT - 2, SLOT - 2); });
+      hit.on('pointerout',  () => { bg.lineStyle(1, rarityHex, 1);  bg.strokeRect(sx, 0, SLOT - 2, SLOT - 2); });
     });
 
-    // Clip mask — must be positioned in screen space
-    const maskGfx = this.add.graphics();
-    maskGfx.fillStyle(0xffffff);
-    maskGfx.fillRect(GRID_X - 2, GRID_Y, GRID_W, VISIBLE_H);
-    container.setMask(maskGfx.createGeometryMask());
-
-    // Mousewheel scroll
     if (contentH > VISIBLE_H) {
       const maxScroll = contentH - VISIBLE_H;
       this.input.on('wheel',
         (_ptr: Phaser.Input.Pointer, _gos: unknown, _dx: number, dy: number) => {
           scrollY = Phaser.Math.Clamp(scrollY + dy * 0.8, 0, maxScroll);
-          container.setY(GRID_Y - scrollY);
+          for (const { obj, baseY } of scrollables) obj.setY(baseY - scrollY);
         }
       );
     }
@@ -244,5 +243,6 @@ export class InventoryScene extends Phaser.Scene {
 
   shutdown() {
     this.input.keyboard?.removeAllKeys(true);
+    this.gameScene?.setPaused(false);
   }
 }

@@ -335,7 +335,7 @@ export const SKILLS: Skill[] = [
     manaCost: 50,
     cooldown: 30.0,
     effect: { teleport: true },
-    unlockCondition: { hidden: true },
+    unlockCondition: { hidden: true, allZonesCleared: true },
     isHidden: true,
     lore: 'During the first phase of the Malachar battle, the hero catches a glimpse of how dark magic bends space. The insight is immediate and permanent.'
   },

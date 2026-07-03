@@ -370,16 +370,20 @@ export class GameScene extends Phaser.Scene {
 
   private handleAttackInput() {
     if (Phaser.Input.Keyboard.JustDown(this.attackKey)) {
-      if (this.nearbyNPC && !this.isInDialogue) {
-        this.startNPCDialogue(this.nearbyNPC);
-      } else if (this.nearbyLootable) {
-        this.interactWithLootable(this.nearbyLootable);
-      } else {
-        this.performBasicAttack();
-      }
+      this.performBasicAttackOrInteract();
     }
     if (Phaser.Input.Keyboard.JustDown(this.dashKey)) {
       this.handleDash();
+    }
+  }
+
+  private performBasicAttackOrInteract() {
+    if (this.nearbyNPC && !this.isInDialogue) {
+      this.startNPCDialogue(this.nearbyNPC);
+    } else if (this.nearbyLootable) {
+      this.interactWithLootable(this.nearbyLootable);
+    } else {
+      this.performBasicAttack();
     }
   }
 
@@ -477,11 +481,13 @@ export class GameScene extends Phaser.Scene {
 
   public openInventory() {
     if (this.scene.isActive('InventoryScene')) return;
+    this.setPaused(true);
     this.scene.launch('InventoryScene', { gameScene: this });
   }
 
   public openSkills() {
     if (this.scene.isActive('SkillScene')) return;
+    this.setPaused(true);
     this.scene.launch('SkillScene', { gameScene: this });
   }
 
@@ -539,12 +545,16 @@ export class GameScene extends Phaser.Scene {
     this.inventoryKey = kb.addKey(b.inventory);
     this.skillMenuKey = kb.addKey(b.skills);
     this.inventoryKey.on('down', () => {
-      if (this.scene.isActive('InventoryScene')) this.scene.stop('InventoryScene');
-      else this.scene.launch('InventoryScene', { gameScene: this });
+      if (this.scene.isActive('InventoryScene')) { this.scene.stop('InventoryScene'); return; }
+      if (this.scene.isActive('SkillScene'))     { this.scene.stop('SkillScene'); }
+      this.setPaused(true);
+      this.scene.launch('InventoryScene', { gameScene: this });
     });
     this.skillMenuKey.on('down', () => {
-      if (this.scene.isActive('SkillScene')) this.scene.stop('SkillScene');
-      else this.scene.launch('SkillScene', { gameScene: this });
+      if (this.scene.isActive('SkillScene'))     { this.scene.stop('SkillScene'); return; }
+      if (this.scene.isActive('InventoryScene')) { this.scene.stop('InventoryScene'); }
+      this.setPaused(true);
+      this.scene.launch('SkillScene', { gameScene: this });
     });
   }
 
@@ -1632,12 +1642,21 @@ export class GameScene extends Phaser.Scene {
       r: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.R),
       f: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.F),
     };
-    // ESC → pause menu (stored ref, cleaned up by shutdown's removeAllKeys)
+    // ESC → ferme l'overlay actif ou ouvre le menu pause
     this.escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     this.escKey.on('down', () => {
-      if (!this.isInDialogue && !this.scene.isActive('PauseScene')) {
+      if (this.isInDialogue) return;
+      if (this.scene.isActive('InventoryScene')) { this.scene.stop('InventoryScene'); return; }
+      if (this.scene.isActive('SkillScene'))     { this.scene.stop('SkillScene');     return; }
+      if (!this.scene.isActive('PauseScene')) {
         this.setPaused(true);
         this.scene.launch('PauseScene', { gameScene: this });
+      }
+    });
+    // Clic gauche souris → attaque / interaction
+    this.input.on('pointerdown', (ptr: Phaser.Input.Pointer) => {
+      if (ptr.leftButtonDown() && !this.sys.isPaused() && !this.isInDialogue) {
+        this.performBasicAttackOrInteract();
       }
     });
     // Debug: hold B to move at 5× speed
