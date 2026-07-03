@@ -306,7 +306,7 @@ export class GameScene extends Phaser.Scene {
   // ── DASH ────────────────────────────────────────────────────
 
   private flashDashReady() {
-    this.player.setTintFill(0xffe066);
+    this.player.setTintFill(0x66ddff);
     this.time.delayedCall(80, () => this.player.clearTint());
     this.tweens.add({
       targets: this.player,
