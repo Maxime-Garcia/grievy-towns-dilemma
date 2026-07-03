@@ -123,6 +123,11 @@ export class GameScene extends Phaser.Scene {
     this.lootableLooted = new Set();
     this.cooldowns           = {};
     this.dashCooldown        = 0;
+    this.wasDashReady        = true;
+    this.playerVx            = 0;
+    this.playerVy            = 0;
+    this.dashMomentumX       = 0;
+    this.dashMomentumY       = 0;
     this.playtimeAccumulator = 0;
     this.lastAutoSave        = 0;
     this.isDashing      = false;
