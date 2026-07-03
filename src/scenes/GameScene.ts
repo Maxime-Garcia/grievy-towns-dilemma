@@ -263,15 +263,21 @@ export class GameScene extends Phaser.Scene {
     if (targetVx !== 0 && Math.sign(targetVx) !== Math.sign(this.playerVx)) this.playerVx = 0;
     if (targetVy !== 0 && Math.sign(targetVy) !== Math.sign(this.playerVy)) this.playerVy = 0;
 
-    // Snappy accel (~4-5 frames to 90%), brief decel (~10 frames to stop)
-    const accel = 25 * dt;
-    const decel = 12 * dt;
-    this.playerVx = Phaser.Math.Linear(this.playerVx, targetVx, targetVx !== 0 ? accel : decel);
-    this.playerVy = Phaser.Math.Linear(this.playerVy, targetVy, targetVy !== 0 ? accel : decel);
-
-    // Prevent micro-drift
-    if (Math.abs(this.playerVx) < 1) this.playerVx = 0;
-    if (Math.abs(this.playerVy) < 1) this.playerVy = 0;
+    // Acceleration : lerp snappy (~4-5 frames à 90%)
+    // Décélération : linéaire à taux fixe — la vitesse reste haute puis coupe net (~440ms, ~24px de glisse)
+    const DECEL_RATE = 250; // px/s²
+    if (targetVx !== 0) {
+      this.playerVx = Phaser.Math.Linear(this.playerVx, targetVx, 25 * dt);
+    } else {
+      const d = DECEL_RATE * dt;
+      this.playerVx = Math.abs(this.playerVx) <= d ? 0 : this.playerVx - Math.sign(this.playerVx) * d;
+    }
+    if (targetVy !== 0) {
+      this.playerVy = Phaser.Math.Linear(this.playerVy, targetVy, 25 * dt);
+    } else {
+      const d = DECEL_RATE * dt;
+      this.playerVy = Math.abs(this.playerVy) <= d ? 0 : this.playerVy - Math.sign(this.playerVy) * d;
+    }
 
     body.setVelocity(this.playerVx, this.playerVy);
 
