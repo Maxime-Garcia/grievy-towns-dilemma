@@ -1737,7 +1737,11 @@ export class GameScene extends Phaser.Scene {
       sprite.refreshBody();
       this.lootableGroup.add(sprite);
 
-      const lootLabel = this.add.text(lo.x, lo.y - 16, t(`notif.loot_${lo.type}` as const), {
+      const firstItem  = lo.itemPool[0] ? ALL_ITEMS[lo.itemPool[0]] : null;
+      const labelText  = (lo.type === 'mineral' || lo.type === 'plant') && firstItem
+        ? firstItem.name
+        : t(`notif.loot_${lo.type}` as const);
+      const lootLabel = this.add.text(lo.x, lo.y - 16, labelText, {
         fontSize: '8px', color: '#ffeeaa', fontFamily: 'monospace',
         stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5, 1).setDepth(4);
