@@ -353,8 +353,8 @@ export class GameScene extends Phaser.Scene {
         this.isDashing = false;
         this.playerVx = 0;
         this.playerVy = 0;
-        this.dashMomentumX = nx * 0.27; // ~80px/s overlay → ~6px de slide post-dash
-        this.dashMomentumY = ny * 0.27;
+        this.dashMomentumX = nx * 0.48; // ~144px/s overlay → ~18px de slide post-dash
+        this.dashMomentumY = ny * 0.48;
       },
     });
 
