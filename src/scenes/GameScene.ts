@@ -91,6 +91,8 @@ export class GameScene extends Phaser.Scene {
   private isDashing = false;
   private lastDirX = 0;
   private lastDirY = 1;
+  private playerVx = 0;
+  private playerVy = 0;
   private isInDialogue = false;
   private isTraveling = false;
   private lastAutoSave = 0;
@@ -241,28 +243,44 @@ export class GameScene extends Phaser.Scene {
   // ── MOVEMENT ─────────────────────────────────────────────────
 
   private handleMovement(dt: number) {
-    if (this.isDashing) return; // Don't override velocity during dash
+    if (this.isDashing) return;
 
     this.debugSpeedMult = this.speedBoostKey?.isDown ? 5 : 1;
 
     const player = this.gameState.player;
     const speed  = (90 + player.stats.spd * 4) * this.debugSpeedMult;
     const body   = this.player.body as Phaser.Physics.Arcade.Body;
-    let vx = 0, vy = 0;
 
-    if (this.wasd.left.isDown  || this.cursors.left.isDown)  vx = -speed;
-    if (this.wasd.right.isDown || this.cursors.right.isDown) vx =  speed;
-    if (this.wasd.up.isDown    || this.cursors.up.isDown)    vy = -speed;
-    if (this.wasd.down.isDown  || this.cursors.down.isDown)  vy =  speed;
+    let targetVx = 0, targetVy = 0;
+    if (this.wasd.left.isDown  || this.cursors.left.isDown)  targetVx = -speed;
+    if (this.wasd.right.isDown || this.cursors.right.isDown) targetVx =  speed;
+    if (this.wasd.up.isDown    || this.cursors.up.isDown)    targetVy = -speed;
+    if (this.wasd.down.isDown  || this.cursors.down.isDown)  targetVy =  speed;
 
-    if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
+    if (targetVx !== 0 && targetVy !== 0) { targetVx *= 0.707; targetVy *= 0.707; }
 
-    body.setVelocity(vx, vy);
+    // Snap to 0 on direction change — immediate reversal, no momentum carry
+    if (targetVx !== 0 && Math.sign(targetVx) !== Math.sign(this.playerVx)) this.playerVx = 0;
+    if (targetVy !== 0 && Math.sign(targetVy) !== Math.sign(this.playerVy)) this.playerVy = 0;
 
-    if (vx !== 0 || vy !== 0) {
-      this.lastDirX = vx;
-      this.lastDirY = vy;
-      this.player.setFlipX(vx < 0);
+    // Snappy accel (~4-5 frames to 90%), brief decel (~10 frames to stop)
+    const accel = 25 * dt;
+    const decel = 12 * dt;
+    this.playerVx = Phaser.Math.Linear(this.playerVx, targetVx, targetVx !== 0 ? accel : decel);
+    this.playerVy = Phaser.Math.Linear(this.playerVy, targetVy, targetVy !== 0 ? accel : decel);
+
+    // Prevent micro-drift
+    if (Math.abs(this.playerVx) < 1) this.playerVx = 0;
+    if (Math.abs(this.playerVy) < 1) this.playerVy = 0;
+
+    body.setVelocity(this.playerVx, this.playerVy);
+
+    // Flip on input direction immediately (not lerped velocity) for crisp visual response
+    if (targetVx !== 0) this.player.setFlipX(targetVx < 0);
+
+    if (targetVx !== 0 || targetVy !== 0) {
+      this.lastDirX = targetVx;
+      this.lastDirY = targetVy;
     }
   }
 
@@ -273,9 +291,9 @@ export class GameScene extends Phaser.Scene {
 
     const body = this.player.body as Phaser.Physics.Arcade.Body;
 
-    // Use current velocity direction, or fall back to last known direction
-    let dx = body.velocity.x;
-    let dy = body.velocity.y;
+    // Use lerped velocity direction, or fall back to last known direction
+    let dx = this.playerVx;
+    let dy = this.playerVy;
     if (Math.abs(dx) < 1 && Math.abs(dy) < 1) {
       dx = this.lastDirX;
       dy = this.lastDirY;
@@ -298,7 +316,7 @@ export class GameScene extends Phaser.Scene {
       targets: this.player,
       alpha: 1,
       duration: 300,
-      onComplete: () => { this.isDashing = false; },
+      onComplete: () => { this.isDashing = false; this.playerVx = 0; this.playerVy = 0; },
     });
 
     this.cooldowns['dash'] = 1.5;
