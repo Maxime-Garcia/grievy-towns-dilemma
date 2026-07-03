@@ -2,16 +2,18 @@ import { GameScene } from './GameScene';
 import { ALL_ITEMS } from '../data/items';
 import { LootSystem } from '../systems/LootSystem';
 import { SHOP_INVENTORY, ShopEntry } from '../data/shops';
+import { UI, drawPanel, pxStyle } from '../utils/UITheme';
+import { t } from '../i18n';
 
 export class ShopScene extends Phaser.Scene {
   private gameScene!: GameScene;
   private npcId!: string;
 
-  // Live-update references (rebuilt only when affording changes)
+  // Live-update references (rebuilt only when affordability changes)
   private goldText!: Phaser.GameObjects.Text;
-  private rowBgs:   Phaser.GameObjects.Rectangle[] = [];
-  private rowNames: Phaser.GameObjects.Text[]       = [];
-  private rowPrices: Phaser.GameObjects.Text[]      = [];
+  private rowBgs:    Phaser.GameObjects.Rectangle[] = [];
+  private rowNames:  Phaser.GameObjects.Text[]       = [];
+  private rowPrices: Phaser.GameObjects.Text[]       = [];
 
   constructor() { super({ key: 'ShopScene' }); }
 
@@ -21,31 +23,46 @@ export class ShopScene extends Phaser.Scene {
   }
 
   create() {
+    this.cameras.main.fadeIn(400, 0, 0, 0);
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
 
-    // ── Static overlay ───────────────────────────────────────────
-    this.add.rectangle(W / 2, H / 2, W - 40, H - 40, 0x0a0a18, 0.97)
-      .setStrokeStyle(1, 0x554433).setDepth(0);
+    // ── Dark overlay + main panel ────────────────────────────────
+    this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.75).setDepth(0);
+    const frame = this.add.graphics().setDepth(0);
+    drawPanel(frame, 20, 20, W - 40, H - 40);
 
+    // ── Title ────────────────────────────────────────────────────
     const npcName = this.npcId.charAt(0).toUpperCase() + this.npcId.slice(1);
-    this.add.text(W / 2, 30, `Boutique — ${npcName}`, {
-      fontSize: '16px', color: '#e8d5b0', fontFamily: 'monospace', fontStyle: 'bold',
-    }).setOrigin(0.5, 0.5).setDepth(1);
+    this.add.text(W / 2, 36, t('shop.title').replace('{name}', npcName), {
+      ...pxStyle(13, UI.TXT_GOLD, true),
+      stroke: '#000000',
+      strokeThickness: 4,
+    }).setOrigin(0.5).setDepth(1);
 
-    this.goldText = this.add.text(W - 30, 30, `Or : ${this.gameScene.gameState.player.gold} G`, {
-      fontSize: '13px', color: '#ffdd44', fontFamily: 'monospace',
-    }).setOrigin(1, 0.5).setDepth(1);
+    // ── Gold display ─────────────────────────────────────────────
+    const gldGfx = this.add.graphics().setDepth(1);
+    drawPanel(gldGfx, W - 162, 24, 136, 22, UI.SLOT_BG);
+    this.goldText = this.add.text(W - 94, 35,
+      t('shop.gold').replace('{gold}', String(this.gameScene.gameState.player.gold)),
+      pxStyle(8, UI.TXT_GOLD),
+    ).setOrigin(0.5).setDepth(2);
 
-    this.add.text(30,      60, 'ARTICLE', { fontSize: '10px', color: '#887766', fontFamily: 'monospace' }).setDepth(1);
-    this.add.text(W - 160, 60, 'PRIX',    { fontSize: '10px', color: '#887766', fontFamily: 'monospace' }).setOrigin(0, 0).setDepth(1);
-    this.add.text(W - 60,  60, 'STOCK',   { fontSize: '10px', color: '#887766', fontFamily: 'monospace' }).setOrigin(0, 0).setDepth(1);
-    this.add.rectangle(W / 2, 72, W - 40, 1, 0x554433).setDepth(1);
+    // ── Column headers ───────────────────────────────────────────
+    const headerY = 62;
+    this.add.text(46,      headerY, t('shop.col.item'),  pxStyle(7, UI.TXT_MUTED)).setDepth(1);
+    this.add.text(W - 158, headerY, t('shop.col.price'), pxStyle(7, UI.TXT_MUTED)).setOrigin(0, 0).setDepth(1);
+    this.add.text(W - 58,  headerY, t('shop.col.stock'), pxStyle(7, UI.TXT_MUTED)).setOrigin(0, 0).setDepth(1);
+
+    // Separator line
+    const sep = this.add.graphics().setDepth(1);
+    sep.lineStyle(1, UI.BORDER_LIT, 0.4);
+    sep.beginPath(); sep.moveTo(30, 74); sep.lineTo(W - 30, 74); sep.strokePath();
 
     // ── Item rows ────────────────────────────────────────────────
     const entries: ShopEntry[] = SHOP_INVENTORY[this.npcId] ?? [];
-    const rowH    = 44;
-    const startY  = 90;
+    const rowH   = 44;
+    const startY = 90;
 
     this.rowBgs    = [];
     this.rowNames  = [];
@@ -57,43 +74,43 @@ export class ShopScene extends Phaser.Scene {
       const rowY   = startY + i * rowH;
       const canBuy = this.gameScene.gameState.player.gold >= entry.price;
 
-      const bg = this.add.rectangle(W / 2, rowY + rowH / 2, W - 60, rowH - 4, canBuy ? 0x111122 : 0x0a0a0a)
-        .setDepth(1).setInteractive({ useHandCursor: true });
+      const bg = this.add.rectangle(W / 2, rowY + rowH / 2, W - 60, rowH - 4,
+        canBuy ? UI.BTN_BG : UI.PANEL_BG,
+      ).setDepth(1).setInteractive({ useHandCursor: true });
       this.rowBgs.push(bg);
 
-      const nameText = this.add.text(40, rowY + 8, item.name, {
-        fontSize: '13px', color: canBuy ? '#ffffff' : '#665544', fontFamily: 'monospace',
-      }).setDepth(2);
+      const nameText = this.add.text(46, rowY + 8, item.name, pxStyle(11, canBuy ? UI.TXT_PARCHMENT : UI.TXT_MUTED))
+        .setDepth(2);
       this.rowNames.push(nameText);
 
-      this.add.text(40, rowY + 26, item.description.slice(0, 55), {
-        fontSize: '9px', color: '#665544', fontFamily: 'monospace',
-      }).setDepth(2);
+      this.add.text(46, rowY + 26, item.description.slice(0, 55), pxStyle(7, UI.TXT_HINT))
+        .setDepth(2);
 
-      const priceText = this.add.text(W - 155, rowY + 18, `${entry.price} G`, {
-        fontSize: '13px', color: canBuy ? '#ffdd44' : '#554433', fontFamily: 'monospace',
-      }).setOrigin(0, 0.5).setDepth(2);
+      const priceText = this.add.text(W - 153, rowY + rowH / 2, `${entry.price} G`,
+        pxStyle(11, canBuy ? UI.TXT_GOLD : UI.TXT_HINT),
+      ).setOrigin(0, 0.5).setDepth(2);
       this.rowPrices.push(priceText);
 
       const stockLabel = entry.stock !== undefined ? `${entry.stock}` : '∞';
-      this.add.text(W - 55, rowY + 18, stockLabel, {
-        fontSize: '13px', color: '#aaaaaa', fontFamily: 'monospace',
-      }).setOrigin(0, 0.5).setDepth(2);
+      this.add.text(W - 53, rowY + rowH / 2, stockLabel, pxStyle(11, UI.TXT_MUTED))
+        .setOrigin(0, 0.5).setDepth(2);
 
       bg.on('pointerover', () => {
-        if (this.gameScene.gameState.player.gold >= entry.price) bg.setFillStyle(0x222244);
+        if (this.gameScene.gameState.player.gold >= entry.price) bg.setFillStyle(UI.BTN_BG_HOVER);
       });
       bg.on('pointerout', () => {
-        bg.setFillStyle(this.gameScene.gameState.player.gold >= entry.price ? 0x111122 : 0x0a0a0a);
+        bg.setFillStyle(this.gameScene.gameState.player.gold >= entry.price ? UI.BTN_BG : UI.PANEL_BG);
       });
       bg.on('pointerdown', () => this.buyItem(entry, i));
     });
 
     // ── Bottom bar ───────────────────────────────────────────────
-    this.add.rectangle(W / 2, H - 30, W - 40, 1, 0x554433).setDepth(1);
-    this.add.text(W / 2, H - 16, '[Échap] / [I] fermer', {
-      fontSize: '10px', color: '#554433', fontFamily: 'monospace',
-    }).setOrigin(0.5, 0.5).setDepth(1);
+    const sepBot = this.add.graphics().setDepth(1);
+    sepBot.lineStyle(1, UI.BORDER_LIT, 0.4);
+    sepBot.beginPath(); sepBot.moveTo(30, H - 42); sepBot.lineTo(W - 30, H - 42); sepBot.strokePath();
+
+    this.add.text(W / 2, H - 28, t('shop.close_hint'), pxStyle(8, UI.TXT_HINT))
+      .setOrigin(0.5).setDepth(1);
 
     this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC).once('down', () => this.closeShop());
     this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.I).once('down',   () => this.closeShop());
@@ -109,12 +126,12 @@ export class ShopScene extends Phaser.Scene {
     LootSystem.addToInventory(player, item, 1);
     this.gameScene.events.emit('item_looted',       { item, quantity: 1 });
     this.gameScene.events.emit('player_update',     player);
-    this.gameScene.events.emit('show_notification', `Acheté : ${item.name}`);
+    this.gameScene.events.emit('show_notification', t('shop.bought').replace('{name}', item.name));
 
     // Update gold display
-    this.goldText.setText(`Or : ${player.gold} G`);
+    this.goldText.setText(t('shop.gold').replace('{gold}', String(player.gold)));
 
-    // Update affordability state for all rows (no scene restart needed)
+    // Update affordability state for all rows without scene restart
     const entries = SHOP_INVENTORY[this.npcId] ?? [];
     entries.forEach((e, i) => {
       const bg    = this.rowBgs[i];
@@ -122,11 +139,12 @@ export class ShopScene extends Phaser.Scene {
       const price = this.rowPrices[i];
       if (!bg || !name || !price) return;
       const canAfford = player.gold >= e.price;
-      bg.setFillStyle(canAfford ? 0x111122 : 0x0a0a0a);
-      bg.input!.cursor = canAfford ? 'pointer' : 'default';
-      name.setStyle({ color: canAfford ? '#ffffff' : '#665544' });
-      price.setStyle({ color: canAfford ? '#ffdd44' : '#554433' });
+      bg.setFillStyle(canAfford ? UI.BTN_BG : UI.PANEL_BG);
+      if (bg.input) bg.input.cursor = canAfford ? 'pointer' : 'default';
+      name.setStyle({ color: canAfford ? UI.TXT_PARCHMENT : UI.TXT_MUTED });
+      price.setStyle({ color: canAfford ? UI.TXT_GOLD : UI.TXT_HINT });
     });
+
   }
 
   private closeShop() {

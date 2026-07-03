@@ -25,6 +25,7 @@ export class PauseScene extends Phaser.Scene {
   }
 
   create() {
+    this.cameras.main.fadeIn(400, 0, 0, 0);
     this.renderUI();
   }
 
@@ -306,7 +307,6 @@ export class PauseScene extends Phaser.Scene {
   private saveGame() {
     const slot = this.gameScene.gameState.saveSlot;
     const ok   = typeof slot === 'number' && SaveSystem.save(this.gameScene.gameState, slot);
-    console.warn('[SaveSystem] save slot=', slot, 'ok=', ok, 'stored=', localStorage.getItem(`gtd_save_${slot}`)?.slice(0, 60));
     const W    = this.cameras.main.width;
     const msg  = this.add.text(
       W / 2, this.cameras.main.height / 2,

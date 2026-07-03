@@ -55,6 +55,28 @@ export const EN: Record<string, string> = {
   'rarity.MYTHIC': 'Mythic',
   'rarity.HIDDEN': 'Hidden',
 
+  // ── INTRO SCENE ─────────────────────────────────────────────
+  'intro.hint_continue': '[ Z / ENTER — continue ]',
+  'intro.hint_begin':    '[ Z / ENTER — begin ]',
+
+  // ── ENDING SCENE ─────────────────────────────────────────────
+  'ending.thanks':           'Thank you for playing.',
+  'ending.ng_plus_unlocked': 'New Game+ unlocked. The world remembers.',
+  'ending.begin_again':      '[ BEGIN AGAIN ]',
+  'ending.return_menu':      '[ Return to Menu ]',
+
+  // ── SHOP SCENE ───────────────────────────────────────────────
+  'shop.title':       'Shop — {name}',
+  'shop.gold':        'Gold: {gold} G',
+  'shop.col.item':    'ITEM',
+  'shop.col.price':   'PRICE',
+  'shop.col.stock':   'STOCK',
+  'shop.close_hint':  '[Esc] / [I] Close',
+  'shop.bought':      'Purchased: {name}',
+
+  // ── DIALOGUE SCENE ───────────────────────────────────────────
+  'dialogue.advance_hint': '[Z] advance   [Esc] close',
+
   // ── SETTINGS ────────────────────────────────────────────────
   'settings.section.language': 'LANGUAGE',
   'settings.section.graphics': 'GRAPHICS',
