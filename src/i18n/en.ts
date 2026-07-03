@@ -122,6 +122,8 @@ export const EN: Record<string, string> = {
   'notif.loot_chest': '[Chest]',
   'notif.loot_plant': '[Plant]',
   'notif.loot_mineral': '[Mineral]',
+  'hint.talk': '[W] Talk',
+  'hint.loot': '[W] Loot',
   'notif.loot_shrine': '[Shrine]',
   'notif.level_up': '✦ Level {level}! ✦',
   'notif.quest_done': 'Quest complete!',

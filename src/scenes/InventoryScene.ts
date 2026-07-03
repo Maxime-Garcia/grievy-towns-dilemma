@@ -62,11 +62,22 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   private renderGrid() {
+    const H          = this.cameras.main.height;
+    const VISIBLE_H  = H - GRID_Y - 30;
+    const GRID_W     = COLS * SLOT + 4;
+
+    const rows       = Math.ceil(this.player.inventory.length / COLS);
+    const contentH   = rows * SLOT;
+    let   scrollY    = 0;
+
+    // Container positioned at GRID_Y; children use y relative to that origin
+    const container = this.add.container(0, GRID_Y);
+
     this.player.inventory.forEach((slot, i) => {
       const col = i % COLS;
       const row = Math.floor(i / COLS);
       const x   = GRID_X + col * SLOT;
-      const y   = GRID_Y + row * SLOT;
+      const y   = row * SLOT;
 
       const rarityHex = parseInt(
         (RARITY_COLORS[slot.item.rarity] ?? '#666666').replace('#', ''), 16
@@ -79,15 +90,18 @@ export class InventoryScene extends Phaser.Scene {
       bg.strokeRect(x, y, SLOT - 2, SLOT - 2);
       bg.lineStyle(1, 0x000000, 0.35);
       bg.strokeRect(x + 1, y + 1, SLOT - 4, SLOT - 4);
+      container.add(bg);
 
       try {
-        this.add.image(x + SLOT / 2 - 1, y + SLOT / 2 - 1, slot.item.icon)
+        const img = this.add.image(x + SLOT / 2 - 1, y + SLOT / 2 - 1, slot.item.icon)
           .setDisplaySize(28, 28);
+        container.add(img);
       } catch {}
 
       if (slot.quantity > 1) {
-        this.add.text(x + SLOT - 5, y + SLOT - 5, `${slot.quantity}`, pxStyle(7, UI.TXT_WHITE))
+        const qty = this.add.text(x + SLOT - 5, y + SLOT - 5, `${slot.quantity}`, pxStyle(7, UI.TXT_WHITE))
           .setOrigin(1, 1);
+        container.add(qty);
       }
 
       const hit = this.add.rectangle(
@@ -95,6 +109,7 @@ export class InventoryScene extends Phaser.Scene {
         SLOT - 2, SLOT - 2,
         0x000000, 0
       ).setInteractive({ useHandCursor: true });
+      container.add(hit);
 
       hit.on('pointerdown', () => this.showItemDetail(slot.item.id));
       hit.on('pointerover', () => {
@@ -106,6 +121,23 @@ export class InventoryScene extends Phaser.Scene {
         bg.strokeRect(x, y, SLOT - 2, SLOT - 2);
       });
     });
+
+    // Clip mask — must be positioned in screen space
+    const maskGfx = this.add.graphics();
+    maskGfx.fillStyle(0xffffff);
+    maskGfx.fillRect(GRID_X - 2, GRID_Y, GRID_W, VISIBLE_H);
+    container.setMask(maskGfx.createGeometryMask());
+
+    // Mousewheel scroll
+    if (contentH > VISIBLE_H) {
+      const maxScroll = contentH - VISIBLE_H;
+      this.input.on('wheel',
+        (_ptr: Phaser.Input.Pointer, _gos: unknown, _dx: number, dy: number) => {
+          scrollY = Phaser.Math.Clamp(scrollY + dy * 0.8, 0, maxScroll);
+          container.setY(GRID_Y - scrollY);
+        }
+      );
+    }
   }
 
   private renderEquipment(W: number) {

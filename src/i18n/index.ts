@@ -25,9 +25,12 @@ export function t(key: string): string {
 // ── Localization helpers ─────────────────────────────────────
 
 export function localizeItem(item: Item): { name: string; description: string } {
+  const dict   = currentLang === 'en' ? EN : FR;
+  const nameK  = `item.${item.id}.name`;
+  const descK  = `item.${item.id}.description`;
   return {
-    name:        t(`item.${item.id}.name`)        || item.name,
-    description: t(`item.${item.id}.description`) || item.description,
+    name:        dict[nameK]  ?? FR[nameK]  ?? item.name,
+    description: dict[descK]  ?? FR[descK]  ?? item.description,
   };
 }
 

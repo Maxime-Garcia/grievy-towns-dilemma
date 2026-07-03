@@ -162,7 +162,7 @@ export class GameScene extends Phaser.Scene {
     this.setupPhysics();
     this.createProjectileGroup();
 
-    this.interactHint = this.add.text(0, 0, '[W] Talk', {
+    this.interactHint = this.add.text(0, 0, t('hint.talk'), {
       fontSize: '11px', color: '#ffee88',
       fontFamily: 'monospace',
       stroke: '#000000', strokeThickness: 3,
@@ -221,9 +221,9 @@ export class GameScene extends Phaser.Scene {
     const showHint = !!this.nearbyNPC || !!this.nearbyLootable;
     this.interactHint.setVisible(showHint);
     if (showHint) {
-      const hintText = this.nearbyNPC ? '[W] Talk' : '[W] Loot';
+      const hintText = this.nearbyNPC ? t('hint.talk') : t('hint.loot');
       if (this.interactHint.text !== hintText) this.interactHint.setText(hintText);
-      this.interactHint.setPosition(this.player.x, this.player.y - 28);
+      this.interactHint.setPosition(Math.round(this.player.x), Math.round(this.player.y) - 28);
     }
 
     SkillSystem.tickCooldowns(this.cooldowns, dt);
@@ -311,12 +311,12 @@ export class GameScene extends Phaser.Scene {
   // ── DASH ────────────────────────────────────────────────────
 
   private flashDashReady() {
-    this.player.setTintFill(0x66ddff);
-    this.time.delayedCall(80, () => this.player.clearTint());
+    this.player.setTintFill(0xaaeeff);
+    this.time.delayedCall(70, () => this.player.clearTint());
     this.tweens.add({
       targets: this.player,
-      alpha: 0.15,
-      duration: 55,
+      alpha: 0.3,
+      duration: 50,
       yoyo: true,
       repeat: 2,
       ease: 'Linear',
