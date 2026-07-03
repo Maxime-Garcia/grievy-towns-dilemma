@@ -88,6 +88,7 @@ export class GameScene extends Phaser.Scene {
   private enemyCrowns: Map<string, Phaser.GameObjects.Text> = new Map();
   private cooldowns: Record<string, number> = {};
   private dashCooldown = 0;
+  private wasDashReady = true;
   private isDashing = false;
   private lastDirX = 0;
   private lastDirY = 1;
@@ -222,6 +223,9 @@ export class GameScene extends Phaser.Scene {
 
     SkillSystem.tickCooldowns(this.cooldowns, dt);
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
+    const dashReady = this.dashCooldown === 0;
+    if (dashReady && !this.wasDashReady) this.flashDashReady();
+    this.wasDashReady = dashReady;
 
     this.tickEnemyAI(dt);
     this.tickXpOrbs();
@@ -300,6 +304,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ── DASH ────────────────────────────────────────────────────
+
+  private flashDashReady() {
+    this.player.setTintFill(0xffe066);
+    this.time.delayedCall(80, () => this.player.clearTint());
+    this.tweens.add({
+      targets: this.player,
+      alpha: 0.15,
+      duration: 55,
+      yoyo: true,
+      repeat: 2,
+      ease: 'Linear',
+      onComplete: () => this.player.setAlpha(1),
+    });
+  }
 
   private handleDash() {
     if (this.dashCooldown > 0) return;
