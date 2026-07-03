@@ -93,6 +93,8 @@ export class GameScene extends Phaser.Scene {
   private lastDirY = 1;
   private playerVx = 0;
   private playerVy = 0;
+  private dashMomentumX = 0;
+  private dashMomentumY = 0;
   private isInDialogue = false;
   private isTraveling = false;
   private lastAutoSave = 0;
@@ -265,7 +267,7 @@ export class GameScene extends Phaser.Scene {
 
     // Acceleration : lerp snappy (~4-5 frames à 90%)
     // Décélération : linéaire à taux fixe — la vitesse reste haute puis coupe net (~440ms, ~24px de glisse)
-    const DECEL_RATE = 390; // px/s²  — ~15px de glisse depuis la vitesse max
+    const DECEL_RATE = 720; // px/s²  — ~8px de glisse depuis la vitesse max
     if (targetVx !== 0) {
       this.playerVx = Phaser.Math.Linear(this.playerVx, targetVx, 25 * dt);
     } else {
@@ -279,7 +281,14 @@ export class GameScene extends Phaser.Scene {
       this.playerVy = Math.abs(this.playerVy) <= d ? 0 : this.playerVy - Math.sign(this.playerVy) * d;
     }
 
-    body.setVelocity(this.playerVx, this.playerVy);
+    // Post-dash momentum : overlay additif qui s'estompe independamment du mouvement
+    if (this.dashMomentumX !== 0 || this.dashMomentumY !== 0) {
+      const dm = 560 * dt;
+      this.dashMomentumX = Math.abs(this.dashMomentumX) <= dm ? 0 : this.dashMomentumX - Math.sign(this.dashMomentumX) * dm;
+      this.dashMomentumY = Math.abs(this.dashMomentumY) <= dm ? 0 : this.dashMomentumY - Math.sign(this.dashMomentumY) * dm;
+    }
+
+    body.setVelocity(this.playerVx + this.dashMomentumX, this.playerVy + this.dashMomentumY);
 
     // Flip on input direction immediately (not lerped velocity) for crisp visual response
     if (targetVx !== 0) this.player.setFlipX(targetVx < 0);
@@ -322,7 +331,13 @@ export class GameScene extends Phaser.Scene {
       targets: this.player,
       alpha: 1,
       duration: 300,
-      onComplete: () => { this.isDashing = false; this.playerVx = nx * 0.33; this.playerVy = ny * 0.33; },
+      onComplete: () => {
+        this.isDashing = false;
+        this.playerVx = 0;
+        this.playerVy = 0;
+        this.dashMomentumX = nx * 0.27; // ~80px/s overlay → ~6px de slide post-dash
+        this.dashMomentumY = ny * 0.27;
+      },
     });
 
     this.cooldowns['dash'] = 1.5;
