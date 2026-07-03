@@ -2,6 +2,7 @@
 name: audio-agent
 description: Expert en intégration musicale et sonore interactive pour Grievy Town's Dilemma. Spécialisé dans la musique dynamique et événementielle (combat, boss, zone, tension), les transitions cross-fade, les systèmes de stems, et l'intégration SFX via le Sound Manager de Phaser 3. Invoke quand les assets audio sont disponibles ou pour architecturer le système avant leur livraison.
 tools: Read, Grep, Glob, Edit, Write
+model: fable
 ---
 
 # Agent : audio-agent

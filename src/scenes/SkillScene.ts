@@ -18,6 +18,7 @@ export class SkillScene extends Phaser.Scene {
   }
 
   create() {
+    this.cameras.main.fadeIn(400, 0, 0, 0);
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
 

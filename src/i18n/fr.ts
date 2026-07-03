@@ -11,6 +11,14 @@ export const FR: Record<string, string> = {
   'ui.gold': 'Or',
   'ui.hint': '[I] Inv  [K] Compétences  [W] Attaque  [Espace] Dash',
 
+  // ── NAME INPUT SCENE ────────────────────────────────────────
+  'name_input.wake':        'Tu te réveilles.',
+  'name_input.no_name':     'Tu ne te souviens plus de ton nom.',
+  'name_input.choose':      'Choisis-en un.',
+  'name_input.placeholder': 'Ton nom...',
+  'name_input.begin':       'COMMENCER',
+  'name_input.hint':        'Entrée ou clic pour confirmer',
+
   // ── MAINMENU SCENE ──────────────────────────────────────────
   'menu.subtitle': 'Un conte de mémoire, de sacrifice et de dieux brisés',
   'menu.new_game': 'NOUVELLE PARTIE',
@@ -47,6 +55,28 @@ export const FR: Record<string, string> = {
   'rarity.LEGENDARY': 'Légendaire',
   'rarity.MYTHIC': 'Mythique',
   'rarity.HIDDEN': 'Caché',
+
+  // ── INTRO SCENE ─────────────────────────────────────────────
+  'intro.hint_continue': '[ Z / ENTRÉE — continuer ]',
+  'intro.hint_begin':    '[ Z / ENTRÉE — commencer ]',
+
+  // ── ENDING SCENE ─────────────────────────────────────────────
+  'ending.thanks':            'Merci d\'avoir joué.',
+  'ending.ng_plus_unlocked':  'Nouvelle Partie+ débloquée. Le monde se souvient.',
+  'ending.begin_again':       '[ RECOMMENCER ]',
+  'ending.return_menu':       '[ Retour au Menu ]',
+
+  // ── SHOP SCENE ───────────────────────────────────────────────
+  'shop.title':       'Boutique — {name}',
+  'shop.gold':        'Or : {gold} G',
+  'shop.col.item':    'ARTICLE',
+  'shop.col.price':   'PRIX',
+  'shop.col.stock':   'STOCK',
+  'shop.close_hint':  '[Échap] / [I] Fermer',
+  'shop.bought':      'Acheté : {name}',
+
+  // ── DIALOGUE SCENE ───────────────────────────────────────────
+  'dialogue.advance_hint': '[Z] suite   [Échap] fermer',
 
   // ── PARAMÈTRES ───────────────────────────────────────────────
   'settings.section.language': 'LANGUE',

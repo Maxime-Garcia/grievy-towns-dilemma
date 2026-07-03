@@ -2,6 +2,7 @@
 name: gamefeel-agent
 description: Expert en game feel pour Grievy Town's Dilemma. Maître des VFX, SFX, timing et micro-interactions UI qui rendent le jeu vivant et satisfaisant. Invoke pour toute passe de polish visuel ou sensoriel — hit effects, screen shake, lerp des barres HP/MP, particules, animations de feedback, ambiance sonore.
 tools: Read, Grep, Glob, Edit, Write
+model: fable
 ---
 
 # Agent : gamefeel-agent

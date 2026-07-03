@@ -1,6 +1,7 @@
 import { NPC, PlayerState } from '../types';
 import { DialogueSystem, DialogueSession } from '../systems/DialogueSystem';
 import { UI, drawPanel, pxStyle } from '../utils/UITheme';
+import { t } from '../i18n';
 
 export class DialogueScene extends Phaser.Scene {
   private session!:  DialogueSession;
@@ -26,6 +27,7 @@ export class DialogueScene extends Phaser.Scene {
   }
 
   create() {
+    this.cameras.main.fadeIn(300, 0, 0, 0);
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
 
@@ -80,7 +82,7 @@ export class DialogueScene extends Phaser.Scene {
     closeBtn.on('pointerdown', () => this.closeDialogue());
 
     // Hint
-    this.add.text(PX + PW - 10, H - 10, '[Z] suite   [Échap] fermer', pxStyle(6, UI.TXT_HINT))
+    this.add.text(PX + PW - 10, H - 10, t('dialogue.advance_hint'), pxStyle(6, UI.TXT_HINT))
       .setOrigin(1, 1);
 
     this.renderCurrentLine();

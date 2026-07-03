@@ -1,5 +1,7 @@
 import { GameState, EndingChoice } from '../types';
 import { SaveSystem } from '../systems/SaveSystem';
+import { UI, drawPanel, pxStyle } from '../utils/UITheme';
+import { t } from '../i18n';
 
 const RESTORE_TEXT = [
   'The six zones grow quiet.',
@@ -65,7 +67,6 @@ export class EndingScene extends Phaser.Scene {
   private lines: string[] = [];
   private displayedLines: Phaser.GameObjects.Text[] = [];
   private lineIndex = 0;
-  private typewriterTimer = 0;
 
   constructor() { super({ key: 'EndingScene' }); }
 
@@ -76,10 +77,8 @@ export class EndingScene extends Phaser.Scene {
   }
 
   create() {
-    const W = this.cameras.main.width;
-    const H = this.cameras.main.height;
-
     this.cameras.main.setBackgroundColor('#000000');
+    // Cinematic 2-second fade — intentional, not the standard 400ms
     this.cameras.main.fadeIn(2000);
 
     this.displayedLines = [];
@@ -92,7 +91,7 @@ export class EndingScene extends Phaser.Scene {
       callbackScope: this,
     });
 
-    // After all lines, show final choice / credits
+    // After all lines, show final screen
     this.time.delayedCall(this.lines.length * 1800 + 3000, () => this.showFinalScreen());
   }
 
@@ -100,10 +99,9 @@ export class EndingScene extends Phaser.Scene {
     if (this.lineIndex >= this.lines.length) return;
     const W = this.cameras.main.width;
 
+    const isEmpty = this.lines[this.lineIndex] === '';
     const txt = this.add.text(W / 2, 60 + this.lineIndex * 22, this.lines[this.lineIndex], {
-      fontSize: this.lines[this.lineIndex] === '' ? '4px' : '12px',
-      color: '#ccbbaa',
-      fontFamily: 'monospace',
+      ...pxStyle(isEmpty ? 4 : 9, UI.TXT_PARCHMENT),
       align: 'center',
     }).setOrigin(0.5, 0).setAlpha(0);
 
@@ -118,26 +116,35 @@ export class EndingScene extends Phaser.Scene {
 
     this.cameras.main.fadeIn(800);
 
+    // ── Subtext ───────────────────────────────────
     const subtext = this.choice === EndingChoice.RESTORE
-      ? 'Thank you for playing.'
-      : 'New Game+ unlocked. The world remembers.';
+      ? t('ending.thanks')
+      : t('ending.ng_plus_unlocked');
 
-    this.add.text(W / 2, H - 80, subtext, {
-      fontSize: '14px', color: '#998877', fontFamily: 'monospace',
-    }).setOrigin(0.5);
+    this.add.text(W / 2, H - 92, subtext, pxStyle(9, UI.TXT_MUTED)).setOrigin(0.5);
 
+    // ── New Game+ button ──────────────────────────
     if (this.choice === EndingChoice.ERASE) {
-      const ngPlusBtn = this.add.text(W / 2, H - 40, '[ BEGIN AGAIN ]', {
-        fontSize: '16px',
-        color: '#ffffff',
-        fontFamily: 'monospace',
-        backgroundColor: '#1a0a2a',
-        padding: { x: 20, y: 8 },
-      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      const BW = 220;
+      const BH = 36;
+      const BY = H - 60;
+      const nbg = this.add.graphics();
+      const ndraw = (hover: boolean) => {
+        nbg.clear();
+        drawPanel(nbg, W / 2 - BW / 2, BY - BH / 2, BW, BH, hover ? UI.BTN_BG_HOVER : UI.BTN_BG);
+        if (hover) {
+          nbg.lineStyle(1, UI.CORNER, 1);
+          nbg.strokeRect(W / 2 - BW / 2 + 1, BY - BH / 2 + 1, BW - 2, BH - 2);
+        }
+      };
+      ndraw(false);
 
-      ngPlusBtn.on('pointerover', () => ngPlusBtn.setStyle({ color: '#cc88ff' }));
-      ngPlusBtn.on('pointerout',  () => ngPlusBtn.setStyle({ color: '#ffffff' }));
-      ngPlusBtn.on('pointerdown', () => {
+      const ngTxt = this.add.text(W / 2, BY, t('ending.begin_again'), pxStyle(10, UI.TXT_PARCHMENT))
+        .setOrigin(0.5);
+      const nhit = this.add.rectangle(W / 2, BY, BW, BH, 0, 0).setInteractive({ useHandCursor: true });
+      nhit.on('pointerover', () => { ndraw(true);  ngTxt.setStyle({ color: UI.TXT_GOLD }); });
+      nhit.on('pointerout',  () => { ndraw(false); ngTxt.setStyle({ color: UI.TXT_PARCHMENT }); });
+      nhit.on('pointerdown', () => {
         const ngState = SaveSystem.createNewGamePlus(this.gameState, EndingChoice.ERASE);
         this.cameras.main.fadeOut(800);
         this.time.delayedCall(900, () => {
@@ -146,24 +153,29 @@ export class EndingScene extends Phaser.Scene {
       });
     }
 
-    const mainMenuBtn = this.add.text(W / 2, H - 12, '[ Return to Menu ]', {
-      fontSize: '12px', color: '#666655', fontFamily: 'monospace',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    // ── Return to menu ────────────────────────────
+    const MW = 200;
+    const MH = 26;
+    const MY = H - 22;
+    const mbg = this.add.graphics();
+    const mdraw = (hover: boolean) => {
+      mbg.clear();
+      drawPanel(mbg, W / 2 - MW / 2, MY - MH / 2, MW, MH, hover ? UI.BTN_BG_HOVER : UI.BTN_BG);
+    };
+    mdraw(false);
 
-    mainMenuBtn.on('pointerdown', () => {
+    const mTxt = this.add.text(W / 2, MY, t('ending.return_menu'), pxStyle(8, UI.TXT_MUTED)).setOrigin(0.5);
+    const mhit = this.add.rectangle(W / 2, MY, MW, MH, 0, 0).setInteractive({ useHandCursor: true });
+    mhit.on('pointerover', () => { mdraw(true);  mTxt.setStyle({ color: UI.TXT_PARCHMENT }); });
+    mhit.on('pointerout',  () => { mdraw(false); mTxt.setStyle({ color: UI.TXT_MUTED }); });
+    mhit.on('pointerdown', () => {
       this.cameras.main.fadeOut(600);
       this.time.delayedCall(700, () => this.scene.start('MainMenuScene'));
     });
 
-    // Credits
-    this.add.text(W / 2, H / 2 + 60, "Grievy Town's Dilemma", {
-      fontSize: '18px', color: '#553322', fontFamily: 'monospace',
-    }).setOrigin(0.5);
-    this.add.text(W / 2, H / 2 + 85, 'Original story, design & code', {
-      fontSize: '10px', color: '#443322', fontFamily: 'monospace',
-    }).setOrigin(0.5);
-    this.add.text(W / 2, H / 2 + 105, 'Music by [your friend]', {
-      fontSize: '10px', color: '#443322', fontFamily: 'monospace',
-    }).setOrigin(0.5);
+    // ── Credits ───────────────────────────────────
+    this.add.text(W / 2, H / 2 + 60, "Grievy Town's Dilemma", pxStyle(14, UI.TXT_MUTED)).setOrigin(0.5);
+    this.add.text(W / 2, H / 2 + 82, 'Original story, design & code', pxStyle(8, UI.TXT_HINT)).setOrigin(0.5);
+    this.add.text(W / 2, H / 2 + 102, 'Music by [your friend]', pxStyle(8, UI.TXT_HINT)).setOrigin(0.5);
   }
 }

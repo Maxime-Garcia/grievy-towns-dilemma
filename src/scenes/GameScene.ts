@@ -76,6 +76,7 @@ export class GameScene extends Phaser.Scene {
   // Zone-scoped objects destroyed/recreated on each transition
   private zoneGraphics: Phaser.GameObjects.Graphics | null = null;
   private zoneLabels: Phaser.GameObjects.Text[] = [];
+  private bossDeathObjects: Phaser.GameObjects.GameObject[] = [];
   private teleportZoneImages: Phaser.Physics.Arcade.Image[] = [];
   private xpOrbOverlap: Phaser.Physics.Arcade.Collider | null = null;
   private lootableOverlap: Phaser.Physics.Arcade.Collider | null = null;
@@ -87,9 +88,14 @@ export class GameScene extends Phaser.Scene {
   private enemyCrowns: Map<string, Phaser.GameObjects.Text> = new Map();
   private cooldowns: Record<string, number> = {};
   private dashCooldown = 0;
+  private wasDashReady = true;
   private isDashing = false;
   private lastDirX = 0;
   private lastDirY = 1;
+  private playerVx = 0;
+  private playerVy = 0;
+  private dashMomentumX = 0;
+  private dashMomentumY = 0;
   private isInDialogue = false;
   private isTraveling = false;
   private lastAutoSave = 0;
@@ -117,6 +123,11 @@ export class GameScene extends Phaser.Scene {
     this.lootableLooted = new Set();
     this.cooldowns           = {};
     this.dashCooldown        = 0;
+    this.wasDashReady        = true;
+    this.playerVx            = 0;
+    this.playerVy            = 0;
+    this.dashMomentumX       = 0;
+    this.dashMomentumY       = 0;
     this.playtimeAccumulator = 0;
     this.lastAutoSave        = 0;
     this.isDashing      = false;
@@ -217,6 +228,9 @@ export class GameScene extends Phaser.Scene {
 
     SkillSystem.tickCooldowns(this.cooldowns, dt);
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
+    const dashReady = this.dashCooldown === 0;
+    if (dashReady && !this.wasDashReady) this.flashDashReady();
+    this.wasDashReady = dashReady;
 
     this.tickEnemyAI(dt);
     this.tickXpOrbs();
@@ -240,41 +254,84 @@ export class GameScene extends Phaser.Scene {
   // ── MOVEMENT ─────────────────────────────────────────────────
 
   private handleMovement(dt: number) {
-    if (this.isDashing) return; // Don't override velocity during dash
+    if (this.isDashing) return;
 
     this.debugSpeedMult = this.speedBoostKey?.isDown ? 5 : 1;
 
     const player = this.gameState.player;
     const speed  = (90 + player.stats.spd * 4) * this.debugSpeedMult;
     const body   = this.player.body as Phaser.Physics.Arcade.Body;
-    let vx = 0, vy = 0;
 
-    if (this.wasd.left.isDown  || this.cursors.left.isDown)  vx = -speed;
-    if (this.wasd.right.isDown || this.cursors.right.isDown) vx =  speed;
-    if (this.wasd.up.isDown    || this.cursors.up.isDown)    vy = -speed;
-    if (this.wasd.down.isDown  || this.cursors.down.isDown)  vy =  speed;
+    let targetVx = 0, targetVy = 0;
+    if (this.wasd.left.isDown  || this.cursors.left.isDown)  targetVx = -speed;
+    if (this.wasd.right.isDown || this.cursors.right.isDown) targetVx =  speed;
+    if (this.wasd.up.isDown    || this.cursors.up.isDown)    targetVy = -speed;
+    if (this.wasd.down.isDown  || this.cursors.down.isDown)  targetVy =  speed;
 
-    if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
+    if (targetVx !== 0 && targetVy !== 0) { targetVx *= 0.707; targetVy *= 0.707; }
 
-    body.setVelocity(vx, vy);
+    // Snap to 0 on direction change — immediate reversal, no momentum carry
+    if (targetVx !== 0 && Math.sign(targetVx) !== Math.sign(this.playerVx)) this.playerVx = 0;
+    if (targetVy !== 0 && Math.sign(targetVy) !== Math.sign(this.playerVy)) this.playerVy = 0;
 
-    if (vx !== 0 || vy !== 0) {
-      this.lastDirX = vx;
-      this.lastDirY = vy;
-      this.player.setFlipX(vx < 0);
+    // Acceleration : lerp snappy (~4-5 frames à 90%)
+    // Décélération : linéaire à taux fixe — la vitesse reste haute puis coupe net (~440ms, ~24px de glisse)
+    const DECEL_RATE = 720; // px/s²  — ~8px de glisse depuis la vitesse max
+    if (targetVx !== 0) {
+      this.playerVx = Phaser.Math.Linear(this.playerVx, targetVx, 25 * dt);
+    } else {
+      const d = DECEL_RATE * dt;
+      this.playerVx = Math.abs(this.playerVx) <= d ? 0 : this.playerVx - Math.sign(this.playerVx) * d;
+    }
+    if (targetVy !== 0) {
+      this.playerVy = Phaser.Math.Linear(this.playerVy, targetVy, 25 * dt);
+    } else {
+      const d = DECEL_RATE * dt;
+      this.playerVy = Math.abs(this.playerVy) <= d ? 0 : this.playerVy - Math.sign(this.playerVy) * d;
+    }
+
+    // Post-dash momentum : overlay additif qui s'estompe independamment du mouvement
+    if (this.dashMomentumX !== 0 || this.dashMomentumY !== 0) {
+      const dm = 560 * dt;
+      this.dashMomentumX = Math.abs(this.dashMomentumX) <= dm ? 0 : this.dashMomentumX - Math.sign(this.dashMomentumX) * dm;
+      this.dashMomentumY = Math.abs(this.dashMomentumY) <= dm ? 0 : this.dashMomentumY - Math.sign(this.dashMomentumY) * dm;
+    }
+
+    body.setVelocity(this.playerVx + this.dashMomentumX, this.playerVy + this.dashMomentumY);
+
+    // Flip on input direction immediately (not lerped velocity) for crisp visual response
+    if (targetVx !== 0) this.player.setFlipX(targetVx < 0);
+
+    if (targetVx !== 0 || targetVy !== 0) {
+      this.lastDirX = targetVx;
+      this.lastDirY = targetVy;
     }
   }
 
   // ── DASH ────────────────────────────────────────────────────
+
+  private flashDashReady() {
+    this.player.setTintFill(0x66ddff);
+    this.time.delayedCall(80, () => this.player.clearTint());
+    this.tweens.add({
+      targets: this.player,
+      alpha: 0.15,
+      duration: 55,
+      yoyo: true,
+      repeat: 2,
+      ease: 'Linear',
+      onComplete: () => this.player.setAlpha(1),
+    });
+  }
 
   private handleDash() {
     if (this.dashCooldown > 0) return;
 
     const body = this.player.body as Phaser.Physics.Arcade.Body;
 
-    // Use current velocity direction, or fall back to last known direction
-    let dx = body.velocity.x;
-    let dy = body.velocity.y;
+    // Use lerped velocity direction, or fall back to last known direction
+    let dx = this.playerVx;
+    let dy = this.playerVy;
     if (Math.abs(dx) < 1 && Math.abs(dy) < 1) {
       dx = this.lastDirX;
       dy = this.lastDirY;
@@ -290,12 +347,20 @@ export class GameScene extends Phaser.Scene {
     this.isDashing = true;
     body.setVelocity(nx, ny);
 
-    this.player.setAlpha(0.5);
+    this.spawnDashAfterimages();
+
+    this.player.setAlpha(0.6);
     this.tweens.add({
       targets: this.player,
       alpha: 1,
       duration: 300,
-      onComplete: () => { this.isDashing = false; },
+      onComplete: () => {
+        this.isDashing = false;
+        this.playerVx = 0;
+        this.playerVy = 0;
+        this.dashMomentumX = nx * 0.48; // ~144px/s overlay → ~18px de slide post-dash
+        this.dashMomentumY = ny * 0.48;
+      },
     });
 
     this.cooldowns['dash'] = 1.5;
@@ -343,7 +408,20 @@ export class GameScene extends Phaser.Scene {
     const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
     this.showDamageNumber(nearest.x, nearest.y - 20, result.damage, result.isCrit);
 
-    if (result.isKill) this.onEnemyKilled(activeEnemy, nearest);
+    this.spawnHitParticles(nearest.x, nearest.y, result.element);
+    if (result.isCrit) {
+      this.cameras.main.shake(120, 0.007);
+    } else {
+      this.cameras.main.shake(40, 0.002);
+    }
+
+    this.applyHitFeedback(nearest, activeEnemy, result.damage);
+
+    if (result.isKill) {
+      this.onEnemyKilled(activeEnemy, nearest);
+    } else {
+      this.checkStagger(nearest, activeEnemy, result.damage);
+    }
   }
 
   private activateSkill(skillId: string) {
@@ -361,7 +439,18 @@ export class GameScene extends Phaser.Scene {
           this.spawnCosmeticProjectile(this.player.x, this.player.y, nearest.x, nearest.y, skill.element);
         }
         this.showDamageNumber(nearest.x, nearest.y - 20, result.damage, result.isCrit, skill.element);
-        if (result.isKill) this.onEnemyKilled(activeEnemy!, nearest);
+        this.spawnHitParticles(nearest.x, nearest.y, skill.element);
+        if (result.isCrit) {
+          this.cameras.main.shake(150, 0.009);
+        } else {
+          this.cameras.main.shake(50, 0.003);
+        }
+        this.applyHitFeedback(nearest, activeEnemy!, result.damage);
+        if (result.isKill) {
+          this.onEnemyKilled(activeEnemy!, nearest);
+        } else {
+          this.checkStagger(nearest, activeEnemy!, result.damage);
+        }
       }
       if (result.damage === 0 && skill.effect?.healPercent) {
         this.showHealNumber(this.player.x, this.player.y - 20,
@@ -856,10 +945,19 @@ export class GameScene extends Phaser.Scene {
     const crown = this.enemyCrowns.get(activeEnemy.instanceId);
     if (crown) { crown.destroy(); this.enemyCrowns.delete(activeEnemy.instanceId); }
 
-    // XP bonus for elites
-    const xpMult = activeEnemy.isElite ? 2.5 : 1;
+    const xpMult   = activeEnemy.isElite ? 2.5 : 1;
+    const deathX   = sprite.x;
+    const deathY   = sprite.y;
+    const isBoss   = enemyDef.isBoss;
 
-    sprite.destroy();
+    // Remove from physics immediately so it no longer blocks or attacks
+    sprite.disableBody(true, false);
+
+    if (isBoss) {
+      this.playBossDeathSequence(sprite, activeEnemy, enemyDef);
+    } else {
+      this.playEnemyDeathSequence(sprite);
+    }
 
     const loot = LootSystem.rollLoot(
       enemyDef.loot, enemyDef.baseGold, enemyDef.baseXp,
@@ -872,7 +970,7 @@ export class GameScene extends Phaser.Scene {
       this.events.emit('item_looted', { item, quantity });
     }
 
-    this.spawnXpOrbs(sprite.x, sprite.y, Math.floor(loot.xp * xpMult));
+    this.spawnXpOrbs(deathX, deathY, Math.floor(loot.xp * xpMult));
 
     const questCompleted = QuestSystem.onEnemyKilled(this.gameState.player, activeEnemy.enemyId);
     for (const itemLoot of loot.items) {
@@ -880,7 +978,7 @@ export class GameScene extends Phaser.Scene {
     }
     if (questCompleted.length > 0) this.handleQuestCompletions(questCompleted);
 
-    if (enemyDef.isBoss) {
+    if (isBoss) {
       const zone = Object.values(ZONE_MAP).find(z => z.bossId === enemyDef.id);
       if (zone) {
         const zoneCompleted = QuestSystem.onBossKilled(this.gameState.player, enemyDef.id, zone.element as ElementType);
@@ -899,6 +997,75 @@ export class GameScene extends Phaser.Scene {
 
     const hidden = SkillSystem.checkHiddenUnlocks(this.gameState.player);
     hidden.forEach(s => this.events.emit('skill_unlocked', s));
+  }
+
+  private playEnemyDeathSequence(sprite: Phaser.Physics.Arcade.Sprite) {
+    sprite.setTintFill(0xffffff);
+    this.tweens.add({
+      targets: sprite,
+      alpha: 0,
+      scaleX: 0.2,
+      scaleY: 0.2,
+      duration: 350,
+      ease: 'Power3',
+      onComplete: () => { if (sprite.active) sprite.destroy(); },
+    });
+  }
+
+  private playBossDeathSequence(
+    sprite: Phaser.Physics.Arcade.Sprite,
+    _ae: ActiveEnemy,
+    enemyDef: Enemy,
+  ) {
+    const { width: W, height: H } = this.cameras.main;
+
+    sprite.setTint(0xffffff);
+    this.cameras.main.shake(200, 0.012);
+
+    const aura = this.add.circle(sprite.x, sprite.y, 40, 0xffffff, 0.6).setDepth(30);
+    this.bossDeathObjects.push(aura);
+    this.tweens.add({
+      targets: aura,
+      scaleX: 5,
+      scaleY: 5,
+      alpha: 0,
+      duration: 1200,
+      ease: 'Power2',
+      onComplete: () => { if (aura.active) aura.destroy(); },
+    });
+
+    this.time.delayedCall(600, () => {
+      if (sprite.active) {
+        this.tweens.add({
+          targets: sprite,
+          alpha: 0,
+          scaleX: 0.2,
+          scaleY: 0.2,
+          duration: 800,
+          ease: 'Power2',
+          onComplete: () => { if (sprite.active) sprite.destroy(); },
+        });
+      }
+    });
+
+    const bossName = enemyDef.name;
+    const nameLabel = this.add.text(W / 2, H / 2 - 30, bossName, {
+      fontSize: '20px',
+      color: '#ffff00',
+      fontFamily: 'monospace',
+      stroke: '#000000',
+      strokeThickness: 4,
+    }).setScrollFactor(0).setOrigin(0.5).setDepth(200).setAlpha(0);
+    this.bossDeathObjects.push(nameLabel);
+
+    this.tweens.add({
+      targets: nameLabel,
+      alpha: 1,
+      duration: 400,
+      hold: 1600,
+      yoyo: true,
+      onComplete: () => { if (nameLabel.active) nameLabel.destroy(); },
+    });
   }
 
   private onPlayerDeath() {
@@ -953,26 +1120,157 @@ export class GameScene extends Phaser.Scene {
     return nearest;
   }
 
+  private spawnDashAfterimages() {
+    const w = this.player.displayWidth;
+    const h = this.player.displayHeight;
+    const x = this.player.x;
+    const y = this.player.y;
+
+    for (let i = 0; i < 3; i++) {
+      const ghost = this.add.rectangle(x, y, w, h, 0x44aaff, 0.3 - i * 0.08)
+        .setDepth(3).setOrigin(0.5);
+      this.tweens.add({
+        targets: ghost,
+        alpha: 0,
+        duration: 200,
+        delay: i * 50,
+        onComplete: () => ghost.destroy(),
+      });
+    }
+  }
+
+  private applyHitFeedback(sprite: Phaser.Physics.Arcade.Sprite, _ae: ActiveEnemy, _damage: number) {
+    sprite.setTintFill(0xffffff);
+    this.time.delayedCall(80, () => { if (sprite.active) sprite.clearTint(); });
+  }
+
+  private checkStagger(sprite: Phaser.Physics.Arcade.Sprite, ae: ActiveEnemy, damage: number) {
+    if (damage / ae.maxHp < 0.20) return;
+
+    sprite.setTintFill(0xff3333);
+    this.time.delayedCall(180, () => { if (sprite.active) sprite.clearTint(); });
+
+    const body = sprite.body as Phaser.Physics.Arcade.Body | null;
+    if (!body || !body.enable) return;
+    const origMaxVel = body.maxVelocity.x;
+    body.setMaxVelocity(origMaxVel * 0.5);
+    this.time.delayedCall(400, () => {
+      if (sprite.active && sprite.body && (sprite.body as Phaser.Physics.Arcade.Body).enable) {
+        (sprite.body as Phaser.Physics.Arcade.Body).setMaxVelocity(origMaxVel);
+      }
+    });
+  }
+
+  private spawnHitParticles(x: number, y: number, element?: ElementType) {
+    const ELEMENT_HEX: Partial<Record<ElementType, number>> = {
+      [ElementType.FIRE]:      0xff4400,
+      [ElementType.WATER]:     0x2266ff,
+      [ElementType.LIGHTNING]: 0xffee00,
+      [ElementType.ICE]:       0x88ddff,
+      [ElementType.EARTH]:     0x88aa33,
+      [ElementType.WIND]:      0xaaddff,
+      [ElementType.DARK]:      0xaa44ff,
+      [ElementType.DIVINE]:    0xffd700,
+    };
+    const color = element ? (ELEMENT_HEX[element] ?? 0xffffff) : 0xffffff;
+    const count = 8;
+
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 / count) * i + Phaser.Math.Between(-10, 10) * 0.017;
+      const dist  = Phaser.Math.Between(20, 44);
+      const px    = x + Math.cos(angle) * dist;
+      const py    = y + Math.sin(angle) * dist;
+      const size  = Phaser.Math.Between(3, 6);
+      const dot   = this.add.circle(x, y, size, color, 1).setDepth(50);
+      this.tweens.add({
+        targets: dot,
+        x: px, y: py,
+        alpha: 0,
+        scaleX: 0,
+        scaleY: 0,
+        duration: Phaser.Math.Between(200, 380),
+        ease: 'Power2',
+        onComplete: () => dot.destroy(),
+      });
+    }
+  }
+
+  private showBossAnnouncement(bossName: string, zoneElement: ElementType) {
+    const ZONE_AURA_COLORS: Partial<Record<ElementType, number>> = {
+      [ElementType.FIRE]:      0xff4400,
+      [ElementType.EARTH]:     0x88aa33,
+      [ElementType.WIND]:      0xaaddff,
+      [ElementType.WATER]:     0x2266ff,
+      [ElementType.LIGHTNING]: 0xffee00,
+      [ElementType.ICE]:       0x88ddff,
+      [ElementType.DARK]:      0xaa44ff,
+      [ElementType.DIVINE]:    0xffd700,
+    };
+    const auraColor = ZONE_AURA_COLORS[zoneElement] ?? 0xffffff;
+    const { width: W, height: H } = this.cameras.main;
+
+    const overlay = this.add.rectangle(W / 2, H / 2, W, H, auraColor, 0)
+      .setScrollFactor(0).setDepth(190);
+    this.tweens.add({
+      targets: overlay,
+      alpha: 0.08,
+      duration: 600,
+      yoyo: true,
+      hold: 1400,
+      onComplete: () => overlay.destroy(),
+    });
+
+    const label = this.add.text(W / 2, H / 2, bossName, {
+      fontSize: '22px',
+      color: '#ffffff',
+      fontFamily: 'monospace',
+      stroke: '#000000',
+      strokeThickness: 5,
+    }).setScrollFactor(0).setOrigin(0.5).setDepth(200).setAlpha(0);
+
+    this.tweens.add({
+      targets: label,
+      alpha: 1,
+      duration: 500,
+      hold: 1400,
+      yoyo: true,
+      onComplete: () => label.destroy(),
+    });
+  }
+
   private showDamageNumber(x: number, y: number, amount: number, isCrit: boolean, element?: ElementType, isEnemy = false) {
     const ELEMENT_COLORS: Partial<Record<ElementType, string>> = {
-      [ElementType.FIRE]: '#ff6622',
-      [ElementType.WATER]: '#4488ff',
-      [ElementType.LIGHTNING]: '#ffee22',
-      [ElementType.ICE]: '#aaeeff',
-      [ElementType.EARTH]: '#aa8844',
-      [ElementType.WIND]: '#aaffcc',
-      [ElementType.DARK]: '#aa44ff',
-      [ElementType.DIVINE]: '#ffd700',
+      [ElementType.FIRE]:      '#ff4400',
+      [ElementType.WATER]:     '#2266ff',
+      [ElementType.LIGHTNING]: '#ffee00',
+      [ElementType.ICE]:       '#88ddff',
+      [ElementType.EARTH]:     '#88aa33',
+      [ElementType.WIND]:      '#aaddff',
+      [ElementType.DARK]:      '#aa44ff',
+      [ElementType.DIVINE]:    '#ffd700',
     };
-    const color = isEnemy ? '#ff4444' : (element ? ELEMENT_COLORS[element] ?? '#ffffff' : '#ffffff');
-    const size  = isCrit ? '18px' : '14px';
+    const color = isEnemy
+      ? '#ff4444'
+      : isCrit
+        ? '#ffff00'
+        : (element ? ELEMENT_COLORS[element] ?? '#ffffff' : '#ffffff');
+    const size = isCrit ? '20px' : '14px';
+    const label = isCrit ? `${amount}!` : `${amount}`;
 
-    const txt = this.add.text(x, y, isCrit ? `${amount}!` : `${amount}`, {
+    const txt = this.add.text(x + Phaser.Math.Between(-6, 6), y, label, {
       fontSize: size, color, fontFamily: 'monospace',
       stroke: '#000000', strokeThickness: 2,
-    }).setDepth(100);
+    }).setDepth(100).setOrigin(0.5, 1);
 
-    this.tweens.add({ targets: txt, y: y - 40, alpha: 0, duration: 900, onComplete: () => txt.destroy() });
+    const floatY = isCrit ? y - 56 : y - 40;
+    this.tweens.add({
+      targets: txt,
+      y: floatY,
+      alpha: 0,
+      duration: isCrit ? 1100 : 900,
+      ease: 'Quad.easeOut',
+      onComplete: () => txt.destroy(),
+    });
   }
 
   private showHealNumber(x: number, y: number, amount: number) {
@@ -1180,7 +1478,7 @@ export class GameScene extends Phaser.Scene {
   private createEnemiesForZone(zoneId: string) {
     this.enemies = this.physics.add.group();
     const zone = ZONE_MAP[zoneId];
-    if (!zone || zone.enemies.length === 0) return;
+    if (!zone) return;
 
     const enemyColor = ZONE_ENEMY_COLORS[zoneId] ?? 0xaa4444;
     const eliteColor = Phaser.Display.Color.IntegerToColor(enemyColor).brighten(30).color;
@@ -1236,6 +1534,44 @@ export class GameScene extends Phaser.Scene {
           }).setOrigin(0.5, 1).setDepth(10);
           this.enemyCrowns.set(active.instanceId, crown);
         }
+      }
+    }
+
+    // Boss spawn — only if zone has a boss and it hasn't been cleared yet
+    if (zone.bossId && !this.gameState.player.clearedZones.includes(zoneId)) {
+      const bossDef = ENEMY_MAP[zone.bossId];
+      if (bossDef) {
+        const bx = Math.floor(mapWidth / 2);
+        const by = Math.floor(mapHeight / 2);
+        const bossTexKey = `enemy_${zone.bossId}`;
+        this.ensureTexture(bossTexKey, 0xffd700, 64, 64);
+
+        const bossSprite = this.physics.add.sprite(bx, by, bossTexKey);
+        bossSprite.setDisplaySize(64, 64);
+        (bossSprite.body as Phaser.Physics.Arcade.Body).setSize(60, 60);
+        bossSprite.setDepth(5);
+
+        const activeBoss = CombatSystem.spawnEnemy(bossDef, this.gameState.player.level);
+        activeBoss.x = bx;
+        activeBoss.y = by;
+        bossSprite.name = activeBoss.instanceId;
+        this.activeEnemies.set(activeBoss.instanceId, activeBoss);
+        this.enemies.add(bossSprite);
+
+        const bossBarW = 72;
+        const bossBg = this.add.rectangle(bx, by - 44, bossBarW, 8, 0x220000).setDepth(8);
+        const bossFg = this.add.rectangle(bx - bossBarW / 2, by - 44, bossBarW, 6, 0xffd700)
+          .setDepth(9).setOrigin(0, 0.5);
+        this.enemyHpBars.set(activeBoss.instanceId, { bg: bossBg, bar: bossFg, baseW: bossBarW });
+
+        const crown = this.add.text(bx, by - 52, '* BOSS *', {
+          fontSize: '10px', color: '#ffd700', stroke: '#000000', strokeThickness: 2,
+        }).setOrigin(0.5, 1).setDepth(10);
+        this.enemyCrowns.set(activeBoss.instanceId, crown);
+
+        this.time.delayedCall(1500, () => {
+          this.showBossAnnouncement(bossDef.name, zone.element as ElementType);
+        });
       }
     }
   }
@@ -1543,6 +1879,10 @@ export class GameScene extends Phaser.Scene {
 
     // XP orbs — destroy remaining orbs
     this.xpOrbs.destroy(true);
+
+    // Boss death VFX objects (aura, nameLabel) — may outlive zone transition
+    for (const o of this.bossDeathObjects) { if (o.active) o.destroy(); }
+    this.bossDeathObjects = [];
   }
 
   private performZoneTransition(zoneId: string, targetX: number, targetY: number) {

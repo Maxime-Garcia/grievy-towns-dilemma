@@ -1,4 +1,6 @@
 import { GameState } from '../types';
+import { UI, drawPanel, pxStyle } from '../utils/UITheme';
+import { t } from '../i18n';
 
 export class IntroScene extends Phaser.Scene {
   private gameState!: GameState;
@@ -20,6 +22,7 @@ export class IntroScene extends Phaser.Scene {
   }
 
   create() {
+    this.cameras.main.fadeIn(400, 0, 0, 0);
     const name = this.gameState.player.name;
     this.pages = [
       [
@@ -85,9 +88,8 @@ export class IntroScene extends Phaser.Scene {
 
     this.panel = this.add.graphics().setDepth(1);
 
-    this.hintText = this.add.text(W - 24, H - 16, '[ Z / ENTER ]', {
-      fontSize: '10px', color: '#444433', fontFamily: 'monospace',
-    }).setOrigin(1, 1).setDepth(3);
+    this.hintText = this.add.text(W - 24, H - 16, t('intro.hint_continue'), pxStyle(8, UI.TXT_HINT))
+      .setOrigin(1, 1).setDepth(3);
 
     this.advanceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
     this.enterKey   = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
@@ -106,26 +108,32 @@ export class IntroScene extends Phaser.Scene {
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
 
-    this.textObjs.forEach(t => t.destroy());
+    this.textObjs.forEach(obj => obj.destroy());
     this.textObjs = [];
     this.panel.clear();
 
     const page   = this.pages[this.lineIndex];
-    const lineH  = 26;
+    const lineH  = 28;
     const boxPad = 32;
     const boxH   = boxPad * 2 + page.length * lineH;
     const boxY   = H / 2 - boxH / 2;
 
-    this.panel.fillStyle(0x080808, 0.95);
-    this.panel.fillRect(60, boxY, W - 120, boxH);
-    this.panel.lineStyle(1, 0x554433);
-    this.panel.strokeRect(60, boxY, W - 120, boxH);
+    drawPanel(this.panel, 60, boxY, W - 120, boxH);
+
+    // Decorative separator inside panel
+    this.panel.lineStyle(1, UI.BORDER_LIT, 0.4);
+    this.panel.beginPath();
+    this.panel.moveTo(72, boxY + boxPad - 8);
+    this.panel.lineTo(W - 72, boxY + boxPad - 8);
+    this.panel.strokePath();
+    this.panel.beginPath();
+    this.panel.moveTo(72, boxY + boxH - boxPad + 4);
+    this.panel.lineTo(W - 72, boxY + boxH - boxPad + 4);
+    this.panel.strokePath();
 
     page.forEach((line, i) => {
       const txt = this.add.text(W / 2, boxY + boxPad + i * lineH, line, {
-        fontSize: '14px',
-        color: line.startsWith('—') ? '#e8d090' : '#ccbbaa',
-        fontFamily: 'monospace',
+        ...pxStyle(10, line.startsWith('—') ? UI.TXT_GOLD : UI.TXT_PARCHMENT),
         align: 'center',
         wordWrap: { width: W - 180 },
       }).setOrigin(0.5, 0).setDepth(2);
@@ -133,8 +141,8 @@ export class IntroScene extends Phaser.Scene {
     });
 
     const isLast = this.lineIndex >= this.pages.length - 1;
-    this.hintText.setText(isLast ? '[ Z / ENTER — begin ]' : '[ Z / ENTER — continue ]');
-    this.hintText.setColor(isLast ? '#887744' : '#444433');
+    this.hintText.setText(isLast ? t('intro.hint_begin') : t('intro.hint_continue'));
+    this.hintText.setStyle({ color: isLast ? UI.TXT_MUTED : UI.TXT_HINT });
   }
 
   shutdown() {
