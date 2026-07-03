@@ -1739,7 +1739,7 @@ export class GameScene extends Phaser.Scene {
 
       const firstItem  = lo.itemPool[0] ? ALL_ITEMS[lo.itemPool[0]] : null;
       const labelText  = (lo.type === 'mineral' || lo.type === 'plant') && firstItem
-        ? firstItem.name
+        ? localizeItem(firstItem).name
         : t(`notif.loot_${lo.type}` as const);
       const lootLabel = this.add.text(lo.x, lo.y - 16, labelText, {
         fontSize: '8px', color: '#ffeeaa', fontFamily: 'monospace',

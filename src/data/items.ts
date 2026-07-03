@@ -127,7 +127,7 @@ export const CONSUMABLES: Consumable[] = [
 
 export const MATERIALS: Material[] = [
   // Fire
-  { id: 'ember_core', name: 'Cœur de Braise', description: 'Noyau solidifié d\'une créature ignée. Chaud au toucher.', rarity: ItemRarity.COMMON, type: ItemType.MATERIAL, icon: 'item_ember_core', value: 12, zone: ElementType.FIRE, stackable: true, maxStack: 99 },
+  { id: 'ember_core', name: 'Noyau de Braise', description: 'Noyau solidifié d\'une créature ignée. Chaud au toucher.', rarity: ItemRarity.COMMON, type: ItemType.MATERIAL, icon: 'item_ember_core', value: 12, zone: ElementType.FIRE, stackable: true, maxStack: 99 },
   { id: 'obsidian_shard', name: 'Éclat d\'Obsidienne', description: 'Verre volcanique acéré. Prisé des artisans.', rarity: ItemRarity.COMMON, type: ItemType.MATERIAL, icon: 'item_obsidian', value: 15, zone: ElementType.FIRE, stackable: true, maxStack: 99 },
   { id: 'volcanic_ash', name: 'Volcanic Ash', description: 'Fine ash from Ignis Reach\'s eruptions. Alchemists prize it.', rarity: ItemRarity.COMMON, type: ItemType.MATERIAL, icon: 'item_volcanic_ash', value: 8, zone: ElementType.FIRE, stackable: true, maxStack: 99 },
   { id: 'pyrath_scale', name: "Pyrath's Scale", description: 'A divine dragon scale. Nearly indestructible.', rarity: ItemRarity.LEGENDARY, type: ItemType.MATERIAL, icon: 'item_pyrath_scale', value: 3000, zone: ElementType.FIRE, stackable: true, maxStack: 5 },
@@ -159,8 +159,8 @@ export const MATERIALS: Material[] = [
   { id: 'volt_hound_pelt', name: 'Volt Hound Pelt', description: 'Conducting fur that crackles with static.', rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_volt_pelt', value: 60, zone: ElementType.LIGHTNING, stackable: true, maxStack: 30 },
 
   // Ice
-  { id: 'glaciem_ice_shard', name: 'Éclat de Glace Éternelle', description: 'Glace de Glaciem qui ne fond jamais.', rarity: ItemRarity.COMMON, type: ItemType.MATERIAL, icon: 'item_ice_shard', value: 15, zone: ElementType.ICE, stackable: true, maxStack: 99 },
-  { id: 'ancient_frost_rune', name: 'Rune de Givre Antique', description: 'Rune des cavernes glacées, préservée depuis des millénaires.', rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_frost_rune', value: 52, zone: ElementType.ICE, stackable: true, maxStack: 50 },
+  { id: 'glaciem_ice_shard', name: 'Éclat de Glace de Glaciem', description: 'Glace de Glaciem qui ne fond jamais.', rarity: ItemRarity.COMMON, type: ItemType.MATERIAL, icon: 'item_ice_shard', value: 15, zone: ElementType.ICE, stackable: true, maxStack: 99 },
+  { id: 'ancient_frost_rune', name: 'Rune de Givre Ancienne', description: 'Rune des cavernes glacées, préservée depuis des millénaires.', rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_frost_rune', value: 52, zone: ElementType.ICE, stackable: true, maxStack: 50 },
   { id: 'frozen_essence', name: 'Essence Gelée', description: 'Énergie élémentaire condensée au cœur de Glaciem.', rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_frozen_essence', value: 65, zone: ElementType.ICE, stackable: true, maxStack: 50 },
   { id: 'crysthea_splinter', name: "Crysthea's Splinter", description: 'A fragment of the ice goddess herself.', rarity: ItemRarity.LEGENDARY, type: ItemType.MATERIAL, icon: 'item_crysthea_splinter', value: 3600, zone: ElementType.ICE, stackable: true, maxStack: 5 },
   { id: 'frost_wolf_pelt', name: 'Frost Wolf Pelt', description: 'Thick, warm, water-resistant fur.', rarity: ItemRarity.UNCOMMON, type: ItemType.MATERIAL, icon: 'item_wolf_pelt', value: 55, zone: ElementType.ICE, stackable: true, maxStack: 30 },
