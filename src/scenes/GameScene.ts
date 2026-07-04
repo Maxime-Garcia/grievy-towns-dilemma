@@ -1230,14 +1230,33 @@ export class GameScene extends Phaser.Scene {
       case WeaponType.SWORD:
         this.spawnSlashArcVfx(fromX, fromY, angle, color, { radius: 26, thickness: 3, halfArc: 0.85, duration: 140 });
         break;
+      case WeaponType.DUAL_SWORD:
+        // Deux arcs décalés angulairement pour simuler les deux lames
+        this.spawnSlashArcVfx(fromX, fromY, angle - 0.3, color, { radius: 24, thickness: 2, halfArc: 0.70, duration: 120 });
+        this.time.delayedCall(50, () =>
+          this.spawnSlashArcVfx(fromX, fromY, angle + 0.3, 0xffffff, { radius: 24, thickness: 2, halfArc: 0.70, duration: 120 })
+        );
+        break;
       case WeaponType.DAGGER:
-        // Plus court, plus serré, plus rapide — lecture "vif"
         this.spawnSlashArcVfx(fromX, fromY, angle, color, { radius: 20, thickness: 2, halfArc: 0.60, duration: 100 });
+        break;
+      case WeaponType.DUAL_DAGGER:
+        // Deux slashes rapides en X sur la cible
+        this.spawnSlashArcVfx(fromX, fromY, angle - 0.4, color, { radius: 18, thickness: 2, halfArc: 0.50, duration: 90 });
+        this.time.delayedCall(40, () =>
+          this.spawnSlashArcVfx(fromX, fromY, angle + 0.4, 0xffffff, { radius: 18, thickness: 2, halfArc: 0.50, duration: 90 })
+        );
         break;
       case WeaponType.GREATSWORD:
         // Sweep massif + micro-shake supplémentaire pour le poids
         this.spawnSlashArcVfx(fromX, fromY, angle, color, { radius: 34, thickness: 6, halfArc: 1.15, duration: 200 });
         this.cameras.main.shake(50, 0.002);
+        break;
+      case WeaponType.AXE:
+        this.spawnAxeVfx(fromX, fromY, toX, toY, angle, color);
+        break;
+      case WeaponType.HAMMER:
+        this.spawnHammerVfx(toX, toY, color);
         break;
       case WeaponType.STAFF:
         this.spawnStaffTrailVfx(fromX, fromY, toX, toY, color);
@@ -1343,6 +1362,73 @@ export class GameScene extends Phaser.Scene {
         });
       },
     });
+  }
+
+  // Hache : arc lourd + éclat de métal au point d'impact
+  private spawnAxeVfx(fromX: number, fromY: number, toX: number, toY: number, angle: number, color: number) {
+    // Sweep court mais épais, à sens unique (haut vers bas) — feeling tranché
+    this.spawnSlashArcVfx(fromX, fromY, angle, color, { radius: 28, thickness: 5, halfArc: 0.70, duration: 160 });
+    // Éclats de métal (gris argenté) sur l'impact
+    const sparkCount = 5;
+    for (let i = 0; i < sparkCount; i++) {
+      const spreadAngle = angle - Math.PI + (Math.PI * 2 / sparkCount) * i;
+      const dist = Phaser.Math.Between(10, 22);
+      const spark = this.add.rectangle(toX, toY, 6, 2, 0xcccccc, 1).setDepth(32);
+      spark.setRotation(spreadAngle);
+      this.tweens.add({
+        targets: spark,
+        x: toX + Math.cos(spreadAngle) * dist,
+        y: toY + Math.sin(spreadAngle) * dist,
+        alpha: 0,
+        scaleX: 0.1,
+        duration: Phaser.Math.Between(100, 180),
+        ease: 'Power2',
+        onComplete: () => spark.destroy(),
+      });
+    }
+  }
+
+  // Marteau : impact au sol — onde de choc circulaire + débris qui tombent
+  private spawnHammerVfx(x: number, y: number, color: number) {
+    // Onde de choc : cercle qui s'expand et fade
+    const ring = this.add.graphics({ x, y }).setDepth(31);
+    ring.lineStyle(4, color, 0.9);
+    ring.strokeCircle(0, 0, 6);
+    this.tweens.add({
+      targets: ring,
+      scaleX: 3.5, scaleY: 3.5,
+      alpha: 0,
+      duration: 220,
+      ease: 'Power2.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+    // Flash central
+    const flash = this.add.circle(x, y, 8, 0xffffff, 0.85).setDepth(32);
+    this.tweens.add({
+      targets: flash,
+      scaleX: 0.1, scaleY: 0.1,
+      alpha: 0,
+      duration: 120,
+      ease: 'Power3',
+      onComplete: () => flash.destroy(),
+    });
+    // Débris (petits rectangles couleur de l'élément) projetés vers le haut
+    for (let i = 0; i < 4; i++) {
+      const debrisAngle = -Math.PI / 2 + (Math.PI / 3) * (i - 1.5);
+      const dist = Phaser.Math.Between(16, 28);
+      const d = this.add.rectangle(x, y, 4, 4, color, 1).setDepth(31);
+      this.tweens.add({
+        targets: d,
+        x: x + Math.cos(debrisAngle) * dist,
+        y: y + Math.sin(debrisAngle) * dist,
+        alpha: 0,
+        angle: Phaser.Math.Between(90, 270),
+        duration: Phaser.Math.Between(150, 240),
+        ease: 'Power1',
+        onComplete: () => d.destroy(),
+      });
+    }
+    this.cameras.main.shake(80, 0.005);
   }
 
   // Mains nues : 4 rayons blancs courts en étoile sur le point d'impact
