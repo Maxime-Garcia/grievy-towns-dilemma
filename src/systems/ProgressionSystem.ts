@@ -1,8 +1,6 @@
 import { PlayerState, Attributes, Stats, Equipment, StatBonus } from '../types';
 import { ALL_ITEMS } from '../data/items';
 
-const DEV_FULL_INVENTORY = Object.values(ALL_ITEMS).map(item => ({ item, quantity: 1 }));
-
 export const XP_PER_LEVEL = (level: number): number =>
   Math.floor(100 * Math.pow(level, 1.6));
 
@@ -141,7 +139,10 @@ export class ProgressionSystem {
       attributes: attrs,
       attributePoints: 0,
       equipment: {},
-      inventory: DEV_FULL_INVENTORY.map(s => ({ ...s })),
+      inventory: [
+        { item: ALL_ITEMS['minor_health_potion'], quantity: 5 },
+        { item: ALL_ITEMS['minor_mana_potion'],   quantity: 3 },
+      ],
       gold: 50,
       unlockedSkills: ['dash', 'echo_strike'],
       equippedSkills: { slot1: 'echo_strike', slot2: null, slot3: null, slot4: null },
