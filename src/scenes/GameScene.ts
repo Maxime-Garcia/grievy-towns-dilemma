@@ -476,6 +476,11 @@ export class GameScene extends Phaser.Scene {
     else        this.physics.world.resume();
   }
 
+  public closeOverlay(key: string) {
+    this.setPaused(false);
+    this.scene.stop(key);
+  }
+
   public openInventory() {
     if (this.scene.isActive('InventoryScene')) return;
     this.setPaused(true);
