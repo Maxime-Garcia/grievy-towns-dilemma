@@ -471,31 +471,21 @@ export class GameScene extends Phaser.Scene {
   public setShopOpen(open: boolean) { this.isInDialogue = open; }
 
   public setPaused(paused: boolean) {
-    console.log(`[GameScene] setPaused(${paused}) menuOpen was ${this.menuOpen}`);
     this.menuOpen = paused;
     if (paused) this.physics.world.pause();
     else        this.physics.world.resume();
-  }
-
-  private resumeOnOverlayClose(sceneKey: string) {
-    this.scene.get(sceneKey).events.once('shutdown', () => {
-      console.log(`[GameScene] ${sceneKey} shutdown → resume`);
-      this.setPaused(false);
-    });
   }
 
   public openInventory() {
     if (this.scene.isActive('InventoryScene')) return;
     this.setPaused(true);
     this.scene.launch('InventoryScene', { gameScene: this });
-    this.resumeOnOverlayClose('InventoryScene');
   }
 
   public openSkills() {
     if (this.scene.isActive('SkillScene')) return;
     this.setPaused(true);
     this.scene.launch('SkillScene', { gameScene: this });
-    this.resumeOnOverlayClose('SkillScene');
   }
 
   public goToMainMenu() {
@@ -551,18 +541,16 @@ export class GameScene extends Phaser.Scene {
     this.inventoryKey = kb.addKey(b.inventory);
     this.skillMenuKey = kb.addKey(b.skills);
     this.inventoryKey.on('down', () => {
-      if (this.scene.isActive('InventoryScene')) { this.scene.stop('InventoryScene'); return; }
-      if (this.scene.isActive('SkillScene'))     { this.scene.stop('SkillScene'); }
+      if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); return; }
+      if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); }
       this.setPaused(true);
       this.scene.launch('InventoryScene', { gameScene: this });
-      this.resumeOnOverlayClose('InventoryScene');
     });
     this.skillMenuKey.on('down', () => {
-      if (this.scene.isActive('SkillScene'))     { this.scene.stop('SkillScene'); return; }
-      if (this.scene.isActive('InventoryScene')) { this.scene.stop('InventoryScene'); }
+      if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); return; }
+      if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
       this.setPaused(true);
       this.scene.launch('SkillScene', { gameScene: this });
-      this.resumeOnOverlayClose('SkillScene');
     });
   }
 
@@ -1654,8 +1642,8 @@ export class GameScene extends Phaser.Scene {
     this.escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     this.escKey.on('down', () => {
       if (this.isInDialogue) return;
-      if (this.scene.isActive('InventoryScene')) { this.scene.stop('InventoryScene'); return; }
-      if (this.scene.isActive('SkillScene'))     { this.scene.stop('SkillScene');     return; }
+      if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); return; }
+      if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene');     return; }
       if (!this.scene.isActive('PauseScene')) {
         this.setPaused(true);
         this.scene.launch('PauseScene', { gameScene: this });

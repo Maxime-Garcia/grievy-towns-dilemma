@@ -62,7 +62,7 @@ export class InventoryScene extends Phaser.Scene {
     this.add.text(W / 2, H - 12, t('inventory.close'), pxStyle(7, UI.TXT_HINT))
       .setOrigin(0.5, 1)
       .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.scene.stop());
+      .on('pointerdown', () => { this.gameScene.setPaused(false); this.scene.stop(); });
   }
 
   private renderGrid() {
@@ -267,7 +267,5 @@ export class InventoryScene extends Phaser.Scene {
     c.once('down', () => panel.destroy());
   }
 
-  shutdown() {
-    console.log('[InventoryScene] shutdown() — gameScene:', !!this.gameScene);
-  }
+  shutdown() {}
 }
