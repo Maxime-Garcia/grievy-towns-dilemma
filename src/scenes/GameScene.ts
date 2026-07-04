@@ -46,6 +46,19 @@ const ZONE_ENEMY_COLORS: Record<string, number> = {
   malachars_spire:0x6622aa,
 };
 
+const WEAPON_SPECS: Record<string, { range: number; halfArc: number; hits: number }> = {
+  [WeaponType.DAGGER]:      { range: 55,  halfArc: Math.PI / 3,       hits: 1 },
+  [WeaponType.DUAL_DAGGER]: { range: 55,  halfArc: Math.PI / 3,       hits: 2 },
+  [WeaponType.SWORD]:       { range: 75,  halfArc: Math.PI / 3,       hits: 1 },
+  [WeaponType.DUAL_SWORD]:  { range: 70,  halfArc: 11 * Math.PI / 18, hits: 2 },
+  [WeaponType.GREATSWORD]:  { range: 100, halfArc: 5 * Math.PI / 12,  hits: 1 },
+  [WeaponType.AXE]:         { range: 80,  halfArc: 11 * Math.PI / 18, hits: 1 },
+  [WeaponType.HAMMER]:      { range: 65,  halfArc: Math.PI / 2,       hits: 1 },
+  [WeaponType.STAFF]:       { range: 200, halfArc: Math.PI / 12,      hits: 1 },
+  [WeaponType.BOW]:         { range: 350, halfArc: Math.PI / 18,      hits: 1 },
+};
+const FISTS_SPEC = { range: 45, halfArc: Math.PI / 2.4, hits: 1 };
+
 export class GameScene extends Phaser.Scene {
   public  gameState!: GameState;
 
@@ -92,6 +105,7 @@ export class GameScene extends Phaser.Scene {
   private isDashing = false;
   private lastDirX = 0;
   private lastDirY = 1;
+  private facingAngle = 0;
   private playerVx = 0;
   private playerVy = 0;
   private dashMomentumX = 0;
@@ -135,6 +149,7 @@ export class GameScene extends Phaser.Scene {
     this.isDashing      = false;
     this.lastDirX       = 0;
     this.lastDirY       = 1;
+    this.facingAngle    = 0;
     // Reset zone-scoped refs on each scene start (full Phaser restart)
     this.zoneGraphics       = null;
     this.zoneLabels         = [];
@@ -307,6 +322,7 @@ export class GameScene extends Phaser.Scene {
     if (targetVx !== 0 || targetVy !== 0) {
       this.lastDirX = targetVx;
       this.lastDirY = targetVy;
+      this.facingAngle = Math.atan2(Math.sign(targetVy), Math.sign(targetVx));
     }
   }
 
@@ -378,16 +394,6 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private performBasicAttackOrInteract() {
-    if (this.nearbyNPC && !this.isInDialogue) {
-      this.startNPCDialogue(this.nearbyNPC);
-    } else if (this.nearbyLootable) {
-      this.interactWithLootable(this.nearbyLootable);
-    } else {
-      this.performBasicAttack();
-    }
-  }
-
   private handleSkillInput() {
     const slots = this.gameState.player.equippedSkills;
     const pairs: [Phaser.Input.Keyboard.Key, string | null][] = [
@@ -404,36 +410,68 @@ export class GameScene extends Phaser.Scene {
   }
 
   private performBasicAttack() {
-    const nearest     = this.findNearestEnemy(80);
-    const activeEnemy = nearest ? this.activeEnemies.get(nearest.name) : undefined;
+    const weapon = this.gameState.player.equipment.weapon;
+    const weaponType = weapon?.weaponType;
+    const spec = weaponType !== undefined ? (WEAPON_SPECS[weaponType] ?? FISTS_SPEC) : FISTS_SPEC;
 
-    // Swing VFX always visible: toward enemy if in range, toward mouse cursor otherwise
-    const targetX = nearest?.x ?? this.input.activePointer.worldX;
-    const targetY = nearest?.y ?? this.input.activePointer.worldY;
+    const targetX = this.player.x + Math.cos(this.facingAngle) * spec.range * 0.7;
+    const targetY = this.player.y + Math.sin(this.facingAngle) * spec.range * 0.7;
+
     this.spawnWeaponSwingVfx(
       this.player.x, this.player.y,
       targetX, targetY,
-      this.gameState.player.equipment.weapon?.weaponType,
+      weaponType,
     );
 
-    if (!nearest || !activeEnemy) return;
+    this.executeHitInCone(spec.range, spec.halfArc);
 
-    const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
-    this.showDamageNumber(nearest.x, nearest.y - 20, result.damage, result.isCrit);
-    this.spawnHitParticles(nearest.x, nearest.y, result.element);
-    if (result.isCrit) {
+    if (spec.hits >= 2) {
+      this.time.delayedCall(120, () => {
+        this.executeHitInCone(spec.range, spec.halfArc);
+      });
+    }
+  }
+
+  private executeHitInCone(range: number, halfArc: number) {
+    const hits = this.findEnemiesInCone(range, halfArc);
+    if (hits.length === 0) return;
+
+    let anyCrit = false;
+    for (const sprite of hits) {
+      const activeEnemy = this.activeEnemies.get(sprite.name);
+      if (!activeEnemy) continue;
+      const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
+      this.showDamageNumber(sprite.x, sprite.y - 20, result.damage, result.isCrit);
+      this.spawnHitParticles(sprite.x, sprite.y, result.element);
+      this.applyHitFeedback(sprite, activeEnemy, result.damage);
+      if (result.isCrit) anyCrit = true;
+      if (result.isKill) {
+        this.onEnemyKilled(activeEnemy, sprite);
+      } else {
+        this.checkStagger(sprite, activeEnemy, result.damage);
+      }
+    }
+
+    if (anyCrit) {
       this.cameras.main.shake(120, 0.007);
     } else {
       this.cameras.main.shake(40, 0.002);
     }
+  }
 
-    this.applyHitFeedback(nearest, activeEnemy, result.damage);
-
-    if (result.isKill) {
-      this.onEnemyKilled(activeEnemy, nearest);
-    } else {
-      this.checkStagger(nearest, activeEnemy, result.damage);
+  private findEnemiesInCone(range: number, halfArc: number): Phaser.Physics.Arcade.Sprite[] {
+    const hits: Phaser.Physics.Arcade.Sprite[] = [];
+    for (const go of this.enemies.children.getArray()) {
+      const sprite = go as Phaser.Physics.Arcade.Sprite;
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, sprite.x, sprite.y);
+      if (dist > range) continue;
+      const angleToEnemy = Math.atan2(sprite.y - this.player.y, sprite.x - this.player.x);
+      let diff = angleToEnemy - this.facingAngle;
+      while (diff > Math.PI)  diff -= 2 * Math.PI;
+      while (diff < -Math.PI) diff += 2 * Math.PI;
+      if (Math.abs(diff) <= halfArc) hits.push(sprite);
     }
+    return hits;
   }
 
   private activateSkill(skillId: string) {
@@ -538,7 +576,7 @@ export class GameScene extends Phaser.Scene {
     this.attackKey?.removeAllListeners();
     this.attackKey = kb.addKey(b.attack);
     this.attackKey.on('down', () => {
-      if (!this.menuOpen && !this.isInDialogue) this.performBasicAttackOrInteract();
+      if (!this.menuOpen && !this.isInDialogue) this.performBasicAttack();
     });
     this.dashKey   = kb.addKey(b.dash);
     this.skillKeys = {
@@ -1900,11 +1938,11 @@ export class GameScene extends Phaser.Scene {
         this.scene.launch('PauseScene', { gameScene: this });
       }
     });
-    // Clic gauche souris → attaque / interaction
+    // Clic gauche souris → interaction uniquement (NPC / lootable)
     this.input.on('pointerdown', (ptr: Phaser.Input.Pointer) => {
-      if (ptr.leftButtonDown() && !this.menuOpen && !this.isInDialogue) {
-        this.performBasicAttackOrInteract();
-      }
+      if (!ptr.leftButtonDown() || this.menuOpen || this.isInDialogue) return;
+      if (this.nearbyNPC) { this.startNPCDialogue(this.nearbyNPC); return; }
+      if (this.nearbyLootable) { this.interactWithLootable(this.nearbyLootable); return; }
     });
     // Debug: hold B to move at 5× speed
     this.speedBoostKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.B);
