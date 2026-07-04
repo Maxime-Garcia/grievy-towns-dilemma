@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GameState, ActiveEnemy, ElementType, Enemy } from '../types';
+import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType } from '../types';
 import { CombatSystem } from '../systems/CombatSystem';
 import { LootSystem } from '../systems/LootSystem';
 import { QuestSystem } from '../systems/QuestSystem';
@@ -413,6 +413,12 @@ export class GameScene extends Phaser.Scene {
     const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
     this.showDamageNumber(nearest.x, nearest.y - 20, result.damage, result.isCrit);
 
+    this.spawnWeaponSwingVfx(
+      this.player.x, this.player.y,
+      nearest.x, nearest.y,
+      this.gameState.player.equipment.weapon?.weaponType,
+      result.element,
+    );
     this.spawnHitParticles(nearest.x, nearest.y, result.element);
     if (result.isCrit) {
       this.cameras.main.shake(120, 0.007);
@@ -1202,6 +1208,159 @@ export class GameScene extends Phaser.Scene {
         duration: Phaser.Math.Between(200, 380),
         ease: 'Power2',
         onComplete: () => dot.destroy(),
+      });
+    }
+  }
+
+  // ── WEAPON SWING VFX ────────────────────────────────────────
+  // VFX directionnel de l'attaque de base : part du joueur vers l'ennemi.
+  // Primitives Phaser uniquement (Graphics / shapes / tweens), ≤ 250ms,
+  // tout objet détruit en onComplete — aucun résidu.
+
+  private spawnWeaponSwingVfx(
+    fromX: number, fromY: number,
+    toX: number, toY: number,
+    weaponType: WeaponType | undefined,
+    element?: ElementType,
+  ) {
+    const color = element ? (ELEMENT_PROJECTILE_COLORS[element] ?? 0xffffff) : 0xffffff;
+    const angle = Math.atan2(toY - fromY, toX - fromX);
+
+    switch (weaponType) {
+      case WeaponType.SWORD:
+        this.spawnSlashArcVfx(fromX, fromY, angle, color, { radius: 26, thickness: 3, halfArc: 0.85, duration: 140 });
+        break;
+      case WeaponType.DAGGER:
+        // Plus court, plus serré, plus rapide — lecture "vif"
+        this.spawnSlashArcVfx(fromX, fromY, angle, color, { radius: 20, thickness: 2, halfArc: 0.60, duration: 100 });
+        break;
+      case WeaponType.GREATSWORD:
+        // Sweep massif + micro-shake supplémentaire pour le poids
+        this.spawnSlashArcVfx(fromX, fromY, angle, color, { radius: 34, thickness: 6, halfArc: 1.15, duration: 200 });
+        this.cameras.main.shake(50, 0.002);
+        break;
+      case WeaponType.STAFF:
+        this.spawnStaffTrailVfx(fromX, fromY, toX, toY, color);
+        break;
+      case WeaponType.BOW:
+        this.spawnArrowVfx(fromX, fromY, toX, toY, angle, color);
+        break;
+      default:
+        // Mains nues : burst d'impact en étoile sur la cible
+        this.spawnPunchBurstVfx(toX, toY, angle);
+        break;
+    }
+  }
+
+  // Arc de slash : croissant Graphics qui balaie le cône vers la cible en fondu
+  private spawnSlashArcVfx(
+    x: number, y: number, angle: number, color: number,
+    opts: { radius: number; thickness: number; halfArc: number; duration: number },
+  ) {
+    const { radius, thickness, halfArc, duration } = opts;
+
+    const g = this.add.graphics({ x, y }).setDepth(31);
+    // Croissant principal (couleur de l'élément)
+    g.lineStyle(thickness, color, 0.95);
+    g.beginPath();
+    g.arc(0, 0, radius, -halfArc, halfArc);
+    g.strokePath();
+    // Traînée externe blanche plus fine
+    g.lineStyle(Math.max(1, thickness - 2), 0xffffff, 0.5);
+    g.beginPath();
+    g.arc(0, 0, radius + 3, -halfArc * 0.8, halfArc * 0.8);
+    g.strokePath();
+
+    // Sweep : rotation de -50% à +50% du cône, fondu simultané
+    g.rotation = angle - halfArc * 0.5;
+    this.tweens.add({
+      targets: g,
+      rotation: angle + halfArc * 0.5,
+      alpha: 0,
+      duration,
+      ease: 'Cubic.easeOut',
+      onComplete: () => g.destroy(),
+    });
+  }
+
+  // Bâton : lueur au départ + étincelles qui filent vers la cible en cascade
+  private spawnStaffTrailVfx(fromX: number, fromY: number, toX: number, toY: number, color: number) {
+    const glow = this.add.circle(fromX, fromY, 7, color, 0.6).setDepth(31);
+    this.tweens.add({
+      targets: glow,
+      scaleX: 1.8, scaleY: 1.8, alpha: 0,
+      duration: 150,
+      ease: 'Quad.easeOut',
+      onComplete: () => glow.destroy(),
+    });
+
+    const perpAngle = Math.atan2(toY - fromY, toX - fromX) + Math.PI / 2;
+    const sparkCount = 4;
+    for (let i = 0; i < sparkCount; i++) {
+      const jitter = Phaser.Math.Between(-8, 8);
+      const size   = Phaser.Math.Between(3, 5);
+      const spark  = this.add.star(fromX, fromY, 4, size * 0.4, size, color, 1).setDepth(32);
+      this.tweens.add({
+        targets: spark,
+        x: toX + Math.cos(perpAngle) * jitter,
+        y: toY + Math.sin(perpAngle) * jitter,
+        alpha: 0,
+        scaleX: 0.2, scaleY: 0.2,
+        angle: 180,
+        delay: i * 20,
+        duration: 160,
+        ease: 'Sine.easeIn',
+        onComplete: () => spark.destroy(),
+      });
+    }
+  }
+
+  // Arc : flèche (rectangle + pointe triangle) en tween rapide, flash puis destroy
+  private spawnArrowVfx(
+    fromX: number, fromY: number,
+    toX: number, toY: number,
+    angle: number, color: number,
+  ) {
+    const shaft = this.add.rectangle(0, 0, 16, 2, 0xddccaa, 1);
+    const head  = this.add.triangle(10, 0, 0, -3, 0, 3, 6, 0, color, 1);
+    const arrow = this.add.container(fromX, fromY, [shaft, head]).setDepth(32);
+    arrow.setRotation(angle);
+
+    const dist = Phaser.Math.Distance.Between(fromX, fromY, toX, toY);
+    const dur  = Math.max(60, Math.min(140, dist * 1.2));
+
+    this.tweens.add({
+      targets: arrow,
+      x: toX, y: toY,
+      duration: dur,
+      ease: 'Linear',
+      onComplete: () => {
+        this.tweens.add({
+          targets: arrow,
+          alpha: 0,
+          duration: 60,
+          onComplete: () => arrow.destroy(),
+        });
+      },
+    });
+  }
+
+  // Mains nues : 4 rayons blancs courts en étoile sur le point d'impact
+  private spawnPunchBurstVfx(x: number, y: number, angle: number) {
+    const rayCount = 4;
+    for (let i = 0; i < rayCount; i++) {
+      const rayAngle = angle + (Math.PI * 2 / rayCount) * i + Math.PI / 4;
+      const ray = this.add.rectangle(x, y, 12, 2, 0xffffff, 0.9).setDepth(32);
+      ray.setRotation(rayAngle);
+      this.tweens.add({
+        targets: ray,
+        x: x + Math.cos(rayAngle) * 14,
+        y: y + Math.sin(rayAngle) * 14,
+        scaleX: 0.2,
+        alpha: 0,
+        duration: 120,
+        ease: 'Power2',
+        onComplete: () => ray.destroy(),
       });
     }
   }
