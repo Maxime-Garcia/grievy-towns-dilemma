@@ -404,21 +404,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   private performBasicAttack() {
-    const nearest = this.findNearestEnemy(80);
-    if (!nearest) return;
+    const nearest     = this.findNearestEnemy(80);
+    const activeEnemy = nearest ? this.activeEnemies.get(nearest.name) : undefined;
 
-    const activeEnemy = this.activeEnemies.get(nearest.name);
-    if (!activeEnemy) return;
+    // Swing VFX always visible: toward enemy if in range, toward mouse cursor otherwise
+    const targetX = nearest?.x ?? this.input.activePointer.worldX;
+    const targetY = nearest?.y ?? this.input.activePointer.worldY;
+    this.spawnWeaponSwingVfx(
+      this.player.x, this.player.y,
+      targetX, targetY,
+      this.gameState.player.equipment.weapon?.weaponType,
+    );
+
+    if (!nearest || !activeEnemy) return;
 
     const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
     this.showDamageNumber(nearest.x, nearest.y - 20, result.damage, result.isCrit);
-
-    this.spawnWeaponSwingVfx(
-      this.player.x, this.player.y,
-      nearest.x, nearest.y,
-      this.gameState.player.equipment.weapon?.weaponType,
-      result.element,
-    );
     this.spawnHitParticles(nearest.x, nearest.y, result.element);
     if (result.isCrit) {
       this.cameras.main.shake(120, 0.007);
