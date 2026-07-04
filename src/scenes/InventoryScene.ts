@@ -13,6 +13,8 @@ const GRID_Y  = 52;
 export class InventoryScene extends Phaser.Scene {
   private gameScene!: GameScene;
   private player!: PlayerState;
+  private dynamicObjs: Phaser.GameObjects.GameObject[] = [];
+  private scrollMaskGfx?: Phaser.GameObjects.Graphics;
 
   constructor() { super({ key: 'InventoryScene' }); }
 
@@ -23,6 +25,8 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   create() {
+    this.dynamicObjs = [];
+    this.scrollMaskGfx = undefined;
     this.cameras.main.fadeIn(400, 0, 0, 0);
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
@@ -62,6 +66,8 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   private renderGrid() {
+    this.input.off('wheel');
+
     const H         = this.cameras.main.height;
     const VISIBLE_H = H - GRID_Y - 30;
     const GRID_W    = COLS * SLOT + 4;
@@ -74,15 +80,17 @@ export class InventoryScene extends Phaser.Scene {
     maskGfx.fillStyle(0xffffff);
     maskGfx.fillRect(GRID_X - 2, GRID_Y, GRID_W, VISIBLE_H);
     const geomMask = maskGfx.createGeometryMask();
+    this.scrollMaskGfx = maskGfx;
 
     // Each entry: game object + its rest-position Y (scrollY=0)
     type Settable = { setY(y: number): unknown; setMask(m: Phaser.Display.Masks.GeometryMask): unknown };
     type Scrollable = { obj: Settable; baseY: number };
     const scrollables: Scrollable[] = [];
 
-    const reg = (go: Settable, y: number) => {
+    const reg = (go: Settable & Phaser.GameObjects.GameObject, y: number) => {
       go.setMask(geomMask);
       scrollables.push({ obj: go, baseY: y });
+      this.dynamicObjs.push(go);
     };
 
     this.player.inventory.forEach((slot, i) => {
@@ -145,7 +153,10 @@ export class InventoryScene extends Phaser.Scene {
 
     const panGfx = this.add.graphics();
     drawPanel(panGfx, EX - 8, EY - 18, 178, 294, UI.SLOT_BG);
-    this.add.text(EX + 81, EY - 12, t('inventory.equipment'), pxStyle(7, UI.TXT_GOLD)).setOrigin(0.5, 0);
+    this.dynamicObjs.push(panGfx);
+    this.dynamicObjs.push(
+      this.add.text(EX + 81, EY - 12, t('inventory.equipment'), pxStyle(7, UI.TXT_GOLD)).setOrigin(0.5, 0)
+    );
 
     const slots: [keyof typeof this.player.equipment, string][] = [
       ['weapon', t('inventory.slot.weapon')],  ['helm',   t('inventory.slot.helm')],   ['chest', t('inventory.slot.chest')],
@@ -158,13 +169,28 @@ export class InventoryScene extends Phaser.Scene {
       const y   = EY + 4 + i * 26;
       const item = this.player.equipment[key] as Item | undefined;
 
-      this.add.text(EX, y, `${label}:`, pxStyle(6, UI.TXT_MUTED));
+      this.dynamicObjs.push(this.add.text(EX, y, `${label}:`, pxStyle(6, UI.TXT_MUTED)));
 
       const raw  = item ? localizeItem(item).name : '—';
       const name = raw.length > 12 ? raw.slice(0, 10) + '..' : raw;
       const col  = item ? (RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT) : UI.TXT_HINT;
-      this.add.text(EX + 72, y, name, pxStyle(6, col));
+      this.dynamicObjs.push(this.add.text(EX + 72, y, name, pxStyle(6, col)));
     });
+  }
+
+  private clearDynamic() {
+    this.input.off('wheel');
+    for (const go of this.dynamicObjs) go.destroy();
+    this.dynamicObjs = [];
+    this.scrollMaskGfx?.destroy();
+    this.scrollMaskGfx = undefined;
+  }
+
+  private refresh() {
+    this.clearDynamic();
+    this.player = this.gameScene.gameState.player;
+    this.renderGrid();
+    this.renderEquipment(this.cameras.main.width);
   }
 
   private showItemDetail(itemId: string) {
@@ -231,17 +257,18 @@ export class InventoryScene extends Phaser.Scene {
         InventorySystem.equip(this.player, itemId);
       }
       panel.destroy();
-      this.scene.restart({ gameScene: this.gameScene });
+      this.refresh();
     });
     x.once('down', () => {
       InventorySystem.sell(this.player, itemId, 1);
       panel.destroy();
-      this.scene.restart({ gameScene: this.gameScene });
+      this.refresh();
     });
     c.once('down', () => panel.destroy());
   }
 
   shutdown() {
+    this.clearDynamic();
     this.input.keyboard?.removeAllKeys(true);
     this.gameScene?.setPaused(false);
   }

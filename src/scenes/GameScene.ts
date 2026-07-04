@@ -369,9 +369,8 @@ export class GameScene extends Phaser.Scene {
   // ── SKILLS & ATTACK ──────────────────────────────────────────
 
   private handleAttackInput() {
-    if (Phaser.Input.Keyboard.JustDown(this.attackKey)) {
-      this.performBasicAttackOrInteract();
-    }
+    // Basic attack is driven by a direct key listener in applyKeyBindings()
+    // so it fires even when the update loop is starved after a menu overlay.
     if (Phaser.Input.Keyboard.JustDown(this.dashKey)) {
       this.handleDash();
     }
@@ -531,7 +530,11 @@ export class GameScene extends Phaser.Scene {
       left:  kb.addKey(b.left),
       right: kb.addKey(b.right),
     };
+    this.attackKey?.removeAllListeners();
     this.attackKey = kb.addKey(b.attack);
+    this.attackKey.on('down', () => {
+      if (!this.sys.isPaused() && !this.isInDialogue) this.performBasicAttackOrInteract();
+    });
     this.dashKey   = kb.addKey(b.dash);
     this.skillKeys = {
       a: kb.addKey(b.skill1),
