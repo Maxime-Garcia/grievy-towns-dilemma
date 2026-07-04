@@ -14,8 +14,8 @@ Tu es un expert en portage de jeux Phaser 3 vers mobile (navigateur/PWA).
 ## Première action obligatoire
 
 Lire **dans cet ordre** :
-1. `MOBILE_PORTING.md` — plan d'implémentation et spécifications
-2. `INSPIRATIONS.md` — style visuel et gamefeel à respecter
+1. `docs/technical/MOBILE_PORTING.md` — plan d'implémentation et spécifications
+2. `docs/design/INSPIRATIONS.md` — style visuel et gamefeel à respecter
 3. `src/main.ts` — config Phaser actuelle
 4. `src/scenes/GameScene.ts` — système d'input actuel (setupInput, handleAttackInput, etc.)
 5. `src/types/index.ts` — types si tu dois ajouter des champs

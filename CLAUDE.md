@@ -39,7 +39,7 @@ Texture keys : catégorie_id                    (ex: enemy_ember_wyrm, npc_aldri
 
 ## Référence thématique obligatoire
 
-**`INSPIRATIONS.md`** (à la racine) = source de vérité pour le style, le ton, le gamefeel et les inspirations du projet.  
+**`docs/design/INSPIRATIONS.md`** = source de vérité pour le style, le ton, le gamefeel et les inspirations du projet.  
 Tout agent créant du contenu, des effets visuels, des dialogues, des ennemis ou des items **doit le lire en premier**.
 
 ## Architecture agents
