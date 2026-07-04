@@ -268,6 +268,6 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   shutdown() {
-    this.gameScene?.setPaused(false);
+    console.log('[InventoryScene] shutdown() — gameScene:', !!this.gameScene);
   }
 }
