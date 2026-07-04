@@ -96,6 +96,7 @@ export class GameScene extends Phaser.Scene {
   private playerVy = 0;
   private dashMomentumX = 0;
   private dashMomentumY = 0;
+  private menuOpen = false;
   private isInDialogue = false;
   private isTraveling = false;
   private lastAutoSave = 0;
@@ -113,6 +114,7 @@ export class GameScene extends Phaser.Scene {
     this.gameState = data?.gameState ?? SaveSystem.createNewGame('Héros');
     // Spells non fonctionnels pour l'instant — vider les slots équipés
     this.gameState.player.equippedSkills = { slot1: null, slot2: null, slot3: null, slot4: null };
+    this.menuOpen       = false;
     this.isTraveling    = false;
     this.isInDialogue   = false;
     this.nearbyNPC      = null;
@@ -197,7 +199,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number) {
-    if (this.isInDialogue || this.isTraveling) return;
+    if (this.isInDialogue || this.isTraveling || this.menuOpen) return;
 
     const dt = delta / 1000;
     this.playtimeAccumulator += dt;
@@ -469,13 +471,9 @@ export class GameScene extends Phaser.Scene {
   public setShopOpen(open: boolean) { this.isInDialogue = open; }
 
   public setPaused(paused: boolean) {
-    if (paused) {
-      this.physics.world.pause();
-      this.scene.pause();
-    } else {
-      this.physics.world.resume();
-      this.scene.resume();
-    }
+    this.menuOpen = paused;
+    if (paused) this.physics.world.pause();
+    else        this.physics.world.resume();
   }
 
   public openInventory() {
@@ -500,13 +498,8 @@ export class GameScene extends Phaser.Scene {
       if (this.scene.isActive(key) || this.scene.isPaused(key)) this.scene.stop(key);
     }
 
-    // GameScene may be paused (called from PauseScene via scene.pause()).
-    // camera.update() only runs on RUNNING scenes, so FADE_OUT_COMPLETE would
-    // never fire if we start the fade while paused. Resume the scene first.
-    // scene.resume() is *queued* (takes effect next frame), so we wrap the
-    // fade in delayedCall(0) — it fires after processQueue() in that same frame,
-    // when GameScene is actually running again.
-    if (this.sys.isPaused()) this.scene.resume();
+    // Reset menu flag so the scene can run its update + camera fade correctly.
+    this.menuOpen = false;
 
     this.time.delayedCall(0, () => {
       this.cameras.main.once(
@@ -533,7 +526,7 @@ export class GameScene extends Phaser.Scene {
     this.attackKey?.removeAllListeners();
     this.attackKey = kb.addKey(b.attack);
     this.attackKey.on('down', () => {
-      if (!this.sys.isPaused() && !this.isInDialogue) this.performBasicAttackOrInteract();
+      if (!this.menuOpen && !this.isInDialogue) this.performBasicAttackOrInteract();
     });
     this.dashKey   = kb.addKey(b.dash);
     this.skillKeys = {
@@ -1658,7 +1651,7 @@ export class GameScene extends Phaser.Scene {
     });
     // Clic gauche souris → attaque / interaction
     this.input.on('pointerdown', (ptr: Phaser.Input.Pointer) => {
-      if (ptr.leftButtonDown() && !this.sys.isPaused() && !this.isInDialogue) {
+      if (ptr.leftButtonDown() && !this.menuOpen && !this.isInDialogue) {
         this.performBasicAttackOrInteract();
       }
     });

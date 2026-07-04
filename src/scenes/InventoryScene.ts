@@ -268,7 +268,7 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   shutdown() {
-    this.clearDynamic();
+    this.input.off('wheel');
     this.input.keyboard?.removeAllKeys(true);
     this.gameScene?.setPaused(false);
   }
