@@ -65,6 +65,8 @@ interface AttackPattern {
   cooldown: number;
   /** ms before the first hit fires (windup charging feel for heavy weapons) */
   windupMs?: number;
+  /** if true, this weapon fires a physical projectile instead of an instant cone hit */
+  isProjectile?: boolean;
 }
 
 const ATTACK_PATTERNS: Partial<Record<WeaponType, AttackPattern>> = {
@@ -112,11 +114,12 @@ const ATTACK_PATTERNS: Partial<Record<WeaponType, AttackPattern>> = {
     cooldown: 700,
   },
   [WeaponType.BOW]: {
-    // delay: 530ms = arrow travel time (460 * 0.7px / 600px/s ≈ 537ms).
-    // windupMs(200) draws the bow; hit lands 530ms after release via delayedCall(730, doHit).
-    hits: [{ delay: 530, range: 460, halfArc: Math.PI / 18, damageMultiplier: 1.0 }],
+    // Physical arrow projectile — damage lands on collision, not via timed cone hit.
+    // VFX (spawnArrowVfx) is purely cosmetic; the physics body drives actual hit detection.
+    hits: [],
     cooldown: 900,
     windupMs: 200,
+    isProjectile: true,
   },
 };
 
@@ -155,6 +158,7 @@ export class GameScene extends Phaser.Scene {
   private lootableGroup!: Phaser.Physics.Arcade.StaticGroup;
   private projectiles!: Phaser.Physics.Arcade.Group;
   private projectileCollider: Phaser.Physics.Arcade.Collider | null = null;
+  private weaponProjectiles!: Phaser.Physics.Arcade.Group;
   private lootableLooted: Set<string> = new Set();
 
   // Zone-scoped objects destroyed/recreated on each transition
@@ -250,6 +254,7 @@ export class GameScene extends Phaser.Scene {
     this.setupCamera();
     this.setupPhysics();
     this.createProjectileGroup();
+    this.weaponProjectiles = this.physics.add.group();
 
     this.interactHint = this.add.text(0, 0, t('hint.talk'), {
       fontSize: '11px', color: '#ffee88',
@@ -492,6 +497,19 @@ export class GameScene extends Phaser.Scene {
     this.attackCooldownUntil = now + pattern.cooldown;
     const windupMs = pattern.windupMs ?? 0;
 
+    // BOW (and any future isProjectile weapon) fires a physics body, not a cone hit.
+    if (pattern.isProjectile) {
+      if (windupMs > 0) this.spawnWindupVfx(windupMs);
+      if (windupMs === 0) {
+        this.fireArrowProjectile();
+      } else {
+        this.time.delayedCall(windupMs, () => {
+          if (!this.isTraveling) this.fireArrowProjectile();
+        });
+      }
+      return;
+    }
+
     if (windupMs > 0) {
       this.spawnWindupVfx(windupMs);
     }
@@ -568,6 +586,69 @@ export class GameScene extends Phaser.Scene {
       if (Math.abs(diff) <= halfArc) hits.push(sprite);
     }
     return hits;
+  }
+
+  // ── BOW PROJECTILE ───────────────────────────────────────────
+  // Spawns an invisible physics body that travels at 600px/s and applies
+  // damage only on actual collision. The cosmetic arrow VFX runs in parallel.
+
+  private fireArrowProjectile() {
+    const SPEED = 600;  // px/s
+    const RANGE = 460;  // px — body is destroyed if it travels this far without a hit
+    const angle = this.facingAngle;
+
+    // Invisible physics body — 8×4px, aligned to facing direction
+    const arrow = this.physics.add.sprite(this.player.x, this.player.y, '_px');
+    arrow.setVisible(false);
+    arrow.setDisplaySize(8, 4);
+    const arrowBody = arrow.body as Phaser.Physics.Arcade.Body;
+    arrowBody.setSize(8, 4);
+    arrowBody.setAllowGravity(false);
+    arrowBody.setVelocity(Math.cos(angle) * SPEED, Math.sin(angle) * SPEED);
+    this.weaponProjectiles.add(arrow);
+
+    // Cosmetic VFX — purely visual, travels to the same destination
+    const toX = this.player.x + Math.cos(angle) * RANGE * 0.7;
+    const toY = this.player.y + Math.sin(angle) * RANGE * 0.7;
+    this.spawnArrowVfx(this.player.x, this.player.y, toX, toY, angle, 0xddcc77);
+
+    // Guard: only the first enemy collision counts
+    let hit = false;
+
+    const collider = this.physics.add.overlap(
+      arrow,
+      this.enemies,
+      (_arrowObj, enemyObj) => {
+        if (hit) return;
+        hit = true;
+
+        const sprite = enemyObj as Phaser.Physics.Arcade.Sprite;
+        const activeEnemy = this.activeEnemies.get(sprite.name);
+        if (!activeEnemy) return;
+
+        const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
+        this.showDamageNumber(sprite.x, sprite.y - 20, result.damage, result.isCrit);
+        this.spawnHitParticles(sprite.x, sprite.y, result.element);
+        this.applyHitFeedback(sprite, activeEnemy, result.damage);
+        if (result.isCrit) this.cameras.main.shake(120, 0.007);
+        else               this.cameras.main.shake(40, 0.002);
+        if (result.isKill) this.onEnemyKilled(activeEnemy, sprite);
+        else               this.checkStagger(sprite, activeEnemy, result.damage);
+
+        // Clean up physics immediately so no further overlaps fire
+        this.physics.world.removeCollider(collider);
+        arrow.destroy();
+      },
+    );
+
+    // Auto-destroy after travel distance is exhausted if no hit occurred
+    const travelMs = (RANGE / SPEED) * 1000; // ≈ 767ms
+    this.time.delayedCall(travelMs, () => {
+      if (arrow.active) {
+        this.physics.world.removeCollider(collider);
+        arrow.destroy();
+      }
+    });
   }
 
   private activateSkill(skillId: string) {
@@ -2312,8 +2393,11 @@ export class GameScene extends Phaser.Scene {
     if (this.lootableOverlap) { this.lootableOverlap.destroy(); this.lootableOverlap = null; }
     if (this.projectileCollider) { this.projectileCollider.destroy(); this.projectileCollider = null; }
 
-    // Projectiles group
+    // Projectiles group (skill/enemy projectiles)
     if (this.projectiles) { this.projectiles.destroy(true); }
+    // Weapon projectile group — clear sprites; individual colliders are cleaned up
+    // by their own delayedCall/overlap callbacks once sprites go inactive.
+    this.weaponProjectiles?.clear(true, true);
 
     // Zone graphics (map background, paths, walls, teleport highlights)
     if (this.zoneGraphics) {
