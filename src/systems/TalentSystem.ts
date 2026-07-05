@@ -28,6 +28,49 @@ export interface TalentModifiers {
   heavyFinisherBonus: number;   // % additionnel sur les finishers GREATSWORD/HAMMER/AXE
   heavyCdReductionPct: number;  // % de réduction du cooldown GS/HAMMER/AXE
   lightFinisherBleed: boolean;  // si true, finishers DAGGER/DUAL_DAGGER/DUAL_SWORD appliquent saignement renforcé
+
+  // ── Génériques (branches élémentaires) ────────────────────────────────────
+  atkMult: number;              // base 1.0 — multiplie l'ATK globale (physique + magique)
+  attackSpeedMult: number;      // base 1.0 — multiplie la vitesse d'attaque
+  elemBonusPct: number;         // % additif de dégâts élémentaires (cumulé avec la substat ELEM_BONUS_PCT de StatsSystem)
+  manaMaxMult: number;          // base 1.0 — multiplie le mana max
+  manaRegenPct: number;         // % du mana max régénéré / seconde hors combat (timestamp-based, jamais frame-based)
+  lifestealPct: number;         // % de vol de vie sur attaques ET sorts (s'ajoute à la substat LIFESTEAL_PCT)
+
+  // ── IGNIS ──────────────────────────────────────────────────────────────────
+  burnChancePct: number;        // % de chance d'infliger BURN sur coup de base
+  burnDmgPct: number;           // % bonus sur les ticks de BURN
+  atkPerBurningPct: number;     // % d'ATK par ennemi en feu à l'écran
+  lowHpDefPct: number;          // % de DEF bonus sous 50% HP
+  magmaGuard: boolean;          // absorbe 1 coup par combat (1 charge, restaurée par zone)
+  burnOnFinisher: boolean;      // finishers : BURN garanti 3s
+  burningPackDmgPct: number;    // % de dégâts si 3+ ennemis brûlent simultanément
+
+  // ── ZEPHYR ─────────────────────────────────────────────────────────────────
+  dashCdReductionPct: number;   // % de réduction du cooldown de dash
+  rangedCritPct: number;        // % de crit bonus sur cibles > 200px
+  doubleDash: boolean;          // second dash immédiat autorisé (CD 8s)
+  projectileRangePct: number;   // % de portée des projectiles
+  projectileDmgPct: number;     // % de dégâts des projectiles
+  cycloneFinisher: boolean;     // finisher : zone de vent qui repousse les ennemis
+  dashDmgPct: number;           // % de dégâts infligés pendant un dash
+  autoDodge: boolean;           // esquive automatique 1 attaque / 5s
+
+  // ── ABYSSAL ────────────────────────────────────────────────────────────────
+  slowOnHit: boolean;           // attaques : SLOW 20%, 2s
+  freezeChancePct: number;      // % de chance de FREEZE sur sort
+  aquaticDefPct: number;        // % de DEF en zone aquatique (Abyssmar, Glaciem)
+  freezeOnFinisher: boolean;    // finisher : FREEZE garanti 2s
+  manaOnKillPct: number;        // % du mana max restauré par kill
+  burnBleedImmunity: boolean;   // immunité aux statuts BURN et BLEED
+
+  // ── TENEBRES (NG+) ─────────────────────────────────────────────────────────
+  darkDmgMult: number;          // base 1.0 — multiplie les dégâts sombres
+  soulStackBonus: number;       // stacks Soul Echo bonus par zone cleared
+  voidChannel: boolean;         // sacrifie 15% HP au cast → sort +100%
+  darkBurn: boolean;            // les BURN infligés deviennent des dégâts sombres
+  phantomStrikePct: number;     // % de chance de coup fantôme sans cooldown
+  sacrificeFinisher: boolean;   // finisher : consume 20% HP max → dégâts ×3
 }
 
 export class TalentSystem {
@@ -40,11 +83,23 @@ export class TalentSystem {
     }, 0);
   }
 
+  /** True si le joueur a débloqué au moins un nœud ARCANE de tier ≥ 3 (gate d'accès IGNIS). */
+  static hasArcaneTier3(player: PlayerState): boolean {
+    return player.unlockedTalents.some(id => {
+      const n = TALENT_MAP[id];
+      return n?.branch === TalentBranch.ARCANE && n.tier >= 3;
+    });
+  }
+
   /**
    * Vérifie si un nœud peut être débloqué :
    * - non déjà acquis
    * - suffisamment de points disponibles
-   * - gate par investissement : tier2=2pts, tier3=4pts, capstone=6pts dans la branche
+   * - nœud NG+ (TENEBRES) : player.isNewGamePlus requis — l'UI affiche le nœud
+   *   grisé avec "Je ne suis pas encore capable de maîtriser cette magie..."
+   * - prérequis directs (node.requires, AND) tous débloqués
+   * - accès IGNIS : au moins un nœud ARCANE tier ≥ 3 débloqué
+   * - gate par investissement : tier2=2pts, tier3=4pts, tier4=6pts, tier5=10pts dans la branche
    */
   static canUnlock(player: PlayerState, talentId: string): boolean {
     const node = TALENT_MAP[talentId];
@@ -52,8 +107,14 @@ export class TalentSystem {
     if (player.unlockedTalents.includes(talentId)) return false;
     if (player.talentPoints < node.cost) return false;
 
+    if (node.ngPlusOnly && !player.isNewGamePlus) return false;
+
+    if (node.requires?.some(req => !player.unlockedTalents.includes(req))) return false;
+
+    if (node.branch === TalentBranch.IGNIS && !TalentSystem.hasArcaneTier3(player)) return false;
+
     const spent = TalentSystem.pointsSpentInBranch(player, node.branch);
-    const GATE: Record<1 | 2 | 3 | 4, number> = { 1: 0, 2: 2, 3: 4, 4: 6 };
+    const GATE: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 2, 3: 4, 4: 6, 5: 10 };
     if (spent < GATE[node.tier]) return false;
 
     return true;
@@ -122,6 +183,44 @@ export class TalentSystem {
       heavyFinisherBonus: 0,
       heavyCdReductionPct: 0,
       lightFinisherBleed: false,
+
+      atkMult: 1.0,
+      attackSpeedMult: 1.0,
+      elemBonusPct: 0,
+      manaMaxMult: 1.0,
+      manaRegenPct: 0,
+      lifestealPct: 0,
+
+      burnChancePct: 0,
+      burnDmgPct: 0,
+      atkPerBurningPct: 0,
+      lowHpDefPct: 0,
+      magmaGuard: false,
+      burnOnFinisher: false,
+      burningPackDmgPct: 0,
+
+      dashCdReductionPct: 0,
+      rangedCritPct: 0,
+      doubleDash: false,
+      projectileRangePct: 0,
+      projectileDmgPct: 0,
+      cycloneFinisher: false,
+      dashDmgPct: 0,
+      autoDodge: false,
+
+      slowOnHit: false,
+      freezeChancePct: 0,
+      aquaticDefPct: 0,
+      freezeOnFinisher: false,
+      manaOnKillPct: 0,
+      burnBleedImmunity: false,
+
+      darkDmgMult: 1.0,
+      soulStackBonus: 0,
+      voidChannel: false,
+      darkBurn: false,
+      phantomStrikePct: 0,
+      sacrificeFinisher: false,
     };
 
     for (const id of player.unlockedTalents) {
@@ -151,6 +250,49 @@ export class TalentSystem {
       if (e.HEAVY_CD_REDUCTION_PCT !== undefined) mods.heavyCdReductionPct += e.HEAVY_CD_REDUCTION_PCT;
       if (e.LIGHT_FINISHER_BLEED !== undefined)   mods.lightFinisherBleed   = true;
       // TODO(talent-ui): DEF_PCT → ProgressionSystem.computeBaseStats(), MANA_COST_PCT → playerSkill(), POST_FINISHER_BUFF → executeFinisherAttack()
+
+      // ── Génériques (branches élémentaires) ──────────────────────────────
+      if (e.ATK_PCT !== undefined)                mods.atkMult             *= 1 + e.ATK_PCT / 100;
+      if (e.ASPD_PCT !== undefined)               mods.attackSpeedMult     *= 1 + e.ASPD_PCT / 100;
+      if (e.ELEM_BONUS_PCT !== undefined)         mods.elemBonusPct        += e.ELEM_BONUS_PCT;
+      if (e.MANA_MAX_PCT !== undefined)           mods.manaMaxMult         *= 1 + e.MANA_MAX_PCT / 100;
+      if (e.MANA_REGEN_PCT !== undefined)         mods.manaRegenPct        += e.MANA_REGEN_PCT;
+      if (e.LIFESTEAL_PCT !== undefined)          mods.lifestealPct        += e.LIFESTEAL_PCT;
+
+      // ── IGNIS ────────────────────────────────────────────────────────────
+      if (e.BURN_CHANCE_PCT !== undefined)        mods.burnChancePct       += e.BURN_CHANCE_PCT;
+      if (e.BURN_DMG_PCT !== undefined)           mods.burnDmgPct          += e.BURN_DMG_PCT;
+      if (e.ATK_PER_BURNING_PCT !== undefined)    mods.atkPerBurningPct    += e.ATK_PER_BURNING_PCT;
+      if (e.LOW_HP_DEF_PCT !== undefined)         mods.lowHpDefPct         += e.LOW_HP_DEF_PCT;
+      if (e.MAGMA_GUARD !== undefined)            mods.magmaGuard           = true;
+      if (e.BURN_ON_FINISHER !== undefined)       mods.burnOnFinisher       = true;
+      if (e.BURNING_PACK_DMG_PCT !== undefined)   mods.burningPackDmgPct   += e.BURNING_PACK_DMG_PCT;
+
+      // ── ZEPHYR ───────────────────────────────────────────────────────────
+      if (e.DASH_CD_PCT !== undefined)            mods.dashCdReductionPct  += e.DASH_CD_PCT;
+      if (e.RANGED_CRIT_PCT !== undefined)        mods.rangedCritPct       += e.RANGED_CRIT_PCT;
+      if (e.DOUBLE_DASH !== undefined)            mods.doubleDash           = true;
+      if (e.PROJECTILE_RANGE_PCT !== undefined)   mods.projectileRangePct  += e.PROJECTILE_RANGE_PCT;
+      if (e.PROJECTILE_DMG_PCT !== undefined)     mods.projectileDmgPct    += e.PROJECTILE_DMG_PCT;
+      if (e.CYCLONE_FINISHER !== undefined)       mods.cycloneFinisher      = true;
+      if (e.DASH_DMG_PCT !== undefined)           mods.dashDmgPct          += e.DASH_DMG_PCT;
+      if (e.AUTO_DODGE !== undefined)             mods.autoDodge            = true;
+
+      // ── ABYSSAL ──────────────────────────────────────────────────────────
+      if (e.SLOW_ON_HIT !== undefined)            mods.slowOnHit            = true;
+      if (e.FREEZE_CHANCE_PCT !== undefined)      mods.freezeChancePct     += e.FREEZE_CHANCE_PCT;
+      if (e.AQUATIC_DEF_PCT !== undefined)        mods.aquaticDefPct       += e.AQUATIC_DEF_PCT;
+      if (e.FREEZE_ON_FINISHER !== undefined)     mods.freezeOnFinisher     = true;
+      if (e.MANA_ON_KILL_PCT !== undefined)       mods.manaOnKillPct       += e.MANA_ON_KILL_PCT;
+      if (e.BURN_BLEED_IMMUNITY !== undefined)    mods.burnBleedImmunity    = true;
+
+      // ── TENEBRES (NG+) ───────────────────────────────────────────────────
+      if (e.DARK_DMG_MULT !== undefined)          mods.darkDmgMult         *= 1 + e.DARK_DMG_MULT / 100;
+      if (e.SOUL_STACK_BONUS !== undefined)       mods.soulStackBonus      += e.SOUL_STACK_BONUS;
+      if (e.VOID_CHANNEL !== undefined)           mods.voidChannel          = true;
+      if (e.DARK_BURN !== undefined)              mods.darkBurn             = true;
+      if (e.PHANTOM_STRIKE_PCT !== undefined)     mods.phantomStrikePct    += e.PHANTOM_STRIKE_PCT;
+      if (e.SACRIFICE_FINISHER !== undefined)     mods.sacrificeFinisher    = true;
     }
 
     return mods;
