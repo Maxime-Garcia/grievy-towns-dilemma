@@ -1,7 +1,7 @@
 import { PlayerState, Item, ItemRarity, RARITY_COLORS } from '../types';
 import { GameScene } from './GameScene';
 import { SKILL_MAP } from '../data/skills';
-import { UI, drawPanel, drawBar, pxStyle } from '../utils/UITheme';
+import { UI, drawPanel, drawGlowPanel, drawBar, pxStyle } from '../utils/UITheme';
 import { t, localizeItem, localizeSkill } from '../i18n';
 
 const BAR_W = 178;
@@ -29,9 +29,20 @@ export class UIScene extends Phaser.Scene {
 
   private notifQueue: string[] = [];
   private notifText!: Phaser.GameObjects.Text;
+  private notifBg!: Phaser.GameObjects.Graphics;
   private notifTimer = 0;
 
   private zoneText!: Phaser.GameObjects.Text;
+  private zoneBg!: Phaser.GameObjects.Graphics;
+
+  // ── Combo HUD (pips sous le joueur — COMBO_TALENT_SPEC.md §2.3 / §6.2) ──
+  private comboPips!: Phaser.GameObjects.Container;
+  private comboMaxPips = 0;
+  private comboCurrentCount = 0;
+  private pipObjects: Phaser.GameObjects.Graphics[] = [];
+  private pipTween: Phaser.Tweens.Tween | null = null;
+  private comboShownAt = 0;
+  private comboFading = false;
 
   private lerpHp          = 1;
   private lerpMp          = 1;
@@ -54,7 +65,7 @@ export class UIScene extends Phaser.Scene {
     const { width: W, height: H } = this.cameras.main;
 
     // ── DEV: build badge (top-left) — retirer avant release ─────────
-    const BUILD_LABEL = 'BOW: distance check manuel, no physics.overlap (30a02f3)';
+    const BUILD_LABEL = 'feat: ui-stats-combat-polish — talents + StatsSystem + InventoryUX (549ac37)';
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 4, badgePad + 4, BUILD_LABEL, {
       fontSize: '10px', color: '#000000', fontFamily: 'monospace', fontStyle: 'bold',
@@ -72,8 +83,14 @@ export class UIScene extends Phaser.Scene {
     this.HP_Y = PANEL_TOP + 22;
     this.MP_Y = PANEL_TOP + 44;
 
+    // Glow panel : accent vert (vie) sur le cadre, ticks colorés par barre
     const panelGfx = this.add.graphics();
-    drawPanel(panelGfx, 4, PANEL_TOP, PANEL_W, PANEL_H);
+    drawGlowPanel(panelGfx, 4, PANEL_TOP, PANEL_W, PANEL_H, UI.HP_GREEN, UI.BG_MID, 4);
+    // Tick d'accent vertical devant chaque barre (vert = HP, bleu = MP)
+    panelGfx.fillStyle(UI.HP_GREEN, 0.8);
+    panelGfx.fillRect(BAR_X - 5, this.HP_Y, 2, HP_H);
+    panelGfx.fillStyle(UI.MP_FILL, 0.8);
+    panelGfx.fillRect(BAR_X - 5, this.MP_Y, 2, MP_H);
 
     // Label badges HP / MP
     this.add.text(10, this.HP_Y + 1, t('ui.hp'), pxStyle(7, UI.TXT_GREEN));
@@ -104,7 +121,8 @@ export class UIScene extends Phaser.Scene {
     this.xpBar = this.add.graphics();
 
     // ── Skill slots (centered bottom) ────────────
-    const SLOT_SZ  = 46;
+    // SLOT_SZ ≥ 52 so the touch hit zone meets the 44px accessibility minimum.
+    const SLOT_SZ  = 52;
     const SLOT_GAP = 5;
     const TOTAL_W  = 4 * SLOT_SZ + 3 * SLOT_GAP;
     const SX_START = W / 2 - TOTAL_W / 2;
@@ -118,7 +136,7 @@ export class UIScene extends Phaser.Scene {
       drawPanel(slotGfx, sx, SY, SLOT_SZ, SLOT_SZ, UI.SLOT_BG);
 
       const icon = this.add.image(sx + SLOT_SZ / 2, SY + SLOT_SZ / 2, 'skill_dash')
-        .setDisplaySize(30, 30);
+        .setDisplaySize(34, 34);
       this.skillSlots.push(icon);
 
       const cdOverlay = this.add.graphics();
@@ -135,20 +153,92 @@ export class UIScene extends Phaser.Scene {
         stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5);
       this.skillCdTexts.push(cdText);
+
+      // Invisible hit zone — slightly larger than visual slot for comfortable tapping.
+      // Emits mobile_action so GameScene fires the same code path as the keyboard.
+      const slotIdx = i;
+      const hitZone = this.add.rectangle(
+        sx + SLOT_SZ / 2, SY + SLOT_SZ / 2,
+        SLOT_SZ + 6, SLOT_SZ + 6, 0, 0,
+      ).setInteractive({ useHandCursor: true }).setDepth(5);
+      hitZone.on('pointerdown', () => {
+        this.game.events.emit('mobile_action', `skill${slotIdx}`);
+        const ic = this.skillSlots[slotIdx];
+        this.tweens.killTweensOf(ic);
+        ic.setAlpha(0.6);
+        this.tweens.add({
+          targets: ic,
+          alpha: 1,
+          duration: 80,
+          onComplete: () => {
+            this.tweens.add({
+              targets: ic,
+              scaleX: 1.15, scaleY: 1.15,
+              duration: 60,
+              yoyo: true,
+              ease: 'Back.easeOut',
+            });
+          },
+        });
+      });
     }
 
+    // ── Nav buttons: Inventory (I) and Skills (K) — bottom-right ────────
+    // Give mobile players the same access as the keyboard shortcuts.
+    const NAV_W = 54;
+    const NAV_H = 44;
+    const NAV_Y = SY + (SLOT_SZ - NAV_H) / 2;
+    const sklX  = W - 8 - NAV_W;
+    const invX  = sklX - 6 - NAV_W;
+
+    const buildNavBtn = (bx: number, label: string, action: string) => {
+      const gfx = this.add.graphics();
+      drawPanel(gfx, bx, NAV_Y, NAV_W, NAV_H, UI.BTN_BG);
+      this.add.text(bx + NAV_W / 2, NAV_Y + NAV_H / 2, label, pxStyle(8, UI.TXT_GOLD))
+        .setOrigin(0.5).setDepth(6);
+      const flash = this.add.rectangle(
+        bx + NAV_W / 2, NAV_Y + NAV_H / 2, NAV_W - 2, NAV_H - 2, 0xffffff, 0,
+      ).setDepth(6);
+      // Hit zone includes a 4px margin on all sides for comfortable tapping.
+      const hit = this.add.rectangle(
+        bx + NAV_W / 2, NAV_Y + NAV_H / 2, NAV_W + 4, NAV_H + 4, 0, 0,
+      ).setInteractive({ useHandCursor: true }).setDepth(7);
+      hit.on('pointerdown', () => {
+        flash.setAlpha(0.25);
+        this.tweens.add({ targets: flash, alpha: 0, duration: 150 });
+        this.game.events.emit('mobile_action', action);
+      });
+    };
+
+    buildNavBtn(invX, 'INV', 'inventory');
+    buildNavBtn(sklX, 'SKL', 'skills');
+
     // ── Notification (above skill slots) ─────────
+    // Fond semi-opaque derrière la notif : lisible même sur zone claire.
+    this.notifBg = this.add.graphics().setAlpha(0).setDepth(9);
     this.notifText = this.add.text(W / 2, H - SLOT_SZ - 20, '', {
       ...pxStyle(9, UI.TXT_PARCHMENT, true),
     }).setOrigin(0.5).setAlpha(0).setDepth(10);
 
-    // ── Zone name (top-right) ─────────────────────
-    this.zoneText = this.add.text(W - 10, 10, '', pxStyle(9, UI.TXT_GOLD))
+    // ── Zone name (top-right) — encadré discret ───
+    this.zoneBg = this.add.graphics().setAlpha(0).setDepth(4);
+    this.zoneText = this.add.text(W - 18, 15, '', pxStyle(9, UI.TXT_GOLD))
       .setOrigin(1, 0).setAlpha(0).setDepth(5);
 
     // ── Hint (bottom-right) ───────────────────────
     this.add.text(W - 8, H - 20, t('ui.hint'), pxStyle(6, UI.TXT_HINT))
       .setOrigin(1, 0);
+
+    // ── Combo HUD (pips qui suivent le joueur) ────
+    // Reset explicite : scene.restart() réutilise l'instance, les
+    // initialiseurs de champs ne sont pas re-exécutés.
+    this.comboPips = this.add.container(0, 0).setDepth(50).setAlpha(0.75).setVisible(false);
+    this.pipObjects = [];
+    this.pipTween = null;
+    this.comboMaxPips = 0;
+    this.comboCurrentCount = 0;
+    this.comboShownAt = 0;
+    this.comboFading = false;
 
     // ── Events ───────────────────────────────────
     this.gameScene.events.on('player_update',    this.onPlayerUpdate,    this);
@@ -160,6 +250,9 @@ export class UIScene extends Phaser.Scene {
     this.gameScene.events.on('zone_entered',     this.onZoneEntered,     this);
     this.gameScene.events.on('show_notification',this.onShowNotification,this);
     this.gameScene.events.on('language_changed', this.onLanguageChanged,  this);
+    this.gameScene.events.on('combo-changed',     this.onComboChanged,     this);
+    this.gameScene.events.on('combo-broken',      this.onComboBroken,      this);
+    this.gameScene.events.on('finisher-executed', this.onFinisherExecuted, this);
   }
 
   shutdown() {
@@ -172,6 +265,10 @@ export class UIScene extends Phaser.Scene {
     this.gameScene.events.off('zone_entered',     this.onZoneEntered,     this);
     this.gameScene.events.off('show_notification',this.onShowNotification,this);
     this.gameScene.events.off('language_changed', this.onLanguageChanged,  this);
+    this.gameScene.events.off('combo-changed',     this.onComboChanged,     this);
+    this.gameScene.events.off('combo-broken',      this.onComboBroken,      this);
+    this.gameScene.events.off('finisher-executed', this.onFinisherExecuted, this);
+    this.pipTween = null;
   }
 
   private onLanguageChanged() {
@@ -179,11 +276,13 @@ export class UIScene extends Phaser.Scene {
   }
 
   update(_t: number, delta: number) {
+    this.updateComboPips();
+
     if (this.notifTimer > 0) {
       this.notifTimer -= delta;
       if (this.notifTimer <= 0) {
         this.tweens.add({
-          targets: this.notifText,
+          targets: [this.notifText, this.notifBg],
           alpha: 0,
           duration: 400,
           onComplete: () => this.showNextNotif(),
@@ -200,6 +299,180 @@ export class UIScene extends Phaser.Scene {
     if (Math.abs(this.lerpHp - prevHp) > 0.001 || Math.abs(this.lerpMp - prevMp) > 0.001) {
       this.drawLerpedBars();
     }
+  }
+
+  // ── Combo HUD ────────────────────────────────────
+  // Losanges 4×4px sous le sprite du joueur (offset +26px), espacés de 7px.
+  // Blanc cassé 0xf0e8d8 = validé, gris 0x444444 = restant, ambre 0xffb347 =
+  // finisher prêt. Interdits : azur 0x66ddff, doré 0xffe066 (INSPIRATIONS.md).
+
+  private updateComboPips() {
+    if (this.comboMaxPips === 0) {
+      this.comboPips.setVisible(false);
+      return;
+    }
+
+    // UIScene est une scène parallèle : convertir world → screen via la caméra de GameScene
+    const pos = this.gameScene.getPlayerScreenPosition();
+    if (!pos) {
+      this.comboPips.setVisible(false);
+      return;
+    }
+    this.comboPips.setVisible(true);
+    this.comboPips.setPosition(pos.x, pos.y + 26);
+
+    // Fade out complet après 2s sans attaque (spec §2.3) — rien hors combat
+    if (!this.comboFading && this.comboShownAt > 0 && this.time.now - this.comboShownAt > 2000) {
+      this.comboFading = true;
+      this.stopPipTween();
+      this.tweens.add({
+        targets: this.comboPips,
+        alpha: 0,
+        duration: 250,
+        onComplete: () => this.hideComboPips(),
+      });
+    }
+  }
+
+  private onComboChanged({ count, max }: { count: number; max: number }) {
+    if (!this.sys.isActive()) return;
+    this.tweens.killTweensOf(this.comboPips);
+    this.comboFading = false;
+    this.comboPips.setAlpha(0.75).setVisible(true);
+
+    const prevCount = this.comboCurrentCount;
+    this.comboCurrentCount = count;
+    this.comboMaxPips = max;
+    this.comboShownAt = this.time.now;
+    this.redrawPips();
+
+    // Pop du pip qui vient de s'allumer : 1.0→1.4→1.0 en 120ms (spec §6.2)
+    if (count > prevCount && count > 0 && count <= this.pipObjects.length) {
+      const lit = this.pipObjects[count - 1];
+      this.tweens.add({
+        targets: lit, scaleX: 1.4, scaleY: 1.4,
+        duration: 60, yoyo: true, ease: 'Back.easeOut',
+      });
+    }
+  }
+
+  private onComboBroken() {
+    if (!this.sys.isActive() || this.comboMaxPips === 0) return;
+    this.comboFading = true;
+    this.stopPipTween();
+
+    // Pips en gris — un blink, puis fade out 250ms. Échec silencieux, jamais humiliant.
+    for (const g of this.pipObjects) {
+      g.clear();
+      g.fillStyle(0x777777, 1);
+      g.fillRect(-2, -2, 4, 4);
+    }
+    this.tweens.killTweensOf(this.comboPips);
+    this.tweens.add({
+      targets: this.comboPips,
+      alpha: 0.15,
+      duration: 80,
+      yoyo: true,
+      onComplete: () => {
+        this.tweens.add({
+          targets: this.comboPips,
+          alpha: 0,
+          duration: 250,
+          onComplete: () => this.hideComboPips(),
+        });
+      },
+    });
+  }
+
+  private onFinisherExecuted(_data: { weaponType?: unknown }) {
+    if (!this.sys.isActive() || this.comboMaxPips === 0) return;
+    this.comboFading = true;
+    this.stopPipTween();
+
+    // Les pips éclatent en 3–4 particules ambre qui s'envolent en arc (300ms)
+    const { x, y } = this.comboPips;
+    const count = Phaser.Math.Between(3, 4);
+    for (let i = 0; i < count; i++) {
+      const p = this.add
+        .circle(x + Phaser.Math.Between(-10, 10), y, 2, 0xffb347, 1)
+        .setDepth(51);
+      this.tweens.add({
+        targets: p,
+        x: p.x + Phaser.Math.Between(-18, 18),
+        y: y - Phaser.Math.Between(10, 18),
+        duration: 150,
+        ease: 'Quad.easeOut',
+        onComplete: () => {
+          this.tweens.add({
+            targets: p,
+            y: y + Phaser.Math.Between(14, 22),
+            alpha: 0,
+            duration: 150,
+            ease: 'Quad.easeIn',
+            onComplete: () => p.destroy(),
+          });
+        },
+      });
+    }
+
+    this.tweens.killTweensOf(this.comboPips);
+    this.hideComboPips();
+  }
+
+  private redrawPips() {
+    const max = this.comboMaxPips;
+
+    // Reconstruire si le nombre de pips a changé (changement d'arme)
+    if (this.pipObjects.length !== max) {
+      this.stopPipTween();
+      for (const p of this.pipObjects) p.destroy();
+      this.pipObjects = [];
+      for (let i = 0; i < max; i++) {
+        const g = this.add.graphics();
+        g.setRotation(Math.PI / 4); // carré 4×4 tourné à 45° = losange
+        g.x = (i - (max - 1) / 2) * 7;
+        this.comboPips.add(g);
+        this.pipObjects.push(g);
+      }
+    }
+
+    const finisherReady = max > 0 && this.comboCurrentCount === max - 1;
+    for (let i = 0; i < max; i++) {
+      const g = this.pipObjects[i];
+      let color = i < this.comboCurrentCount ? 0xf0e8d8 : 0x444444;
+      if (i === max - 1 && finisherReady) color = 0xffb347;
+      g.clear();
+      g.fillStyle(color, 1);
+      g.fillRect(-2, -2, 4, 4);
+    }
+
+    // Pulsation lente du pip finisher quand le prochain coup est le finisher
+    this.stopPipTween();
+    if (finisherReady) {
+      this.pipTween = this.tweens.add({
+        targets: this.pipObjects[max - 1],
+        scaleX: 1.3, scaleY: 1.3,
+        duration: 400,
+        yoyo: true,
+        repeat: -1, // arrêté systématiquement par stopPipTween() à chaque changement d'état
+      });
+    }
+  }
+
+  private stopPipTween() {
+    if (this.pipTween) {
+      this.pipTween.stop();
+      this.pipTween = null;
+    }
+    for (const g of this.pipObjects) g.setScale(1);
+  }
+
+  private hideComboPips() {
+    this.comboMaxPips = 0;
+    this.comboCurrentCount = 0;
+    this.comboShownAt = 0;
+    this.comboFading = false;
+    this.comboPips.setVisible(false).setAlpha(0.75);
   }
 
   // ── Event handlers ───────────────────────────────
@@ -231,10 +504,14 @@ export class UIScene extends Phaser.Scene {
     this.xpBar.fillStyle(UI.XP_BG, 1);
     this.xpBar.fillRect(0, H - 4, W, 4);
     if (xpFW > 0) {
+      // Gradient simulé : base violette + moitié basse assombrie
+      // + fine bande lumineuse 1px sur le dessus.
       this.xpBar.fillStyle(UI.XP_FILL, 1);
       this.xpBar.fillRect(0, H - 4, xpFW, 4);
-      this.xpBar.fillStyle(UI.XP_SHINE, 0.3);
-      this.xpBar.fillRect(0, H - 4, xpFW, 2);
+      this.xpBar.fillStyle(0x000000, 0.28);
+      this.xpBar.fillRect(0, H - 2, xpFW, 2);
+      this.xpBar.fillStyle(UI.XP_SHINE, 0.65);
+      this.xpBar.fillRect(0, H - 4, xpFW, 1);
     }
 
     // Skill icons
@@ -293,10 +570,20 @@ export class UIScene extends Phaser.Scene {
 
   private onZoneEntered(zone: { id: string; name: string }) {
     if (!this.sys.isActive()) return;
+    const W = this.cameras.main.width;
     this.zoneText.setText(t(`zone.${zone.id}`) || zone.name);
-    this.tweens.add({ targets: this.zoneText, alpha: 1, duration: 400 });
+
+    // Encadré glow discret dimensionné sur le texte
+    const padX = 8;
+    const padY = 5;
+    const bw = Math.ceil(this.zoneText.width)  + padX * 2;
+    const bh = Math.ceil(this.zoneText.height) + padY * 2;
+    this.zoneBg.clear();
+    drawGlowPanel(this.zoneBg, W - 10 - bw, 15 - padY, bw, bh, UI.GLOW_GOLD, UI.BG_MID, 3);
+
+    this.tweens.add({ targets: [this.zoneText, this.zoneBg], alpha: 1, duration: 400 });
     this.time.delayedCall(3500, () => {
-      this.tweens.add({ targets: this.zoneText, alpha: 0.4, duration: 1000 });
+      this.tweens.add({ targets: [this.zoneText, this.zoneBg], alpha: 0.4, duration: 1000 });
     });
   }
 
@@ -312,6 +599,20 @@ export class UIScene extends Phaser.Scene {
     const color  = entry.slice(0, pipe);
     const msg    = entry.slice(pipe + 1);
     this.notifText.setText(msg).setStyle({ color }).setAlpha(1);
+
+    // Fond semi-opaque ajusté à la largeur du message
+    const padX = 10;
+    const padY = 5;
+    const bw = Math.ceil(this.notifText.width)  + padX * 2;
+    const bh = Math.ceil(this.notifText.height) + padY * 2;
+    this.notifBg.clear();
+    drawGlowPanel(
+      this.notifBg,
+      this.notifText.x - bw / 2, this.notifText.y - bh / 2,
+      bw, bh, UI.SEPARATOR, UI.BG_MID, 3,
+    );
+    this.notifBg.setAlpha(0.92);
+
     this.notifTimer = 2500;
   }
 }

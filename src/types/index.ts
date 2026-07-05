@@ -82,6 +82,79 @@ export enum EndingChoice {
   ERASE = 'ERASE'
 }
 
+export enum TalentBranch {
+  VIGOR = 'VIGOR',
+  INSTINCT = 'INSTINCT',
+  ARCANE = 'ARCANE',
+  IGNIS = 'IGNIS',       // Voie de la Flamme — couleur UI #ff6600
+  ZEPHYR = 'ZEPHYR',     // Voie du Vent — couleur UI #44ddaa
+  ABYSSAL = 'ABYSSAL',   // Voie des Profondeurs — couleur UI #2244cc
+  TENEBRES = 'TENEBRES', // Voie de la Magie Noire — NG+ uniquement — couleur UI #7700aa
+}
+
+export type TalentEffectKey =
+  | 'MELEE_DMG_PCT' | 'DEF_PCT' | 'KILL_HEAL_PCT' | 'WINDUP_ARMOR'
+  | 'HEAVY_FINISHER_BONUS' | 'LOW_HP_ATK_PCT' | 'HEAVY_CD_REDUCTION_PCT'
+  | 'POST_FINISHER_BUFF'
+  | 'CRIT_PCT' | 'MOVE_SPEED_PCT' | 'COMBO_GRACE_PCT' | 'DASH_PRESERVES_COMBO'
+  | 'LIGHT_FINISHER_BLEED' | 'BOW_RANGE_DMG_PCT' | 'MAX_HP_PCT'
+  | 'COMBO_STACK_DMG'
+  | 'MAGIC_DMG_PCT' | 'MANA_COST_PCT' | 'SKILL_DMG_PCT' | 'STAFF_FINISHER_ZONE'
+  | 'BOW_ELEMENTAL_ARROWS' | 'PROJECTILE_SKILL_PCT' | 'SHIELD_SKILL_PCT'
+  | 'FINISHER_NOVA'
+  // ── Génériques (branches élémentaires) ──────────────────────────────────────
+  | 'ATK_PCT'              // % d'ATK globale (physique + magique)
+  | 'ASPD_PCT'             // % de vitesse d'attaque
+  | 'ELEM_BONUS_PCT'       // % bonus dégâts élémentaires (cumulé avec la substat homonyme)
+  | 'MANA_MAX_PCT'         // % de mana max
+  | 'MANA_REGEN_PCT'       // % du mana max régénéré / seconde hors combat
+  | 'LIFESTEAL_PCT'        // % de lifesteal (attaques ET sorts)
+  // ── IGNIS ────────────────────────────────────────────────────────────────────
+  | 'BURN_CHANCE_PCT'      // % de chance d'infliger BURN sur coup de base
+  | 'BURN_DMG_PCT'         // % bonus sur les ticks de BURN
+  | 'ATK_PER_BURNING_PCT'  // % d'ATK par ennemi en feu à l'écran
+  | 'LOW_HP_DEF_PCT'       // % de DEF sous 50% HP
+  | 'MAGMA_GUARD'          // flag : absorbe 1 coup/combat (1 charge/zone)
+  | 'BURN_ON_FINISHER'     // flag : finishers → BURN garanti 3s
+  | 'BURNING_PACK_DMG_PCT' // % de dégâts si 3+ ennemis brûlent simultanément
+  // ── ZEPHYR ───────────────────────────────────────────────────────────────────
+  | 'DASH_CD_PCT'          // % de réduction du cooldown de dash
+  | 'RANGED_CRIT_PCT'      // % de crit bonus sur cibles > 200px
+  | 'DOUBLE_DASH'          // flag : 2e dash immédiat autorisé (CD 8s)
+  | 'PROJECTILE_RANGE_PCT' // % de portée des projectiles
+  | 'PROJECTILE_DMG_PCT'   // % de dégâts des projectiles
+  | 'CYCLONE_FINISHER'     // flag : finisher → zone de vent qui repousse
+  | 'DASH_DMG_PCT'         // % de dégâts infligés pendant un dash
+  | 'AUTO_DODGE'           // flag : esquive automatique 1 attaque / 5s
+  // ── ABYSSAL ──────────────────────────────────────────────────────────────────
+  | 'SLOW_ON_HIT'          // flag : attaques → SLOW 20%, 2s
+  | 'FREEZE_CHANCE_PCT'    // % de chance de FREEZE sur sort
+  | 'AQUATIC_DEF_PCT'      // % de DEF en zone aquatique (Abyssmar, Glaciem)
+  | 'FREEZE_ON_FINISHER'   // flag : finisher → FREEZE garanti 2s
+  | 'MANA_ON_KILL_PCT'     // % du mana max restauré par kill
+  | 'BURN_BLEED_IMMUNITY'  // flag : immunité BURN + BLEED
+  // ── TENEBRES (NG+ uniquement) ────────────────────────────────────────────────
+  | 'DARK_DMG_MULT'        // % de multiplicateur dégâts sombres
+  | 'SOUL_STACK_BONUS'     // stacks Soul Echo bonus par zone cleared
+  | 'VOID_CHANNEL'         // flag : sacrifie 15% HP au cast → sort +100%
+  | 'DARK_BURN'            // flag : les BURN infligés deviennent des dégâts sombres
+  | 'PHANTOM_STRIKE_PCT'   // % de chance de coup fantôme sans cooldown
+  | 'SACRIFICE_FINISHER';  // flag : finisher consume 20% HP max → dégâts ×3
+
+export interface TalentNode {
+  id: string;
+  name: string;
+  description: string;
+  branch: TalentBranch;
+  tier: 1 | 2 | 3 | 4 | 5; // capstone = dernier tier (4 pour VIGOR/INSTINCT/ARCANE, 5 pour les branches élémentaires)
+  cost: number;             // 1–3 (branches élémentaires : t1-2 = 1, t3 = 2, t4-5 = 3)
+  icon: string;
+  effects: Partial<Record<TalentEffectKey, number>>;
+  lore?: string;
+  requires?: string[];      // prérequis directs (AND) — IDs de nodes du tier précédent
+  ngPlusOnly?: boolean;     // node visible mais verrouillé tant que player.isNewGamePlus === false
+}
+
 // ============================================================
 // STATS & ATTRIBUTES
 // ============================================================
@@ -145,6 +218,7 @@ export interface Weapon extends BaseItem {
   bonusStats: StatBonus;
   attackSpeed: number;
   passiveEffect?: string;
+  equipStats?: EquipStats;
 }
 
 export interface Armor extends BaseItem {
@@ -153,12 +227,14 @@ export interface Armor extends BaseItem {
   magicDefense: number;
   bonusStats: StatBonus;
   passiveEffect?: string;
+  equipStats?: EquipStats;
 }
 
 export interface Accessory extends BaseItem {
   type: ItemType.RING | ItemType.AMULET;
   bonusStats: StatBonus;
   passiveEffect?: string;
+  equipStats?: EquipStats;
 }
 
 export interface ConsumableEffect {
@@ -511,6 +587,9 @@ export interface PlayerState {
   isNewGamePlus: boolean;
   ngPlusCount: number;
   questProgress: Record<string, QuestObjective[]>;
+  talentPoints: number;       // points disponibles à dépenser (1 par niveau, cap 20)
+  unlockedTalents: string[];  // IDs des nœuds débloqués
+  respecCount: number;        // nombre de respecs effectués
 }
 
 // ============================================================
@@ -541,7 +620,7 @@ export interface GameState {
 // ============================================================
 
 export interface StatusEffect {
-  type: 'BURN' | 'POISON' | 'STUN' | 'SLOW' | 'FREEZE' | 'SHOCK';
+  type: 'BURN' | 'POISON' | 'STUN' | 'SLOW' | 'FREEZE' | 'SHOCK' | 'BLEED' | 'EXPOSE';
   duration: number;
   strength: number;
   sourceSkillId?: string;
@@ -617,6 +696,54 @@ export type GameEventType =
   | 'PLAYER_DIED'
   | 'GAME_SAVED'
   | 'ENDING_REACHED';
+
+// ============================================================
+// EQUIPMENT STATS — main stat + substats (couche loot ARPG)
+// ============================================================
+
+/** Clés de stats portables par un équipement (main stat ou substat). */
+export type SubstatKey =
+  | 'ATK_FLAT' | 'ATK_PCT' | 'MATK_FLAT' | 'MATK_PCT'
+  | 'DEF_FLAT' | 'DEF_PCT' | 'HP_FLAT'   | 'HP_PCT'
+  | 'CRIT_RATE' | 'CRIT_DMG' | 'ASPD_PCT' | 'SPD_FLAT'
+  | 'ELEM_BONUS_PCT' | 'MANA_FLAT' | 'LIFESTEAL_PCT';
+
+export interface ItemSubstat {
+  key: SubstatKey;
+  value: number;          // valeur flat ou % selon la clé
+  isPercentage?: boolean; // true si la valeur s'affiche avec %
+}
+
+export interface ItemMainStat {
+  key: SubstatKey;
+  value: number;
+  isPercentage?: boolean;
+}
+
+/**
+ * Stats d'équipement style ARPG (cf. docs/design/INSPIRATIONS.md §4).
+ * - mainStat : la stat qui définit l'item, fixée par son type.
+ *   • Arme : mainStat.value est le MIROIR de damage/magicDamage — ne jamais
+ *     cumuler les deux dans un calcul (StatsSystem.computeAll fait foi).
+ *   • Armure/accessoire : bonus d'identité ADDITIF — defense/magicDefense
+ *     legacy restent appliqués séparément par ProgressionSystem.
+ * - substats : 1 (COMMON) → 4 (EPIC+) bonus secondaires thématiques.
+ */
+export interface EquipStats {
+  mainStat: ItemMainStat;
+  substats: ItemSubstat[];
+}
+
+/** Nombre de substats attendu par rareté (validation data + futurs rolls). */
+export const SUBSTAT_COUNT_BY_RARITY: Record<ItemRarity, number> = {
+  [ItemRarity.COMMON]: 1,
+  [ItemRarity.UNCOMMON]: 2,
+  [ItemRarity.RARE]: 3,
+  [ItemRarity.EPIC]: 4,
+  [ItemRarity.LEGENDARY]: 4,
+  [ItemRarity.MYTHIC]: 4,
+  [ItemRarity.HIDDEN]: 0, // les HIDDEN portent un passif unique, pas de substats
+};
 
 // ============================================================
 // ELEMENTAL AFFINITY (weakness/resistance table)

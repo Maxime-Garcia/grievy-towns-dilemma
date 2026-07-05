@@ -2,12 +2,13 @@ import {
   PlayerState, Enemy, ActiveEnemy, DamageResult,
   StatusEffect, ElementType, ELEMENT_WEAKNESS, DARK_MULTIPLIER, WEAKNESS_MULTIPLIER, Skill
 } from '../types';
-import { ProgressionSystem, SCALED_ENEMY_LEVEL } from './ProgressionSystem';
+import { SCALED_ENEMY_LEVEL } from './ProgressionSystem';
+import { TalentModifiers } from './TalentSystem';
+import { StatsSystem } from './StatsSystem';
 import { SKILL_MAP } from '../data/skills';
 
 const ELEMENTAL_ADVANTAGE = WEAKNESS_MULTIPLIER;
 const ELEMENTAL_DISADVANTAGE = 0.80;
-const CRIT_MULTIPLIER = 1.5;
 
 export class CombatSystem {
 
@@ -44,14 +45,23 @@ export class CombatSystem {
   // Player basic attack on enemy
   static playerAttack(player: PlayerState, target: ActiveEnemy): DamageResult {
     const weapon = player.equipment.weapon;
+    const cs = StatsSystem.computeAll(player);
     const rawDamage = player.stats.atk + (weapon?.damage ?? 0);
-    const critRoll = Math.random() < ProgressionSystem.critChance(player);
-    const mult = critRoll ? CRIT_MULTIPLIER : 1.0;
-    const reduced = rawDamage * (100 / (100 + target.stats.baseDef));
+    const critRoll = Math.random() < cs.crit / 100;
+    const mult = critRoll ? cs.critDmg : 1.0;
+    // BUG2 fix: EXPOSE status reduces effective DEF before damage calculation
+    const expose = target.statusEffects.find(e => e.type === 'EXPOSE');
+    const effectiveDef = expose
+      ? Math.max(0, target.stats.baseDef * (1 - expose.strength / 100))
+      : target.stats.baseDef;
+    const reduced = rawDamage * (100 / (100 + effectiveDef));
     const soulBonus = CombatSystem.getSoulEchoBonus(player);
     const damage = Math.max(1, Math.floor(reduced * mult * (0.9 + Math.random() * 0.2) * soulBonus));
 
     target.currentHp = Math.max(0, target.currentHp - damage);
+    if (cs.lifesteal > 0) {
+      player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + Math.floor(damage * cs.lifesteal / 100));
+    }
     return { damage, isCrit: critRoll, isKill: target.currentHp <= 0 };
   }
 
@@ -59,7 +69,8 @@ export class CombatSystem {
   static playerSkill(
     player: PlayerState,
     skill: Skill,
-    target?: ActiveEnemy
+    target?: ActiveEnemy,
+    mods?: TalentModifiers,
   ): DamageResult | null {
     if (player.stats.mana < skill.manaCost) return null;
     player.stats.mana -= skill.manaCost;
@@ -74,10 +85,11 @@ export class CombatSystem {
 
     if (!target) return null;
 
+    const cs = StatsSystem.computeAll(player);
     const rawMagic = player.stats.magicAtk + (skill.magicDamage ?? 0);
     const rawPhys  = player.stats.atk      + (skill.damage      ?? 0);
-    const critRoll = Math.random() < ProgressionSystem.critChance(player);
-    const mult = critRoll ? CRIT_MULTIPLIER : 1.0;
+    const critRoll = Math.random() < cs.crit / 100;
+    const mult = critRoll ? cs.critDmg : 1.0;
 
     const elemMult = CombatSystem.elementalMultiplier(skill.element, target);
 
@@ -86,7 +98,19 @@ export class CombatSystem {
     const physDmg  = Math.floor(rawPhys  * (100 / (100 + target.stats.baseDef))      * mult * soulBonus);
     const total    = Math.max(1, magicDmg + physDmg);
 
-    target.currentHp = Math.max(0, target.currentHp - total);
+    // BLOCKER-C: apply talent multipliers (skillDmgMult, projectileSkillMult, magicDmgMult)
+    let finalTotal = total;
+    if (mods) {
+      finalTotal = Math.round(total * mods.skillDmgMult);
+      if (skill.isProjectile) finalTotal = Math.round(finalTotal * mods.projectileSkillMult);
+      if (skill.element)      finalTotal = Math.round(finalTotal * mods.magicDmgMult);
+      finalTotal = Math.max(1, finalTotal);
+    }
+
+    target.currentHp = Math.max(0, target.currentHp - finalTotal);
+    if (cs.lifesteal > 0) {
+      player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + Math.floor(finalTotal * cs.lifesteal / 100));
+    }
 
     let statusApplied: StatusEffect | undefined;
     if (skill.effect?.stun && Math.random() < 0.7) {
@@ -103,7 +127,7 @@ export class CombatSystem {
       target.statusEffects.push(statusApplied);
     }
 
-    return { damage: total, isCrit: critRoll, element: skill.element, isKill: target.currentHp <= 0, statusApplied };
+    return { damage: finalTotal, isCrit: critRoll, element: skill.element, isKill: target.currentHp <= 0, statusApplied };
   }
 
   // Enemy attacks player
@@ -123,7 +147,7 @@ export class CombatSystem {
     let dotDamage = 0;
     enemy.statusEffects = enemy.statusEffects
       .map(effect => {
-        if (effect.type === 'BURN' || effect.type === 'POISON') {
+        if (effect.type === 'BURN' || effect.type === 'POISON' || effect.type === 'BLEED') {
           dotDamage += effect.strength;
         }
         return { ...effect, duration: effect.duration - 1 };

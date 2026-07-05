@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType } from '../types';
 import { CombatSystem } from '../systems/CombatSystem';
+import { COMBO_CONFIGS, ComboConfig } from '../data/combos';
+import { TalentSystem, TalentModifiers } from '../systems/TalentSystem';
 import { LootSystem } from '../systems/LootSystem';
 import { QuestSystem } from '../systems/QuestSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
@@ -131,6 +133,28 @@ const FISTS_PATTERN: AttackPattern = {
   cooldown: 500,
 };
 
+// ── ALT ATTACK CONFIGS ────────────────────────────────────────────────────────
+// Pure cooldown / windup data per weapon. Execution logic lives in performAltAttack().
+
+interface AltAttackConfig {
+  cooldownMs: number;
+  windupMs?: number;
+}
+
+const ALT_ATTACK_CONFIGS: Partial<Record<WeaponType, AltAttackConfig>> = {
+  [WeaponType.SWORD]:       { cooldownMs: 350 },
+  [WeaponType.GREATSWORD]:  { cooldownMs: 900,  windupMs: 250 },
+  [WeaponType.DAGGER]:      { cooldownMs: 600 },
+  [WeaponType.DUAL_DAGGER]: { cooldownMs: 700 },
+  [WeaponType.DUAL_SWORD]:  { cooldownMs: 800 },
+  [WeaponType.AXE]:         { cooldownMs: 900 },
+  [WeaponType.HAMMER]:      { cooldownMs: 1400, windupMs: 400 },
+  [WeaponType.STAFF]:       { cooldownMs: 1200, windupMs: 300 },
+  [WeaponType.BOW]:         { cooldownMs: 700 },
+};
+
+const FISTS_ALT_CONFIG: AltAttackConfig = { cooldownMs: 500 };
+
 export class GameScene extends Phaser.Scene {
   public  gameState!: GameState;
 
@@ -145,7 +169,9 @@ export class GameScene extends Phaser.Scene {
   private skillKeys!: { a: Phaser.Input.Keyboard.Key; e: Phaser.Input.Keyboard.Key; r: Phaser.Input.Keyboard.Key; f: Phaser.Input.Keyboard.Key };
   private attackKey!: Phaser.Input.Keyboard.Key;
   private _attackHandler: ((e: KeyboardEvent) => void) | null = null;
+  private _altAttackHandler: ((e: KeyboardEvent) => void) | null = null;
   private attackCooldownUntil = 0;
+  private altAttackCooldownUntil = 0;
   private dashKey!: Phaser.Input.Keyboard.Key;
   private inventoryKey!: Phaser.Input.Keyboard.Key;
   private skillMenuKey!: Phaser.Input.Keyboard.Key;
@@ -164,6 +190,7 @@ export class GameScene extends Phaser.Scene {
     vx: number; vy: number;
     hit: boolean;
     destroyAt: number;
+    dmgMult: number;
   }> = [];
   private lootableLooted: Set<string> = new Set();
 
@@ -198,6 +225,16 @@ export class GameScene extends Phaser.Scene {
   private playtimeAccumulator = 0;
   private lastRegenTime = 0;
 
+  // ── COMBO STATE MACHINE ──────────────────────────────────────
+  private comboCount = 0;
+  private lastAttackEnd = 0;    // timestamp (ms) de fin du cooldown de la dernière attaque
+  private comboRushed = false;  // un input a été reçu en zone morte
+  private bufferedAttack = false; // réservé pour implémentation future zone buffer
+  private comboWeaponType: WeaponType | undefined = undefined;
+  private guardUntil = 0;       // timestamp fin de la garde (Sword finisher)
+  private inWindup = false;     // true pendant le chargement (windup) d'une arme lourde
+  private playerModifiers!: TalentModifiers; // recalculé après unlock/respec/équipement
+
   // Interaction tracking
   private nearbyNPC: string | null = null;
   private nearbyLootable: string | null = null;
@@ -227,11 +264,21 @@ export class GameScene extends Phaser.Scene {
     this.dashMomentumY       = 0;
     this.playtimeAccumulator = 0;
     this.lastAutoSave        = 0;
-    this.attackCooldownUntil = 0;
+    this.attackCooldownUntil    = 0;
+    this.altAttackCooldownUntil = 0;
     this.isDashing      = false;
     this.lastDirX       = 0;
     this.lastDirY       = 1;
     this.facingAngle    = 0;
+    // Combo state machine reset
+    this.comboCount      = 0;
+    this.lastAttackEnd   = 0;
+    this.comboRushed     = false;
+    this.bufferedAttack  = false;
+    this.comboWeaponType = undefined;
+    this.guardUntil      = 0;
+    this.inWindup        = false;
+    this.playerModifiers = TalentSystem.getModifiers(this.gameState.player);
     // Reset zone-scoped refs on each scene start (full Phaser restart)
     this.zoneGraphics       = null;
     this.zoneLabels         = [];
@@ -257,6 +304,7 @@ export class GameScene extends Phaser.Scene {
     this.createXpOrbsGroup();
     this.setupInput();
     this.applyKeyBindings(loadBindings());
+    this.game.events.on('mobile_action', this.onMobileAction, this);
     this.setupCamera();
     this.setupPhysics();
     this.createProjectileGroup();
@@ -360,7 +408,7 @@ export class GameScene extends Phaser.Scene {
     this.debugSpeedMult = this.speedBoostKey?.isDown ? 5 : 1;
 
     const player = this.gameState.player;
-    const speed  = (90 + player.stats.spd * 4) * this.debugSpeedMult;
+    const speed  = (90 + player.stats.spd * 4) * this.playerModifiers.moveSpeedMult * this.debugSpeedMult;
     const body   = this.player.body as Phaser.Physics.Arcade.Body;
 
     let targetVx = 0, targetVy = 0;
@@ -449,6 +497,11 @@ export class GameScene extends Phaser.Scene {
     this.isDashing = true;
     body.setVelocity(nx, ny);
 
+    // BUG5 fix: dashPreservesCombo gèle le timer de grace pendant 350ms
+    if (this.playerModifiers.dashPreservesCombo) {
+      this.lastAttackEnd = Math.max(this.lastAttackEnd, this.time.now + 350);
+    }
+
     this.spawnDashAfterimages();
 
     this.player.setAlpha(0.6);
@@ -471,8 +524,13 @@ export class GameScene extends Phaser.Scene {
   // ── SKILLS & ATTACK ──────────────────────────────────────────
 
   private handleAttackInput() {
-    // Basic attack is driven by a direct key listener in applyKeyBindings()
-    // so it fires even when the update loop is starved after a menu overlay.
+    // Auto-fire a buffered attack the moment the cooldown expires.
+    // This lets the player spam the attack key freely; the character simply
+    // attacks as fast as the animation cooldown allows — no punish, no dead zone.
+    if (this.bufferedAttack && this.time.now >= this.attackCooldownUntil) {
+      this.bufferedAttack = false;
+      this.performBasicAttack();
+    }
     if (Phaser.Input.Keyboard.JustDown(this.dashKey)) {
       this.handleDash();
     }
@@ -495,50 +553,95 @@ export class GameScene extends Phaser.Scene {
 
   private performBasicAttack() {
     const now = this.time.now;
-    if (now < this.attackCooldownUntil) return;
 
     const weapon = this.gameState.player.equipment.weapon;
     const weaponType = weapon?.weaponType;
     const pattern = (weaponType !== undefined ? ATTACK_PATTERNS[weaponType] : undefined) ?? FISTS_PATTERN;
+    const comboConfig = weaponType !== undefined ? COMBO_CONFIGS[weaponType] : undefined;
 
-    this.attackCooldownUntil = now + pattern.cooldown;
-    const windupMs = pattern.windupMs ?? 0;
-
-    // BOW (and any future isProjectile weapon) fires a physics body, not a cone hit.
-    if (pattern.isProjectile) {
-      if (windupMs > 0) this.spawnWindupVfx(windupMs);
-      if (windupMs === 0) {
-        this.fireArrowProjectile();
-      } else {
-        this.time.delayedCall(windupMs, () => {
-          if (!this.isTraveling) this.fireArrowProjectile();
-        });
-      }
+    // ── BUFFER ───────────────────────────────────────────────────
+    // Input received before cooldown ends → buffer; auto-fires in handleAttackInput().
+    // No punishment for spam — the player simply waits for the animation cooldown.
+    if (now < this.attackCooldownUntil) {
+      this.bufferedAttack = true;
       return;
     }
 
-    if (windupMs > 0) {
-      this.spawnWindupVfx(windupMs);
+    // ── CHANGEMENT D'ARME ────────────────────────────────────────
+    if (weaponType !== this.comboWeaponType) {
+      if (this.comboCount > 0) this.events.emit('combo-broken');
+      this.comboCount = 0;
     }
 
-    for (let i = 0; i < pattern.hits.length; i++) {
-      const hit = pattern.hits[i];
-      const fireDelay = windupMs + hit.delay;
-      const hitIndex = i;
-
-      const doHit = () => {
-        if (this.isTraveling) return;
-        const tx = this.player.x + Math.cos(this.facingAngle) * hit.range * 0.7;
-        const ty = this.player.y + Math.sin(this.facingAngle) * hit.range * 0.7;
-        this.spawnWeaponSwingVfx(this.player.x, this.player.y, tx, ty, weaponType, hitIndex);
-        this.executeHitInCone(hit.range, hit.halfArc, hit.damageMultiplier);
-      };
-
-      if (fireDelay === 0) {
-        doHit();
-      } else {
-        this.time.delayedCall(fireDelay, doHit);
+    // ── GRACE TIMER ──────────────────────────────────────────────
+    // If the player waited past the grace window, the chain resets to 1.
+    // Grace is measured from when the previous cooldown ended (lastAttackEnd).
+    if (comboConfig && this.comboCount > 0) {
+      const effectiveGrace = comboConfig.graceMs * this.playerModifiers.comboGraceMult;
+      if (now - this.lastAttackEnd > effectiveGrace) {
+        this.comboCount = 0;
+        this.events.emit('combo-broken');
       }
+    }
+
+    this.comboWeaponType = weaponType;
+    this.comboCount++;
+
+    const cooldown = pattern.cooldown;
+
+    // ── FINISHER ─────────────────────────────────────────────────
+    let finisherFired = false;
+    if (comboConfig && this.comboCount >= comboConfig.chainLength) {
+      finisherFired = true;
+      this.executeFinisherAttack(weaponType, pattern, comboConfig, now);
+      this.comboCount = 0;
+      const finisherCd = cooldown * comboConfig.finisher.cooldownMult;
+      this.lastAttackEnd      = now + finisherCd;
+      this.attackCooldownUntil = this.lastAttackEnd;
+    } else {
+      // ── ATTAQUE NORMALE ──────────────────────────────────────
+      const windupMs = pattern.windupMs ?? 0;
+
+      if (pattern.isProjectile) {
+        // BOW fires a physics rectangle, not a cone.
+        if (windupMs > 0) this.spawnWindupVfx(windupMs);
+        if (windupMs === 0) {
+          this.fireArrowProjectile();
+        } else {
+          this.time.delayedCall(windupMs, () => {
+            if (!this.isTraveling) this.fireArrowProjectile();
+          });
+        }
+      } else {
+        if (windupMs > 0) this.spawnWindupVfx(windupMs);
+        for (let i = 0; i < pattern.hits.length; i++) {
+          const hit = pattern.hits[i];
+          const fireDelay = windupMs + hit.delay;
+          const hitIndex  = i;
+          const doHit = () => {
+            if (this.isTraveling) return;
+            const tx = this.player.x + Math.cos(this.facingAngle) * hit.range * 0.7;
+            const ty = this.player.y + Math.sin(this.facingAngle) * hit.range * 0.7;
+            this.spawnWeaponSwingVfx(this.player.x, this.player.y, tx, ty, weaponType, hitIndex);
+            this.executeHitInCone(hit.range, hit.halfArc, hit.damageMultiplier);
+          };
+          if (fireDelay === 0) doHit();
+          else this.time.delayedCall(fireDelay, doHit);
+        }
+      }
+
+      this.lastAttackEnd      = now + cooldown;
+      this.attackCooldownUntil = this.lastAttackEnd;
+    }
+
+    // ── ÉVÉNEMENT COMBO HUD ──────────────────────────────────────
+    // BUG3 fix: ne pas émettre combo-changed si le finisher a déjà réinitialisé l'état
+    if (!finisherFired) {
+      this.events.emit('combo-changed', {
+        count: this.comboCount,
+        max: comboConfig?.chainLength ?? 0,
+        weaponType,
+      });
     }
   }
 
@@ -546,19 +649,28 @@ export class GameScene extends Phaser.Scene {
     const hits = this.findEnemiesInCone(range, halfArc);
     if (hits.length === 0) return;
 
+    // Talent modifiers — recalculés après chaque unlock/respec, pas à chaque frame.
+    // BUG6 fix: meleeDmgMult ne s'applique pas aux armes à sort (STAFF).
+    const currentWeaponType = this.gameState.player.equipment.weapon?.weaponType;
+    const isSpellWeapon = currentWeaponType === WeaponType.STAFF;
+    const appliedMeleeMult = isSpellWeapon ? 1.0 : this.playerModifiers.meleeDmgMult;
+    // BLOCKER-B: comboStackDmg — bonus cumulatif par coup dans la chaîne
+    const stackBonus = 1 + this.comboCount * this.playerModifiers.comboStackDmg / 100;
+
     let anyCrit = false;
     for (const sprite of hits) {
       const activeEnemy = this.activeEnemies.get(sprite.name);
       if (!activeEnemy) continue;
       const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
 
-      // Apply weapon pattern damage multiplier on top of the base calculation.
-      // CombatSystem already applied result.damage to currentHp — apply bonus separately.
-      let finalDamage = result.damage;
-      if (damageMultiplier !== 1.0) {
-        const bonus = Math.round(result.damage * (damageMultiplier - 1));
+      // Combiné : multiplicateur du pattern + talents mêlée + bonus de chaîne.
+      // CombatSystem a déjà soustrait result.damage de currentHp — on applique le delta ici.
+      const finalDamage = Math.round(result.damage * damageMultiplier * appliedMeleeMult * stackBonus);
+      const bonus = finalDamage - result.damage;
+      if (bonus > 0) {
         activeEnemy.currentHp = Math.max(0, activeEnemy.currentHp - bonus);
-        finalDamage = result.damage + bonus;
+      } else if (bonus < 0) {
+        activeEnemy.currentHp = Math.min(activeEnemy.maxHp, activeEnemy.currentHp - bonus);
       }
       const isKill = activeEnemy.currentHp <= 0;
 
@@ -600,7 +712,7 @@ export class GameScene extends Phaser.Scene {
   // La détection de collision se fait manuellement dans updateArrowProjectiles()
   // — plus fiable que physics.add.overlap qui dépend d'une texture valide.
 
-  private fireArrowProjectile() {
+  private fireArrowProjectile(dmgMult = 1.0) {
     const SPEED = 600;  // px/s
     const RANGE = 460;
     const angle = this.facingAngle;
@@ -614,6 +726,7 @@ export class GameScene extends Phaser.Scene {
       vy: Math.sin(angle) * SPEED,
       hit: false,
       destroyAt: this.time.now + travelMs,
+      dmgMult,
     });
 
     // VFX cosmétique — voyage en parallèle, purement visuel
@@ -655,13 +768,19 @@ export class GameScene extends Phaser.Scene {
         if (!activeEnemy) break;
 
         const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
-        this.showDamageNumber(sprite.x, sprite.y - 20, result.damage, result.isCrit);
+        // BUG4 fix: apply the dmgMult from the finisher (or 1.0 for normal shots)
+        const arrowFinalDmg = Math.round(result.damage * arrow.dmgMult);
+        const arrowBonus = arrowFinalDmg - result.damage;
+        if (arrowBonus > 0)  activeEnemy.currentHp = Math.max(0, activeEnemy.currentHp - arrowBonus);
+        else if (arrowBonus < 0) activeEnemy.currentHp = Math.min(activeEnemy.maxHp, activeEnemy.currentHp - arrowBonus);
+        const arrowIsKill = activeEnemy.currentHp <= 0;
+        this.showDamageNumber(sprite.x, sprite.y - 20, arrowFinalDmg, result.isCrit);
         this.spawnHitParticles(sprite.x, sprite.y, result.element);
-        this.applyHitFeedback(sprite, activeEnemy, result.damage);
+        this.applyHitFeedback(sprite, activeEnemy, arrowFinalDmg);
         if (result.isCrit) this.cameras.main.shake(120, 0.007);
         else               this.cameras.main.shake(40, 0.002);
-        if (result.isKill) this.onEnemyKilled(activeEnemy, sprite);
-        else               this.checkStagger(sprite, activeEnemy, result.damage);
+        if (arrowIsKill) this.onEnemyKilled(activeEnemy, sprite);
+        else             this.checkStagger(sprite, activeEnemy, arrowFinalDmg);
         break;
       }
     }
@@ -675,7 +794,7 @@ export class GameScene extends Phaser.Scene {
     const nearest = this.findNearestEnemy(skill.range ?? 200);
     const activeEnemy = nearest ? this.activeEnemies.get(nearest.name) : undefined;
 
-    const result = CombatSystem.playerSkill(this.gameState.player, skill, activeEnemy);
+    const result = CombatSystem.playerSkill(this.gameState.player, skill, activeEnemy, this.playerModifiers);
     if (result) {
       if (result.damage > 0 && nearest) {
         if (skill.isProjectile) {
@@ -778,6 +897,16 @@ export class GameScene extends Phaser.Scene {
       }
     };
     window.addEventListener('keydown', this._attackHandler);
+    // Alt attack — same window listener pattern, separate handler for H key.
+    if (this._altAttackHandler) {
+      window.removeEventListener('keydown', this._altAttackHandler);
+    }
+    this._altAttackHandler = (e: KeyboardEvent) => {
+      if (e.keyCode === b.altAttack && !this.menuOpen && !this.isInDialogue && !this.isTraveling) {
+        this.performAltAttack();
+      }
+    };
+    window.addEventListener('keydown', this._altAttackHandler);
     this.dashKey   = kb.addKey(b.dash);
     this.skillKeys = {
       a: kb.addKey(b.skill1),
@@ -936,14 +1065,30 @@ export class GameScene extends Phaser.Scene {
               sprite.setData(chargeKey, 'cooldown');
               const atkKey = `atk_${instanceId}`;
               if (!this.cooldowns[atkKey] || this.cooldowns[atkKey] <= 0) {
-                const result = CombatSystem.enemyAttack(ae, this.gameState.player);
-                if (result.damage > 0) {
-                  this.showDamageNumber(this.player.x, this.player.y - 20, result.damage, false, undefined, true);
-                  this.cameras.main.shake(100, 0.005);
+                if (this.inWindup && this.playerModifiers.windupArmor) {
+                  // BLOCKER-F: windup armor — immunité pendant le chargement d'une arme lourde
+                  this.cooldowns[atkKey] = 1.5;
+                } else {
+                  const guardActive = this.time.now < this.guardUntil;
+                  const result = CombatSystem.enemyAttack(ae, this.gameState.player);
+                  // BUG1 fix: garde active → −30% dégâts reçus
+                  if (guardActive && result.damage > 0) {
+                    const refund = Math.round(result.damage * 0.3);
+                    this.gameState.player.stats.hp = Math.min(
+                      this.gameState.player.stats.maxHp,
+                      this.gameState.player.stats.hp + refund,
+                    );
+                    result.damage = result.damage - refund;
+                    result.isKill = this.gameState.player.stats.hp <= 0;
+                  }
+                  if (result.damage > 0) {
+                    this.showDamageNumber(this.player.x, this.player.y - 20, result.damage, false, undefined, true);
+                    this.cameras.main.shake(100, 0.005);
+                  }
+                  this.events.emit('player_update', this.gameState.player);
+                  this.cooldowns[atkKey] = 1.5;
+                  if (result.isKill) this.onPlayerDeath();
                 }
-                this.events.emit('player_update', this.gameState.player);
-                this.cooldowns[atkKey] = 1.5;
-                if (result.isKill) this.onPlayerDeath();
               }
               this.time.delayedCall(1500, () => {
                 if (sprite.active) sprite.setData(chargeKey, 'idle');
@@ -1004,14 +1149,30 @@ export class GameScene extends Phaser.Scene {
       if (behavior !== 'ranged' && dist < 50) {
         const atkKey = `atk_${instanceId}`;
         if (!this.cooldowns[atkKey] || this.cooldowns[atkKey] <= 0) {
-          const result = CombatSystem.enemyAttack(ae, this.gameState.player);
-          if (result.damage > 0) {
-            this.showDamageNumber(this.player.x, this.player.y - 20, result.damage, false, undefined, true);
-            this.cameras.main.shake(100, 0.005);
+          if (this.inWindup && this.playerModifiers.windupArmor) {
+            // BLOCKER-F: windup armor — immunité pendant le chargement d'une arme lourde
+            this.cooldowns[atkKey] = 1.2;
+          } else {
+            const guardActive = this.time.now < this.guardUntil;
+            const result = CombatSystem.enemyAttack(ae, this.gameState.player);
+            // BUG1 fix: garde active → −30% dégâts reçus
+            if (guardActive && result.damage > 0) {
+              const refund = Math.round(result.damage * 0.3);
+              this.gameState.player.stats.hp = Math.min(
+                this.gameState.player.stats.maxHp,
+                this.gameState.player.stats.hp + refund,
+              );
+              result.damage = result.damage - refund;
+              result.isKill = this.gameState.player.stats.hp <= 0;
+            }
+            if (result.damage > 0) {
+              this.showDamageNumber(this.player.x, this.player.y - 20, result.damage, false, undefined, true);
+              this.cameras.main.shake(100, 0.005);
+            }
+            this.events.emit('player_update', this.gameState.player);
+            this.cooldowns[atkKey] = 1.2;
+            if (result.isKill) this.onPlayerDeath();
           }
-          this.events.emit('player_update', this.gameState.player);
-          this.cooldowns[atkKey] = 1.2;
-          if (result.isKill) this.onPlayerDeath();
         }
       }
 
@@ -1193,6 +1354,15 @@ export class GameScene extends Phaser.Scene {
   private onEnemyKilled(activeEnemy: ActiveEnemy, sprite: Phaser.Physics.Arcade.Sprite) {
     const enemyDef = ENEMY_MAP[activeEnemy.enemyId];
     if (!enemyDef) return;
+
+    // BLOCKER-D: killHealPct — soin au kill (approximation : appliqué sur toute mort)
+    if (this.playerModifiers.killHealPct > 0) {
+      const heal = Math.round(this.gameState.player.stats.maxHp * this.playerModifiers.killHealPct / 100);
+      this.gameState.player.stats.hp = Math.min(
+        this.gameState.player.stats.maxHp,
+        this.gameState.player.stats.hp + heal,
+      );
+    }
 
     this.activeEnemies.delete(activeEnemy.instanceId);
 
@@ -1721,8 +1891,11 @@ export class GameScene extends Phaser.Scene {
 
   // Windup : teinte jaune sur le joueur pendant le chargement d'une arme lourde
   private spawnWindupVfx(durationMs: number) {
+    // BLOCKER-F: flag inWindup pour windupArmor dans tickEnemyAI
+    this.inWindup = true;
     this.player.setTint(0xffffaa);
     this.time.delayedCall(durationMs, () => {
+      this.inWindup = false;
       if (this.player.active) this.player.clearTint();
     });
   }
@@ -1744,6 +1917,309 @@ export class GameScene extends Phaser.Scene {
         duration: 120,
         ease: 'Power2',
         onComplete: () => ray.destroy(),
+      });
+    }
+  }
+
+  // ── FINISHER VFX (combo system — COMBO_TALENT_SPEC.md §6.1) ──
+  // Primitives Phaser uniquement (Graphics / shapes / tweens), tout objet
+  // détruit en onComplete — aucun résidu. Appelé par la machine à états
+  // combo quand comboCount atteint chainLength.
+
+  /** Position écran du joueur (pour le HUD combo de UIScene — caméra parallèle). */
+  getPlayerScreenPosition(): { x: number; y: number } | null {
+    if (!this.player || !this.player.active) return null;
+    const wv = this.cameras.main.worldView;
+    return { x: this.player.x - wv.x, y: this.player.y - wv.y };
+  }
+
+  private spawnFinisherVfx(weaponType: WeaponType | undefined, angle: number) {
+    const px = this.player.x;
+    const py = this.player.y;
+
+    switch (weaponType) {
+      case WeaponType.DAGGER:      this.spawnDaggerFinisherVfx(px, py, angle);    break;
+      case WeaponType.DUAL_DAGGER: this.spawnDualDaggerFinisherVfx(px, py);       break;
+      case WeaponType.SWORD:       this.spawnSwordFinisherVfx(px, py, angle);     break;
+      case WeaponType.DUAL_SWORD:  this.spawnDualSwordFinisherVfx(px, py, angle); break;
+      case WeaponType.GREATSWORD:  this.spawnGreatswordFinisherVfx(px, py);       break;
+      case WeaponType.AXE:         this.spawnAxeFinisherVfx(px, py, angle);       break;
+      case WeaponType.HAMMER:      this.spawnHammerFinisherVfx(px, py);           break;
+      case WeaponType.STAFF:       this.spawnStaffFinisherVfx(px, py, angle);     break;
+      case WeaponType.BOW:         this.spawnBowFinisherVfx(px, py, angle);       break;
+      default: break; // FISTS : pas de combo, pas de finisher
+    }
+  }
+
+  // Lacération : 3 traits blancs fins en éventail serré + afterimage de fente
+  // + marqueur « Exposé » rouge qui pulse 2s au point d'impact.
+  private spawnDaggerFinisherVfx(px: number, py: number, angle: number) {
+    const offsets = [-0.17, 0, 0.17]; // éventail serré ±10°
+    for (let i = 0; i < offsets.length; i++) {
+      const a = angle + offsets[i];
+      const streak = this.add
+        .rectangle(px + Math.cos(a) * 30, py + Math.sin(a) * 30, 52, 2, 0xffffff, 0.95)
+        .setDepth(32).setRotation(a);
+      this.tweens.add({
+        targets: streak,
+        x: px + Math.cos(a) * 78,
+        y: py + Math.sin(a) * 78,
+        alpha: 0,
+        duration: 150,
+        delay: i * 40,
+        ease: 'Power2',
+        onComplete: () => streak.destroy(),
+      });
+    }
+
+    // Afterimage du joueur sur la fente (même style que la trainée du dash)
+    const ghost = this.add
+      .rectangle(px, py, this.player.displayWidth, this.player.displayHeight, 0xf0e8d8, 0.5)
+      .setDepth(3);
+    this.tweens.add({ targets: ghost, alpha: 0, duration: 200, onComplete: () => ghost.destroy() });
+
+    // Marqueur « Exposé » : cercle rouge 3px pulsant au-dessus du point d'impact
+    const hitX = px + Math.cos(angle) * 60;
+    const hitY = py + Math.sin(angle) * 60;
+    const marker = this.add.circle(hitX, hitY - 16, 3, 0xcc2200).setDepth(30).setAlpha(0.8);
+    const pulse = this.tweens.add({
+      targets: marker, alpha: 0.2, duration: 400, yoyo: true, repeat: 2,
+    });
+    this.time.delayedCall(2000, () => { pulse.stop(); marker.destroy(); });
+  }
+
+  // Danse des Crocs : 6 petits arcs qui tournent autour du joueur (offset 60°),
+  // blanc → ambre sur le dernier, 300ms total.
+  private spawnDualDaggerFinisherVfx(_px: number, _py: number) {
+    for (let i = 0; i < 6; i++) {
+      const segAngle = (Math.PI / 3) * i;
+      const color = i === 5 ? 0xffb347 : 0xffffff;
+      this.time.delayedCall(i * 50, () => {
+        if (!this.player.active) return;
+        this.spawnSlashArcVfx(this.player.x, this.player.y, segAngle, color, {
+          radius: 52, thickness: 4, halfArc: 0.45, duration: 160,
+        });
+      });
+    }
+  }
+
+  // Estocade : trait de percée droit 140px + liseré de garde blanc cassé 1s.
+  private spawnSwordFinisherVfx(px: number, py: number, angle: number) {
+    const beam = this.add
+      .rectangle(px + Math.cos(angle) * 70, py + Math.sin(angle) * 70, 140, 3, 0xffffff, 0.95)
+      .setDepth(32).setRotation(angle);
+    this.tweens.add({
+      targets: beam, alpha: 0, scaleY: 0.2, duration: 200, ease: 'Power2',
+      onComplete: () => beam.destroy(),
+    });
+
+    // Liseré de garde : contour 0xf0e8d8 alpha 0.3 qui pulse sur le joueur (1s)
+    const guard = this.add
+      .rectangle(px, py, this.player.displayWidth + 4, this.player.displayHeight + 4)
+      .setDepth(3).setFillStyle(0x000000, 0).setStrokeStyle(2, 0xf0e8d8, 0.3);
+    this.tweens.add({
+      targets: guard,
+      alpha: 0,
+      duration: 500,
+      yoyo: true,
+      onUpdate: () => guard.setPosition(this.player.x, this.player.y),
+      onComplete: () => guard.destroy(),
+    });
+  }
+
+  // Croix d'Écho : deux arcs croisés rouge sombre (le 2e décalé 140ms)
+  // + gouttes de saignement en chute lente.
+  private spawnDualSwordFinisherVfx(px: number, py: number, angle: number) {
+    this.spawnSlashArcVfx(px, py, angle + Math.PI / 2, 0x8a1a1a, {
+      radius: 62, thickness: 6, halfArc: 1.22, duration: 220, alpha: 1.0,
+    });
+    this.time.delayedCall(140, () => {
+      if (!this.player.active) return;
+      this.spawnSlashArcVfx(this.player.x, this.player.y, angle - Math.PI / 2, 0x8a1a1a, {
+        radius: 62, thickness: 6, halfArc: 1.22, duration: 220, alpha: 1.0,
+      });
+    });
+
+    const hitX = px + Math.cos(angle) * 55;
+    const hitY = py + Math.sin(angle) * 55;
+    for (let i = 0; i < 4; i++) {
+      const drop = this.add
+        .circle(hitX + Phaser.Math.Between(-15, 15), hitY + Phaser.Math.Between(-6, 6), 2, 0x8a1a1a, 1)
+        .setDepth(31).setAlpha(0);
+      this.tweens.add({ targets: drop, alpha: 1, duration: 200, yoyo: true });
+      this.tweens.add({
+        targets: drop, y: drop.y + 30, duration: 400, ease: 'Quad.easeIn',
+        onComplete: () => drop.destroy(),
+      });
+    }
+  }
+
+  // Fauchage du Colosse : arc 360° épais + trainée persistante + afterimage.
+  private spawnGreatswordFinisherVfx(px: number, py: number) {
+    this.spawnSlashArcVfx(px, py, 0, 0xffffff, {
+      radius: 92, thickness: 14, halfArc: Math.PI, duration: 400, alpha: 1.0,
+    });
+    // Trainée blanche persistante ~150ms après le passage
+    this.time.delayedCall(150, () => {
+      if (!this.player.active) return;
+      this.spawnSlashArcVfx(this.player.x, this.player.y, Math.PI, 0xf0e8d8, {
+        radius: 88, thickness: 6, halfArc: Math.PI, duration: 250, alpha: 0.5,
+      });
+    });
+    const ghost = this.add
+      .rectangle(px, py, this.player.displayWidth, this.player.displayHeight, 0xffffff, 0.4)
+      .setDepth(3);
+    this.tweens.add({ targets: ghost, alpha: 0, duration: 150, onComplete: () => ghost.destroy() });
+    this.cameras.main.shake(120, 0.005); // shake moyen (spec 6.1)
+  }
+
+  // Brise-Garde : arc montant orange vif + fragments d'armure gris éjectés.
+  private spawnAxeFinisherVfx(px: number, py: number, angle: number) {
+    this.spawnSlashArcVfx(px, py, angle - Math.PI / 2, 0xff8800, {
+      radius: 80, thickness: 10, halfArc: Math.PI, duration: 300, alpha: 1.0,
+    });
+    const hitX = px + Math.cos(angle) * 60;
+    const hitY = py + Math.sin(angle) * 60;
+    const count = Phaser.Math.Between(4, 6);
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const dist = Phaser.Math.Between(40, 150);
+      const frag = this.add
+        .circle(hitX, hitY, Phaser.Math.Between(2, 3), 0xaaaaaa, 1)
+        .setDepth(31);
+      this.tweens.add({
+        targets: frag,
+        x: hitX + Math.cos(a) * dist,
+        y: hitY + Math.sin(a) * dist,
+        alpha: 0,
+        duration: 300,
+        ease: 'Power2',
+        onComplete: () => frag.destroy(),
+      });
+    }
+  }
+
+  // Onde Tellurique : impact hammer amplifié — grand anneau 180px + fissures au sol.
+  // spawnHammerVfx inclut déjà le shake fort (150ms, 0.010) — le plus lourd hors boss.
+  private spawnHammerFinisherVfx(px: number, py: number) {
+    this.spawnHammerVfx(px, py, 0xffdd00);
+
+    // Anneau supplémentaire qui s'étend jusqu'à ~180px
+    const bigRing = this.add.graphics({ x: px, y: py }).setDepth(31);
+    bigRing.lineStyle(5, 0xffffff, 0.8);
+    bigRing.strokeCircle(0, 0, 24);
+    this.tweens.add({
+      targets: bigRing,
+      scaleX: 7.5, scaleY: 7.5, // 24 × 7.5 = 180px
+      alpha: 0,
+      duration: 320,
+      ease: 'Power2.easeOut',
+      onComplete: () => bigRing.destroy(),
+    });
+
+    // Fissures au sol : lignes brunes brisées partant de l'impact, fade 500ms
+    const crackCount = Phaser.Math.Between(4, 5);
+    for (let i = 0; i < crackCount; i++) {
+      const a = ((Math.PI * 2) / crackCount) * i + Phaser.Math.FloatBetween(-0.3, 0.3);
+      const len = Phaser.Math.Between(80, 120);
+      const crack = this.add.graphics({ x: px, y: py }).setDepth(2);
+      crack.lineStyle(3, 0x6a3a1a, 0.9);
+      crack.beginPath();
+      crack.moveTo(0, 0);
+      crack.lineTo(
+        Math.cos(a) * len * 0.5 + Phaser.Math.Between(-8, 8),
+        Math.sin(a) * len * 0.5 + Phaser.Math.Between(-8, 8),
+      );
+      crack.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+      crack.strokePath();
+      this.tweens.add({
+        targets: crack, alpha: 0, duration: 500, delay: 150,
+        onComplete: () => crack.destroy(),
+      });
+    }
+  }
+
+  // Orbe Saturé : projectile perçant couleur élément, halo pulsant + trainée.
+  private spawnStaffFinisherVfx(px: number, py: number, angle: number) {
+    const ELEMENT_VFX_COLORS: Partial<Record<ElementType, number>> = {
+      [ElementType.FIRE]:      0xff4400,
+      [ElementType.WATER]:     0x2266ff,
+      [ElementType.LIGHTNING]: 0xffee00,
+      [ElementType.ICE]:       0x88ddff,
+      [ElementType.WIND]:      0xaaddff,
+      [ElementType.EARTH]:     0x88aa33,
+      [ElementType.DARK]:      0xaa44ff,
+      [ElementType.DIVINE]:    0xffd700,
+    };
+    const element = this.gameState.player.equipment.weapon?.element;
+    const color = (element !== undefined ? ELEMENT_VFX_COLORS[element] : undefined) ?? 0x9944ff;
+
+    const RANGE = 300;
+    const toX = px + Math.cos(angle) * RANGE;
+    const toY = py + Math.sin(angle) * RANGE;
+    const travelDur = 600;
+
+    const orb  = this.add.circle(px, py, 10, color, 1).setDepth(32);
+    const halo = this.add.circle(px, py, 20, color, 0.5).setDepth(31);
+
+    // Halo pulsant pendant le voyage (borné : 3 cycles = 600ms)
+    this.tweens.add({ targets: halo, alpha: 0, duration: 100, yoyo: true, repeat: 2 });
+
+    // Trainée de cercles 4px derrière l'orbe — répétition finie
+    const trailInterval = 50;
+    this.time.addEvent({
+      delay: trailInterval,
+      repeat: Math.floor(travelDur / trailInterval) - 1,
+      callback: () => {
+        if (!orb.active) return;
+        const t = this.add.circle(orb.x, orb.y, 4, color, 0.5).setDepth(30);
+        this.tweens.add({
+          targets: t, alpha: 0, scaleX: 0.2, scaleY: 0.2, duration: 250,
+          onComplete: () => t.destroy(),
+        });
+      },
+    });
+
+    this.tweens.add({
+      targets: [orb, halo],
+      x: toX, y: toY,
+      duration: travelDur,
+      ease: 'Linear',
+      onComplete: () => {
+        this.tweens.add({
+          targets: [orb, halo],
+          scaleX: 3, scaleY: 3, alpha: 0,
+          duration: 200,
+          ease: 'Quad.easeOut',
+          onComplete: () => { orb.destroy(); halo.destroy(); },
+        });
+      },
+    });
+  }
+
+  // Volée : 3 flèches simultanées en éventail ±12°, pointes ambre (finisher).
+  private spawnBowFinisherVfx(px: number, py: number, angle: number) {
+    const SPREAD = 0.21; // ~12°
+    const RANGE = 460 * 0.7;
+    for (const off of [-SPREAD, 0, SPREAD]) {
+      const a = angle + off;
+      const shaft = this.add.rectangle(0, 0, 24, 2, 0xddcc77, 1);
+      const head  = this.add.triangle(14, 0, 0, -3, 0, 3, 7, 0, 0xffb347, 1);
+      const arrow = this.add.container(px, py, [shaft, head]).setDepth(32);
+      arrow.setRotation(a);
+      const dur = (RANGE / 600) * 1000; // 600 px/s, ~537ms
+      this.tweens.add({
+        targets: arrow,
+        x: px + Math.cos(a) * RANGE,
+        y: py + Math.sin(a) * RANGE,
+        duration: dur,
+        ease: 'Linear',
+        onComplete: () => {
+          this.tweens.add({
+            targets: arrow, alpha: 0, duration: 80,
+            onComplete: () => arrow.destroy(),
+          });
+        },
       });
     }
   }
@@ -2517,14 +2993,536 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // ── COMBO FINISHER ──────────────────────────────────────────
+
+  /**
+   * Déclenche le finisher : fires chaque hit avec son délai, puis applique les
+   * effets spéciaux (stun, knockback, statuts). Émet 'finisher-executed'.
+   * Stub VFX séparé — implémenté par le gamefeel-agent.
+   */
+  private executeFinisherAttack(
+    weaponType: WeaponType | undefined,
+    pattern: { hits: AttackHit[]; cooldown: number; windupMs?: number; isProjectile?: boolean },
+    comboConfig: ComboConfig,
+    _now: number,
+  ) {
+    const windupMs = pattern.windupMs ?? 0;
+    const finisher = comboConfig.finisher;
+
+    // BLOCKER-E: heavyFinisherBonus multiplie le damageMultiplier pour GS/HAMMER/AXE
+    const isHeavyWeapon = weaponType === WeaponType.GREATSWORD
+      || weaponType === WeaponType.HAMMER
+      || weaponType === WeaponType.AXE;
+    const heavyFinisherFactor = isHeavyWeapon
+      ? (1 + this.playerModifiers.heavyFinisherBonus / 100)
+      : 1.0;
+
+    if (pattern.isProjectile) {
+      // BOW finisher : 3 flèches en éventail via le système de projectile existant.
+      // BUG4 fix: passe le damageMultiplier de chaque hit à fireArrowProjectile.
+      if (windupMs > 0) this.spawnWindupVfx(windupMs);
+      finisher.hits.forEach(hit => {
+        this.time.delayedCall(windupMs + hit.delay, () => {
+          if (!this.isTraveling) this.fireArrowProjectile(hit.damageMultiplier);
+        });
+      });
+    } else {
+      if (windupMs > 0) this.spawnWindupVfx(windupMs);
+      finisher.hits.forEach((hit, hitIndex) => {
+        const effectiveDmgMult = hit.damageMultiplier * heavyFinisherFactor;
+        const fireAt = windupMs + hit.delay;
+        const doHit = () => {
+          if (this.isTraveling) return;
+          const tx = this.player.x + Math.cos(this.facingAngle) * hit.range * 0.7;
+          const ty = this.player.y + Math.sin(this.facingAngle) * hit.range * 0.7;
+          this.spawnWeaponSwingVfx(this.player.x, this.player.y, tx, ty, weaponType, hitIndex);
+          this.executeHitInCone(hit.range, hit.halfArc, effectiveDmgMult);
+        };
+        if (fireAt === 0) doHit();
+        else this.time.delayedCall(fireAt, doHit);
+      });
+    }
+
+    // Effets spéciaux — appliqués au timing du dernier hit
+    if (finisher.effect) {
+      const lastHit  = finisher.hits[finisher.hits.length - 1];
+      const effectAt = windupMs + (lastHit?.delay ?? 0);
+      const effect   = finisher.effect;
+
+      const applyEffect = () => {
+        if (this.isTraveling) return;
+        const range   = lastHit?.range   ?? 130;
+        const halfArc = lastHit?.halfArc ?? Math.PI;
+        const sprites = this.findEnemiesInCone(range, halfArc);
+
+        for (const sprite of sprites) {
+          const ae = this.activeEnemies.get(sprite.name);
+          if (!ae || ae.currentHp <= 0) continue;
+
+          if (effect.stunMs)   this.applyStun(sprite, effect.stunMs);
+          if (effect.knockback) this.applyKnockback(sprite, effect.knockback);
+
+          if (effect.expose) {
+            // Expose : −15% DEF, 2s. Non-cumulable avec Sunder : garder le plus fort.
+            const str = 15;
+            const existing = ae.statusEffects.find(e => e.type === 'EXPOSE');
+            if (!existing || existing.strength < str) {
+              ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'EXPOSE');
+              ae.statusEffects.push({ type: 'EXPOSE', duration: 2, strength: str });
+            }
+          }
+          if (effect.sunder) {
+            // Sunder : −20% DEF, 4s. Représenté via le type EXPOSE (plus fort, prioritaire).
+            const str = 20;
+            const existing = ae.statusEffects.find(e => e.type === 'EXPOSE');
+            if (!existing || existing.strength < str) {
+              ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'EXPOSE');
+              ae.statusEffects.push({ type: 'EXPOSE', duration: 4, strength: str });
+            }
+          }
+          {
+            // Bleed : base (DUAL_SWORD, 10% ATK/s, 2s) OU ins_lacerate sur DAGGER/DUAL_DAGGER/DUAL_SWORD (30% ATK, 3s).
+            // ins_lacerate s'applique même quand le finisher de base n'a pas effect.bleed.
+            const isLightBleedWeapon = weaponType === WeaponType.DAGGER
+              || weaponType === WeaponType.DUAL_DAGGER
+              || weaponType === WeaponType.DUAL_SWORD;
+            const useLacerate = this.playerModifiers.lightFinisherBleed && isLightBleedWeapon;
+            if (effect.bleed || useLacerate) {
+              const bleedStr = Math.max(1, Math.floor(
+                this.gameState.player.stats.atk * (useLacerate ? 0.30 : 0.10),
+              ));
+              const bleedDur = useLacerate ? 3 : 2;
+              ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'BLEED');
+              ae.statusEffects.push({ type: 'BLEED', duration: bleedDur, strength: bleedStr });
+            }
+          }
+        }
+
+        // Garde (Sword finisher) : −30% dégâts subis pendant guardMs.
+        // La réduction effective est appliquée dans tickEnemyAI via guardUntil.
+        if (effect.guardMs) {
+          this.guardUntil = this.time.now + effect.guardMs;
+        }
+
+        // AoE shake si le finisher a une zone explicite (GREATSWORD, HAMMER)
+        if (effect.aoeRadius) {
+          this.cameras.main.shake(120, 0.010);
+        }
+      };
+
+      if (effectAt === 0) applyEffect();
+      else this.time.delayedCall(effectAt, applyEffect);
+    }
+
+    this.spawnFinisherVfx(weaponType, this.facingAngle);
+    this.events.emit('finisher-executed', { weaponType });
+  }
+
+  /** Applique un stun à un ennemi. Ne se cumule pas — garde la durée la plus longue. */
+  private applyStun(sprite: Phaser.Physics.Arcade.Sprite, stunMs: number) {
+    const ae = this.activeEnemies.get(sprite.name);
+    if (!ae) return;
+    const durationSecs = stunMs / 1000;
+    const existing = ae.statusEffects.find(e => e.type === 'STUN');
+    if (existing) {
+      existing.duration = Math.max(existing.duration, durationSecs);
+    } else {
+      ae.statusEffects.push({ type: 'STUN', duration: durationSecs, strength: 1 });
+    }
+    const body = sprite.body as Phaser.Physics.Arcade.Body | null;
+    if (body?.enable) body.setVelocity(0, 0);
+  }
+
+  /** Projette un ennemi à partir de la position joueur avec la force donnée (px/s). */
+  private applyKnockback(sprite: Phaser.Physics.Arcade.Sprite, force: number) {
+    const body = sprite.body as Phaser.Physics.Arcade.Body | null;
+    if (!body?.enable) return;
+    const angle = Math.atan2(sprite.y - this.player.y, sprite.x - this.player.x);
+    body.setVelocity(Math.cos(angle) * force, Math.sin(angle) * force);
+  }
+
+  // ── ALT ATTACK SYSTEM ────────────────────────────────────────
+  // H key triggers the weapon-specific alternate attack.
+  // All VFX use violet/magenta palette to distinguish from the normal blue/cyan swings.
+
+  private performAltAttack() {
+    const now = this.time.now;
+    if (now < this.altAttackCooldownUntil) return;
+
+    const weaponType = this.gameState.player.equipment.weapon?.weaponType;
+    const config = (weaponType !== undefined ? ALT_ATTACK_CONFIGS[weaponType] : undefined)
+      ?? FISTS_ALT_CONFIG;
+
+    this.altAttackCooldownUntil = now + config.cooldownMs;
+
+    switch (weaponType) {
+      case WeaponType.SWORD:       this.performAltSword(config);      break;
+      case WeaponType.GREATSWORD:  this.performAltGreatsword(config); break;
+      case WeaponType.DAGGER:      this.performAltDagger(config);     break;
+      case WeaponType.DUAL_DAGGER: this.performAltDualDagger(config); break;
+      case WeaponType.DUAL_SWORD:  this.performAltDualSword(config);  break;
+      case WeaponType.AXE:         this.performAltAxe(config);        break;
+      case WeaponType.HAMMER:      this.performAltHammer(config);     break;
+      case WeaponType.STAFF:       this.performAltStaff(config);      break;
+      case WeaponType.BOW:         this.performAltBow(config);        break;
+      default:                      this.performAltFists(config);      break;
+    }
+  }
+
+  // SWORD — Estoc : narrow cone (PI/12), range x1.8, dmgMult=0.85, rapid, 350ms cd.
+  // Note: 30% DEF pierce is a design intent; CombatSystem has no pierce param.
+  private performAltSword(_config: AltAttackConfig) {
+    const range = Math.round(115 * 1.8); // 207px
+    this.spawnAltSwordEstocVfx(this.player.x, this.player.y, this.facingAngle);
+    this.executeHitInCone(range, Math.PI / 12, 0.85);
+  }
+
+  // GREATSWORD — Frappe circulaire : 360°, range x0.7, dmgMult=1.4, windup 250ms, knockback.
+  private performAltGreatsword(config: AltAttackConfig) {
+    const windupMs = config.windupMs ?? 0;
+    this.inWindup = true;
+    this.player.setTint(0xff8888); // reddish windup (distinct from normal yellow)
+    this.time.delayedCall(windupMs, () => {
+      this.inWindup = false;
+      if (this.player.active) this.player.clearTint();
+      if (this.isTraveling) return;
+      const range = Math.round(155 * 0.7); // 108px
+      this.spawnAltGreatswordCircleVfx(this.player.x, this.player.y);
+      this.executeHitInCone(range, Math.PI, 1.4); // 360°
+      const hitSprites = this.findEnemiesInCone(range, Math.PI);
+      for (const sprite of hitSprites) this.applyKnockback(sprite, 180);
+    });
+  }
+
+  // DAGGER — Contre-attaque : dash toward nearest enemy + hit (dmgMult=1.6), or dash fwd.
+  private performAltDagger(_config: AltAttackConfig) {
+    const angle  = this.facingAngle;
+    const target = this.findNearestEnemy(85);
+    const fromX  = this.player.x;
+    const fromY  = this.player.y;
+
+    if (target) {
+      // Land just behind the enemy relative to attack direction
+      const toX = target.x - Math.cos(angle) * 20;
+      const toY = target.y - Math.sin(angle) * 20;
+      this.player.setPosition(toX, toY);
+      (this.player.body as Phaser.Physics.Arcade.Body).reset(toX, toY);
+      this.spawnAltDaggerCounterVfx(fromX, fromY, toX, toY);
+      this.executeHitInCone(85, Math.PI, 1.6); // 360° backstab reach
+    } else {
+      // No target — simple forward dash
+      const toX = fromX + Math.cos(angle) * 80;
+      const toY = fromY + Math.sin(angle) * 80;
+      this.player.setPosition(toX, toY);
+      (this.player.body as Phaser.Physics.Arcade.Body).reset(toX, toY);
+      this.spawnAltDaggerCounterVfx(fromX, fromY, toX, toY);
+    }
+  }
+
+  // DUAL_DAGGER — Tornade : 360°, 3 hits × 80ms, each dmgMult=0.4, range x0.8.
+  private performAltDualDagger(_config: AltAttackConfig) {
+    const range = Math.round(85 * 0.8); // 68px
+    for (let i = 0; i < 3; i++) {
+      this.time.delayedCall(i * 80, () => {
+        if (this.isTraveling) return;
+        this.executeHitInCone(range, Math.PI, 0.4);
+        this.spawnAltDualDaggerTornadoVfx(i);
+      });
+    }
+  }
+
+  // DUAL_SWORD — Parade-riposte : 600ms guard → auto-counter dmgMult=1.2 if hit, 0.7 if not.
+  private performAltDualSword(_config: AltAttackConfig) {
+    const guardMs  = 600;
+    const hpBefore = this.gameState.player.stats.hp;
+    this.guardUntil = this.time.now + guardMs;
+    this.spawnAltDualSwordParadeVfx(this.player.x, this.player.y);
+    this.time.delayedCall(guardMs, () => {
+      if (this.isTraveling) return;
+      const wasHit   = this.gameState.player.stats.hp < hpBefore;
+      const dmgMult  = wasHit ? 1.2 : 0.7;
+      this.executeHitInCone(105, Math.PI * 0.6, dmgMult);
+      this.spawnAltDualSwordCounterVfx(this.player.x, this.player.y, this.facingAngle);
+    });
+  }
+
+  // AXE — Lancer : physics projectile, range=150, dmgMult=1.0.
+  private performAltAxe(_config: AltAttackConfig) {
+    this.fireAltProjectile(150, 1.0);
+    this.spawnAltAxeThrowVfx(this.player.x, this.player.y, this.facingAngle);
+  }
+
+  // HAMMER — Saut écrasement : windup 400ms (red tint), 360° AOE=100, dmgMult=2.5, stun 800ms.
+  private performAltHammer(config: AltAttackConfig) {
+    const windupMs = config.windupMs ?? 0;
+    this.inWindup  = true;
+    this.player.setTint(0xff3333); // bright red windup signal
+    this.time.delayedCall(windupMs, () => {
+      this.inWindup = false;
+      if (this.player.active) this.player.clearTint();
+      if (this.isTraveling) return;
+      const AOE = 100;
+      this.spawnAltHammerSlamVfx(this.player.x, this.player.y);
+      this.executeHitInCone(AOE, Math.PI, 2.5);
+      const hitSprites = this.findEnemiesInCone(AOE, Math.PI);
+      for (const sprite of hitSprites) this.applyStun(sprite, 800);
+    });
+  }
+
+  // STAFF — Tir chargé : windup 300ms (purple tint), projectile range x1.5, dmgMult=1.8.
+  private performAltStaff(config: AltAttackConfig) {
+    const windupMs = config.windupMs ?? 0;
+    this.inWindup  = true;
+    this.player.setTint(0xcc44ff); // purple charge
+    this.time.delayedCall(windupMs, () => {
+      this.inWindup = false;
+      if (this.player.active) this.player.clearTint();
+      if (this.isTraveling) return;
+      const range = Math.round(260 * 1.5); // 390px
+      const angle = this.facingAngle;
+      this.fireAltProjectile(range, 1.8);
+      const toX = this.player.x + Math.cos(angle) * range;
+      const toY = this.player.y + Math.sin(angle) * range;
+      this.spawnStaffTrailVfx(this.player.x, this.player.y, toX, toY, 0xff44ff);
+    });
+  }
+
+  // BOW — Tir de précision : straight projectile, range x1.6, dmgMult=1.5.
+  private performAltBow(_config: AltAttackConfig) {
+    const range = Math.round(460 * 1.6); // 736px
+    const angle = this.facingAngle;
+    this.fireAltProjectile(range, 1.5);
+    const toX = this.player.x + Math.cos(angle) * range;
+    const toY = this.player.y + Math.sin(angle) * range;
+    this.spawnArrowVfx(this.player.x, this.player.y, toX, toY, angle, 0xcc44ff);
+  }
+
+  // FISTS — Coup retourné : dash back 80px → pause 150ms → dash fwd 120px + hit dmgMult=1.2.
+  private performAltFists(_config: AltAttackConfig) {
+    const angle = this.facingAngle;
+    const fromX = this.player.x;
+    const fromY = this.player.y;
+    const backX = fromX - Math.cos(angle) * 80;
+    const backY = fromY - Math.sin(angle) * 80;
+
+    // Afterimage at starting position
+    const ghost = this.add.rectangle(fromX, fromY, this.player.displayWidth, this.player.displayHeight, 0xff44ff, 0.5).setDepth(3);
+    this.tweens.add({ targets: ghost, alpha: 0, duration: 200, onComplete: () => ghost.destroy() });
+
+    // Snap backward
+    this.player.setPosition(backX, backY);
+    (this.player.body as Phaser.Physics.Arcade.Body).reset(backX, backY);
+
+    this.time.delayedCall(150, () => {
+      if (this.isTraveling) return;
+      const fwdX = this.player.x + Math.cos(angle) * 120;
+      const fwdY = this.player.y + Math.sin(angle) * 120;
+
+      // Afterimage at back position before lunge
+      const ghost2 = this.add.rectangle(this.player.x, this.player.y, this.player.displayWidth, this.player.displayHeight, 0xff44ff, 0.5).setDepth(3);
+      this.tweens.add({ targets: ghost2, alpha: 0, duration: 200, onComplete: () => ghost2.destroy() });
+
+      this.player.setPosition(fwdX, fwdY);
+      (this.player.body as Phaser.Physics.Arcade.Body).reset(fwdX, fwdY);
+      this.executeHitInCone(65, Math.PI / 2.4, 1.2);
+      // Magenta punch burst at impact point
+      const impX = this.player.x + Math.cos(angle) * 30;
+      const impY = this.player.y + Math.sin(angle) * 30;
+      const burst = this.add.circle(impX, impY, 14, 0xff44ff, 0.85).setDepth(33);
+      this.tweens.add({ targets: burst, scaleX: 2, scaleY: 2, alpha: 0, duration: 200, ease: 'Power2', onComplete: () => burst.destroy() });
+    });
+  }
+
+  // ── ALT ATTACK PROJECTILE HELPER ──────────────────────────────
+  // Fires a physics-collision rectangle along facingAngle (reuses _activeArrows pool).
+  // No cosmetic VFX — each caller spawns its own visual to match the weapon feel.
+
+  private fireAltProjectile(range: number, dmgMult: number) {
+    const SPEED = 600; // px/s — same as bow
+    const angle = this.facingAngle;
+    const rect  = this.add.rectangle(this.player.x, this.player.y, 16, 8, 0xffffff, 0);
+    this._activeArrows.push({
+      rect,
+      vx: Math.cos(angle) * SPEED,
+      vy: Math.sin(angle) * SPEED,
+      hit: false,
+      destroyAt: this.time.now + (range / SPEED) * 1000,
+      dmgMult,
+    });
+  }
+
+  // ── ALT ATTACK VFX ───────────────────────────────────────────
+  // All use violet/magenta palette (0xcc44ff / 0xff44ff / 0xff00ff) to signal
+  // "this is H, not J" at a glance. Pure Phaser primitives, destroyed in onComplete.
+
+  // SWORD estoc — fast thin purple thrust beam along facing angle.
+  private spawnAltSwordEstocVfx(px: number, py: number, angle: number) {
+    const len = 140;
+    const cx = px + Math.cos(angle) * len / 2;
+    const cy = py + Math.sin(angle) * len / 2;
+    const beam = this.add.rectangle(cx, cy, len, 4, 0xcc44ff, 0.9).setDepth(32).setRotation(angle);
+    this.tweens.add({
+      targets: beam,
+      scaleX: 0.05, alpha: 0,
+      duration: 180,
+      ease: 'Power3',
+      onComplete: () => beam.destroy(),
+    });
+    const tip = this.add.circle(px + Math.cos(angle) * len, py + Math.sin(angle) * len, 8, 0xee88ff, 0.8).setDepth(33);
+    this.tweens.add({ targets: tip, scaleX: 0, scaleY: 0, alpha: 0, duration: 150, ease: 'Power2', onComplete: () => tip.destroy() });
+  }
+
+  // GREATSWORD frappe circulaire — red expanding ring.
+  private spawnAltGreatswordCircleVfx(px: number, py: number) {
+    const ring = this.add.graphics({ x: px, y: py }).setDepth(32);
+    ring.lineStyle(10, 0xff2244, 0.9);
+    ring.strokeCircle(0, 0, 14);
+    this.tweens.add({
+      targets: ring,
+      scaleX: 5.5, scaleY: 5.5, alpha: 0,
+      duration: 500,
+      ease: 'Power2.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+    const inner = this.add.circle(px, py, 18, 0xff0000, 0.4).setDepth(31);
+    this.tweens.add({ targets: inner, alpha: 0, duration: 280, onComplete: () => inner.destroy() });
+  }
+
+  // DAGGER contre — orange dash trail + impact flash at destination.
+  private spawnAltDaggerCounterVfx(fromX: number, fromY: number, toX: number, toY: number) {
+    const trailAngle = Math.atan2(toY - fromY, toX - fromX);
+    const trailLen   = Phaser.Math.Distance.Between(fromX, fromY, toX, toY);
+    const trail = this.add.rectangle(
+      (fromX + toX) / 2, (fromY + toY) / 2,
+      trailLen, 3, 0xff8800, 0.8,
+    ).setDepth(31).setRotation(trailAngle);
+    this.tweens.add({ targets: trail, alpha: 0, duration: 220, onComplete: () => trail.destroy() });
+    const flash = this.add.circle(toX, toY, 12, 0xff6600, 0.9).setDepth(33);
+    this.tweens.add({ targets: flash, scaleX: 2.2, scaleY: 2.2, alpha: 0, duration: 200, ease: 'Power2', onComplete: () => flash.destroy() });
+  }
+
+  // DUAL_DAGGER tornade — three purple arcs spread 120° apart per hit cycle.
+  private spawnAltDualDaggerTornadoVfx(hitIndex: number) {
+    const px = this.player.x;
+    const py = this.player.y;
+    const baseAngle = (Math.PI * 2 / 3) * hitIndex;
+    for (let i = 0; i < 3; i++) {
+      const a = baseAngle + (Math.PI * 2 / 3) * i;
+      this.spawnSlashArcVfx(px, py, a, 0xcc44ff, { radius: 50, thickness: 4, halfArc: 0.6, duration: 200 });
+    }
+  }
+
+  // DUAL_SWORD parade — pulsing purple shield ring that follows the player.
+  private spawnAltDualSwordParadeVfx(px: number, py: number) {
+    const shield = this.add.graphics({ x: px, y: py }).setDepth(30);
+    shield.lineStyle(3, 0xcc44ff, 0.85);
+    shield.strokeCircle(0, 0, 20);
+    this.tweens.add({
+      targets: shield,
+      scaleX: 1.5, scaleY: 1.5, alpha: 0.1,
+      duration: 300,
+      yoyo: true, repeat: 1,
+      onUpdate: () => shield.setPosition(this.player.x, this.player.y),
+      onComplete: () => shield.destroy(),
+    });
+  }
+
+  // DUAL_SWORD counter — magenta counter slash + glow flash.
+  private spawnAltDualSwordCounterVfx(px: number, py: number, angle: number) {
+    this.spawnSlashArcVfx(px, py, angle, 0xff00ff, { radius: 70, thickness: 8, halfArc: 0.80, duration: 200, alpha: 1.0 });
+    const flash = this.add.circle(px, py, 18, 0xff44ff, 0.7).setDepth(33);
+    this.tweens.add({ targets: flash, scaleX: 2.5, scaleY: 2.5, alpha: 0, duration: 200, ease: 'Power2', onComplete: () => flash.destroy() });
+  }
+
+  // AXE lancer — purple spinning rectangle flying along facing angle.
+  private spawnAltAxeThrowVfx(fromX: number, fromY: number, angle: number) {
+    const toX    = fromX + Math.cos(angle) * 150;
+    const toY    = fromY + Math.sin(angle) * 150;
+    const axe    = this.add.rectangle(fromX, fromY, 18, 6, 0xcc44ff, 1).setDepth(32);
+    axe.setRotation(angle);
+    this.tweens.add({
+      targets: axe,
+      x: toX, y: toY,
+      angle: 720, // two full rotations during flight
+      duration: 250,
+      ease: 'Linear',
+      onComplete: () => {
+        this.tweens.add({ targets: axe, alpha: 0, scaleX: 0.1, scaleY: 0.1, duration: 100, onComplete: () => axe.destroy() });
+      },
+    });
+  }
+
+  // HAMMER saut écrasement — massive red shockwave ring + center implosion.
+  private spawnAltHammerSlamVfx(px: number, py: number) {
+    const ring = this.add.graphics({ x: px, y: py }).setDepth(31);
+    ring.lineStyle(10, 0xff0000, 0.9);
+    ring.strokeCircle(0, 0, 14);
+    this.tweens.add({
+      targets: ring,
+      scaleX: 7.2, scaleY: 7.2, alpha: 0, // ~100px final radius
+      duration: 600,
+      ease: 'Power2.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+    const inner = this.add.circle(px, py, 26, 0xff2222, 0.85).setDepth(32);
+    this.tweens.add({ targets: inner, scaleX: 0.1, scaleY: 0.1, alpha: 0, duration: 220, ease: 'Power3', onComplete: () => inner.destroy() });
+    this.cameras.main.shake(180, 0.014);
+  }
+
+  /** Trigger a skill by slot index (0–3). Called from UIScene mobile buttons. */
+  public triggerSkillBySlot(slot: 0 | 1 | 2 | 3): void {
+    if (this.menuOpen || this.isInDialogue || this.isTraveling) return;
+    const s = this.gameState.player.equippedSkills;
+    const skillId = ([s.slot1, s.slot2, s.slot3, s.slot4] as (string | null)[])[slot];
+    if (skillId) this.activateSkill(skillId);
+  }
+
+  private onMobileAction(action: string): void {
+    switch (action) {
+      case 'attack':
+        if (!this.menuOpen && !this.isInDialogue && !this.isTraveling) this.performBasicAttack();
+        break;
+      case 'dash':
+        if (!this.menuOpen && !this.isInDialogue && !this.isTraveling) this.handleDash();
+        break;
+      case 'skill0': this.triggerSkillBySlot(0); break;
+      case 'skill1': this.triggerSkillBySlot(1); break;
+      case 'skill2': this.triggerSkillBySlot(2); break;
+      case 'skill3': this.triggerSkillBySlot(3); break;
+      case 'inventory':
+        if (this.scene.isActive('InventoryScene')) {
+          this.setPaused(false); this.scene.stop('InventoryScene');
+        } else {
+          if (this.scene.isActive('SkillScene')) { this.setPaused(false); this.scene.stop('SkillScene'); }
+          this.setPaused(true);
+          this.scene.launch('InventoryScene', { gameScene: this });
+        }
+        break;
+      case 'skills':
+        if (this.scene.isActive('SkillScene')) {
+          this.setPaused(false); this.scene.stop('SkillScene');
+        } else {
+          if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
+          this.setPaused(true);
+          this.scene.launch('SkillScene', { gameScene: this });
+        }
+        break;
+    }
+  }
+
   shutdown() {
     this.time.removeAllEvents();
     this.input.keyboard?.removeAllKeys(true);
-    // Clean up native window listener — no memory leak on scene stop/restart.
+    // Clean up native window listeners — no memory leak on scene stop/restart.
     if (this._attackHandler) {
       window.removeEventListener('keydown', this._attackHandler);
       this._attackHandler = null;
     }
+    if (this._altAttackHandler) {
+      window.removeEventListener('keydown', this._altAttackHandler);
+      this._altAttackHandler = null;
+    }
+    this.game.events.off('mobile_action', this.onMobileAction, this);
     // Do NOT call events.removeAllListeners() — it strips Phaser's internal
     // lifecycle listeners (physics, tweens, input) registered on sys.events,
     // which prevents the scene from resuming correctly.

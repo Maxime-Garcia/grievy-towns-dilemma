@@ -6,6 +6,7 @@ export interface KeyBindings {
   left:      number;
   right:     number;
   attack:    number;
+  altAttack: number;
   dash:      number;
   skill1:    number;
   skill2:    number;
@@ -21,6 +22,7 @@ export const DEFAULT_BINDINGS: KeyBindings = {
   left:      Phaser.Input.Keyboard.KeyCodes.Q,
   right:     Phaser.Input.Keyboard.KeyCodes.D,
   attack:    Phaser.Input.Keyboard.KeyCodes.J,
+  altAttack: Phaser.Input.Keyboard.KeyCodes.H,
   dash:      Phaser.Input.Keyboard.KeyCodes.SPACE,
   skill1:    Phaser.Input.Keyboard.KeyCodes.ONE,
   skill2:    Phaser.Input.Keyboard.KeyCodes.TWO,
@@ -50,6 +52,7 @@ export const ACTION_LABELS: Record<keyof KeyBindings, string> = {
   left:      'Gauche',
   right:     'Droite',
   attack:    'Attaque / Interagir',
+  altAttack: 'Attaque alternative',
   dash:      'Dash',
   skill1:    'Compétence 1',
   skill2:    'Compétence 2',

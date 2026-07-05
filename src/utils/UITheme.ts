@@ -46,6 +46,14 @@ export const UI = {
   XP_BG:    0x080012,
   XP_FILL:  0x8833cc,
   XP_SHINE: 0xcc88ff,
+
+  // Modern accent palette (glow panels, badges, magic feedback)
+  ACCENT_VIOLET: 0x9966ff,   // accents mana / magie
+  ACCENT_CYAN:   0x44ddcc,   // accents vent / eau
+  GLOW_GOLD:     0xffcc66,   // halos dorés (level up, EPIC)
+  BG_DEEP:       0x060810,   // fond très sombre (menus overlay)
+  BG_MID:        0x0e1520,   // fond panneau mid
+  SEPARATOR:     0x1a2535,   // séparateurs discrets
 } as const;
 
 export const FONT = "'Press Start 2P', monospace";
@@ -73,6 +81,57 @@ export function drawPanel(
   g.fillRect(x + w - C, y,         C, C);
   g.fillRect(x,         y + h - C, C, C);
   g.fillRect(x + w - C, y + h - C, C, C);
+}
+
+/**
+ * Draw a modern glow panel: dark rounded fill + fine outer separator line +
+ * fine inner accent line at 30% alpha. The "pixel art + modern UI" look
+ * (Hyper Light Drifter / Dead Cells / Hades) — subtle glow instead of
+ * thick flat borders.
+ *
+ * Coexists with drawPanel(): existing scenes keep drawPanel, new/refreshed
+ * surfaces use drawGlowPanel. Both are separate named exports.
+ */
+export function drawGlowPanel(
+  g: Phaser.GameObjects.Graphics,
+  x: number, y: number, w: number, h: number,
+  accentColor: number = UI.BORDER_LIT,
+  bgColor: number = UI.PANEL_BG,
+  radius: number = 4,
+): void {
+  g.fillStyle(bgColor, 0.97);
+  g.fillRoundedRect(x, y, w, h, radius);
+  g.lineStyle(1, UI.SEPARATOR, 1);
+  g.strokeRoundedRect(x, y, w, h, radius);
+  g.lineStyle(1, accentColor, 0.3);
+  g.strokeRoundedRect(x + 2, y + 2, w - 4, h - 4, Math.max(1, radius - 2));
+}
+
+/**
+ * Small coloured badge (rarity, element, status): rounded background +
+ * centred label, returned as a Container positioned at (x, y) — the
+ * container's origin is the badge centre.
+ */
+export function drawBadge(
+  scene: Phaser.Scene,
+  x: number, y: number,
+  label: string,
+  bgColor: number,
+  textColor: string = '#ffffff',
+): Phaser.GameObjects.Container {
+  const txt = scene.add.text(0, 0, label, pxStyle(6, textColor)).setOrigin(0.5);
+  const padX = 6;
+  const padY = 4;
+  const w = Math.ceil(txt.width)  + padX * 2;
+  const h = Math.ceil(txt.height) + padY * 2;
+
+  const g = scene.add.graphics();
+  g.fillStyle(bgColor, 0.9);
+  g.fillRoundedRect(-w / 2, -h / 2, w, h, 3);
+  g.lineStyle(1, bgColor, 0.45);
+  g.strokeRoundedRect(-w / 2 - 1, -h / 2 - 1, w + 2, h + 2, 4);
+
+  return scene.add.container(x, y, [g, txt]);
 }
 
 /**
