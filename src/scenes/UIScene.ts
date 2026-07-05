@@ -33,6 +33,15 @@ export class UIScene extends Phaser.Scene {
 
   private zoneText!: Phaser.GameObjects.Text;
 
+  // ── Combo HUD (pips sous le joueur — COMBO_TALENT_SPEC.md §2.3 / §6.2) ──
+  private comboPips!: Phaser.GameObjects.Container;
+  private comboMaxPips = 0;
+  private comboCurrentCount = 0;
+  private pipObjects: Phaser.GameObjects.Graphics[] = [];
+  private pipTween: Phaser.Tweens.Tween | null = null;
+  private comboShownAt = 0;
+  private comboFading = false;
+
   private lerpHp          = 1;
   private lerpMp          = 1;
   private targetHp        = 1;
@@ -150,6 +159,17 @@ export class UIScene extends Phaser.Scene {
     this.add.text(W - 8, H - 20, t('ui.hint'), pxStyle(6, UI.TXT_HINT))
       .setOrigin(1, 0);
 
+    // ── Combo HUD (pips qui suivent le joueur) ────
+    // Reset explicite : scene.restart() réutilise l'instance, les
+    // initialiseurs de champs ne sont pas re-exécutés.
+    this.comboPips = this.add.container(0, 0).setDepth(50).setAlpha(0.75).setVisible(false);
+    this.pipObjects = [];
+    this.pipTween = null;
+    this.comboMaxPips = 0;
+    this.comboCurrentCount = 0;
+    this.comboShownAt = 0;
+    this.comboFading = false;
+
     // ── Events ───────────────────────────────────
     this.gameScene.events.on('player_update',    this.onPlayerUpdate,    this);
     this.gameScene.events.on('level_up',         this.onLevelUp,         this);
@@ -160,6 +180,9 @@ export class UIScene extends Phaser.Scene {
     this.gameScene.events.on('zone_entered',     this.onZoneEntered,     this);
     this.gameScene.events.on('show_notification',this.onShowNotification,this);
     this.gameScene.events.on('language_changed', this.onLanguageChanged,  this);
+    this.gameScene.events.on('combo-changed',     this.onComboChanged,     this);
+    this.gameScene.events.on('combo-broken',      this.onComboBroken,      this);
+    this.gameScene.events.on('finisher-executed', this.onFinisherExecuted, this);
   }
 
   shutdown() {
@@ -172,6 +195,10 @@ export class UIScene extends Phaser.Scene {
     this.gameScene.events.off('zone_entered',     this.onZoneEntered,     this);
     this.gameScene.events.off('show_notification',this.onShowNotification,this);
     this.gameScene.events.off('language_changed', this.onLanguageChanged,  this);
+    this.gameScene.events.off('combo-changed',     this.onComboChanged,     this);
+    this.gameScene.events.off('combo-broken',      this.onComboBroken,      this);
+    this.gameScene.events.off('finisher-executed', this.onFinisherExecuted, this);
+    this.pipTween = null;
   }
 
   private onLanguageChanged() {
@@ -179,6 +206,8 @@ export class UIScene extends Phaser.Scene {
   }
 
   update(_t: number, delta: number) {
+    this.updateComboPips();
+
     if (this.notifTimer > 0) {
       this.notifTimer -= delta;
       if (this.notifTimer <= 0) {
@@ -200,6 +229,180 @@ export class UIScene extends Phaser.Scene {
     if (Math.abs(this.lerpHp - prevHp) > 0.001 || Math.abs(this.lerpMp - prevMp) > 0.001) {
       this.drawLerpedBars();
     }
+  }
+
+  // ── Combo HUD ────────────────────────────────────
+  // Losanges 4×4px sous le sprite du joueur (offset +26px), espacés de 7px.
+  // Blanc cassé 0xf0e8d8 = validé, gris 0x444444 = restant, ambre 0xffb347 =
+  // finisher prêt. Interdits : azur 0x66ddff, doré 0xffe066 (INSPIRATIONS.md).
+
+  private updateComboPips() {
+    if (this.comboMaxPips === 0) {
+      this.comboPips.setVisible(false);
+      return;
+    }
+
+    // UIScene est une scène parallèle : convertir world → screen via la caméra de GameScene
+    const pos = this.gameScene.getPlayerScreenPosition();
+    if (!pos) {
+      this.comboPips.setVisible(false);
+      return;
+    }
+    this.comboPips.setVisible(true);
+    this.comboPips.setPosition(pos.x, pos.y + 26);
+
+    // Fade out complet après 2s sans attaque (spec §2.3) — rien hors combat
+    if (!this.comboFading && this.comboShownAt > 0 && this.time.now - this.comboShownAt > 2000) {
+      this.comboFading = true;
+      this.stopPipTween();
+      this.tweens.add({
+        targets: this.comboPips,
+        alpha: 0,
+        duration: 250,
+        onComplete: () => this.hideComboPips(),
+      });
+    }
+  }
+
+  private onComboChanged({ count, max }: { count: number; max: number }) {
+    if (!this.sys.isActive()) return;
+    this.tweens.killTweensOf(this.comboPips);
+    this.comboFading = false;
+    this.comboPips.setAlpha(0.75).setVisible(true);
+
+    const prevCount = this.comboCurrentCount;
+    this.comboCurrentCount = count;
+    this.comboMaxPips = max;
+    this.comboShownAt = this.time.now;
+    this.redrawPips();
+
+    // Pop du pip qui vient de s'allumer : 1.0→1.4→1.0 en 120ms (spec §6.2)
+    if (count > prevCount && count > 0 && count <= this.pipObjects.length) {
+      const lit = this.pipObjects[count - 1];
+      this.tweens.add({
+        targets: lit, scaleX: 1.4, scaleY: 1.4,
+        duration: 60, yoyo: true, ease: 'Back.easeOut',
+      });
+    }
+  }
+
+  private onComboBroken() {
+    if (!this.sys.isActive() || this.comboMaxPips === 0) return;
+    this.comboFading = true;
+    this.stopPipTween();
+
+    // Pips en gris — un blink, puis fade out 250ms. Échec silencieux, jamais humiliant.
+    for (const g of this.pipObjects) {
+      g.clear();
+      g.fillStyle(0x777777, 1);
+      g.fillRect(-2, -2, 4, 4);
+    }
+    this.tweens.killTweensOf(this.comboPips);
+    this.tweens.add({
+      targets: this.comboPips,
+      alpha: 0.15,
+      duration: 80,
+      yoyo: true,
+      onComplete: () => {
+        this.tweens.add({
+          targets: this.comboPips,
+          alpha: 0,
+          duration: 250,
+          onComplete: () => this.hideComboPips(),
+        });
+      },
+    });
+  }
+
+  private onFinisherExecuted(_data: { weaponType?: unknown }) {
+    if (!this.sys.isActive() || this.comboMaxPips === 0) return;
+    this.comboFading = true;
+    this.stopPipTween();
+
+    // Les pips éclatent en 3–4 particules ambre qui s'envolent en arc (300ms)
+    const { x, y } = this.comboPips;
+    const count = Phaser.Math.Between(3, 4);
+    for (let i = 0; i < count; i++) {
+      const p = this.add
+        .circle(x + Phaser.Math.Between(-10, 10), y, 2, 0xffb347, 1)
+        .setDepth(51);
+      this.tweens.add({
+        targets: p,
+        x: p.x + Phaser.Math.Between(-18, 18),
+        y: y - Phaser.Math.Between(10, 18),
+        duration: 150,
+        ease: 'Quad.easeOut',
+        onComplete: () => {
+          this.tweens.add({
+            targets: p,
+            y: y + Phaser.Math.Between(14, 22),
+            alpha: 0,
+            duration: 150,
+            ease: 'Quad.easeIn',
+            onComplete: () => p.destroy(),
+          });
+        },
+      });
+    }
+
+    this.tweens.killTweensOf(this.comboPips);
+    this.hideComboPips();
+  }
+
+  private redrawPips() {
+    const max = this.comboMaxPips;
+
+    // Reconstruire si le nombre de pips a changé (changement d'arme)
+    if (this.pipObjects.length !== max) {
+      this.stopPipTween();
+      for (const p of this.pipObjects) p.destroy();
+      this.pipObjects = [];
+      for (let i = 0; i < max; i++) {
+        const g = this.add.graphics();
+        g.setRotation(Math.PI / 4); // carré 4×4 tourné à 45° = losange
+        g.x = (i - (max - 1) / 2) * 7;
+        this.comboPips.add(g);
+        this.pipObjects.push(g);
+      }
+    }
+
+    const finisherReady = max > 0 && this.comboCurrentCount === max - 1;
+    for (let i = 0; i < max; i++) {
+      const g = this.pipObjects[i];
+      let color = i < this.comboCurrentCount ? 0xf0e8d8 : 0x444444;
+      if (i === max - 1 && finisherReady) color = 0xffb347;
+      g.clear();
+      g.fillStyle(color, 1);
+      g.fillRect(-2, -2, 4, 4);
+    }
+
+    // Pulsation lente du pip finisher quand le prochain coup est le finisher
+    this.stopPipTween();
+    if (finisherReady) {
+      this.pipTween = this.tweens.add({
+        targets: this.pipObjects[max - 1],
+        scaleX: 1.3, scaleY: 1.3,
+        duration: 400,
+        yoyo: true,
+        repeat: -1, // arrêté systématiquement par stopPipTween() à chaque changement d'état
+      });
+    }
+  }
+
+  private stopPipTween() {
+    if (this.pipTween) {
+      this.pipTween.stop();
+      this.pipTween = null;
+    }
+    for (const g of this.pipObjects) g.setScale(1);
+  }
+
+  private hideComboPips() {
+    this.comboMaxPips = 0;
+    this.comboCurrentCount = 0;
+    this.comboShownAt = 0;
+    this.comboFading = false;
+    this.comboPips.setVisible(false).setAlpha(0.75);
   }
 
   // ── Event handlers ───────────────────────────────

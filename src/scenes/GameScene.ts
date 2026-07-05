@@ -1748,6 +1748,309 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // ── FINISHER VFX (combo system — COMBO_TALENT_SPEC.md §6.1) ──
+  // Primitives Phaser uniquement (Graphics / shapes / tweens), tout objet
+  // détruit en onComplete — aucun résidu. Appelé par la machine à états
+  // combo quand comboCount atteint chainLength.
+
+  /** Position écran du joueur (pour le HUD combo de UIScene — caméra parallèle). */
+  getPlayerScreenPosition(): { x: number; y: number } | null {
+    if (!this.player || !this.player.active) return null;
+    const wv = this.cameras.main.worldView;
+    return { x: this.player.x - wv.x, y: this.player.y - wv.y };
+  }
+
+  private spawnFinisherVfx(weaponType: WeaponType | undefined, angle: number) {
+    const px = this.player.x;
+    const py = this.player.y;
+
+    switch (weaponType) {
+      case WeaponType.DAGGER:      this.spawnDaggerFinisherVfx(px, py, angle);    break;
+      case WeaponType.DUAL_DAGGER: this.spawnDualDaggerFinisherVfx(px, py);       break;
+      case WeaponType.SWORD:       this.spawnSwordFinisherVfx(px, py, angle);     break;
+      case WeaponType.DUAL_SWORD:  this.spawnDualSwordFinisherVfx(px, py, angle); break;
+      case WeaponType.GREATSWORD:  this.spawnGreatswordFinisherVfx(px, py);       break;
+      case WeaponType.AXE:         this.spawnAxeFinisherVfx(px, py, angle);       break;
+      case WeaponType.HAMMER:      this.spawnHammerFinisherVfx(px, py);           break;
+      case WeaponType.STAFF:       this.spawnStaffFinisherVfx(px, py, angle);     break;
+      case WeaponType.BOW:         this.spawnBowFinisherVfx(px, py, angle);       break;
+      default: break; // FISTS : pas de combo, pas de finisher
+    }
+  }
+
+  // Lacération : 3 traits blancs fins en éventail serré + afterimage de fente
+  // + marqueur « Exposé » rouge qui pulse 2s au point d'impact.
+  private spawnDaggerFinisherVfx(px: number, py: number, angle: number) {
+    const offsets = [-0.17, 0, 0.17]; // éventail serré ±10°
+    for (let i = 0; i < offsets.length; i++) {
+      const a = angle + offsets[i];
+      const streak = this.add
+        .rectangle(px + Math.cos(a) * 30, py + Math.sin(a) * 30, 52, 2, 0xffffff, 0.95)
+        .setDepth(32).setRotation(a);
+      this.tweens.add({
+        targets: streak,
+        x: px + Math.cos(a) * 78,
+        y: py + Math.sin(a) * 78,
+        alpha: 0,
+        duration: 150,
+        delay: i * 40,
+        ease: 'Power2',
+        onComplete: () => streak.destroy(),
+      });
+    }
+
+    // Afterimage du joueur sur la fente (même style que la trainée du dash)
+    const ghost = this.add
+      .rectangle(px, py, this.player.displayWidth, this.player.displayHeight, 0xf0e8d8, 0.5)
+      .setDepth(3);
+    this.tweens.add({ targets: ghost, alpha: 0, duration: 200, onComplete: () => ghost.destroy() });
+
+    // Marqueur « Exposé » : cercle rouge 3px pulsant au-dessus du point d'impact
+    const hitX = px + Math.cos(angle) * 60;
+    const hitY = py + Math.sin(angle) * 60;
+    const marker = this.add.circle(hitX, hitY - 16, 3, 0xcc2200).setDepth(30).setAlpha(0.8);
+    const pulse = this.tweens.add({
+      targets: marker, alpha: 0.2, duration: 400, yoyo: true, repeat: 2,
+    });
+    this.time.delayedCall(2000, () => { pulse.stop(); marker.destroy(); });
+  }
+
+  // Danse des Crocs : 6 petits arcs qui tournent autour du joueur (offset 60°),
+  // blanc → ambre sur le dernier, 300ms total.
+  private spawnDualDaggerFinisherVfx(_px: number, _py: number) {
+    for (let i = 0; i < 6; i++) {
+      const segAngle = (Math.PI / 3) * i;
+      const color = i === 5 ? 0xffb347 : 0xffffff;
+      this.time.delayedCall(i * 50, () => {
+        if (!this.player.active) return;
+        this.spawnSlashArcVfx(this.player.x, this.player.y, segAngle, color, {
+          radius: 52, thickness: 4, halfArc: 0.45, duration: 160,
+        });
+      });
+    }
+  }
+
+  // Estocade : trait de percée droit 140px + liseré de garde blanc cassé 1s.
+  private spawnSwordFinisherVfx(px: number, py: number, angle: number) {
+    const beam = this.add
+      .rectangle(px + Math.cos(angle) * 70, py + Math.sin(angle) * 70, 140, 3, 0xffffff, 0.95)
+      .setDepth(32).setRotation(angle);
+    this.tweens.add({
+      targets: beam, alpha: 0, scaleY: 0.2, duration: 200, ease: 'Power2',
+      onComplete: () => beam.destroy(),
+    });
+
+    // Liseré de garde : contour 0xf0e8d8 alpha 0.3 qui pulse sur le joueur (1s)
+    const guard = this.add
+      .rectangle(px, py, this.player.displayWidth + 4, this.player.displayHeight + 4)
+      .setDepth(3).setFillStyle(0x000000, 0).setStrokeStyle(2, 0xf0e8d8, 0.3);
+    this.tweens.add({
+      targets: guard,
+      alpha: 0,
+      duration: 500,
+      yoyo: true,
+      onUpdate: () => guard.setPosition(this.player.x, this.player.y),
+      onComplete: () => guard.destroy(),
+    });
+  }
+
+  // Croix d'Écho : deux arcs croisés rouge sombre (le 2e décalé 140ms)
+  // + gouttes de saignement en chute lente.
+  private spawnDualSwordFinisherVfx(px: number, py: number, angle: number) {
+    this.spawnSlashArcVfx(px, py, angle + Math.PI / 2, 0x8a1a1a, {
+      radius: 62, thickness: 6, halfArc: 1.22, duration: 220, alpha: 1.0,
+    });
+    this.time.delayedCall(140, () => {
+      if (!this.player.active) return;
+      this.spawnSlashArcVfx(this.player.x, this.player.y, angle - Math.PI / 2, 0x8a1a1a, {
+        radius: 62, thickness: 6, halfArc: 1.22, duration: 220, alpha: 1.0,
+      });
+    });
+
+    const hitX = px + Math.cos(angle) * 55;
+    const hitY = py + Math.sin(angle) * 55;
+    for (let i = 0; i < 4; i++) {
+      const drop = this.add
+        .circle(hitX + Phaser.Math.Between(-15, 15), hitY + Phaser.Math.Between(-6, 6), 2, 0x8a1a1a, 1)
+        .setDepth(31).setAlpha(0);
+      this.tweens.add({ targets: drop, alpha: 1, duration: 200, yoyo: true });
+      this.tweens.add({
+        targets: drop, y: drop.y + 30, duration: 400, ease: 'Quad.easeIn',
+        onComplete: () => drop.destroy(),
+      });
+    }
+  }
+
+  // Fauchage du Colosse : arc 360° épais + trainée persistante + afterimage.
+  private spawnGreatswordFinisherVfx(px: number, py: number) {
+    this.spawnSlashArcVfx(px, py, 0, 0xffffff, {
+      radius: 92, thickness: 14, halfArc: Math.PI, duration: 400, alpha: 1.0,
+    });
+    // Trainée blanche persistante ~150ms après le passage
+    this.time.delayedCall(150, () => {
+      if (!this.player.active) return;
+      this.spawnSlashArcVfx(this.player.x, this.player.y, Math.PI, 0xf0e8d8, {
+        radius: 88, thickness: 6, halfArc: Math.PI, duration: 250, alpha: 0.5,
+      });
+    });
+    const ghost = this.add
+      .rectangle(px, py, this.player.displayWidth, this.player.displayHeight, 0xffffff, 0.4)
+      .setDepth(3);
+    this.tweens.add({ targets: ghost, alpha: 0, duration: 150, onComplete: () => ghost.destroy() });
+    this.cameras.main.shake(120, 0.005); // shake moyen (spec 6.1)
+  }
+
+  // Brise-Garde : arc montant orange vif + fragments d'armure gris éjectés.
+  private spawnAxeFinisherVfx(px: number, py: number, angle: number) {
+    this.spawnSlashArcVfx(px, py, angle - Math.PI / 2, 0xff8800, {
+      radius: 80, thickness: 10, halfArc: Math.PI, duration: 300, alpha: 1.0,
+    });
+    const hitX = px + Math.cos(angle) * 60;
+    const hitY = py + Math.sin(angle) * 60;
+    const count = Phaser.Math.Between(4, 6);
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const dist = Phaser.Math.Between(40, 150);
+      const frag = this.add
+        .circle(hitX, hitY, Phaser.Math.Between(2, 3), 0xaaaaaa, 1)
+        .setDepth(31);
+      this.tweens.add({
+        targets: frag,
+        x: hitX + Math.cos(a) * dist,
+        y: hitY + Math.sin(a) * dist,
+        alpha: 0,
+        duration: 300,
+        ease: 'Power2',
+        onComplete: () => frag.destroy(),
+      });
+    }
+  }
+
+  // Onde Tellurique : impact hammer amplifié — grand anneau 180px + fissures au sol.
+  // spawnHammerVfx inclut déjà le shake fort (150ms, 0.010) — le plus lourd hors boss.
+  private spawnHammerFinisherVfx(px: number, py: number) {
+    this.spawnHammerVfx(px, py, 0xffdd00);
+
+    // Anneau supplémentaire qui s'étend jusqu'à ~180px
+    const bigRing = this.add.graphics({ x: px, y: py }).setDepth(31);
+    bigRing.lineStyle(5, 0xffffff, 0.8);
+    bigRing.strokeCircle(0, 0, 24);
+    this.tweens.add({
+      targets: bigRing,
+      scaleX: 7.5, scaleY: 7.5, // 24 × 7.5 = 180px
+      alpha: 0,
+      duration: 320,
+      ease: 'Power2.easeOut',
+      onComplete: () => bigRing.destroy(),
+    });
+
+    // Fissures au sol : lignes brunes brisées partant de l'impact, fade 500ms
+    const crackCount = Phaser.Math.Between(4, 5);
+    for (let i = 0; i < crackCount; i++) {
+      const a = ((Math.PI * 2) / crackCount) * i + Phaser.Math.FloatBetween(-0.3, 0.3);
+      const len = Phaser.Math.Between(80, 120);
+      const crack = this.add.graphics({ x: px, y: py }).setDepth(2);
+      crack.lineStyle(3, 0x6a3a1a, 0.9);
+      crack.beginPath();
+      crack.moveTo(0, 0);
+      crack.lineTo(
+        Math.cos(a) * len * 0.5 + Phaser.Math.Between(-8, 8),
+        Math.sin(a) * len * 0.5 + Phaser.Math.Between(-8, 8),
+      );
+      crack.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+      crack.strokePath();
+      this.tweens.add({
+        targets: crack, alpha: 0, duration: 500, delay: 150,
+        onComplete: () => crack.destroy(),
+      });
+    }
+  }
+
+  // Orbe Saturé : projectile perçant couleur élément, halo pulsant + trainée.
+  private spawnStaffFinisherVfx(px: number, py: number, angle: number) {
+    const ELEMENT_VFX_COLORS: Partial<Record<ElementType, number>> = {
+      [ElementType.FIRE]:      0xff4400,
+      [ElementType.WATER]:     0x2266ff,
+      [ElementType.LIGHTNING]: 0xffee00,
+      [ElementType.ICE]:       0x88ddff,
+      [ElementType.WIND]:      0xaaddff,
+      [ElementType.EARTH]:     0x88aa33,
+      [ElementType.DARK]:      0xaa44ff,
+      [ElementType.DIVINE]:    0xffd700,
+    };
+    const element = this.gameState.player.equipment.weapon?.element;
+    const color = (element !== undefined ? ELEMENT_VFX_COLORS[element] : undefined) ?? 0x9944ff;
+
+    const RANGE = 300;
+    const toX = px + Math.cos(angle) * RANGE;
+    const toY = py + Math.sin(angle) * RANGE;
+    const travelDur = 600;
+
+    const orb  = this.add.circle(px, py, 10, color, 1).setDepth(32);
+    const halo = this.add.circle(px, py, 20, color, 0.5).setDepth(31);
+
+    // Halo pulsant pendant le voyage (borné : 3 cycles = 600ms)
+    this.tweens.add({ targets: halo, alpha: 0, duration: 100, yoyo: true, repeat: 2 });
+
+    // Trainée de cercles 4px derrière l'orbe — répétition finie
+    const trailInterval = 50;
+    this.time.addEvent({
+      delay: trailInterval,
+      repeat: Math.floor(travelDur / trailInterval) - 1,
+      callback: () => {
+        if (!orb.active) return;
+        const t = this.add.circle(orb.x, orb.y, 4, color, 0.5).setDepth(30);
+        this.tweens.add({
+          targets: t, alpha: 0, scaleX: 0.2, scaleY: 0.2, duration: 250,
+          onComplete: () => t.destroy(),
+        });
+      },
+    });
+
+    this.tweens.add({
+      targets: [orb, halo],
+      x: toX, y: toY,
+      duration: travelDur,
+      ease: 'Linear',
+      onComplete: () => {
+        this.tweens.add({
+          targets: [orb, halo],
+          scaleX: 3, scaleY: 3, alpha: 0,
+          duration: 200,
+          ease: 'Quad.easeOut',
+          onComplete: () => { orb.destroy(); halo.destroy(); },
+        });
+      },
+    });
+  }
+
+  // Volée : 3 flèches simultanées en éventail ±12°, pointes ambre (finisher).
+  private spawnBowFinisherVfx(px: number, py: number, angle: number) {
+    const SPREAD = 0.21; // ~12°
+    const RANGE = 460 * 0.7;
+    for (const off of [-SPREAD, 0, SPREAD]) {
+      const a = angle + off;
+      const shaft = this.add.rectangle(0, 0, 24, 2, 0xddcc77, 1);
+      const head  = this.add.triangle(14, 0, 0, -3, 0, 3, 7, 0, 0xffb347, 1);
+      const arrow = this.add.container(px, py, [shaft, head]).setDepth(32);
+      arrow.setRotation(a);
+      const dur = (RANGE / 600) * 1000; // 600 px/s, ~537ms
+      this.tweens.add({
+        targets: arrow,
+        x: px + Math.cos(a) * RANGE,
+        y: py + Math.sin(a) * RANGE,
+        duration: dur,
+        ease: 'Linear',
+        onComplete: () => {
+          this.tweens.add({
+            targets: arrow, alpha: 0, duration: 80,
+            onComplete: () => arrow.destroy(),
+          });
+        },
+      });
+    }
+  }
+
   private showBossAnnouncement(bossName: string, zoneElement: ElementType) {
     const ZONE_AURA_COLORS: Partial<Record<ElementType, number>> = {
       [ElementType.FIRE]:      0xff4400,
