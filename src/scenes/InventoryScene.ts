@@ -1,9 +1,10 @@
 import { GameScene } from './GameScene';
 import {
   PlayerState, Item, ItemType, Weapon, Armor, Accessory, Consumable,
-  StatBonus, RARITY_COLORS,
+  StatBonus, RARITY_COLORS, EquipStats,
 } from '../types';
 import { InventorySystem, setInventoryPlayerContext } from '../systems/InventorySystem';
+import { StatsSystem } from '../systems/StatsSystem';
 import { ALL_ITEMS } from '../data/items';
 import { UI, drawPanel, pxStyle } from '../utils/UITheme';
 import { t, localizeItem } from '../i18n';
@@ -27,9 +28,6 @@ const EQ_ORDER: EquipSlotKey[] = [
 
 interface PanelBounds { x: number; y: number; w: number; h: number }
 
-// ── EquipStats shape (optional future field — see SubstatKey agent) ────────────
-interface EquipStatEntry  { key: string; value: number; isPercentage?: boolean }
-interface EquipStats      { mainStat?: EquipStatEntry; substats?: EquipStatEntry[] }
 
 export class InventoryScene extends Phaser.Scene {
   private gameScene!: GameScene;
@@ -250,15 +248,14 @@ export class InventoryScene extends Phaser.Scene {
     const s = this.player.stats;
     const a = this.player.attributes;
     const rows: [string, string][] = [
-      ['ATK',     String(s.atk)],
+      ['ATK',     String(s.atk + (this.player.equipment.weapon?.damage ?? 0))],
       ['MATK',    String(s.magicAtk)],
       ['DEF',     String(s.def)],
       ['MDEF',    String(s.magicDef)],
       ['HP max',  String(s.maxHp)],
       ['MP max',  String(s.maxMana)],
-      ['CRIT %',  `${Math.round(a.agi * 0.5)}%`],
+      ['CRIT %',  `${(5 + a.agi * 0.3).toFixed(1)}%`],
       ['Vitesse', String(s.spd)],
-      ['SPD',     String(s.spd)],
     ];
 
     const COL1   = PX + 10;
@@ -568,9 +565,8 @@ export class InventoryScene extends Phaser.Scene {
    */
   private getItemMainStat(item: Item): string | null {
     const es = (item as { equipStats?: EquipStats }).equipStats;
-    if (es?.mainStat) {
-      const { key, value, isPercentage } = es.mainStat;
-      return `${key} : ${value}${isPercentage ? '%' : ''}`;
+    if (es) {
+      return StatsSystem.formatStat(es.mainStat.key, es.mainStat.value, es.mainStat.isPercentage);
     }
     if ('damage'  in item) return `ATK : ${(item as Weapon).damage}`;
     if ('defense' in item) return `DEF : ${(item as Armor).defense}`;
@@ -588,8 +584,8 @@ export class InventoryScene extends Phaser.Scene {
    */
   private getItemSubstats(item: Item): string[] {
     const es = (item as { equipStats?: EquipStats }).equipStats;
-    if (es?.substats && es.substats.length > 0) {
-      return es.substats.map(s => `${s.key} : +${s.value}${s.isPercentage ? '%' : ''}`);
+    if (es && es.substats.length > 0) {
+      return es.substats.map(s => StatsSystem.formatStat(s.key, s.value, s.isPercentage));
     }
 
     if (!('bonusStats' in item)) return [];
@@ -641,12 +637,7 @@ export class InventoryScene extends Phaser.Scene {
 
   shutdown() {
     const KB = this.input.keyboard;
-    if (KB) {
-      KB.removeKey(Phaser.Input.Keyboard.KeyCodes.Z);
-      KB.removeKey(Phaser.Input.Keyboard.KeyCodes.X);
-      KB.removeKey(Phaser.Input.Keyboard.KeyCodes.C);
-      if (this.keyEsc) KB.removeKey(this.keyEsc);
-    }
+    if (KB && this.keyEsc) KB.removeKey(this.keyEsc);
     this.input.off('wheel');
     this.clearDynamic();
   }
