@@ -65,7 +65,7 @@ export class UIScene extends Phaser.Scene {
     const { width: W, height: H } = this.cameras.main;
 
     // ── DEV: build badge (top-left) — retirer avant release ─────────
-    const BUILD_LABEL = 'UI: glow panels menus/HUD/dialogue (hash: MAJ au commit)';
+    const BUILD_LABEL = 'feat: talents IGNIS/ZEPHYR/ABYSSAL/TENEBRES + refonte UI glow (31359a3)';
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 4, badgePad + 4, BUILD_LABEL, {
       fontSize: '10px', color: '#000000', fontFamily: 'monospace', fontStyle: 'bold',
