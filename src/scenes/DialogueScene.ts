@@ -72,14 +72,25 @@ export class DialogueScene extends Phaser.Scene {
     this.enterKey   = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
     this.enterKey.on('down', () => this.advance());
 
-    // Close button
+    // Close button — text glyph for desktop hover; invisible 44×44 hit zone for touch.
     const closeBtn = this.add.text(PX + PW - 10, PY + 8, '×', {
       ...pxStyle(14, UI.TXT_RED),
       stroke: '#000000', strokeThickness: 2,
-    }).setOrigin(1, 0).setInteractive({ useHandCursor: true }).setDepth(10);
-    closeBtn.on('pointerover', () => closeBtn.setStyle({ color: UI.TXT_ORANGE }));
-    closeBtn.on('pointerout',  () => closeBtn.setStyle({ color: UI.TXT_RED }));
-    closeBtn.on('pointerdown', () => this.closeDialogue());
+    }).setOrigin(1, 0).setDepth(10);
+    // Invisible rectangle expands the click/tap area to 44×44 without visual change.
+    const closeHit = this.add.rectangle(PX + PW - 26, PY + 22, 44, 44, 0, 0)
+      .setInteractive({ useHandCursor: true }).setDepth(11);
+    closeHit.on('pointerover', () => closeBtn.setStyle({ color: UI.TXT_ORANGE }));
+    closeHit.on('pointerout',  () => closeBtn.setStyle({ color: UI.TXT_RED }));
+    closeHit.on('pointerdown', () => this.closeDialogue());
+
+    // Tap anywhere on the panel to advance — standard mobile dialogue UX.
+    // Depth -1 keeps this below choice texts (depth 0) so Phaser's topOnly input
+    // routing lets choice buttons win when the tap lands on them.
+    // advance() already guards against choice lines for extra safety.
+    const tapZone = this.add.rectangle(PX + PW / 2, PY + PH / 2, PW, PH, 0, 0)
+      .setInteractive().setDepth(-1);
+    tapZone.on('pointerdown', () => this.advance());
 
     // Hint
     this.add.text(PX + PW - 10, H - 10, t('dialogue.advance_hint'), pxStyle(6, UI.TXT_HINT))

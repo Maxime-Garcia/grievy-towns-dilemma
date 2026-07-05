@@ -304,6 +304,7 @@ export class GameScene extends Phaser.Scene {
     this.createXpOrbsGroup();
     this.setupInput();
     this.applyKeyBindings(loadBindings());
+    this.game.events.on('mobile_action', this.onMobileAction, this);
     this.setupCamera();
     this.setupPhysics();
     this.createProjectileGroup();
@@ -3468,6 +3469,47 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.shake(180, 0.014);
   }
 
+  /** Trigger a skill by slot index (0–3). Called from UIScene mobile buttons. */
+  public triggerSkillBySlot(slot: 0 | 1 | 2 | 3): void {
+    if (this.menuOpen || this.isInDialogue || this.isTraveling) return;
+    const s = this.gameState.player.equippedSkills;
+    const skillId = ([s.slot1, s.slot2, s.slot3, s.slot4] as (string | null)[])[slot];
+    if (skillId) this.activateSkill(skillId);
+  }
+
+  private onMobileAction(action: string): void {
+    switch (action) {
+      case 'attack':
+        if (!this.menuOpen && !this.isInDialogue && !this.isTraveling) this.performBasicAttack();
+        break;
+      case 'dash':
+        if (!this.menuOpen && !this.isInDialogue && !this.isTraveling) this.handleDash();
+        break;
+      case 'skill0': this.triggerSkillBySlot(0); break;
+      case 'skill1': this.triggerSkillBySlot(1); break;
+      case 'skill2': this.triggerSkillBySlot(2); break;
+      case 'skill3': this.triggerSkillBySlot(3); break;
+      case 'inventory':
+        if (this.scene.isActive('InventoryScene')) {
+          this.setPaused(false); this.scene.stop('InventoryScene');
+        } else {
+          if (this.scene.isActive('SkillScene')) { this.setPaused(false); this.scene.stop('SkillScene'); }
+          this.setPaused(true);
+          this.scene.launch('InventoryScene', { gameScene: this });
+        }
+        break;
+      case 'skills':
+        if (this.scene.isActive('SkillScene')) {
+          this.setPaused(false); this.scene.stop('SkillScene');
+        } else {
+          if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
+          this.setPaused(true);
+          this.scene.launch('SkillScene', { gameScene: this });
+        }
+        break;
+    }
+  }
+
   shutdown() {
     this.time.removeAllEvents();
     this.input.keyboard?.removeAllKeys(true);
@@ -3480,6 +3522,7 @@ export class GameScene extends Phaser.Scene {
       window.removeEventListener('keydown', this._altAttackHandler);
       this._altAttackHandler = null;
     }
+    this.game.events.off('mobile_action', this.onMobileAction, this);
     // Do NOT call events.removeAllListeners() — it strips Phaser's internal
     // lifecycle listeners (physics, tweens, input) registered on sys.events,
     // which prevents the scene from resuming correctly.

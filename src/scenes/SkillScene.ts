@@ -44,9 +44,23 @@ export class SkillScene extends Phaser.Scene {
     this.renderUnlockedSkills(W, H);
     this.renderEquippedSlots(W, H);
 
-    // Footer hint
+    // Footer hint (keyboard reminder)
     this.add.text(W / 2, H - 12, t('skills.close_hint'), pxStyle(6, UI.TXT_HINT))
       .setOrigin(0.5, 1);
+
+    // Close button — top-right, ≥ 44×44px touch target.
+    const CB_SZ = 40;
+    const cbX   = W - 12 - CB_SZ;
+    const cbY   = 12;
+    const closeBg = this.add.graphics();
+    drawPanel(closeBg, cbX, cbY, CB_SZ, CB_SZ, UI.BTN_BG);
+    this.add.text(cbX + CB_SZ / 2, cbY + CB_SZ / 2, '×', {
+      ...pxStyle(14, UI.TXT_RED, true),
+    }).setOrigin(0.5).setDepth(2);
+    // Hit zone is 48×48 (4px margin) so fingers can comfortably reach the corner.
+    const closeHit = this.add.rectangle(cbX + CB_SZ / 2, cbY + CB_SZ / 2, CB_SZ + 8, CB_SZ + 8, 0, 0)
+      .setInteractive({ useHandCursor: true }).setDepth(3);
+    closeHit.on('pointerdown', () => { this.scene.stop('SkillScene'); });
   }
 
   private renderUnlockedSkills(W: number, _H: number) {
