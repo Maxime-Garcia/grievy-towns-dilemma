@@ -72,6 +72,7 @@ export class GameScene extends Phaser.Scene {
   private wasd!: { up: Phaser.Input.Keyboard.Key; down: Phaser.Input.Keyboard.Key; left: Phaser.Input.Keyboard.Key; right: Phaser.Input.Keyboard.Key };
   private skillKeys!: { a: Phaser.Input.Keyboard.Key; e: Phaser.Input.Keyboard.Key; r: Phaser.Input.Keyboard.Key; f: Phaser.Input.Keyboard.Key };
   private attackKey!: Phaser.Input.Keyboard.Key;
+  private _attackHandler: ((e: KeyboardEvent) => void) | null = null;
   private dashKey!: Phaser.Input.Keyboard.Key;
   private inventoryKey!: Phaser.Input.Keyboard.Key;
   private skillMenuKey!: Phaser.Input.Keyboard.Key;
@@ -410,7 +411,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private performBasicAttack() {
-    console.log('[ATTACK] performBasicAttack() — facingAngle:', this.facingAngle, 'player:', this.player?.x, this.player?.y);
     const weapon = this.gameState.player.equipment.weapon;
     const weaponType = weapon?.weaponType;
     const spec = weaponType !== undefined ? (WEAPON_SPECS[weaponType] ?? FISTS_SPEC) : FISTS_SPEC;
@@ -576,10 +576,16 @@ export class GameScene extends Phaser.Scene {
     };
     this.attackKey?.removeAllListeners();
     this.attackKey = kb.addKey(b.attack);
-    this.attackKey.on('down', () => {
-      console.log('[J] key fired — menuOpen:', this.menuOpen, 'isInDialogue:', this.isInDialogue);
-      if (!this.menuOpen && !this.isInDialogue) this.performBasicAttack();
-    });
+    // On utilise l'événement global keydown (prouvé fonctionnel) plutôt que
+    // key.on('down') qui dépend du keyCode stocké en localStorage.
+    // On retire tout listener précédent avant d'en ajouter un nouveau.
+    kb.off('keydown', this._attackHandler as any);
+    this._attackHandler = (event: KeyboardEvent) => {
+      if (event.keyCode === b.attack && !this.menuOpen && !this.isInDialogue) {
+        this.performBasicAttack();
+      }
+    };
+    kb.on('keydown', this._attackHandler as any);
     this.dashKey   = kb.addKey(b.dash);
     this.skillKeys = {
       a: kb.addKey(b.skill1),
@@ -1916,10 +1922,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setupInput() {
-    // DEBUG TEMPORAIRE — écoute globale de tous les keyCodes
-    this.input.keyboard!.on('keydown', (e: KeyboardEvent) => {
-      console.log('[KEYDOWN] code:', e.code, 'keyCode:', e.keyCode);
-    });
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.wasd = {
       up:    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z),
