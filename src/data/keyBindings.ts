@@ -20,7 +20,7 @@ export const DEFAULT_BINDINGS: KeyBindings = {
   down:      Phaser.Input.Keyboard.KeyCodes.S,
   left:      Phaser.Input.Keyboard.KeyCodes.Q,
   right:     Phaser.Input.Keyboard.KeyCodes.D,
-  attack:    Phaser.Input.Keyboard.KeyCodes.W,
+  attack:    Phaser.Input.Keyboard.KeyCodes.J,
   dash:      Phaser.Input.Keyboard.KeyCodes.SPACE,
   skill1:    Phaser.Input.Keyboard.KeyCodes.ONE,
   skill2:    Phaser.Input.Keyboard.KeyCodes.TWO,
@@ -30,7 +30,7 @@ export const DEFAULT_BINDINGS: KeyBindings = {
   skills:    Phaser.Input.Keyboard.KeyCodes.K,
 };
 
-const STORAGE_KEY = 'grievy_keybindings';
+const STORAGE_KEY = 'grievy_keybindings_v2';
 
 export function loadBindings(): KeyBindings {
   try {

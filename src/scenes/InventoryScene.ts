@@ -13,16 +13,20 @@ const GRID_Y  = 52;
 export class InventoryScene extends Phaser.Scene {
   private gameScene!: GameScene;
   private player!: PlayerState;
+  private dynamicObjs: Phaser.GameObjects.GameObject[] = [];
+  private scrollMaskGfx?: Phaser.GameObjects.Graphics;
 
   constructor() { super({ key: 'InventoryScene' }); }
 
-  init(data: { gameScene: GameScene }) {
-    if (!data?.gameScene) return;
+  init(data?: { gameScene?: GameScene }) {
+    if (!data?.gameScene) { this.scene.stop(); return; }
     this.gameScene = data.gameScene;
     this.player    = data.gameScene.gameState.player;
   }
 
   create() {
+    this.dynamicObjs = [];
+    this.scrollMaskGfx = undefined;
     this.cameras.main.fadeIn(400, 0, 0, 0);
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
@@ -58,54 +62,89 @@ export class InventoryScene extends Phaser.Scene {
     this.add.text(W / 2, H - 12, t('inventory.close'), pxStyle(7, UI.TXT_HINT))
       .setOrigin(0.5, 1)
       .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.scene.stop());
+      .on('pointerdown', () => this.gameScene.closeOverlay('InventoryScene'));
   }
 
   private renderGrid() {
+    this.input.off('wheel');
+
+    const H         = this.cameras.main.height;
+    const VISIBLE_H = H - GRID_Y - 30;
+    const GRID_W    = COLS * SLOT + 4;
+    const rows      = Math.ceil(this.player.inventory.length / COLS);
+    const contentH  = rows * SLOT;
+    let   scrollY   = 0;
+
+    // Shared geometry mask — clips in screen space
+    const maskGfx = this.make.graphics({ x: 0, y: 0 });
+    maskGfx.fillStyle(0xffffff);
+    maskGfx.fillRect(GRID_X - 2, GRID_Y, GRID_W, VISIBLE_H);
+    const geomMask = maskGfx.createGeometryMask();
+    this.scrollMaskGfx = maskGfx;
+
+    // Each entry: game object + its rest-position Y (scrollY=0)
+    type Settable = { setY(y: number): unknown; setMask(m: Phaser.Display.Masks.GeometryMask): unknown };
+    type Scrollable = { obj: Settable; baseY: number };
+    const scrollables: Scrollable[] = [];
+
+    const reg = (go: Settable & Phaser.GameObjects.GameObject, y: number) => {
+      go.setMask(geomMask);
+      scrollables.push({ obj: go, baseY: y });
+      this.dynamicObjs.push(go);
+    };
+
     this.player.inventory.forEach((slot, i) => {
-      const col = i % COLS;
-      const row = Math.floor(i / COLS);
-      const x   = GRID_X + col * SLOT;
-      const y   = GRID_Y + row * SLOT;
+      const col    = i % COLS;
+      const row    = Math.floor(i / COLS);
+      const sx     = GRID_X + col * SLOT;
+      const topY   = GRID_Y + row * SLOT;      // top-left Y of this slot at rest
+      const midY   = topY + SLOT / 2 - 1;      // center Y of this slot
 
       const rarityHex = parseInt(
         (RARITY_COLORS[slot.item.rarity] ?? '#666666').replace('#', ''), 16
       );
 
+      // Graphics bg — draws relative to its own y=0; setY positions it in screen space
       const bg = this.add.graphics();
       bg.fillStyle(UI.SLOT_BG, 1);
-      bg.fillRect(x, y, SLOT - 2, SLOT - 2);
+      bg.fillRect(sx, 0, SLOT - 2, SLOT - 2);
       bg.lineStyle(1, rarityHex, 1);
-      bg.strokeRect(x, y, SLOT - 2, SLOT - 2);
+      bg.strokeRect(sx, 0, SLOT - 2, SLOT - 2);
       bg.lineStyle(1, 0x000000, 0.35);
-      bg.strokeRect(x + 1, y + 1, SLOT - 4, SLOT - 4);
+      bg.strokeRect(sx + 1, 1, SLOT - 4, SLOT - 4);
+      bg.setY(topY);
+      reg(bg, topY);
 
       try {
-        this.add.image(x + SLOT / 2 - 1, y + SLOT / 2 - 1, slot.item.icon)
-          .setDisplaySize(28, 28);
+        const img = this.add.image(sx + SLOT / 2 - 1, midY, slot.item.icon).setDisplaySize(28, 28);
+        reg(img, midY);
       } catch {}
 
       if (slot.quantity > 1) {
-        this.add.text(x + SLOT - 5, y + SLOT - 5, `${slot.quantity}`, pxStyle(7, UI.TXT_WHITE))
-          .setOrigin(1, 1);
+        const qtyY = topY + SLOT - 5;
+        const qty  = this.add.text(sx + SLOT - 5, qtyY, `${slot.quantity}`, pxStyle(7, UI.TXT_WHITE)).setOrigin(1, 1);
+        reg(qty, qtyY);
       }
 
-      const hit = this.add.rectangle(
-        x + SLOT / 2 - 1, y + SLOT / 2 - 1,
-        SLOT - 2, SLOT - 2,
-        0x000000, 0
-      ).setInteractive({ useHandCursor: true });
+      // Hit zone — Phaser Rectangle y is its CENTER (origin 0.5)
+      const hit = this.add.rectangle(sx + SLOT / 2 - 1, midY, SLOT - 2, SLOT - 2, 0x000000, 0)
+        .setInteractive({ useHandCursor: true });
+      reg(hit, midY);
 
       hit.on('pointerdown', () => this.showItemDetail(slot.item.id));
-      hit.on('pointerover', () => {
-        bg.lineStyle(2, 0xffffff, 0.9);
-        bg.strokeRect(x, y, SLOT - 2, SLOT - 2);
-      });
-      hit.on('pointerout', () => {
-        bg.lineStyle(1, rarityHex, 1);
-        bg.strokeRect(x, y, SLOT - 2, SLOT - 2);
-      });
+      hit.on('pointerover', () => { bg.lineStyle(2, 0xffffff, 0.9); bg.strokeRect(sx, 0, SLOT - 2, SLOT - 2); });
+      hit.on('pointerout',  () => { bg.lineStyle(1, rarityHex, 1);  bg.strokeRect(sx, 0, SLOT - 2, SLOT - 2); });
     });
+
+    if (contentH > VISIBLE_H) {
+      const maxScroll = contentH - VISIBLE_H;
+      this.input.on('wheel',
+        (_ptr: Phaser.Input.Pointer, _gos: unknown, _dx: number, dy: number) => {
+          scrollY = Phaser.Math.Clamp(scrollY + dy * 0.8, 0, maxScroll);
+          for (const { obj, baseY } of scrollables) obj.setY(baseY - scrollY);
+        }
+      );
+    }
   }
 
   private renderEquipment(W: number) {
@@ -114,7 +153,10 @@ export class InventoryScene extends Phaser.Scene {
 
     const panGfx = this.add.graphics();
     drawPanel(panGfx, EX - 8, EY - 18, 178, 294, UI.SLOT_BG);
-    this.add.text(EX + 81, EY - 12, t('inventory.equipment'), pxStyle(7, UI.TXT_GOLD)).setOrigin(0.5, 0);
+    this.dynamicObjs.push(panGfx);
+    this.dynamicObjs.push(
+      this.add.text(EX + 81, EY - 12, t('inventory.equipment'), pxStyle(7, UI.TXT_GOLD)).setOrigin(0.5, 0)
+    );
 
     const slots: [keyof typeof this.player.equipment, string][] = [
       ['weapon', t('inventory.slot.weapon')],  ['helm',   t('inventory.slot.helm')],   ['chest', t('inventory.slot.chest')],
@@ -127,13 +169,28 @@ export class InventoryScene extends Phaser.Scene {
       const y   = EY + 4 + i * 26;
       const item = this.player.equipment[key] as Item | undefined;
 
-      this.add.text(EX, y, `${label}:`, pxStyle(6, UI.TXT_MUTED));
+      this.dynamicObjs.push(this.add.text(EX, y, `${label}:`, pxStyle(6, UI.TXT_MUTED)));
 
       const raw  = item ? localizeItem(item).name : '—';
       const name = raw.length > 12 ? raw.slice(0, 10) + '..' : raw;
       const col  = item ? (RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT) : UI.TXT_HINT;
-      this.add.text(EX + 72, y, name, pxStyle(6, col));
+      this.dynamicObjs.push(this.add.text(EX + 72, y, name, pxStyle(6, col)));
     });
+  }
+
+  private clearDynamic() {
+    this.input.off('wheel');
+    for (const go of this.dynamicObjs) go.destroy();
+    this.dynamicObjs = [];
+    this.scrollMaskGfx?.destroy();
+    this.scrollMaskGfx = undefined;
+  }
+
+  private refresh() {
+    this.clearDynamic();
+    this.player = this.gameScene.gameState.player;
+    this.renderGrid();
+    this.renderEquipment(this.cameras.main.width);
   }
 
   private showItemDetail(itemId: string) {
@@ -200,17 +257,22 @@ export class InventoryScene extends Phaser.Scene {
         InventorySystem.equip(this.player, itemId);
       }
       panel.destroy();
-      this.scene.restart({ gameScene: this.gameScene });
+      this.refresh();
     });
     x.once('down', () => {
       InventorySystem.sell(this.player, itemId, 1);
       panel.destroy();
-      this.scene.restart({ gameScene: this.gameScene });
+      this.refresh();
     });
     c.once('down', () => panel.destroy());
   }
 
   shutdown() {
-    this.input.keyboard?.removeAllKeys(true);
+    const KB = this.input.keyboard;
+    if (KB) {
+      KB.removeKey(Phaser.Input.Keyboard.KeyCodes.Z);
+      KB.removeKey(Phaser.Input.Keyboard.KeyCodes.X);
+      KB.removeKey(Phaser.Input.Keyboard.KeyCodes.C);
+    }
   }
 }

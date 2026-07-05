@@ -9,7 +9,7 @@ export const FR: Record<string, string> = {
   'ui.mp': 'MP',
   'ui.level': 'Nv.',
   'ui.gold': 'Or',
-  'ui.hint': '[I] Inv  [K] Compétences  [W] Attaque  [Espace] Dash',
+  'ui.hint': '[I] Inv  [K] Compétences  [J] Attaque  [Espace] Dash',
 
   // ── NAME INPUT SCENE ────────────────────────────────────────
   'name_input.wake':        'Tu te réveilles.',
@@ -30,7 +30,7 @@ export const FR: Record<string, string> = {
   'menu.select_slot': 'CHOISIR UN SLOT',
   'menu.load_title': 'CHARGER SAUVEGARDE',
   'menu.cancel': '[ ANNULER ]',
-  'menu.controls': 'ZQSD / Flèches — déplacer   W — attaque   ESPACE — dash   I — inventaire   K — compétences',
+  'menu.controls': 'ZQSD / Flèches — déplacer   J — attaque   ESPACE — dash   I — inventaire   K — compétences',
 
   // ── PAUSE SCENE ─────────────────────────────────────────────
   'pause.title': 'PAUSE',
@@ -59,6 +59,15 @@ export const FR: Record<string, string> = {
   // ── INTRO SCENE ─────────────────────────────────────────────
   'intro.hint_continue': '[ Z / ENTRÉE — continuer ]',
   'intro.hint_begin':    '[ Z / ENTRÉE — commencer ]',
+  'intro.p0': 'En l\'ère d\'avant les tremblements,\nle monde de Velmara était en équilibre.',
+  'intro.p1': 'Six êtres d\'une puissance immense avaient façonné la terre.\nIls avaient revendiqué des territoires. Soufflé la vie\ndans la roche, le feu et la mer.\nLes peuples vivaient en paix sous leur protection.',
+  'intro.p2': 'Pyrath, dragon des flammes — Ignis Reach.\nGorvun, titan de la terre — Terravast.\nSylvael, phénix du vent — Zephyr Peaks.\nThalymor, léviathan des eaux — Abyssmar.\nVolkran, colosse de la foudre — Volterra.\nCrysthea, gardienne des glaces — Glaciem.',
+  'intro.p3': 'Puis vint Malachar.\n\nUn érudit. Un croyant.\nUn homme qui pensait que l\'ordre divin était une cage.',
+  'intro.p4': 'Il croyait que le pouvoir élémentaire devait circuler librement.\nIl trouva un moyen de le briser.\n\nIl avait peut-être raison sur la logique.\nIl avait tort sur les conséquences.',
+  'intro.p5': 'Les tremblements ont commencé il y a trois semaines.\nLes zones se déchirent d\'elles-mêmes.\nDes réfugiés affluent à Grievy Town de toutes parts.',
+  'intro.p6': 'Vous vous réveillez sur la route de l\'est, aux portes de Grievy Town.\nFace contre terre. Vous respirez. Aucune blessure visible.\n\nVous ne vous souvenez de rien.\nPas même de votre nom.',
+  'intro.p7': 'Grievy Town a besoin de quelqu\'un qui sache se battre.\nQuelqu\'un capable d\'entrer dans les zones élémentaires.\nQuelqu\'un qui retrouvera Malachar\navant qu\'il ne reste plus rien à sauver.',
+  'intro.p8': 'Cette personne, c\'est vous.\n\n{name}',
 
   // ── ENDING SCENE ─────────────────────────────────────────────
   'ending.thanks':            'Merci d\'avoir joué.',
@@ -122,7 +131,9 @@ export const FR: Record<string, string> = {
   'notif.gold': '+{gold} pièces d\'or',
   'notif.loot_chest': '[Coffre]',
   'notif.loot_plant': '[Plante]',
-  'notif.loot_mineral': '[Mineral]',
+  'notif.loot_mineral': '[Minerai]',
+  'hint.talk': '[J] Parler',
+  'hint.loot': '[J] Ramasser',
   'notif.loot_shrine': '[Sanctuaire]',
   'notif.level_up': '✦ Niveau {level} ! ✦',
   'notif.quest_done': 'Quête accomplie !',

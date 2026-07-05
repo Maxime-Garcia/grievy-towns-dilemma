@@ -59,7 +59,7 @@ export const ZONES: Zone[] = [
     element: ElementType.NEUTRAL,
     recommendedLevel: 1,
     mapKey: 'map_grievy_town',
-    enemies: [],
+    enemies: ['ember_wyrm', 'cinder_sprite'], // DEV: ennemis de test — retirer avant release
     bossId: '',
     divine: { id: 'none', name: 'None', title: '', element: ElementType.NEUTRAL, sprite: '', lore: '' },
     unlockedSkills: [],

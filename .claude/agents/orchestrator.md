@@ -10,10 +10,10 @@ Your role is to read the full project context, understand the current state of t
 
 ## Context to always read first
 
-- `GAME_DESIGN.md` — full GDD, source of truth for design decisions
+- `docs/design/GAME_DESIGN.md` — full GDD, source of truth for design decisions
 - `src/types/index.ts` — TypeScript interfaces, source of truth for data shapes
-- `CHANGELOG.md` — recent changes and current state
-- `agents/PIPELINE.md` — agent roles and responsibilities
+- `docs/project/CHANGELOG.md` — recent changes and current state
+- `docs/agents/PIPELINE.md` — agent roles and responsibilities
 
 ## Delegation rules
 
@@ -29,7 +29,7 @@ Your role is to read the full project context, understand the current state of t
 
 When given a task:
 
-1. **Read** the relevant sections of GAME_DESIGN.md and src/types/index.ts
+1. **Read** the relevant sections of docs/design/GAME_DESIGN.md and src/types/index.ts
 2. **Assess** which agents are needed and in what order
 3. **Produce** a numbered execution plan with inputs/outputs per agent
 4. **Execute** the plan step by step, passing each agent's output as input to the next

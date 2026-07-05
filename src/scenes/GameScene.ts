@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GameState, ActiveEnemy, ElementType, Enemy } from '../types';
+import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType } from '../types';
 import { CombatSystem } from '../systems/CombatSystem';
 import { LootSystem } from '../systems/LootSystem';
 import { QuestSystem } from '../systems/QuestSystem';
@@ -46,6 +46,91 @@ const ZONE_ENEMY_COLORS: Record<string, number> = {
   malachars_spire:0x6622aa,
 };
 
+// ── ATTACK PATTERNS ──────────────────────────────────────────────────────────
+// Pure data — each weapon has a sequence of hits (timing, range, arc, dmg mult)
+// and an overall cooldown. windupMs delays all hits so heavy weapons "charge".
+
+interface AttackHit {
+  /** ms offset from (windupMs + start of attack) */
+  delay: number;
+  range: number;
+  halfArc: number;
+  /** multiplier applied on top of CombatSystem base damage — 1.0 = normal */
+  damageMultiplier: number;
+}
+
+interface AttackPattern {
+  hits: AttackHit[];
+  /** ms before the player can attack again */
+  cooldown: number;
+  /** ms before the first hit fires (windup charging feel for heavy weapons) */
+  windupMs?: number;
+  /** if true, this weapon fires a physical projectile instead of an instant cone hit */
+  isProjectile?: boolean;
+}
+
+const ATTACK_PATTERNS: Partial<Record<WeaponType, AttackPattern>> = {
+  [WeaponType.DAGGER]: {
+    hits: [{ delay: 0, range: 85, halfArc: Math.PI / 3, damageMultiplier: 1.0 }],
+    cooldown: 400,
+  },
+  [WeaponType.DUAL_DAGGER]: {
+    hits: [
+      { delay: 0,   range: 85, halfArc: Math.PI / 3, damageMultiplier: 0.7 },
+      { delay: 150, range: 85, halfArc: Math.PI / 3, damageMultiplier: 0.7 },
+    ],
+    cooldown: 500,
+  },
+  [WeaponType.SWORD]: {
+    hits: [{ delay: 0, range: 115, halfArc: Math.PI / 3, damageMultiplier: 1.0 }],
+    cooldown: 600,
+  },
+  [WeaponType.DUAL_SWORD]: {
+    hits: [
+      { delay: 0,   range: 105, halfArc: 11 * Math.PI / 18, damageMultiplier: 0.6 },
+      { delay: 180, range: 105, halfArc: 11 * Math.PI / 18, damageMultiplier: 0.6 },
+      { delay: 360, range: 105, halfArc: 11 * Math.PI / 18, damageMultiplier: 0.8 },
+    ],
+    cooldown: 800,
+  },
+  [WeaponType.GREATSWORD]: {
+    hits: [{ delay: 0, range: 155, halfArc: 5 * Math.PI / 12, damageMultiplier: 1.8 }],
+    cooldown: 1100,
+    windupMs: 300,
+  },
+  [WeaponType.AXE]: {
+    hits: [{ delay: 0, range: 125, halfArc: 11 * Math.PI / 18, damageMultiplier: 1.3 }],
+    cooldown: 700,
+    windupMs: 150,
+  },
+  [WeaponType.HAMMER]: {
+    // +30% arc (Math.PI * 0.65 ≈ 117°) + massive multiplier
+    hits: [{ delay: 0, range: 105, halfArc: Math.PI * 0.65, damageMultiplier: 2.5 }],
+    cooldown: 1300,
+    windupMs: 400,
+  },
+  [WeaponType.STAFF]: {
+    hits: [{ delay: 0, range: 260, halfArc: Math.PI / 12, damageMultiplier: 1.0 }],
+    cooldown: 700,
+  },
+  [WeaponType.BOW]: {
+    // Physical arrow projectile — damage lands on collision, not via timed cone hit.
+    // VFX (spawnArrowVfx) is purely cosmetic; the physics body drives actual hit detection.
+    hits: [],
+    cooldown: 900,
+    windupMs: 200,
+    isProjectile: true,
+  },
+};
+
+const FISTS_PATTERN: AttackPattern = {
+  hits: [
+    { delay: 0,   range: 65, halfArc: Math.PI / 2.4, damageMultiplier: 0.5 },
+    { delay: 200, range: 65, halfArc: Math.PI / 2.4, damageMultiplier: 0.5 },
+  ],
+  cooldown: 500,
+};
+
 export class GameScene extends Phaser.Scene {
   public  gameState!: GameState;
 
@@ -59,6 +144,8 @@ export class GameScene extends Phaser.Scene {
   private wasd!: { up: Phaser.Input.Keyboard.Key; down: Phaser.Input.Keyboard.Key; left: Phaser.Input.Keyboard.Key; right: Phaser.Input.Keyboard.Key };
   private skillKeys!: { a: Phaser.Input.Keyboard.Key; e: Phaser.Input.Keyboard.Key; r: Phaser.Input.Keyboard.Key; f: Phaser.Input.Keyboard.Key };
   private attackKey!: Phaser.Input.Keyboard.Key;
+  private _attackHandler: ((e: KeyboardEvent) => void) | null = null;
+  private attackCooldownUntil = 0;
   private dashKey!: Phaser.Input.Keyboard.Key;
   private inventoryKey!: Phaser.Input.Keyboard.Key;
   private skillMenuKey!: Phaser.Input.Keyboard.Key;
@@ -71,6 +158,13 @@ export class GameScene extends Phaser.Scene {
   private lootableGroup!: Phaser.Physics.Arcade.StaticGroup;
   private projectiles!: Phaser.Physics.Arcade.Group;
   private projectileCollider: Phaser.Physics.Arcade.Collider | null = null;
+  private weaponProjectiles!: Phaser.Physics.Arcade.Group;
+  private _activeArrows: Array<{
+    rect: Phaser.GameObjects.Rectangle;
+    vx: number; vy: number;
+    hit: boolean;
+    destroyAt: number;
+  }> = [];
   private lootableLooted: Set<string> = new Set();
 
   // Zone-scoped objects destroyed/recreated on each transition
@@ -92,10 +186,12 @@ export class GameScene extends Phaser.Scene {
   private isDashing = false;
   private lastDirX = 0;
   private lastDirY = 1;
+  private facingAngle = 0;
   private playerVx = 0;
   private playerVy = 0;
   private dashMomentumX = 0;
   private dashMomentumY = 0;
+  private menuOpen = false;
   private isInDialogue = false;
   private isTraveling = false;
   private lastAutoSave = 0;
@@ -113,6 +209,7 @@ export class GameScene extends Phaser.Scene {
     this.gameState = data?.gameState ?? SaveSystem.createNewGame('Héros');
     // Spells non fonctionnels pour l'instant — vider les slots équipés
     this.gameState.player.equippedSkills = { slot1: null, slot2: null, slot3: null, slot4: null };
+    this.menuOpen       = false;
     this.isTraveling    = false;
     this.isInDialogue   = false;
     this.nearbyNPC      = null;
@@ -130,9 +227,11 @@ export class GameScene extends Phaser.Scene {
     this.dashMomentumY       = 0;
     this.playtimeAccumulator = 0;
     this.lastAutoSave        = 0;
+    this.attackCooldownUntil = 0;
     this.isDashing      = false;
     this.lastDirX       = 0;
     this.lastDirY       = 1;
+    this.facingAngle    = 0;
     // Reset zone-scoped refs on each scene start (full Phaser restart)
     this.zoneGraphics       = null;
     this.zoneLabels         = [];
@@ -161,8 +260,9 @@ export class GameScene extends Phaser.Scene {
     this.setupCamera();
     this.setupPhysics();
     this.createProjectileGroup();
+    this.weaponProjectiles = this.physics.add.group();
 
-    this.interactHint = this.add.text(0, 0, '[W] Talk', {
+    this.interactHint = this.add.text(0, 0, t('hint.talk'), {
       fontSize: '11px', color: '#ffee88',
       fontFamily: 'monospace',
       stroke: '#000000', strokeThickness: 3,
@@ -197,7 +297,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number) {
-    if (this.isInDialogue || this.isTraveling) return;
+    if (this.isInDialogue || this.isTraveling || this.menuOpen) return;
 
     const dt = delta / 1000;
     this.playtimeAccumulator += dt;
@@ -216,14 +316,15 @@ export class GameScene extends Phaser.Scene {
     this.handleMovement(dt);
     this.handleAttackInput();
     this.handleSkillInput();
+    this.updateArrowProjectiles(dt);
 
     // Interaction hint
     const showHint = !!this.nearbyNPC || !!this.nearbyLootable;
     this.interactHint.setVisible(showHint);
     if (showHint) {
-      const hintText = this.nearbyNPC ? '[W] Talk' : '[W] Loot';
+      const hintText = this.nearbyNPC ? t('hint.talk') : t('hint.loot');
       if (this.interactHint.text !== hintText) this.interactHint.setText(hintText);
-      this.interactHint.setPosition(this.player.x, this.player.y - 28);
+      this.interactHint.setPosition(Math.round(this.player.x), Math.round(this.player.y) - 28);
     }
 
     SkillSystem.tickCooldowns(this.cooldowns, dt);
@@ -305,18 +406,19 @@ export class GameScene extends Phaser.Scene {
     if (targetVx !== 0 || targetVy !== 0) {
       this.lastDirX = targetVx;
       this.lastDirY = targetVy;
+      this.facingAngle = Math.atan2(Math.sign(targetVy), Math.sign(targetVx));
     }
   }
 
   // ── DASH ────────────────────────────────────────────────────
 
   private flashDashReady() {
-    this.player.setTintFill(0x66ddff);
-    this.time.delayedCall(80, () => this.player.clearTint());
+    this.player.setTintFill(0xaaeeff);
+    this.time.delayedCall(70, () => this.player.clearTint());
     this.tweens.add({
       targets: this.player,
-      alpha: 0.15,
-      duration: 55,
+      alpha: 0.3,
+      duration: 50,
       yoyo: true,
       repeat: 2,
       ease: 'Linear',
@@ -369,15 +471,8 @@ export class GameScene extends Phaser.Scene {
   // ── SKILLS & ATTACK ──────────────────────────────────────────
 
   private handleAttackInput() {
-    if (Phaser.Input.Keyboard.JustDown(this.attackKey)) {
-      if (this.nearbyNPC && !this.isInDialogue) {
-        this.startNPCDialogue(this.nearbyNPC);
-      } else if (this.nearbyLootable) {
-        this.interactWithLootable(this.nearbyLootable);
-      } else {
-        this.performBasicAttack();
-      }
-    }
+    // Basic attack is driven by a direct key listener in applyKeyBindings()
+    // so it fires even when the update loop is starved after a menu overlay.
     if (Phaser.Input.Keyboard.JustDown(this.dashKey)) {
       this.handleDash();
     }
@@ -399,28 +494,176 @@ export class GameScene extends Phaser.Scene {
   }
 
   private performBasicAttack() {
-    const nearest = this.findNearestEnemy(80);
-    if (!nearest) return;
+    const now = this.time.now;
+    if (now < this.attackCooldownUntil) return;
 
-    const activeEnemy = this.activeEnemies.get(nearest.name);
-    if (!activeEnemy) return;
+    const weapon = this.gameState.player.equipment.weapon;
+    const weaponType = weapon?.weaponType;
+    const pattern = (weaponType !== undefined ? ATTACK_PATTERNS[weaponType] : undefined) ?? FISTS_PATTERN;
 
-    const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
-    this.showDamageNumber(nearest.x, nearest.y - 20, result.damage, result.isCrit);
+    this.attackCooldownUntil = now + pattern.cooldown;
+    const windupMs = pattern.windupMs ?? 0;
 
-    this.spawnHitParticles(nearest.x, nearest.y, result.element);
-    if (result.isCrit) {
+    // BOW (and any future isProjectile weapon) fires a physics body, not a cone hit.
+    if (pattern.isProjectile) {
+      if (windupMs > 0) this.spawnWindupVfx(windupMs);
+      if (windupMs === 0) {
+        this.fireArrowProjectile();
+      } else {
+        this.time.delayedCall(windupMs, () => {
+          if (!this.isTraveling) this.fireArrowProjectile();
+        });
+      }
+      return;
+    }
+
+    if (windupMs > 0) {
+      this.spawnWindupVfx(windupMs);
+    }
+
+    for (let i = 0; i < pattern.hits.length; i++) {
+      const hit = pattern.hits[i];
+      const fireDelay = windupMs + hit.delay;
+      const hitIndex = i;
+
+      const doHit = () => {
+        if (this.isTraveling) return;
+        const tx = this.player.x + Math.cos(this.facingAngle) * hit.range * 0.7;
+        const ty = this.player.y + Math.sin(this.facingAngle) * hit.range * 0.7;
+        this.spawnWeaponSwingVfx(this.player.x, this.player.y, tx, ty, weaponType, hitIndex);
+        this.executeHitInCone(hit.range, hit.halfArc, hit.damageMultiplier);
+      };
+
+      if (fireDelay === 0) {
+        doHit();
+      } else {
+        this.time.delayedCall(fireDelay, doHit);
+      }
+    }
+  }
+
+  private executeHitInCone(range: number, halfArc: number, damageMultiplier = 1.0) {
+    const hits = this.findEnemiesInCone(range, halfArc);
+    if (hits.length === 0) return;
+
+    let anyCrit = false;
+    for (const sprite of hits) {
+      const activeEnemy = this.activeEnemies.get(sprite.name);
+      if (!activeEnemy) continue;
+      const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
+
+      // Apply weapon pattern damage multiplier on top of the base calculation.
+      // CombatSystem already applied result.damage to currentHp — apply bonus separately.
+      let finalDamage = result.damage;
+      if (damageMultiplier !== 1.0) {
+        const bonus = Math.round(result.damage * (damageMultiplier - 1));
+        activeEnemy.currentHp = Math.max(0, activeEnemy.currentHp - bonus);
+        finalDamage = result.damage + bonus;
+      }
+      const isKill = activeEnemy.currentHp <= 0;
+
+      this.showDamageNumber(sprite.x, sprite.y - 20, finalDamage, result.isCrit);
+      this.spawnHitParticles(sprite.x, sprite.y, result.element);
+      this.applyHitFeedback(sprite, activeEnemy, finalDamage);
+      if (result.isCrit) anyCrit = true;
+      if (isKill) {
+        this.onEnemyKilled(activeEnemy, sprite);
+      } else {
+        this.checkStagger(sprite, activeEnemy, finalDamage);
+      }
+    }
+
+    if (anyCrit) {
       this.cameras.main.shake(120, 0.007);
     } else {
       this.cameras.main.shake(40, 0.002);
     }
+  }
 
-    this.applyHitFeedback(nearest, activeEnemy, result.damage);
+  private findEnemiesInCone(range: number, halfArc: number): Phaser.Physics.Arcade.Sprite[] {
+    const hits: Phaser.Physics.Arcade.Sprite[] = [];
+    for (const go of this.enemies.children.getArray()) {
+      const sprite = go as Phaser.Physics.Arcade.Sprite;
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, sprite.x, sprite.y);
+      if (dist > range) continue;
+      const angleToEnemy = Math.atan2(sprite.y - this.player.y, sprite.x - this.player.x);
+      let diff = angleToEnemy - this.facingAngle;
+      while (diff > Math.PI)  diff -= 2 * Math.PI;
+      while (diff < -Math.PI) diff += 2 * Math.PI;
+      if (Math.abs(diff) <= halfArc) hits.push(sprite);
+    }
+    return hits;
+  }
 
-    if (result.isKill) {
-      this.onEnemyKilled(activeEnemy, nearest);
-    } else {
-      this.checkStagger(nearest, activeEnemy, result.damage);
+  // ── BOW PROJECTILE ───────────────────────────────────────────
+  // Un rectangle transparent suit la trajectoire de la flèche à chaque frame.
+  // La détection de collision se fait manuellement dans updateArrowProjectiles()
+  // — plus fiable que physics.add.overlap qui dépend d'une texture valide.
+
+  private fireArrowProjectile() {
+    const SPEED = 600;  // px/s
+    const RANGE = 460;
+    const angle = this.facingAngle;
+
+    // Point de collision : rectangle transparent déplacé manuellement chaque frame
+    const rect = this.add.rectangle(this.player.x, this.player.y, 16, 8, 0xffffff, 0);
+    const travelMs = (RANGE / SPEED) * 1000; // ~767ms
+    this._activeArrows.push({
+      rect,
+      vx: Math.cos(angle) * SPEED,
+      vy: Math.sin(angle) * SPEED,
+      hit: false,
+      destroyAt: this.time.now + travelMs,
+    });
+
+    // VFX cosmétique — voyage en parallèle, purement visuel
+    const toX = this.player.x + Math.cos(angle) * RANGE * 0.7;
+    const toY = this.player.y + Math.sin(angle) * RANGE * 0.7;
+    this.spawnArrowVfx(this.player.x, this.player.y, toX, toY, angle, 0xddcc77);
+  }
+
+  private updateArrowProjectiles(dt: number) {
+    if (this._activeArrows.length === 0) return;
+    const HIT_RADIUS = 22; // px
+
+    for (let i = this._activeArrows.length - 1; i >= 0; i--) {
+      const arrow = this._activeArrows[i];
+
+      if (arrow.hit || this.time.now >= arrow.destroyAt) {
+        if (arrow.rect.active) arrow.rect.destroy();
+        this._activeArrows.splice(i, 1);
+        continue;
+      }
+
+      // Déplacer le point de collision frame par frame
+      arrow.rect.x += arrow.vx * dt;
+      arrow.rect.y += arrow.vy * dt;
+
+      // Vérifier chaque ennemi vivant
+      for (const go of this.enemies.getChildren()) {
+        const sprite = go as Phaser.Physics.Arcade.Sprite;
+        if (!sprite.active) continue;
+        const dist = Phaser.Math.Distance.Between(arrow.rect.x, arrow.rect.y, sprite.x, sprite.y);
+        if (dist > HIT_RADIUS) continue;
+
+        // Impact — un seul ennemi touché
+        arrow.hit = true;
+        arrow.rect.destroy();
+        this._activeArrows.splice(i, 1);
+
+        const activeEnemy = this.activeEnemies.get(sprite.name);
+        if (!activeEnemy) break;
+
+        const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
+        this.showDamageNumber(sprite.x, sprite.y - 20, result.damage, result.isCrit);
+        this.spawnHitParticles(sprite.x, sprite.y, result.element);
+        this.applyHitFeedback(sprite, activeEnemy, result.damage);
+        if (result.isCrit) this.cameras.main.shake(120, 0.007);
+        else               this.cameras.main.shake(40, 0.002);
+        if (result.isKill) this.onEnemyKilled(activeEnemy, sprite);
+        else               this.checkStagger(sprite, activeEnemy, result.damage);
+        break;
+      }
     }
   }
 
@@ -466,22 +709,25 @@ export class GameScene extends Phaser.Scene {
   public setShopOpen(open: boolean) { this.isInDialogue = open; }
 
   public setPaused(paused: boolean) {
-    if (paused) {
-      this.physics.world.pause();
-      this.scene.pause();
-    } else {
-      this.physics.world.resume();
-      this.scene.resume();
-    }
+    this.menuOpen = paused;
+    if (paused) this.physics.world.pause();
+    else        this.physics.world.resume();
+  }
+
+  public closeOverlay(key: string) {
+    this.setPaused(false);
+    this.scene.stop(key);
   }
 
   public openInventory() {
     if (this.scene.isActive('InventoryScene')) return;
+    this.setPaused(true);
     this.scene.launch('InventoryScene', { gameScene: this });
   }
 
   public openSkills() {
     if (this.scene.isActive('SkillScene')) return;
+    this.setPaused(true);
     this.scene.launch('SkillScene', { gameScene: this });
   }
 
@@ -495,13 +741,8 @@ export class GameScene extends Phaser.Scene {
       if (this.scene.isActive(key) || this.scene.isPaused(key)) this.scene.stop(key);
     }
 
-    // GameScene may be paused (called from PauseScene via scene.pause()).
-    // camera.update() only runs on RUNNING scenes, so FADE_OUT_COMPLETE would
-    // never fire if we start the fade while paused. Resume the scene first.
-    // scene.resume() is *queued* (takes effect next frame), so we wrap the
-    // fade in delayedCall(0) — it fires after processQueue() in that same frame,
-    // when GameScene is actually running again.
-    if (this.sys.isPaused()) this.scene.resume();
+    // Reset menu flag so the scene can run its update + camera fade correctly.
+    this.menuOpen = false;
 
     this.time.delayedCall(0, () => {
       this.cameras.main.once(
@@ -525,7 +766,18 @@ export class GameScene extends Phaser.Scene {
       left:  kb.addKey(b.left),
       right: kb.addKey(b.right),
     };
-    this.attackKey = kb.addKey(b.attack);
+    // window.addEventListener bypasses every Phaser keyboard layer — guaranteed
+    // delivery regardless of canvas focus, plugin state, or localStorage corruption.
+    // Always remove the previous handler before registering a new one.
+    if (this._attackHandler) {
+      window.removeEventListener('keydown', this._attackHandler);
+    }
+    this._attackHandler = (e: KeyboardEvent) => {
+      if (e.keyCode === b.attack && !this.menuOpen && !this.isInDialogue && !this.isTraveling) {
+        this.performBasicAttack();
+      }
+    };
+    window.addEventListener('keydown', this._attackHandler);
     this.dashKey   = kb.addKey(b.dash);
     this.skillKeys = {
       a: kb.addKey(b.skill1),
@@ -539,12 +791,16 @@ export class GameScene extends Phaser.Scene {
     this.inventoryKey = kb.addKey(b.inventory);
     this.skillMenuKey = kb.addKey(b.skills);
     this.inventoryKey.on('down', () => {
-      if (this.scene.isActive('InventoryScene')) this.scene.stop('InventoryScene');
-      else this.scene.launch('InventoryScene', { gameScene: this });
+      if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); return; }
+      if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); }
+      this.setPaused(true);
+      this.scene.launch('InventoryScene', { gameScene: this });
     });
     this.skillMenuKey.on('down', () => {
-      if (this.scene.isActive('SkillScene')) this.scene.stop('SkillScene');
-      else this.scene.launch('SkillScene', { gameScene: this });
+      if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); return; }
+      if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
+      this.setPaused(true);
+      this.scene.launch('SkillScene', { gameScene: this });
     });
   }
 
@@ -1195,6 +1451,303 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // ── WEAPON SWING VFX ────────────────────────────────────────
+  // VFX directionnel de l'attaque de base : part du joueur vers l'ennemi.
+  // Primitives Phaser uniquement (Graphics / shapes / tweens), ≤ 250ms,
+  // tout objet détruit en onComplete — aucun résidu.
+
+  // hitIndex = index of this hit within the pattern (0-based, for dual/multi weapons)
+  private spawnWeaponSwingVfx(
+    fromX: number, fromY: number,
+    toX: number, toY: number,
+    weaponType: WeaponType | undefined,
+    hitIndex = 0,
+  ) {
+    const angle = Math.atan2(toY - fromY, toX - fromX);
+
+    switch (weaponType) {
+      case WeaponType.DAGGER:
+        // Silver, ultra-short, 150ms — instant stab feel (range 85 → radius ≈ 85 * 0.55)
+        this.spawnSlashArcVfx(fromX, fromY, angle, 0xcccccc, { radius: 47, thickness: 4, halfArc: 0.55, duration: 150 });
+        break;
+
+      case WeaponType.DUAL_DAGGER: {
+        // Each hit alternates left/right ±30° — double-stab rhythm (range 85 → radius ≈ 85 * 0.55)
+        const ddOffset = hitIndex === 0 ? -0.52 : 0.52;
+        this.spawnSlashArcVfx(fromX, fromY, angle + ddOffset, 0xcccccc, { radius: 46, thickness: 4, halfArc: 0.50, duration: 150 });
+        break;
+      }
+
+      case WeaponType.SWORD:
+        // Blue-steel, clean wide arc, 250ms (range 115 → radius ≈ 115 * 0.55)
+        this.spawnSlashArcVfx(fromX, fromY, angle, 0x88aaff, { radius: 63, thickness: 6, halfArc: 0.85, duration: 250 });
+        break;
+
+      case WeaponType.DUAL_SWORD: {
+        // 3 progressive arcs rotating ~20° each, alternating blue / white / blue
+        // Range 105 → radius ≈ 105 * 0.55, full brightness for the flurry feel
+        const dsAngle  = angle + (hitIndex - 1) * 0.35;
+        const dsColor  = hitIndex === 1 ? 0xffffff : 0x88aaff;
+        const dsRadius = 55 + hitIndex * 3;
+        this.spawnSlashArcVfx(fromX, fromY, dsAngle, dsColor, { radius: dsRadius, thickness: 5, halfArc: 0.78, duration: 200, alpha: 1.0 });
+        break;
+      }
+
+      case WeaponType.GREATSWORD: {
+        // Enormous semi-circle + white impact flash (fires after 300ms windup)
+        // Range 155 → radius ≈ 155 * 0.55, thickness ≈ range * 0.08, full brightness
+        this.spawnSlashArcVfx(fromX, fromY, angle, 0xffffff, { radius: 85, thickness: 12, halfArc: 1.20, duration: 400, alpha: 1.0 });
+        this.cameras.main.shake(60, 0.003);
+        const gsFlash = this.add.circle(fromX, fromY, 24, 0xffffff, 0.85).setDepth(32);
+        this.tweens.add({
+          targets: gsFlash,
+          scaleX: 0.1, scaleY: 0.1, alpha: 0,
+          duration: 250,
+          ease: 'Power3',
+          onComplete: () => gsFlash.destroy(),
+        });
+        break;
+      }
+
+      case WeaponType.AXE:
+        this.spawnAxeVfx(fromX, fromY, toX, toY, angle, 0xff6600);
+        break;
+
+      case WeaponType.HAMMER:
+        this.spawnHammerVfx(toX, toY, 0xffdd00);
+        break;
+
+      case WeaponType.STAFF:
+        this.spawnStaffTrailVfx(fromX, fromY, toX, toY, 0x9944ff);
+        break;
+
+      case WeaponType.BOW:
+        this.spawnArrowVfx(fromX, fromY, toX, toY, angle, 0xddcc77);
+        break;
+
+      default:
+        // Fists: two short directional rays per hit, alternating left/right offset
+        this.spawnPunchBurstVfx(toX, toY, angle, hitIndex);
+        break;
+    }
+  }
+
+  // Arc de slash : croissant Graphics qui balaie le cône vers la cible en fondu
+  private spawnSlashArcVfx(
+    x: number, y: number, angle: number, color: number,
+    opts: { radius: number; thickness: number; halfArc: number; duration: number; alpha?: number },
+  ) {
+    const { radius, thickness, halfArc, duration, alpha = 0.95 } = opts;
+
+    const g = this.add.graphics({ x, y }).setDepth(31);
+    // Croissant principal (couleur de l'élément)
+    g.lineStyle(thickness, color, alpha);
+    g.beginPath();
+    g.arc(0, 0, radius, -halfArc, halfArc);
+    g.strokePath();
+    // Traînée externe blanche plus fine
+    g.lineStyle(Math.max(1, thickness - 2), 0xffffff, 0.5);
+    g.beginPath();
+    g.arc(0, 0, radius + 3, -halfArc * 0.8, halfArc * 0.8);
+    g.strokePath();
+
+    // Sweep : rotation de -50% à +50% du cône, fondu simultané
+    g.rotation = angle - halfArc * 0.5;
+    this.tweens.add({
+      targets: g,
+      rotation: angle + halfArc * 0.5,
+      alpha: 0,
+      duration,
+      ease: 'Cubic.easeOut',
+      onComplete: () => g.destroy(),
+    });
+  }
+
+  // Bâton : orbe glowing qui voyage dans la direction facing puis explose à l'impact
+  // Vitesse ~400px/s, total VFX ~600-800ms (travel + burst)
+  private spawnStaffTrailVfx(fromX: number, fromY: number, toX: number, toY: number, color: number) {
+    const orb  = this.add.circle(fromX, fromY, 10, color, 1).setDepth(32);
+    const halo = this.add.circle(fromX, fromY, 17, color, 0.35).setDepth(31);
+
+    const dist      = Phaser.Math.Distance.Between(fromX, fromY, toX, toY);
+    const travelDur = Math.max(150, Math.min(600, (dist / 400) * 1000)); // 400 px/s cap
+
+    // Fading trail behind the orb while it travels — bounded by finite repeat count
+    const trailInterval = 45;
+    this.time.addEvent({
+      delay: trailInterval,
+      repeat: Math.max(0, Math.floor(travelDur / trailInterval) - 1),
+      callback: () => {
+        const t = this.add.circle(orb.x, orb.y, 5, color, 0.5).setDepth(30);
+        this.tweens.add({
+          targets: t,
+          alpha: 0, scaleX: 0.2, scaleY: 0.2,
+          duration: 260,
+          ease: 'Quad.easeOut',
+          onComplete: () => t.destroy(),
+        });
+      },
+    });
+
+    this.tweens.add({
+      targets: [orb, halo],
+      x: toX, y: toY,
+      duration: travelDur,
+      ease: 'Linear',
+      onComplete: () => {
+        // Impact burst — expand and fade
+        this.tweens.add({
+          targets: [orb, halo],
+          scaleX: 3.5, scaleY: 3.5, alpha: 0,
+          duration: 200,
+          ease: 'Quad.easeOut',
+          onComplete: () => { orb.destroy(); halo.destroy(); },
+        });
+      },
+    });
+  }
+
+  // Arc : flèche fine (brun/or) qui part dans la direction facing — tension + relâche
+  // Shaft + pointe, vitesse ~600px/s, 80ms fade à l'impact
+  private spawnArrowVfx(
+    fromX: number, fromY: number,
+    toX: number, toY: number,
+    angle: number, color: number,
+  ) {
+    const shaft = this.add.rectangle(0, 0, 24, 2, 0xddcc77, 1);
+    const head  = this.add.triangle(14, 0, 0, -3, 0, 3, 7, 0, color, 1);
+    const arrow = this.add.container(fromX, fromY, [shaft, head]).setDepth(32);
+    arrow.setRotation(angle);
+
+    const dist = Phaser.Math.Distance.Between(fromX, fromY, toX, toY);
+    // BOW has range 460 → travel 322px (460 * 0.7) ≈ 537ms at 600px/s, capped sensibly
+    const dur  = Math.max(80, Math.min(600, (dist / 600) * 1000));
+
+    this.tweens.add({
+      targets: arrow,
+      x: toX, y: toY,
+      duration: dur,
+      ease: 'Linear',
+      onComplete: () => {
+        this.tweens.add({
+          targets: arrow,
+          alpha: 0,
+          duration: 80,
+          onComplete: () => arrow.destroy(),
+        });
+      },
+    });
+  }
+
+  // Hache : demi-cercle orange lourd (300ms) + éclats de métal rouges à l'impact
+  private spawnAxeVfx(fromX: number, fromY: number, toX: number, toY: number, angle: number, color: number) {
+    // Orange heavy arc — wider and thicker than sword, 300ms (range 125 → radius ≈ 125 * 0.55)
+    this.spawnSlashArcVfx(fromX, fromY, angle, color, { radius: 69, thickness: 10, halfArc: 0.80, duration: 300 });
+    // Red metal sparks fanning out from impact point (max speed ~280px/s)
+    const sparkCount = 10;
+    for (let i = 0; i < sparkCount; i++) {
+      const spreadAngle = angle + Math.PI + (Math.PI / sparkCount) * (i - (sparkCount - 1) / 2);
+      const dist = Phaser.Math.Between(14, 34);
+      const spark = this.add.rectangle(toX, toY, 10, 3, 0xcc2200, 1).setDepth(32);
+      spark.setRotation(spreadAngle);
+      this.tweens.add({
+        targets: spark,
+        x: toX + Math.cos(spreadAngle) * dist,
+        y: toY + Math.sin(spreadAngle) * dist,
+        alpha: 0,
+        scaleX: 0.1,
+        duration: Phaser.Math.Between(120, 240),
+        ease: 'Power2',
+        onComplete: () => spark.destroy(),
+      });
+    }
+  }
+
+  // Marteau : onde de choc expansive (500ms) + flash jaune intense + débris projetés
+  // Le plus lent, l'impact le plus massif — shake le plus fort
+  private spawnHammerVfx(x: number, y: number, color: number) {
+    // Large expanding shockwave ring — 500ms lifetime (range 105 → final radius ≈ 63px)
+    const ring = this.add.graphics({ x, y }).setDepth(31);
+    ring.lineStyle(8, color, 0.9);
+    ring.strokeCircle(0, 0, 14);
+    this.tweens.add({
+      targets: ring,
+      scaleX: 4.5, scaleY: 4.5,
+      alpha: 0,
+      duration: 500,
+      ease: 'Power2.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+    // Second inner ring for depth
+    const ring2 = this.add.graphics({ x, y }).setDepth(30);
+    ring2.lineStyle(4, 0xffffff, 0.5);
+    ring2.strokeCircle(0, 0, 7);
+    this.tweens.add({
+      targets: ring2,
+      scaleX: 3.0, scaleY: 3.0,
+      alpha: 0,
+      duration: 380,
+      ease: 'Power2.easeOut',
+      onComplete: () => ring2.destroy(),
+    });
+    // Intense yellow flash at center
+    const flash  = this.add.circle(x, y, 21, 0xffffff, 0.95).setDepth(33);
+    const inner  = this.add.circle(x, y, 12, color, 0.8).setDepth(34);
+    this.tweens.add({
+      targets: [flash, inner],
+      scaleX: 0.1, scaleY: 0.1, alpha: 0,
+      duration: 180,
+      ease: 'Power3',
+      onComplete: () => { flash.destroy(); inner.destroy(); },
+    });
+    // Debris chunks projected in a fan
+    for (let i = 0; i < 8; i++) {
+      const debrisAngle = -Math.PI / 2 + (Math.PI / 6.5) * (i - 3.5);
+      const dist = Phaser.Math.Between(28, 55);
+      const d = this.add.rectangle(x, y, 5, 5, color, 1).setDepth(31);
+      this.tweens.add({
+        targets: d,
+        x: x + Math.cos(debrisAngle) * dist,
+        y: y + Math.sin(debrisAngle) * dist,
+        alpha: 0,
+        angle: Phaser.Math.Between(90, 360),
+        duration: Phaser.Math.Between(220, 380),
+        ease: 'Power1',
+        onComplete: () => d.destroy(),
+      });
+    }
+    this.cameras.main.shake(150, 0.010);
+  }
+
+  // Windup : teinte jaune sur le joueur pendant le chargement d'une arme lourde
+  private spawnWindupVfx(durationMs: number) {
+    this.player.setTint(0xffffaa);
+    this.time.delayedCall(durationMs, () => {
+      if (this.player.active) this.player.clearTint();
+    });
+  }
+
+  // Mains nues : 2 rayons blancs courts par coup dans la direction du punch
+  // hitIndex 0 = poing gauche (offset -0.20), hitIndex 1 = poing droit (offset +0.20)
+  private spawnPunchBurstVfx(x: number, y: number, angle: number, hitIndex = 0) {
+    const baseOffset = hitIndex === 0 ? -0.20 : 0.20;
+    const rayAngles  = [angle + baseOffset - 0.12, angle + baseOffset + 0.12];
+    for (const rayAngle of rayAngles) {
+      const ray = this.add.rectangle(x, y, 28, 4, 0xffffff, 0.9).setDepth(32);
+      ray.setRotation(rayAngle);
+      this.tweens.add({
+        targets: ray,
+        x: x + Math.cos(rayAngle) * 26,
+        y: y + Math.sin(rayAngle) * 26,
+        scaleX: 0.1,
+        alpha: 0,
+        duration: 120,
+        ease: 'Power2',
+        onComplete: () => ray.destroy(),
+      });
+    }
+  }
+
   private showBossAnnouncement(bossName: string, zoneElement: ElementType) {
     const ZONE_AURA_COLORS: Partial<Record<ElementType, number>> = {
       [ElementType.FIRE]:      0xff4400,
@@ -1538,7 +2091,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Boss spawn — only if zone has a boss and it hasn't been cleared yet
-    if (zone.bossId && !this.gameState.player.clearedZones.includes(zoneId)) {
+    if (zone.bossId && !this.gameState.player.clearedZones.includes(zone.element as ElementType)) {
       const bossDef = ENEMY_MAP[zone.bossId];
       if (bossDef) {
         const bx = Math.floor(mapWidth / 2);
@@ -1632,13 +2185,22 @@ export class GameScene extends Phaser.Scene {
       r: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.R),
       f: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.F),
     };
-    // ESC → pause menu (stored ref, cleaned up by shutdown's removeAllKeys)
+    // ESC → ferme l'overlay actif ou ouvre le menu pause
     this.escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     this.escKey.on('down', () => {
-      if (!this.isInDialogue && !this.scene.isActive('PauseScene')) {
+      if (this.isInDialogue) return;
+      if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); return; }
+      if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene');     return; }
+      if (!this.scene.isActive('PauseScene')) {
         this.setPaused(true);
         this.scene.launch('PauseScene', { gameScene: this });
       }
+    });
+    // Clic gauche souris → interaction uniquement (NPC / lootable)
+    this.input.on('pointerdown', (ptr: Phaser.Input.Pointer) => {
+      if (!ptr.leftButtonDown() || this.menuOpen || this.isInDialogue) return;
+      if (this.nearbyNPC) { this.startNPCDialogue(this.nearbyNPC); return; }
+      if (this.nearbyLootable) { this.interactWithLootable(this.nearbyLootable); return; }
     });
     // Debug: hold B to move at 5× speed
     this.speedBoostKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.B);
@@ -1737,7 +2299,11 @@ export class GameScene extends Phaser.Scene {
       sprite.refreshBody();
       this.lootableGroup.add(sprite);
 
-      const lootLabel = this.add.text(lo.x, lo.y - 16, t(`notif.loot_${lo.type}` as const), {
+      const firstItem  = lo.itemPool[0] ? ALL_ITEMS[lo.itemPool[0]] : null;
+      const labelText  = (lo.type === 'mineral' || lo.type === 'plant') && firstItem
+        ? localizeItem(firstItem).name
+        : t(`notif.loot_${lo.type}` as const);
+      const lootLabel = this.add.text(lo.x, lo.y - 16, labelText, {
         fontSize: '8px', color: '#ffeeaa', fontFamily: 'monospace',
         stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5, 1).setDepth(4);
@@ -1843,8 +2409,14 @@ export class GameScene extends Phaser.Scene {
     if (this.lootableOverlap) { this.lootableOverlap.destroy(); this.lootableOverlap = null; }
     if (this.projectileCollider) { this.projectileCollider.destroy(); this.projectileCollider = null; }
 
-    // Projectiles group
+    // Projectiles group (skill/enemy projectiles)
     if (this.projectiles) { this.projectiles.destroy(true); }
+    // Flèches en vol — détruire les rectangles de collision et vider le tableau
+    for (const arrow of this._activeArrows) {
+      if (arrow.rect.active) arrow.rect.destroy();
+    }
+    this._activeArrows = [];
+    this.weaponProjectiles?.clear(true, true);
 
     // Zone graphics (map background, paths, walls, teleport highlights)
     if (this.zoneGraphics) {
@@ -1948,6 +2520,11 @@ export class GameScene extends Phaser.Scene {
   shutdown() {
     this.time.removeAllEvents();
     this.input.keyboard?.removeAllKeys(true);
+    // Clean up native window listener — no memory leak on scene stop/restart.
+    if (this._attackHandler) {
+      window.removeEventListener('keydown', this._attackHandler);
+      this._attackHandler = null;
+    }
     // Do NOT call events.removeAllListeners() — it strips Phaser's internal
     // lifecycle listeners (physics, tweens, input) registered on sys.events,
     // which prevents the scene from resuming correctly.

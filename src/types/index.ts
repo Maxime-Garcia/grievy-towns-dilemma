@@ -42,10 +42,14 @@ export enum ItemType {
 
 export enum WeaponType {
   SWORD = 'SWORD',
+  DUAL_SWORD = 'DUAL_SWORD',
   GREATSWORD = 'GREATSWORD',
+  DAGGER = 'DAGGER',
+  DUAL_DAGGER = 'DUAL_DAGGER',
+  AXE = 'AXE',
+  HAMMER = 'HAMMER',
   STAFF = 'STAFF',
   BOW = 'BOW',
-  DAGGER = 'DAGGER'
 }
 
 export enum SkillType {

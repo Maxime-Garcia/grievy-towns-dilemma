@@ -53,6 +53,18 @@ export class UIScene extends Phaser.Scene {
   create() {
     const { width: W, height: H } = this.cameras.main;
 
+    // ── DEV: build badge (top-left) — retirer avant release ─────────
+    const BUILD_LABEL = 'BOW: distance check manuel, no physics.overlap (30a02f3)';
+    const badgePad = 6;
+    const badgeText = this.add.text(badgePad + 4, badgePad + 4, BUILD_LABEL, {
+      fontSize: '10px', color: '#000000', fontFamily: 'monospace', fontStyle: 'bold',
+    }).setDepth(200);
+    const bw = badgeText.width + 8;
+    const bh = badgeText.height + 8;
+    this.add.rectangle(badgePad, badgePad, bw, bh, 0x00cc55, 1)
+      .setOrigin(0, 0).setDepth(199);
+    badgeText.setPosition(badgePad + 4, badgePad + 4);
+
     // ── Player stat panel (bottom-left) ─────────
     const PANEL_H   = 66;
     const PANEL_W   = BAR_X + BAR_W + 8;
