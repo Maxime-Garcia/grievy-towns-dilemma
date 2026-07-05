@@ -26,6 +26,12 @@ const EQ_ORDER: EquipSlotKey[] = [
   'helm', 'cape', 'chest', 'gloves', 'weapon', 'legs', 'boots', 'ring1', 'ring2', 'amulet',
 ];
 
+// Item types that have a direct equipment slot (used by doMainAction + renderItemDetail)
+const EQUIP_TYPES: ItemType[] = [
+  ItemType.WEAPON, ItemType.HELM,   ItemType.CHEST, ItemType.LEGS,
+  ItemType.BOOTS,  ItemType.GLOVES, ItemType.CAPE,  ItemType.RING, ItemType.AMULET,
+];
+
 interface PanelBounds { x: number; y: number; w: number; h: number }
 
 
@@ -49,6 +55,12 @@ export class InventoryScene extends Phaser.Scene {
   private selectedItemId: string | null = null;
 
   private keyEsc?: Phaser.Input.Keyboard.Key;
+  private keyZ?: Phaser.Input.Keyboard.Key;
+
+  // Long-press detection: single ref, cleared on pointerup / pointerout / shutdown
+  private longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  // Which paperdoll slot to flash after a successful tap-equip
+  private lastFlashSlotKey: EquipSlotKey | null = null;
 
   constructor() { super({ key: 'InventoryScene' }); }
 
@@ -138,6 +150,14 @@ export class InventoryScene extends Phaser.Scene {
     this.keyEsc = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     this.keyEsc.on('down', () => this.close());
 
+    // Z → trigger main action on the currently selected item (equip / use).
+    // Safe to use: GameScene.update() bails out early when menuOpen = true, so
+    // the ZQSD movement poll never runs while the inventory is open.
+    this.keyZ = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
+    this.keyZ.on('down', () => {
+      if (this.selectedItemId !== null) this.doMainAction(this.selectedItemId);
+    });
+
     // ── Dynamic content ───────────────────────────────────────────────────
     this.renderEquipment();
     this.renderCenter();
@@ -214,6 +234,23 @@ export class InventoryScene extends Phaser.Scene {
         hit.on('pointerover', () => { bg.lineStyle(2, 0xffffff, 0.8); bg.strokeRect(sx, sy, EQ_SLOT, EQ_SLOT); });
         hit.on('pointerout',  () => { bg.lineStyle(2, rarHex, 1);     bg.strokeRect(sx, sy, EQ_SLOT, EQ_SLOT); });
         hit.on('pointerdown', () => this.showDetail(item.id));
+
+        // White flash overlay — drawn last so it renders above icon/hit zone.
+        // Triggered when this slot was just filled by a tap-equip action.
+        if (this.lastFlashSlotKey === key) {
+          this.lastFlashSlotKey = null;
+          const flash = this.add.graphics();
+          flash.fillStyle(0xffffff, 0.8);
+          flash.fillRect(sx, sy, EQ_SLOT, EQ_SLOT);
+          this.dynamicObjs.push(flash);
+          this.tweens.add({
+            targets: flash,
+            alpha: 0,
+            duration: 400,
+            ease: 'Quad.easeOut',
+            onComplete: () => { if (flash.active) flash.destroy(); },
+          });
+        }
       }
     });
   }
@@ -280,7 +317,7 @@ export class InventoryScene extends Phaser.Scene {
     this.dynamicObjs.push(sepBot);
 
     this.dynamicObjs.push(
-      this.add.text(PX + PW / 2, PY + PH - 12, 'Cliquer un item → détails', pxStyle(5, UI.TXT_HINT)).setOrigin(0.5, 1),
+      this.add.text(PX + PW / 2, PY + PH - 12, 'Tap = action  •  Maintenir = détail', pxStyle(5, UI.TXT_HINT)).setOrigin(0.5, 1),
     );
   }
 
@@ -365,11 +402,7 @@ export class InventoryScene extends Phaser.Scene {
     this.dynamicObjs.push(descTxt);
 
     // ── Action buttons (bottom of panel) ─────────────────────────────────
-    const equipTypes: ItemType[] = [
-      ItemType.WEAPON, ItemType.HELM,   ItemType.CHEST, ItemType.LEGS,
-      ItemType.BOOTS,  ItemType.GLOVES, ItemType.CAPE,  ItemType.RING, ItemType.AMULET,
-    ];
-    const isEquip  = equipTypes.includes(item.type);
+    const isEquip = EQUIP_TYPES.includes(item.type);
     const isUse    = item.type === ItemType.CONSUMABLE;
     const isSell   = item.type !== ItemType.KEY_ITEM;
     const btnCount = (isEquip || isUse ? 1 : 0) + (isSell ? 1 : 0) + 1; // +1 for close
@@ -523,9 +556,27 @@ export class InventoryScene extends Phaser.Scene {
         .setInteractive({ useHandCursor: true });
       reg(hit, midY);
 
-      hit.on('pointerdown', () => this.showDetail(slot.item.id));
+      // Tap → immediate action (equip / use / open detail for key items).
+      // Long-press ≥ 500 ms → always open the detail panel.
+      hit.on('pointerdown', () => {
+        this.longPressTimer = setTimeout(() => {
+          this.longPressTimer = null;
+          this.showDetail(slot.item.id);
+        }, 500);
+      });
+      hit.on('pointerup', () => {
+        if (this.longPressTimer !== null) {
+          clearTimeout(this.longPressTimer);
+          this.longPressTimer = null;
+          this.doMainAction(slot.item.id);
+        }
+      });
       hit.on('pointerover', () => { bg.lineStyle(2, 0xffffff, 0.9); bg.strokeRect(sx, 0, INV_SLOT - 2, INV_SLOT - 2); });
-      hit.on('pointerout',  () => { bg.lineStyle(1, rarHex, 1);     bg.strokeRect(sx, 0, INV_SLOT - 2, INV_SLOT - 2); });
+      hit.on('pointerout',  () => {
+        // Cancel long-press if the pointer leaves before 500 ms
+        if (this.longPressTimer !== null) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
+        bg.lineStyle(1, rarHex, 1); bg.strokeRect(sx, 0, INV_SLOT - 2, INV_SLOT - 2);
+      });
     });
 
     // Mousewheel scroll
@@ -603,6 +654,62 @@ export class InventoryScene extends Phaser.Scene {
     return lines;
   }
 
+  // ── Action helpers ─────────────────────────────────────────────────────────
+
+  /**
+   * Maps an item's type to the paperdoll slot key it will occupy after equipping.
+   * Mirrors InventorySystem.getEquipSlot() so the flash targets the correct slot.
+   */
+  private getSlotKeyForItem(item: Item): EquipSlotKey | null {
+    switch (item.type) {
+      case ItemType.WEAPON:  return 'weapon';
+      case ItemType.HELM:    return 'helm';
+      case ItemType.CHEST:   return 'chest';
+      case ItemType.LEGS:    return 'legs';
+      case ItemType.BOOTS:   return 'boots';
+      case ItemType.GLOVES:  return 'gloves';
+      case ItemType.CAPE:    return 'cape';
+      case ItemType.AMULET:  return 'amulet';
+      case ItemType.RING:
+        // Matches InventorySystem fallback: overwrite ring1 when both slots occupied
+        if (!this.player.equipment.ring1) return 'ring1';
+        if (!this.player.equipment.ring2) return 'ring2';
+        return 'ring1';
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Executes the primary action for an item:
+   *   - Equippable  → equip immediately + flash the paperdoll slot
+   *   - Consumable  → use immediately
+   *   - Key / other → open the detail panel
+   *
+   * Called on quick tap in the grid and by the Z key shortcut in detail view.
+   */
+  private doMainAction(itemId: string): void {
+    const item = ALL_ITEMS[itemId];
+    if (!item) return;
+
+    if (EQUIP_TYPES.includes(item.type)) {
+      setInventoryPlayerContext(this.player);
+      // Compute target slot before equip() mutates player.equipment
+      this.lastFlashSlotKey = this.getSlotKeyForItem(item);
+      InventorySystem.equip(this.player, itemId);
+      this.selectedItemId = null;
+      this.refresh();
+    } else if (item.type === ItemType.CONSUMABLE) {
+      setInventoryPlayerContext(this.player);
+      InventorySystem.useConsumable(this.player, itemId);
+      this.selectedItemId = null;
+      this.refresh();
+    } else {
+      // Key items, materials, skins: open the detail panel
+      this.showDetail(itemId);
+    }
+  }
+
   // ── State transitions ──────────────────────────────────────────────────────
 
   private showDetail(itemId: string): void {
@@ -638,6 +745,12 @@ export class InventoryScene extends Phaser.Scene {
   shutdown() {
     const KB = this.input.keyboard;
     if (KB && this.keyEsc) KB.removeKey(this.keyEsc);
+    if (KB && this.keyZ)   KB.removeKey(this.keyZ);
+    // Cancel any in-flight long-press timer to prevent stale callbacks
+    if (this.longPressTimer !== null) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+    }
     this.input.off('wheel');
     this.clearDynamic();
   }
