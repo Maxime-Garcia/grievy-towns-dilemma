@@ -174,6 +174,7 @@ export interface Weapon extends BaseItem {
   bonusStats: StatBonus;
   attackSpeed: number;
   passiveEffect?: string;
+  equipStats?: EquipStats;
 }
 
 export interface Armor extends BaseItem {
@@ -182,12 +183,14 @@ export interface Armor extends BaseItem {
   magicDefense: number;
   bonusStats: StatBonus;
   passiveEffect?: string;
+  equipStats?: EquipStats;
 }
 
 export interface Accessory extends BaseItem {
   type: ItemType.RING | ItemType.AMULET;
   bonusStats: StatBonus;
   passiveEffect?: string;
+  equipStats?: EquipStats;
 }
 
 export interface ConsumableEffect {
@@ -649,6 +652,54 @@ export type GameEventType =
   | 'PLAYER_DIED'
   | 'GAME_SAVED'
   | 'ENDING_REACHED';
+
+// ============================================================
+// EQUIPMENT STATS — main stat + substats (couche loot ARPG)
+// ============================================================
+
+/** Clés de stats portables par un équipement (main stat ou substat). */
+export type SubstatKey =
+  | 'ATK_FLAT' | 'ATK_PCT' | 'MATK_FLAT' | 'MATK_PCT'
+  | 'DEF_FLAT' | 'DEF_PCT' | 'HP_FLAT'   | 'HP_PCT'
+  | 'CRIT_RATE' | 'CRIT_DMG' | 'ASPD_PCT' | 'SPD_FLAT'
+  | 'ELEM_BONUS_PCT' | 'MANA_FLAT' | 'LIFESTEAL_PCT';
+
+export interface ItemSubstat {
+  key: SubstatKey;
+  value: number;          // valeur flat ou % selon la clé
+  isPercentage?: boolean; // true si la valeur s'affiche avec %
+}
+
+export interface ItemMainStat {
+  key: SubstatKey;
+  value: number;
+  isPercentage?: boolean;
+}
+
+/**
+ * Stats d'équipement style ARPG (cf. docs/design/INSPIRATIONS.md §4).
+ * - mainStat : la stat qui définit l'item, fixée par son type.
+ *   • Arme : mainStat.value est le MIROIR de damage/magicDamage — ne jamais
+ *     cumuler les deux dans un calcul (StatsSystem.computeAll fait foi).
+ *   • Armure/accessoire : bonus d'identité ADDITIF — defense/magicDefense
+ *     legacy restent appliqués séparément par ProgressionSystem.
+ * - substats : 1 (COMMON) → 4 (EPIC+) bonus secondaires thématiques.
+ */
+export interface EquipStats {
+  mainStat: ItemMainStat;
+  substats: ItemSubstat[];
+}
+
+/** Nombre de substats attendu par rareté (validation data + futurs rolls). */
+export const SUBSTAT_COUNT_BY_RARITY: Record<ItemRarity, number> = {
+  [ItemRarity.COMMON]: 1,
+  [ItemRarity.UNCOMMON]: 2,
+  [ItemRarity.RARE]: 3,
+  [ItemRarity.EPIC]: 4,
+  [ItemRarity.LEGENDARY]: 4,
+  [ItemRarity.MYTHIC]: 4,
+  [ItemRarity.HIDDEN]: 0, // les HIDDEN portent un passif unique, pas de substats
+};
 
 // ============================================================
 // ELEMENTAL AFFINITY (weakness/resistance table)
