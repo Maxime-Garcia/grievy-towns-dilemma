@@ -159,6 +159,12 @@ export class GameScene extends Phaser.Scene {
   private projectiles!: Phaser.Physics.Arcade.Group;
   private projectileCollider: Phaser.Physics.Arcade.Collider | null = null;
   private weaponProjectiles!: Phaser.Physics.Arcade.Group;
+  private _activeArrows: Array<{
+    rect: Phaser.GameObjects.Rectangle;
+    vx: number; vy: number;
+    hit: boolean;
+    destroyAt: number;
+  }> = [];
   private lootableLooted: Set<string> = new Set();
 
   // Zone-scoped objects destroyed/recreated on each transition
@@ -310,6 +316,7 @@ export class GameScene extends Phaser.Scene {
     this.handleMovement(dt);
     this.handleAttackInput();
     this.handleSkillInput();
+    this.updateArrowProjectiles(dt);
 
     // Interaction hint
     const showHint = !!this.nearbyNPC || !!this.nearbyLootable;
@@ -589,42 +596,63 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ── BOW PROJECTILE ───────────────────────────────────────────
-  // Spawns an invisible physics body that travels at 600px/s and applies
-  // damage only on actual collision. The cosmetic arrow VFX runs in parallel.
+  // Un rectangle transparent suit la trajectoire de la flèche à chaque frame.
+  // La détection de collision se fait manuellement dans updateArrowProjectiles()
+  // — plus fiable que physics.add.overlap qui dépend d'une texture valide.
 
   private fireArrowProjectile() {
     const SPEED = 600;  // px/s
-    const RANGE = 460;  // px — body is destroyed if it travels this far without a hit
+    const RANGE = 460;
     const angle = this.facingAngle;
 
-    // Invisible physics body — 8×4px, aligned to facing direction
-    const arrow = this.physics.add.sprite(this.player.x, this.player.y, '_px');
-    arrow.setVisible(false);
-    arrow.setDisplaySize(8, 4);
-    const arrowBody = arrow.body as Phaser.Physics.Arcade.Body;
-    arrowBody.setSize(8, 4);
-    arrowBody.setAllowGravity(false);
-    arrowBody.setVelocity(Math.cos(angle) * SPEED, Math.sin(angle) * SPEED);
-    this.weaponProjectiles.add(arrow);
+    // Point de collision : rectangle transparent déplacé manuellement chaque frame
+    const rect = this.add.rectangle(this.player.x, this.player.y, 16, 8, 0xffffff, 0);
+    const travelMs = (RANGE / SPEED) * 1000; // ~767ms
+    this._activeArrows.push({
+      rect,
+      vx: Math.cos(angle) * SPEED,
+      vy: Math.sin(angle) * SPEED,
+      hit: false,
+      destroyAt: this.time.now + travelMs,
+    });
 
-    // Cosmetic VFX — purely visual, travels to the same destination
+    // VFX cosmétique — voyage en parallèle, purement visuel
     const toX = this.player.x + Math.cos(angle) * RANGE * 0.7;
     const toY = this.player.y + Math.sin(angle) * RANGE * 0.7;
     this.spawnArrowVfx(this.player.x, this.player.y, toX, toY, angle, 0xddcc77);
+  }
 
-    // Guard: only the first enemy collision counts
-    let hit = false;
+  private updateArrowProjectiles(dt: number) {
+    if (this._activeArrows.length === 0) return;
+    const HIT_RADIUS = 22; // px
 
-    const collider = this.physics.add.overlap(
-      arrow,
-      this.enemies,
-      (_arrowObj, enemyObj) => {
-        if (hit) return;
-        hit = true;
+    for (let i = this._activeArrows.length - 1; i >= 0; i--) {
+      const arrow = this._activeArrows[i];
 
-        const sprite = enemyObj as Phaser.Physics.Arcade.Sprite;
+      if (arrow.hit || this.time.now >= arrow.destroyAt) {
+        if (arrow.rect.active) arrow.rect.destroy();
+        this._activeArrows.splice(i, 1);
+        continue;
+      }
+
+      // Déplacer le point de collision frame par frame
+      arrow.rect.x += arrow.vx * dt;
+      arrow.rect.y += arrow.vy * dt;
+
+      // Vérifier chaque ennemi vivant
+      for (const go of this.enemies.getChildren()) {
+        const sprite = go as Phaser.Physics.Arcade.Sprite;
+        if (!sprite.active) continue;
+        const dist = Phaser.Math.Distance.Between(arrow.rect.x, arrow.rect.y, sprite.x, sprite.y);
+        if (dist > HIT_RADIUS) continue;
+
+        // Impact — un seul ennemi touché
+        arrow.hit = true;
+        arrow.rect.destroy();
+        this._activeArrows.splice(i, 1);
+
         const activeEnemy = this.activeEnemies.get(sprite.name);
-        if (!activeEnemy) return;
+        if (!activeEnemy) break;
 
         const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
         this.showDamageNumber(sprite.x, sprite.y - 20, result.damage, result.isCrit);
@@ -634,21 +662,9 @@ export class GameScene extends Phaser.Scene {
         else               this.cameras.main.shake(40, 0.002);
         if (result.isKill) this.onEnemyKilled(activeEnemy, sprite);
         else               this.checkStagger(sprite, activeEnemy, result.damage);
-
-        // Clean up physics immediately so no further overlaps fire
-        this.physics.world.removeCollider(collider);
-        arrow.destroy();
-      },
-    );
-
-    // Auto-destroy after travel distance is exhausted if no hit occurred
-    const travelMs = (RANGE / SPEED) * 1000; // ≈ 767ms
-    this.time.delayedCall(travelMs, () => {
-      if (arrow.active) {
-        this.physics.world.removeCollider(collider);
-        arrow.destroy();
+        break;
       }
-    });
+    }
   }
 
   private activateSkill(skillId: string) {
@@ -2395,8 +2411,11 @@ export class GameScene extends Phaser.Scene {
 
     // Projectiles group (skill/enemy projectiles)
     if (this.projectiles) { this.projectiles.destroy(true); }
-    // Weapon projectile group — clear sprites; individual colliders are cleaned up
-    // by their own delayedCall/overlap callbacks once sprites go inactive.
+    // Flèches en vol — détruire les rectangles de collision et vider le tableau
+    for (const arrow of this._activeArrows) {
+      if (arrow.rect.active) arrow.rect.destroy();
+    }
+    this._activeArrows = [];
     this.weaponProjectiles?.clear(true, true);
 
     // Zone graphics (map background, paths, walls, teleport highlights)
