@@ -133,6 +133,28 @@ const FISTS_PATTERN: AttackPattern = {
   cooldown: 500,
 };
 
+// ── ALT ATTACK CONFIGS ────────────────────────────────────────────────────────
+// Pure cooldown / windup data per weapon. Execution logic lives in performAltAttack().
+
+interface AltAttackConfig {
+  cooldownMs: number;
+  windupMs?: number;
+}
+
+const ALT_ATTACK_CONFIGS: Partial<Record<WeaponType, AltAttackConfig>> = {
+  [WeaponType.SWORD]:       { cooldownMs: 350 },
+  [WeaponType.GREATSWORD]:  { cooldownMs: 900,  windupMs: 250 },
+  [WeaponType.DAGGER]:      { cooldownMs: 600 },
+  [WeaponType.DUAL_DAGGER]: { cooldownMs: 700 },
+  [WeaponType.DUAL_SWORD]:  { cooldownMs: 800 },
+  [WeaponType.AXE]:         { cooldownMs: 900 },
+  [WeaponType.HAMMER]:      { cooldownMs: 1400, windupMs: 400 },
+  [WeaponType.STAFF]:       { cooldownMs: 1200, windupMs: 300 },
+  [WeaponType.BOW]:         { cooldownMs: 700 },
+};
+
+const FISTS_ALT_CONFIG: AltAttackConfig = { cooldownMs: 500 };
+
 export class GameScene extends Phaser.Scene {
   public  gameState!: GameState;
 
@@ -147,7 +169,9 @@ export class GameScene extends Phaser.Scene {
   private skillKeys!: { a: Phaser.Input.Keyboard.Key; e: Phaser.Input.Keyboard.Key; r: Phaser.Input.Keyboard.Key; f: Phaser.Input.Keyboard.Key };
   private attackKey!: Phaser.Input.Keyboard.Key;
   private _attackHandler: ((e: KeyboardEvent) => void) | null = null;
+  private _altAttackHandler: ((e: KeyboardEvent) => void) | null = null;
   private attackCooldownUntil = 0;
+  private altAttackCooldownUntil = 0;
   private dashKey!: Phaser.Input.Keyboard.Key;
   private inventoryKey!: Phaser.Input.Keyboard.Key;
   private skillMenuKey!: Phaser.Input.Keyboard.Key;
@@ -240,7 +264,8 @@ export class GameScene extends Phaser.Scene {
     this.dashMomentumY       = 0;
     this.playtimeAccumulator = 0;
     this.lastAutoSave        = 0;
-    this.attackCooldownUntil = 0;
+    this.attackCooldownUntil    = 0;
+    this.altAttackCooldownUntil = 0;
     this.isDashing      = false;
     this.lastDirX       = 0;
     this.lastDirY       = 1;
@@ -498,8 +523,13 @@ export class GameScene extends Phaser.Scene {
   // ── SKILLS & ATTACK ──────────────────────────────────────────
 
   private handleAttackInput() {
-    // Basic attack is driven by a direct key listener in applyKeyBindings()
-    // so it fires even when the update loop is starved after a menu overlay.
+    // Auto-fire a buffered attack the moment the cooldown expires.
+    // This lets the player spam the attack key freely; the character simply
+    // attacks as fast as the animation cooldown allows — no punish, no dead zone.
+    if (this.bufferedAttack && this.time.now >= this.attackCooldownUntil) {
+      this.bufferedAttack = false;
+      this.performBasicAttack();
+    }
     if (Phaser.Input.Keyboard.JustDown(this.dashKey)) {
       this.handleDash();
     }
@@ -528,36 +558,29 @@ export class GameScene extends Phaser.Scene {
     const pattern = (weaponType !== undefined ? ATTACK_PATTERNS[weaponType] : undefined) ?? FISTS_PATTERN;
     const comboConfig = weaponType !== undefined ? COMBO_CONFIGS[weaponType] : undefined;
 
-    // ── ZONE MORTE ──────────────────────────────────────────────
-    // Input reçu avant la fin du cooldown → marquer comboRushed, ne pas attaquer.
-    if (now < this.lastAttackEnd) {
-      this.comboRushed = true;
+    // ── BUFFER ───────────────────────────────────────────────────
+    // Input received before cooldown ends → buffer; auto-fires in handleAttackInput().
+    // No punishment for spam — the player simply waits for the animation cooldown.
+    if (now < this.attackCooldownUntil) {
+      this.bufferedAttack = true;
       return;
     }
 
     // ── CHANGEMENT D'ARME ────────────────────────────────────────
     if (weaponType !== this.comboWeaponType) {
       if (this.comboCount > 0) this.events.emit('combo-broken');
-      this.comboCount  = 0;
-      this.comboRushed = false;
+      this.comboCount = 0;
     }
 
-    // ── APRÈS LA GRACE ───────────────────────────────────────────
-    // Si le joueur a attendu plus longtemps que la fenêtre de grace, la chaîne repart à 1.
-    if (comboConfig && this.comboCount > 0 && !this.comboRushed) {
+    // ── GRACE TIMER ──────────────────────────────────────────────
+    // If the player waited past the grace window, the chain resets to 1.
+    // Grace is measured from when the previous cooldown ended (lastAttackEnd).
+    if (comboConfig && this.comboCount > 0) {
       const effectiveGrace = comboConfig.graceMs * this.playerModifiers.comboGraceMult;
       if (now - this.lastAttackEnd > effectiveGrace) {
         this.comboCount = 0;
         this.events.emit('combo-broken');
       }
-    }
-
-    // ── REJET DU SPAM ────────────────────────────────────────────
-    // Le dernier input était en zone morte → l'attaque part, mais la chaîne repart à 0.
-    if (this.comboRushed) {
-      if (this.comboCount > 0) this.events.emit('combo-broken');
-      this.comboCount  = 0;
-      this.comboRushed = false;
     }
 
     this.comboWeaponType = weaponType;
@@ -873,6 +896,16 @@ export class GameScene extends Phaser.Scene {
       }
     };
     window.addEventListener('keydown', this._attackHandler);
+    // Alt attack — same window listener pattern, separate handler for H key.
+    if (this._altAttackHandler) {
+      window.removeEventListener('keydown', this._altAttackHandler);
+    }
+    this._altAttackHandler = (e: KeyboardEvent) => {
+      if (e.keyCode === b.altAttack && !this.menuOpen && !this.isInDialogue && !this.isTraveling) {
+        this.performAltAttack();
+      }
+    };
+    window.addEventListener('keydown', this._altAttackHandler);
     this.dashKey   = kb.addKey(b.dash);
     this.skillKeys = {
       a: kb.addKey(b.skill1),
@@ -3107,13 +3140,345 @@ export class GameScene extends Phaser.Scene {
     body.setVelocity(Math.cos(angle) * force, Math.sin(angle) * force);
   }
 
+  // ── ALT ATTACK SYSTEM ────────────────────────────────────────
+  // H key triggers the weapon-specific alternate attack.
+  // All VFX use violet/magenta palette to distinguish from the normal blue/cyan swings.
+
+  private performAltAttack() {
+    const now = this.time.now;
+    if (now < this.altAttackCooldownUntil) return;
+
+    const weaponType = this.gameState.player.equipment.weapon?.weaponType;
+    const config = (weaponType !== undefined ? ALT_ATTACK_CONFIGS[weaponType] : undefined)
+      ?? FISTS_ALT_CONFIG;
+
+    this.altAttackCooldownUntil = now + config.cooldownMs;
+
+    switch (weaponType) {
+      case WeaponType.SWORD:       this.performAltSword(config);      break;
+      case WeaponType.GREATSWORD:  this.performAltGreatsword(config); break;
+      case WeaponType.DAGGER:      this.performAltDagger(config);     break;
+      case WeaponType.DUAL_DAGGER: this.performAltDualDagger(config); break;
+      case WeaponType.DUAL_SWORD:  this.performAltDualSword(config);  break;
+      case WeaponType.AXE:         this.performAltAxe(config);        break;
+      case WeaponType.HAMMER:      this.performAltHammer(config);     break;
+      case WeaponType.STAFF:       this.performAltStaff(config);      break;
+      case WeaponType.BOW:         this.performAltBow(config);        break;
+      default:                      this.performAltFists(config);      break;
+    }
+  }
+
+  // SWORD — Estoc : narrow cone (PI/12), range x1.8, dmgMult=0.85, rapid, 350ms cd.
+  // Note: 30% DEF pierce is a design intent; CombatSystem has no pierce param.
+  private performAltSword(_config: AltAttackConfig) {
+    const range = Math.round(115 * 1.8); // 207px
+    this.spawnAltSwordEstocVfx(this.player.x, this.player.y, this.facingAngle);
+    this.executeHitInCone(range, Math.PI / 12, 0.85);
+  }
+
+  // GREATSWORD — Frappe circulaire : 360°, range x0.7, dmgMult=1.4, windup 250ms, knockback.
+  private performAltGreatsword(config: AltAttackConfig) {
+    const windupMs = config.windupMs ?? 0;
+    this.inWindup = true;
+    this.player.setTint(0xff8888); // reddish windup (distinct from normal yellow)
+    this.time.delayedCall(windupMs, () => {
+      this.inWindup = false;
+      if (this.player.active) this.player.clearTint();
+      if (this.isTraveling) return;
+      const range = Math.round(155 * 0.7); // 108px
+      this.spawnAltGreatswordCircleVfx(this.player.x, this.player.y);
+      this.executeHitInCone(range, Math.PI, 1.4); // 360°
+      const hitSprites = this.findEnemiesInCone(range, Math.PI);
+      for (const sprite of hitSprites) this.applyKnockback(sprite, 180);
+    });
+  }
+
+  // DAGGER — Contre-attaque : dash toward nearest enemy + hit (dmgMult=1.6), or dash fwd.
+  private performAltDagger(_config: AltAttackConfig) {
+    const angle  = this.facingAngle;
+    const target = this.findNearestEnemy(85);
+    const fromX  = this.player.x;
+    const fromY  = this.player.y;
+
+    if (target) {
+      // Land just behind the enemy relative to attack direction
+      const toX = target.x - Math.cos(angle) * 20;
+      const toY = target.y - Math.sin(angle) * 20;
+      this.player.setPosition(toX, toY);
+      (this.player.body as Phaser.Physics.Arcade.Body).reset(toX, toY);
+      this.spawnAltDaggerCounterVfx(fromX, fromY, toX, toY);
+      this.executeHitInCone(85, Math.PI, 1.6); // 360° backstab reach
+    } else {
+      // No target — simple forward dash
+      const toX = fromX + Math.cos(angle) * 80;
+      const toY = fromY + Math.sin(angle) * 80;
+      this.player.setPosition(toX, toY);
+      (this.player.body as Phaser.Physics.Arcade.Body).reset(toX, toY);
+      this.spawnAltDaggerCounterVfx(fromX, fromY, toX, toY);
+    }
+  }
+
+  // DUAL_DAGGER — Tornade : 360°, 3 hits × 80ms, each dmgMult=0.4, range x0.8.
+  private performAltDualDagger(_config: AltAttackConfig) {
+    const range = Math.round(85 * 0.8); // 68px
+    for (let i = 0; i < 3; i++) {
+      this.time.delayedCall(i * 80, () => {
+        if (this.isTraveling) return;
+        this.executeHitInCone(range, Math.PI, 0.4);
+        this.spawnAltDualDaggerTornadoVfx(i);
+      });
+    }
+  }
+
+  // DUAL_SWORD — Parade-riposte : 600ms guard → auto-counter dmgMult=1.2 if hit, 0.7 if not.
+  private performAltDualSword(_config: AltAttackConfig) {
+    const guardMs  = 600;
+    const hpBefore = this.gameState.player.stats.hp;
+    this.guardUntil = this.time.now + guardMs;
+    this.spawnAltDualSwordParadeVfx(this.player.x, this.player.y);
+    this.time.delayedCall(guardMs, () => {
+      if (this.isTraveling) return;
+      const wasHit   = this.gameState.player.stats.hp < hpBefore;
+      const dmgMult  = wasHit ? 1.2 : 0.7;
+      this.executeHitInCone(105, Math.PI * 0.6, dmgMult);
+      this.spawnAltDualSwordCounterVfx(this.player.x, this.player.y, this.facingAngle);
+    });
+  }
+
+  // AXE — Lancer : physics projectile, range=150, dmgMult=1.0.
+  private performAltAxe(_config: AltAttackConfig) {
+    this.fireAltProjectile(150, 1.0);
+    this.spawnAltAxeThrowVfx(this.player.x, this.player.y, this.facingAngle);
+  }
+
+  // HAMMER — Saut écrasement : windup 400ms (red tint), 360° AOE=100, dmgMult=2.5, stun 800ms.
+  private performAltHammer(config: AltAttackConfig) {
+    const windupMs = config.windupMs ?? 0;
+    this.inWindup  = true;
+    this.player.setTint(0xff3333); // bright red windup signal
+    this.time.delayedCall(windupMs, () => {
+      this.inWindup = false;
+      if (this.player.active) this.player.clearTint();
+      if (this.isTraveling) return;
+      const AOE = 100;
+      this.spawnAltHammerSlamVfx(this.player.x, this.player.y);
+      this.executeHitInCone(AOE, Math.PI, 2.5);
+      const hitSprites = this.findEnemiesInCone(AOE, Math.PI);
+      for (const sprite of hitSprites) this.applyStun(sprite, 800);
+    });
+  }
+
+  // STAFF — Tir chargé : windup 300ms (purple tint), projectile range x1.5, dmgMult=1.8.
+  private performAltStaff(config: AltAttackConfig) {
+    const windupMs = config.windupMs ?? 0;
+    this.inWindup  = true;
+    this.player.setTint(0xcc44ff); // purple charge
+    this.time.delayedCall(windupMs, () => {
+      this.inWindup = false;
+      if (this.player.active) this.player.clearTint();
+      if (this.isTraveling) return;
+      const range = Math.round(260 * 1.5); // 390px
+      const angle = this.facingAngle;
+      this.fireAltProjectile(range, 1.8);
+      const toX = this.player.x + Math.cos(angle) * range;
+      const toY = this.player.y + Math.sin(angle) * range;
+      this.spawnStaffTrailVfx(this.player.x, this.player.y, toX, toY, 0xff44ff);
+    });
+  }
+
+  // BOW — Tir de précision : straight projectile, range x1.6, dmgMult=1.5.
+  private performAltBow(_config: AltAttackConfig) {
+    const range = Math.round(460 * 1.6); // 736px
+    const angle = this.facingAngle;
+    this.fireAltProjectile(range, 1.5);
+    const toX = this.player.x + Math.cos(angle) * range;
+    const toY = this.player.y + Math.sin(angle) * range;
+    this.spawnArrowVfx(this.player.x, this.player.y, toX, toY, angle, 0xcc44ff);
+  }
+
+  // FISTS — Coup retourné : dash back 80px → pause 150ms → dash fwd 120px + hit dmgMult=1.2.
+  private performAltFists(_config: AltAttackConfig) {
+    const angle = this.facingAngle;
+    const fromX = this.player.x;
+    const fromY = this.player.y;
+    const backX = fromX - Math.cos(angle) * 80;
+    const backY = fromY - Math.sin(angle) * 80;
+
+    // Afterimage at starting position
+    const ghost = this.add.rectangle(fromX, fromY, this.player.displayWidth, this.player.displayHeight, 0xff44ff, 0.5).setDepth(3);
+    this.tweens.add({ targets: ghost, alpha: 0, duration: 200, onComplete: () => ghost.destroy() });
+
+    // Snap backward
+    this.player.setPosition(backX, backY);
+    (this.player.body as Phaser.Physics.Arcade.Body).reset(backX, backY);
+
+    this.time.delayedCall(150, () => {
+      if (this.isTraveling) return;
+      const fwdX = this.player.x + Math.cos(angle) * 120;
+      const fwdY = this.player.y + Math.sin(angle) * 120;
+
+      // Afterimage at back position before lunge
+      const ghost2 = this.add.rectangle(this.player.x, this.player.y, this.player.displayWidth, this.player.displayHeight, 0xff44ff, 0.5).setDepth(3);
+      this.tweens.add({ targets: ghost2, alpha: 0, duration: 200, onComplete: () => ghost2.destroy() });
+
+      this.player.setPosition(fwdX, fwdY);
+      (this.player.body as Phaser.Physics.Arcade.Body).reset(fwdX, fwdY);
+      this.executeHitInCone(65, Math.PI / 2.4, 1.2);
+      // Magenta punch burst at impact point
+      const impX = this.player.x + Math.cos(angle) * 30;
+      const impY = this.player.y + Math.sin(angle) * 30;
+      const burst = this.add.circle(impX, impY, 14, 0xff44ff, 0.85).setDepth(33);
+      this.tweens.add({ targets: burst, scaleX: 2, scaleY: 2, alpha: 0, duration: 200, ease: 'Power2', onComplete: () => burst.destroy() });
+    });
+  }
+
+  // ── ALT ATTACK PROJECTILE HELPER ──────────────────────────────
+  // Fires a physics-collision rectangle along facingAngle (reuses _activeArrows pool).
+  // No cosmetic VFX — each caller spawns its own visual to match the weapon feel.
+
+  private fireAltProjectile(range: number, dmgMult: number) {
+    const SPEED = 600; // px/s — same as bow
+    const angle = this.facingAngle;
+    const rect  = this.add.rectangle(this.player.x, this.player.y, 16, 8, 0xffffff, 0);
+    this._activeArrows.push({
+      rect,
+      vx: Math.cos(angle) * SPEED,
+      vy: Math.sin(angle) * SPEED,
+      hit: false,
+      destroyAt: this.time.now + (range / SPEED) * 1000,
+      dmgMult,
+    });
+  }
+
+  // ── ALT ATTACK VFX ───────────────────────────────────────────
+  // All use violet/magenta palette (0xcc44ff / 0xff44ff / 0xff00ff) to signal
+  // "this is H, not J" at a glance. Pure Phaser primitives, destroyed in onComplete.
+
+  // SWORD estoc — fast thin purple thrust beam along facing angle.
+  private spawnAltSwordEstocVfx(px: number, py: number, angle: number) {
+    const len = 140;
+    const cx = px + Math.cos(angle) * len / 2;
+    const cy = py + Math.sin(angle) * len / 2;
+    const beam = this.add.rectangle(cx, cy, len, 4, 0xcc44ff, 0.9).setDepth(32).setRotation(angle);
+    this.tweens.add({
+      targets: beam,
+      scaleX: 0.05, alpha: 0,
+      duration: 180,
+      ease: 'Power3',
+      onComplete: () => beam.destroy(),
+    });
+    const tip = this.add.circle(px + Math.cos(angle) * len, py + Math.sin(angle) * len, 8, 0xee88ff, 0.8).setDepth(33);
+    this.tweens.add({ targets: tip, scaleX: 0, scaleY: 0, alpha: 0, duration: 150, ease: 'Power2', onComplete: () => tip.destroy() });
+  }
+
+  // GREATSWORD frappe circulaire — red expanding ring.
+  private spawnAltGreatswordCircleVfx(px: number, py: number) {
+    const ring = this.add.graphics({ x: px, y: py }).setDepth(32);
+    ring.lineStyle(10, 0xff2244, 0.9);
+    ring.strokeCircle(0, 0, 14);
+    this.tweens.add({
+      targets: ring,
+      scaleX: 5.5, scaleY: 5.5, alpha: 0,
+      duration: 500,
+      ease: 'Power2.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+    const inner = this.add.circle(px, py, 18, 0xff0000, 0.4).setDepth(31);
+    this.tweens.add({ targets: inner, alpha: 0, duration: 280, onComplete: () => inner.destroy() });
+  }
+
+  // DAGGER contre — orange dash trail + impact flash at destination.
+  private spawnAltDaggerCounterVfx(fromX: number, fromY: number, toX: number, toY: number) {
+    const trailAngle = Math.atan2(toY - fromY, toX - fromX);
+    const trailLen   = Phaser.Math.Distance.Between(fromX, fromY, toX, toY);
+    const trail = this.add.rectangle(
+      (fromX + toX) / 2, (fromY + toY) / 2,
+      trailLen, 3, 0xff8800, 0.8,
+    ).setDepth(31).setRotation(trailAngle);
+    this.tweens.add({ targets: trail, alpha: 0, duration: 220, onComplete: () => trail.destroy() });
+    const flash = this.add.circle(toX, toY, 12, 0xff6600, 0.9).setDepth(33);
+    this.tweens.add({ targets: flash, scaleX: 2.2, scaleY: 2.2, alpha: 0, duration: 200, ease: 'Power2', onComplete: () => flash.destroy() });
+  }
+
+  // DUAL_DAGGER tornade — three purple arcs spread 120° apart per hit cycle.
+  private spawnAltDualDaggerTornadoVfx(hitIndex: number) {
+    const px = this.player.x;
+    const py = this.player.y;
+    const baseAngle = (Math.PI * 2 / 3) * hitIndex;
+    for (let i = 0; i < 3; i++) {
+      const a = baseAngle + (Math.PI * 2 / 3) * i;
+      this.spawnSlashArcVfx(px, py, a, 0xcc44ff, { radius: 50, thickness: 4, halfArc: 0.6, duration: 200 });
+    }
+  }
+
+  // DUAL_SWORD parade — pulsing purple shield ring that follows the player.
+  private spawnAltDualSwordParadeVfx(px: number, py: number) {
+    const shield = this.add.graphics({ x: px, y: py }).setDepth(30);
+    shield.lineStyle(3, 0xcc44ff, 0.85);
+    shield.strokeCircle(0, 0, 20);
+    this.tweens.add({
+      targets: shield,
+      scaleX: 1.5, scaleY: 1.5, alpha: 0.1,
+      duration: 300,
+      yoyo: true, repeat: 1,
+      onUpdate: () => shield.setPosition(this.player.x, this.player.y),
+      onComplete: () => shield.destroy(),
+    });
+  }
+
+  // DUAL_SWORD counter — magenta counter slash + glow flash.
+  private spawnAltDualSwordCounterVfx(px: number, py: number, angle: number) {
+    this.spawnSlashArcVfx(px, py, angle, 0xff00ff, { radius: 70, thickness: 8, halfArc: 0.80, duration: 200, alpha: 1.0 });
+    const flash = this.add.circle(px, py, 18, 0xff44ff, 0.7).setDepth(33);
+    this.tweens.add({ targets: flash, scaleX: 2.5, scaleY: 2.5, alpha: 0, duration: 200, ease: 'Power2', onComplete: () => flash.destroy() });
+  }
+
+  // AXE lancer — purple spinning rectangle flying along facing angle.
+  private spawnAltAxeThrowVfx(fromX: number, fromY: number, angle: number) {
+    const toX    = fromX + Math.cos(angle) * 150;
+    const toY    = fromY + Math.sin(angle) * 150;
+    const axe    = this.add.rectangle(fromX, fromY, 18, 6, 0xcc44ff, 1).setDepth(32);
+    axe.setRotation(angle);
+    this.tweens.add({
+      targets: axe,
+      x: toX, y: toY,
+      angle: 720, // two full rotations during flight
+      duration: 250,
+      ease: 'Linear',
+      onComplete: () => {
+        this.tweens.add({ targets: axe, alpha: 0, scaleX: 0.1, scaleY: 0.1, duration: 100, onComplete: () => axe.destroy() });
+      },
+    });
+  }
+
+  // HAMMER saut écrasement — massive red shockwave ring + center implosion.
+  private spawnAltHammerSlamVfx(px: number, py: number) {
+    const ring = this.add.graphics({ x: px, y: py }).setDepth(31);
+    ring.lineStyle(10, 0xff0000, 0.9);
+    ring.strokeCircle(0, 0, 14);
+    this.tweens.add({
+      targets: ring,
+      scaleX: 7.2, scaleY: 7.2, alpha: 0, // ~100px final radius
+      duration: 600,
+      ease: 'Power2.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+    const inner = this.add.circle(px, py, 26, 0xff2222, 0.85).setDepth(32);
+    this.tweens.add({ targets: inner, scaleX: 0.1, scaleY: 0.1, alpha: 0, duration: 220, ease: 'Power3', onComplete: () => inner.destroy() });
+    this.cameras.main.shake(180, 0.014);
+  }
+
   shutdown() {
     this.time.removeAllEvents();
     this.input.keyboard?.removeAllKeys(true);
-    // Clean up native window listener — no memory leak on scene stop/restart.
+    // Clean up native window listeners — no memory leak on scene stop/restart.
     if (this._attackHandler) {
       window.removeEventListener('keydown', this._attackHandler);
       this._attackHandler = null;
+    }
+    if (this._altAttackHandler) {
+      window.removeEventListener('keydown', this._altAttackHandler);
+      this._altAttackHandler = null;
     }
     // Do NOT call events.removeAllListeners() — it strips Phaser's internal
     // lifecycle listeners (physics, tweens, input) registered on sys.events,
