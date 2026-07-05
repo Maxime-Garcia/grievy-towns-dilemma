@@ -267,5 +267,12 @@ export class InventoryScene extends Phaser.Scene {
     c.once('down', () => panel.destroy());
   }
 
-  shutdown() {}
+  shutdown() {
+    const KB = this.input.keyboard;
+    if (KB) {
+      KB.removeKey(Phaser.Input.Keyboard.KeyCodes.Z);
+      KB.removeKey(Phaser.Input.Keyboard.KeyCodes.X);
+      KB.removeKey(Phaser.Input.Keyboard.KeyCodes.C);
+    }
+  }
 }

@@ -581,7 +581,7 @@ export class GameScene extends Phaser.Scene {
     // On retire tout listener précédent avant d'en ajouter un nouveau.
     kb.off('keydown', this._attackHandler as any);
     this._attackHandler = (event: KeyboardEvent) => {
-      if (event.keyCode === b.attack && !this.menuOpen && !this.isInDialogue) {
+      if (event.keyCode === b.attack && !this.menuOpen && !this.isInDialogue && !this.isTraveling) {
         this.performBasicAttack();
       }
     };
@@ -1841,7 +1841,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Boss spawn — only if zone has a boss and it hasn't been cleared yet
-    if (zone.bossId && !this.gameState.player.clearedZones.includes(zoneId)) {
+    if (zone.bossId && !this.gameState.player.clearedZones.includes(zone.element as ElementType)) {
       const bossDef = ENEMY_MAP[zone.bossId];
       if (bossDef) {
         const bx = Math.floor(mapWidth / 2);
