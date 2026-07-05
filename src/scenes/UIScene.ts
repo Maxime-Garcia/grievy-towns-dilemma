@@ -1,7 +1,7 @@
 import { PlayerState, Item, ItemRarity, RARITY_COLORS } from '../types';
 import { GameScene } from './GameScene';
 import { SKILL_MAP } from '../data/skills';
-import { UI, drawPanel, drawBar, pxStyle } from '../utils/UITheme';
+import { UI, drawPanel, drawGlowPanel, drawBar, pxStyle } from '../utils/UITheme';
 import { t, localizeItem, localizeSkill } from '../i18n';
 
 const BAR_W = 178;
@@ -29,9 +29,11 @@ export class UIScene extends Phaser.Scene {
 
   private notifQueue: string[] = [];
   private notifText!: Phaser.GameObjects.Text;
+  private notifBg!: Phaser.GameObjects.Graphics;
   private notifTimer = 0;
 
   private zoneText!: Phaser.GameObjects.Text;
+  private zoneBg!: Phaser.GameObjects.Graphics;
 
   // ── Combo HUD (pips sous le joueur — COMBO_TALENT_SPEC.md §2.3 / §6.2) ──
   private comboPips!: Phaser.GameObjects.Container;
@@ -63,7 +65,7 @@ export class UIScene extends Phaser.Scene {
     const { width: W, height: H } = this.cameras.main;
 
     // ── DEV: build badge (top-left) — retirer avant release ─────────
-    const BUILD_LABEL = 'feat: mobile UX — skill slots 52px, INV/SKL boutons, tap feedback (e0576e8)';
+    const BUILD_LABEL = 'UI: glow panels menus/HUD/dialogue (hash: MAJ au commit)';
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 4, badgePad + 4, BUILD_LABEL, {
       fontSize: '10px', color: '#000000', fontFamily: 'monospace', fontStyle: 'bold',
@@ -81,8 +83,14 @@ export class UIScene extends Phaser.Scene {
     this.HP_Y = PANEL_TOP + 22;
     this.MP_Y = PANEL_TOP + 44;
 
+    // Glow panel : accent vert (vie) sur le cadre, ticks colorés par barre
     const panelGfx = this.add.graphics();
-    drawPanel(panelGfx, 4, PANEL_TOP, PANEL_W, PANEL_H);
+    drawGlowPanel(panelGfx, 4, PANEL_TOP, PANEL_W, PANEL_H, UI.HP_GREEN, UI.BG_MID, 4);
+    // Tick d'accent vertical devant chaque barre (vert = HP, bleu = MP)
+    panelGfx.fillStyle(UI.HP_GREEN, 0.8);
+    panelGfx.fillRect(BAR_X - 5, this.HP_Y, 2, HP_H);
+    panelGfx.fillStyle(UI.MP_FILL, 0.8);
+    panelGfx.fillRect(BAR_X - 5, this.MP_Y, 2, MP_H);
 
     // Label badges HP / MP
     this.add.text(10, this.HP_Y + 1, t('ui.hp'), pxStyle(7, UI.TXT_GREEN));
@@ -206,12 +214,15 @@ export class UIScene extends Phaser.Scene {
     buildNavBtn(sklX, 'SKL', 'skills');
 
     // ── Notification (above skill slots) ─────────
+    // Fond semi-opaque derrière la notif : lisible même sur zone claire.
+    this.notifBg = this.add.graphics().setAlpha(0).setDepth(9);
     this.notifText = this.add.text(W / 2, H - SLOT_SZ - 20, '', {
       ...pxStyle(9, UI.TXT_PARCHMENT, true),
     }).setOrigin(0.5).setAlpha(0).setDepth(10);
 
-    // ── Zone name (top-right) ─────────────────────
-    this.zoneText = this.add.text(W - 10, 10, '', pxStyle(9, UI.TXT_GOLD))
+    // ── Zone name (top-right) — encadré discret ───
+    this.zoneBg = this.add.graphics().setAlpha(0).setDepth(4);
+    this.zoneText = this.add.text(W - 18, 15, '', pxStyle(9, UI.TXT_GOLD))
       .setOrigin(1, 0).setAlpha(0).setDepth(5);
 
     // ── Hint (bottom-right) ───────────────────────
@@ -271,7 +282,7 @@ export class UIScene extends Phaser.Scene {
       this.notifTimer -= delta;
       if (this.notifTimer <= 0) {
         this.tweens.add({
-          targets: this.notifText,
+          targets: [this.notifText, this.notifBg],
           alpha: 0,
           duration: 400,
           onComplete: () => this.showNextNotif(),
@@ -493,10 +504,14 @@ export class UIScene extends Phaser.Scene {
     this.xpBar.fillStyle(UI.XP_BG, 1);
     this.xpBar.fillRect(0, H - 4, W, 4);
     if (xpFW > 0) {
+      // Gradient simulé : base violette + moitié basse assombrie
+      // + fine bande lumineuse 1px sur le dessus.
       this.xpBar.fillStyle(UI.XP_FILL, 1);
       this.xpBar.fillRect(0, H - 4, xpFW, 4);
-      this.xpBar.fillStyle(UI.XP_SHINE, 0.3);
-      this.xpBar.fillRect(0, H - 4, xpFW, 2);
+      this.xpBar.fillStyle(0x000000, 0.28);
+      this.xpBar.fillRect(0, H - 2, xpFW, 2);
+      this.xpBar.fillStyle(UI.XP_SHINE, 0.65);
+      this.xpBar.fillRect(0, H - 4, xpFW, 1);
     }
 
     // Skill icons
@@ -555,10 +570,20 @@ export class UIScene extends Phaser.Scene {
 
   private onZoneEntered(zone: { id: string; name: string }) {
     if (!this.sys.isActive()) return;
+    const W = this.cameras.main.width;
     this.zoneText.setText(t(`zone.${zone.id}`) || zone.name);
-    this.tweens.add({ targets: this.zoneText, alpha: 1, duration: 400 });
+
+    // Encadré glow discret dimensionné sur le texte
+    const padX = 8;
+    const padY = 5;
+    const bw = Math.ceil(this.zoneText.width)  + padX * 2;
+    const bh = Math.ceil(this.zoneText.height) + padY * 2;
+    this.zoneBg.clear();
+    drawGlowPanel(this.zoneBg, W - 10 - bw, 15 - padY, bw, bh, UI.GLOW_GOLD, UI.BG_MID, 3);
+
+    this.tweens.add({ targets: [this.zoneText, this.zoneBg], alpha: 1, duration: 400 });
     this.time.delayedCall(3500, () => {
-      this.tweens.add({ targets: this.zoneText, alpha: 0.4, duration: 1000 });
+      this.tweens.add({ targets: [this.zoneText, this.zoneBg], alpha: 0.4, duration: 1000 });
     });
   }
 
@@ -574,6 +599,20 @@ export class UIScene extends Phaser.Scene {
     const color  = entry.slice(0, pipe);
     const msg    = entry.slice(pipe + 1);
     this.notifText.setText(msg).setStyle({ color }).setAlpha(1);
+
+    // Fond semi-opaque ajusté à la largeur du message
+    const padX = 10;
+    const padY = 5;
+    const bw = Math.ceil(this.notifText.width)  + padX * 2;
+    const bh = Math.ceil(this.notifText.height) + padY * 2;
+    this.notifBg.clear();
+    drawGlowPanel(
+      this.notifBg,
+      this.notifText.x - bw / 2, this.notifText.y - bh / 2,
+      bw, bh, UI.SEPARATOR, UI.BG_MID, 3,
+    );
+    this.notifBg.setAlpha(0.92);
+
     this.notifTimer = 2500;
   }
 }
