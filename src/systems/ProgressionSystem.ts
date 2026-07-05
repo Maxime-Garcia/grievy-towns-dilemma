@@ -148,6 +148,11 @@ export class ProgressionSystem {
         { item: ALL_ITEMS['harpy_bow'],                   quantity: 1 },
         { item: ALL_ITEMS['dagger_of_shadow'],            quantity: 1 },
         { item: ALL_ITEMS['magma_greatsword'],            quantity: 1 },
+        // DEV: test weapons — one per WeaponType missing from the list above
+        { item: ALL_ITEMS['test_dual_dagger'],            quantity: 1 },
+        { item: ALL_ITEMS['test_dual_sword'],             quantity: 1 },
+        { item: ALL_ITEMS['test_axe'],                    quantity: 1 },
+        { item: ALL_ITEMS['test_hammer'],                 quantity: 1 },
         { item: ALL_ITEMS['leather_helm'],                quantity: 1 },
         { item: ALL_ITEMS['iron_helm'],                   quantity: 1 },
         { item: ALL_ITEMS['leather_chest'],               quantity: 1 },
