@@ -1916,6 +1916,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setupInput() {
+    // DEBUG TEMPORAIRE — écoute globale de tous les keyCodes
+    this.input.keyboard!.on('keydown', (e: KeyboardEvent) => {
+      console.log('[KEYDOWN] code:', e.code, 'keyCode:', e.keyCode);
+    });
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.wasd = {
       up:    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z),
