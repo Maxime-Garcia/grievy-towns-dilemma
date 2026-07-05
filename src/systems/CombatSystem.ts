@@ -123,7 +123,7 @@ export class CombatSystem {
     let dotDamage = 0;
     enemy.statusEffects = enemy.statusEffects
       .map(effect => {
-        if (effect.type === 'BURN' || effect.type === 'POISON') {
+        if (effect.type === 'BURN' || effect.type === 'POISON' || effect.type === 'BLEED') {
           dotDamage += effect.strength;
         }
         return { ...effect, duration: effect.duration - 1 };

@@ -82,6 +82,35 @@ export enum EndingChoice {
   ERASE = 'ERASE'
 }
 
+export enum TalentBranch {
+  VIGOR = 'VIGOR',
+  INSTINCT = 'INSTINCT',
+  ARCANE = 'ARCANE',
+}
+
+export type TalentEffectKey =
+  | 'MELEE_DMG_PCT' | 'DEF_PCT' | 'KILL_HEAL_PCT' | 'WINDUP_ARMOR'
+  | 'HEAVY_FINISHER_BONUS' | 'LOW_HP_ATK_PCT' | 'HEAVY_CD_REDUCTION_PCT'
+  | 'POST_FINISHER_BUFF'
+  | 'CRIT_PCT' | 'MOVE_SPEED_PCT' | 'COMBO_GRACE_PCT' | 'DASH_PRESERVES_COMBO'
+  | 'LIGHT_FINISHER_BLEED' | 'BOW_RANGE_DMG_PCT' | 'MAX_HP_PCT'
+  | 'COMBO_STACK_DMG'
+  | 'MAGIC_DMG_PCT' | 'MANA_COST_PCT' | 'SKILL_DMG_PCT' | 'STAFF_FINISHER_ZONE'
+  | 'BOW_ELEMENTAL_ARROWS' | 'PROJECTILE_SKILL_PCT' | 'SHIELD_SKILL_PCT'
+  | 'FINISHER_NOVA';
+
+export interface TalentNode {
+  id: string;
+  name: string;
+  description: string;
+  branch: TalentBranch;
+  tier: 1 | 2 | 3 | 4;   // 4 = capstone
+  cost: number;            // 1 ou 2
+  icon: string;
+  effects: Partial<Record<TalentEffectKey, number>>;
+  lore?: string;
+}
+
 // ============================================================
 // STATS & ATTRIBUTES
 // ============================================================
@@ -511,6 +540,9 @@ export interface PlayerState {
   isNewGamePlus: boolean;
   ngPlusCount: number;
   questProgress: Record<string, QuestObjective[]>;
+  talentPoints: number;       // points disponibles à dépenser (1 par niveau, cap 20)
+  unlockedTalents: string[];  // IDs des nœuds débloqués
+  respecCount: number;        // nombre de respecs effectués
 }
 
 // ============================================================
@@ -541,7 +573,7 @@ export interface GameState {
 // ============================================================
 
 export interface StatusEffect {
-  type: 'BURN' | 'POISON' | 'STUN' | 'SLOW' | 'FREEZE' | 'SHOCK';
+  type: 'BURN' | 'POISON' | 'STUN' | 'SLOW' | 'FREEZE' | 'SHOCK' | 'BLEED' | 'EXPOSE';
   duration: number;
   strength: number;
   sourceSkillId?: string;

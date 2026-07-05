@@ -79,6 +79,8 @@ export class ProgressionSystem {
       player.xp -= player.xpToNext;
       player.level++;
       player.attributePoints += 3;
+      // 1 talent point par niveau, cap global à 20
+      if (player.talentPoints < 20) player.talentPoints++;
       player.xpToNext = XP_PER_LEVEL(player.level);
       leveled = true;
 
@@ -192,6 +194,9 @@ export class ProgressionSystem {
       isNewGamePlus: false,
       ngPlusCount: 0,
       questProgress: {},
+      talentPoints: 1,    // niveau 1 → 1 point disponible immédiatement
+      unlockedTalents: [],
+      respecCount: 0,
     };
   }
 }

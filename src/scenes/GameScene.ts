@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType } from '../types';
 import { CombatSystem } from '../systems/CombatSystem';
+import { COMBO_CONFIGS, ComboConfig } from '../data/combos';
+import { TalentSystem, TalentModifiers } from '../systems/TalentSystem';
 import { LootSystem } from '../systems/LootSystem';
 import { QuestSystem } from '../systems/QuestSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
@@ -198,6 +200,15 @@ export class GameScene extends Phaser.Scene {
   private playtimeAccumulator = 0;
   private lastRegenTime = 0;
 
+  // ── COMBO STATE MACHINE ──────────────────────────────────────
+  private comboCount = 0;
+  private lastAttackEnd = 0;    // timestamp (ms) de fin du cooldown de la dernière attaque
+  private comboRushed = false;  // un input a été reçu en zone morte
+  private bufferedAttack = false; // réservé pour implémentation future zone buffer
+  private comboWeaponType: WeaponType | undefined = undefined;
+  private guardUntil = 0;       // timestamp fin de la garde (Sword finisher)
+  private playerModifiers!: TalentModifiers; // recalculé après unlock/respec/équipement
+
   // Interaction tracking
   private nearbyNPC: string | null = null;
   private nearbyLootable: string | null = null;
@@ -232,6 +243,14 @@ export class GameScene extends Phaser.Scene {
     this.lastDirX       = 0;
     this.lastDirY       = 1;
     this.facingAngle    = 0;
+    // Combo state machine reset
+    this.comboCount      = 0;
+    this.lastAttackEnd   = 0;
+    this.comboRushed     = false;
+    this.bufferedAttack  = false;
+    this.comboWeaponType = undefined;
+    this.guardUntil      = 0;
+    this.playerModifiers = TalentSystem.getModifiers(this.gameState.player);
     // Reset zone-scoped refs on each scene start (full Phaser restart)
     this.zoneGraphics       = null;
     this.zoneLabels         = [];
@@ -495,56 +514,106 @@ export class GameScene extends Phaser.Scene {
 
   private performBasicAttack() {
     const now = this.time.now;
-    if (now < this.attackCooldownUntil) return;
 
     const weapon = this.gameState.player.equipment.weapon;
     const weaponType = weapon?.weaponType;
     const pattern = (weaponType !== undefined ? ATTACK_PATTERNS[weaponType] : undefined) ?? FISTS_PATTERN;
+    const comboConfig = weaponType !== undefined ? COMBO_CONFIGS[weaponType] : undefined;
 
-    this.attackCooldownUntil = now + pattern.cooldown;
-    const windupMs = pattern.windupMs ?? 0;
-
-    // BOW (and any future isProjectile weapon) fires a physics body, not a cone hit.
-    if (pattern.isProjectile) {
-      if (windupMs > 0) this.spawnWindupVfx(windupMs);
-      if (windupMs === 0) {
-        this.fireArrowProjectile();
-      } else {
-        this.time.delayedCall(windupMs, () => {
-          if (!this.isTraveling) this.fireArrowProjectile();
-        });
-      }
+    // ── ZONE MORTE ──────────────────────────────────────────────
+    // Input reçu avant la fin du cooldown → marquer comboRushed, ne pas attaquer.
+    if (now < this.lastAttackEnd) {
+      this.comboRushed = true;
       return;
     }
 
-    if (windupMs > 0) {
-      this.spawnWindupVfx(windupMs);
+    // ── CHANGEMENT D'ARME ────────────────────────────────────────
+    if (weaponType !== this.comboWeaponType) {
+      if (this.comboCount > 0) this.events.emit('combo-broken');
+      this.comboCount  = 0;
+      this.comboRushed = false;
     }
 
-    for (let i = 0; i < pattern.hits.length; i++) {
-      const hit = pattern.hits[i];
-      const fireDelay = windupMs + hit.delay;
-      const hitIndex = i;
-
-      const doHit = () => {
-        if (this.isTraveling) return;
-        const tx = this.player.x + Math.cos(this.facingAngle) * hit.range * 0.7;
-        const ty = this.player.y + Math.sin(this.facingAngle) * hit.range * 0.7;
-        this.spawnWeaponSwingVfx(this.player.x, this.player.y, tx, ty, weaponType, hitIndex);
-        this.executeHitInCone(hit.range, hit.halfArc, hit.damageMultiplier);
-      };
-
-      if (fireDelay === 0) {
-        doHit();
-      } else {
-        this.time.delayedCall(fireDelay, doHit);
+    // ── APRÈS LA GRACE ───────────────────────────────────────────
+    // Si le joueur a attendu plus longtemps que la fenêtre de grace, la chaîne repart à 1.
+    if (comboConfig && this.comboCount > 0 && !this.comboRushed) {
+      const effectiveGrace = comboConfig.graceMs * this.playerModifiers.comboGraceMult;
+      if (now - this.lastAttackEnd > effectiveGrace) {
+        this.comboCount = 0;
+        this.events.emit('combo-broken');
       }
     }
+
+    // ── REJET DU SPAM ────────────────────────────────────────────
+    // Le dernier input était en zone morte → l'attaque part, mais la chaîne repart à 0.
+    if (this.comboRushed) {
+      if (this.comboCount > 0) this.events.emit('combo-broken');
+      this.comboCount  = 0;
+      this.comboRushed = false;
+    }
+
+    this.comboWeaponType = weaponType;
+    this.comboCount++;
+
+    const cooldown = pattern.cooldown;
+
+    // ── FINISHER ─────────────────────────────────────────────────
+    if (comboConfig && this.comboCount >= comboConfig.chainLength) {
+      this.executeFinisherAttack(weaponType, pattern, comboConfig, now);
+      this.comboCount = 0;
+      const finisherCd = cooldown * comboConfig.finisher.cooldownMult;
+      this.lastAttackEnd      = now + finisherCd;
+      this.attackCooldownUntil = this.lastAttackEnd;
+    } else {
+      // ── ATTAQUE NORMALE ──────────────────────────────────────
+      const windupMs = pattern.windupMs ?? 0;
+
+      if (pattern.isProjectile) {
+        // BOW fires a physics rectangle, not a cone.
+        if (windupMs > 0) this.spawnWindupVfx(windupMs);
+        if (windupMs === 0) {
+          this.fireArrowProjectile();
+        } else {
+          this.time.delayedCall(windupMs, () => {
+            if (!this.isTraveling) this.fireArrowProjectile();
+          });
+        }
+      } else {
+        if (windupMs > 0) this.spawnWindupVfx(windupMs);
+        for (let i = 0; i < pattern.hits.length; i++) {
+          const hit = pattern.hits[i];
+          const fireDelay = windupMs + hit.delay;
+          const hitIndex  = i;
+          const doHit = () => {
+            if (this.isTraveling) return;
+            const tx = this.player.x + Math.cos(this.facingAngle) * hit.range * 0.7;
+            const ty = this.player.y + Math.sin(this.facingAngle) * hit.range * 0.7;
+            this.spawnWeaponSwingVfx(this.player.x, this.player.y, tx, ty, weaponType, hitIndex);
+            this.executeHitInCone(hit.range, hit.halfArc, hit.damageMultiplier);
+          };
+          if (fireDelay === 0) doHit();
+          else this.time.delayedCall(fireDelay, doHit);
+        }
+      }
+
+      this.lastAttackEnd      = now + cooldown;
+      this.attackCooldownUntil = this.lastAttackEnd;
+    }
+
+    // ── ÉVÉNEMENT COMBO HUD ──────────────────────────────────────
+    this.events.emit('combo-changed', {
+      count: this.comboCount,
+      max: comboConfig?.chainLength ?? 0,
+      weaponType,
+    });
   }
 
   private executeHitInCone(range: number, halfArc: number, damageMultiplier = 1.0) {
     const hits = this.findEnemiesInCone(range, halfArc);
     if (hits.length === 0) return;
+
+    // Talent modifier — recalculé après chaque unlock/respec, pas à chaque frame.
+    const meleeDmgMult = this.playerModifiers.meleeDmgMult;
 
     let anyCrit = false;
     for (const sprite of hits) {
@@ -552,13 +621,14 @@ export class GameScene extends Phaser.Scene {
       if (!activeEnemy) continue;
       const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
 
-      // Apply weapon pattern damage multiplier on top of the base calculation.
-      // CombatSystem already applied result.damage to currentHp — apply bonus separately.
-      let finalDamage = result.damage;
-      if (damageMultiplier !== 1.0) {
-        const bonus = Math.round(result.damage * (damageMultiplier - 1));
+      // Combiné : multiplicateur du pattern + talents mêlée.
+      // CombatSystem a déjà soustrait result.damage de currentHp — on applique le delta ici.
+      const finalDamage = Math.round(result.damage * damageMultiplier * meleeDmgMult);
+      const bonus = finalDamage - result.damage;
+      if (bonus > 0) {
         activeEnemy.currentHp = Math.max(0, activeEnemy.currentHp - bonus);
-        finalDamage = result.damage + bonus;
+      } else if (bonus < 0) {
+        activeEnemy.currentHp = Math.min(activeEnemy.maxHp, activeEnemy.currentHp - bonus);
       }
       const isKill = activeEnemy.currentHp <= 0;
 
@@ -2818,6 +2888,145 @@ export class GameScene extends Phaser.Scene {
       this.isTraveling = false;
       this.cameras.main.fadeIn(300, 0, 0, 0);
     }
+  }
+
+  // ── COMBO FINISHER ──────────────────────────────────────────
+
+  /**
+   * Déclenche le finisher : fires chaque hit avec son délai, puis applique les
+   * effets spéciaux (stun, knockback, statuts). Émet 'finisher-executed'.
+   * Stub VFX séparé — implémenté par le gamefeel-agent.
+   */
+  private executeFinisherAttack(
+    weaponType: WeaponType | undefined,
+    pattern: { hits: AttackHit[]; cooldown: number; windupMs?: number; isProjectile?: boolean },
+    comboConfig: ComboConfig,
+    _now: number,
+  ) {
+    const windupMs = pattern.windupMs ?? 0;
+    const finisher = comboConfig.finisher;
+
+    if (pattern.isProjectile) {
+      // BOW finisher : 3 flèches en éventail via le système de projectile existant.
+      // Le pierce (pierceCount:1) est réservé au gamefeel-agent (nécessite refacto fireArrowProjectile).
+      if (windupMs > 0) this.spawnWindupVfx(windupMs);
+      finisher.hits.forEach(hit => {
+        this.time.delayedCall(windupMs + hit.delay, () => {
+          if (!this.isTraveling) this.fireArrowProjectile();
+        });
+      });
+    } else {
+      if (windupMs > 0) this.spawnWindupVfx(windupMs);
+      finisher.hits.forEach((hit, hitIndex) => {
+        const fireAt = windupMs + hit.delay;
+        const doHit = () => {
+          if (this.isTraveling) return;
+          const tx = this.player.x + Math.cos(this.facingAngle) * hit.range * 0.7;
+          const ty = this.player.y + Math.sin(this.facingAngle) * hit.range * 0.7;
+          this.spawnWeaponSwingVfx(this.player.x, this.player.y, tx, ty, weaponType, hitIndex);
+          this.executeHitInCone(hit.range, hit.halfArc, hit.damageMultiplier);
+        };
+        if (fireAt === 0) doHit();
+        else this.time.delayedCall(fireAt, doHit);
+      });
+    }
+
+    // Effets spéciaux — appliqués au timing du dernier hit
+    if (finisher.effect) {
+      const lastHit  = finisher.hits[finisher.hits.length - 1];
+      const effectAt = windupMs + (lastHit?.delay ?? 0);
+      const effect   = finisher.effect;
+
+      const applyEffect = () => {
+        if (this.isTraveling) return;
+        const range   = lastHit?.range   ?? 130;
+        const halfArc = lastHit?.halfArc ?? Math.PI;
+        const sprites = this.findEnemiesInCone(range, halfArc);
+
+        for (const sprite of sprites) {
+          const ae = this.activeEnemies.get(sprite.name);
+          if (!ae || ae.currentHp <= 0) continue;
+
+          if (effect.stunMs)   this.applyStun(sprite, effect.stunMs);
+          if (effect.knockback) this.applyKnockback(sprite, effect.knockback);
+
+          if (effect.expose) {
+            // Expose : −15% DEF, 2s. Non-cumulable avec Sunder : garder le plus fort.
+            const str = 15;
+            const existing = ae.statusEffects.find(e => e.type === 'EXPOSE');
+            if (!existing || existing.strength < str) {
+              ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'EXPOSE');
+              ae.statusEffects.push({ type: 'EXPOSE', duration: 2, strength: str });
+            }
+          }
+          if (effect.sunder) {
+            // Sunder : −20% DEF, 4s. Représenté via le type EXPOSE (plus fort, prioritaire).
+            const str = 20;
+            const existing = ae.statusEffects.find(e => e.type === 'EXPOSE');
+            if (!existing || existing.strength < str) {
+              ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'EXPOSE');
+              ae.statusEffects.push({ type: 'EXPOSE', duration: 4, strength: str });
+            }
+          }
+          {
+            // Bleed : base (DUAL_SWORD, 10% ATK/s, 2s) OU ins_lacerate sur DAGGER/DUAL_DAGGER/DUAL_SWORD (30% ATK, 3s).
+            // ins_lacerate s'applique même quand le finisher de base n'a pas effect.bleed.
+            const isLightBleedWeapon = weaponType === WeaponType.DAGGER
+              || weaponType === WeaponType.DUAL_DAGGER
+              || weaponType === WeaponType.DUAL_SWORD;
+            const useLacerate = this.playerModifiers.lightFinisherBleed && isLightBleedWeapon;
+            if (effect.bleed || useLacerate) {
+              const bleedStr = Math.max(1, Math.floor(
+                this.gameState.player.stats.atk * (useLacerate ? 0.30 : 0.10),
+              ));
+              const bleedDur = useLacerate ? 3 : 2;
+              ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'BLEED');
+              ae.statusEffects.push({ type: 'BLEED', duration: bleedDur, strength: bleedStr });
+            }
+          }
+        }
+
+        // Garde (Sword finisher) : −30% dégâts subis pendant guardMs.
+        // La réduction effective est appliquée dans tickEnemyAI via guardUntil.
+        if (effect.guardMs) {
+          this.guardUntil = this.time.now + effect.guardMs;
+        }
+
+        // AoE shake si le finisher a une zone explicite (GREATSWORD, HAMMER)
+        if (effect.aoeRadius) {
+          this.cameras.main.shake(120, 0.010);
+        }
+      };
+
+      if (effectAt === 0) applyEffect();
+      else this.time.delayedCall(effectAt, applyEffect);
+    }
+
+    this.spawnFinisherVfx(weaponType, this.facingAngle);
+    this.events.emit('finisher-executed', { weaponType });
+  }
+
+  /** Applique un stun à un ennemi. Ne se cumule pas — garde la durée la plus longue. */
+  private applyStun(sprite: Phaser.Physics.Arcade.Sprite, stunMs: number) {
+    const ae = this.activeEnemies.get(sprite.name);
+    if (!ae) return;
+    const durationSecs = stunMs / 1000;
+    const existing = ae.statusEffects.find(e => e.type === 'STUN');
+    if (existing) {
+      existing.duration = Math.max(existing.duration, durationSecs);
+    } else {
+      ae.statusEffects.push({ type: 'STUN', duration: durationSecs, strength: 1 });
+    }
+    const body = sprite.body as Phaser.Physics.Arcade.Body | null;
+    if (body?.enable) body.setVelocity(0, 0);
+  }
+
+  /** Projette un ennemi à partir de la position joueur avec la force donnée (px/s). */
+  private applyKnockback(sprite: Phaser.Physics.Arcade.Sprite, force: number) {
+    const body = sprite.body as Phaser.Physics.Arcade.Body | null;
+    if (!body?.enable) return;
+    const angle = Math.atan2(sprite.y - this.player.y, sprite.x - this.player.x);
+    body.setVelocity(Math.cos(angle) * force, Math.sin(angle) * force);
   }
 
   shutdown() {

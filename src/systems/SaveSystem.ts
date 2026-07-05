@@ -1,7 +1,7 @@
 import { GameState, SaveData, PlayerState, WorldState, EndingChoice } from '../types';
 import { ProgressionSystem } from './ProgressionSystem';
 
-const SAVE_VERSION = '1.2.0';
+const SAVE_VERSION = '1.3.0';
 const SAVE_KEY_PREFIX = 'gtd_save_';
 const MAX_SLOTS = 3;
 
@@ -32,6 +32,17 @@ const MIGRATION_MAP: Record<string, (state: GameState) => GameState> = {
     player: {
       ...state.player,
       questProgress: (state.player as any).questProgress ?? {},
+    },
+  }),
+  // Ajout des champs talent (talentPoints, unlockedTalents, respecCount)
+  '1.2.0': (state) => ({
+    ...state,
+    version: '1.3.0',
+    player: {
+      ...state.player,
+      talentPoints: Math.min((state.player as any).talentPoints ?? Math.min(state.player.level ?? 1, 20), 20),
+      unlockedTalents: (state.player as any).unlockedTalents ?? [],
+      respecCount: (state.player as any).respecCount ?? 0,
     },
   }),
 };
