@@ -141,20 +141,53 @@ export class ProgressionSystem {
       attributes: attrs,
       attributePoints: 0,
       equipment: {},
-      // DEV: inventaire complet pour tester tous les slots et types
+      // DEV: toutes les armes pour tester chaque WeaponType + pattern de combat
       inventory: [
+        // ── SWORD ──────────────────────────────────────────────
         { item: ALL_ITEMS['iron_sword'],                  quantity: 1 },
         { item: ALL_ITEMS['steel_sword'],                 quantity: 1 },
+        { item: ALL_ITEMS['storm_sword'],                 quantity: 1 },
         { item: ALL_ITEMS['dragonfang_sword'],            quantity: 1 },
-        { item: ALL_ITEMS['fire_staff'],                  quantity: 1 },
-        { item: ALL_ITEMS['harpy_bow'],                   quantity: 1 },
-        { item: ALL_ITEMS['dagger_of_shadow'],            quantity: 1 },
+        { item: ALL_ITEMS['coral_sword'],                 quantity: 1 },
+        { item: ALL_ITEMS['arc_sword'],                   quantity: 1 },
+        { item: ALL_ITEMS['sentinel_sword'],              quantity: 1 },
+        { item: ALL_ITEMS['drowned_knight_sword'],        quantity: 1 },
+        { item: ALL_ITEMS['divine_sword'],                quantity: 1 },
+        // ── GREATSWORD ─────────────────────────────────────────
         { item: ALL_ITEMS['magma_greatsword'],            quantity: 1 },
-        // DEV: test weapons — one per WeaponType missing from the list above
+        { item: ALL_ITEMS['colossus_greatsword'],         quantity: 1 },
+        { item: ALL_ITEMS['wind_greatsword'],             quantity: 1 },
+        { item: ALL_ITEMS['blizzard_greatsword'],         quantity: 1 },
+        // ── DAGGER ─────────────────────────────────────────────
+        { item: ALL_ITEMS['dagger_of_shadow'],            quantity: 1 },
+        { item: ALL_ITEMS['depth_serpent_fang_dagger'],   quantity: 1 },
+        { item: ALL_ITEMS['cinder_dagger'],               quantity: 1 },
+        { item: ALL_ITEMS['stone_dagger'],                quantity: 1 },
+        { item: ALL_ITEMS['gale_dagger'],                 quantity: 1 },
+        { item: ALL_ITEMS['frost_dagger'],                quantity: 1 },
+        // ── DUAL_DAGGER ────────────────────────────────────────
         { item: ALL_ITEMS['test_dual_dagger'],            quantity: 1 },
+        // ── DUAL_SWORD ─────────────────────────────────────────
         { item: ALL_ITEMS['test_dual_sword'],             quantity: 1 },
+        // ── AXE ────────────────────────────────────────────────
         { item: ALL_ITEMS['test_axe'],                    quantity: 1 },
+        // ── HAMMER ─────────────────────────────────────────────
         { item: ALL_ITEMS['test_hammer'],                 quantity: 1 },
+        // ── STAFF ──────────────────────────────────────────────
+        { item: ALL_ITEMS['fire_staff'],                  quantity: 1 },
+        { item: ALL_ITEMS['tide_staff'],                  quantity: 1 },
+        { item: ALL_ITEMS['seismic_staff'],               quantity: 1 },
+        { item: ALL_ITEMS['shadow_staff'],                quantity: 1 },
+        { item: ALL_ITEMS['water_staff'],                 quantity: 1 },
+        { item: ALL_ITEMS['thunder_staff'],               quantity: 1 },
+        { item: ALL_ITEMS['frost_staff'],                 quantity: 1 },
+        { item: ALL_ITEMS['earth_tome'],                  quantity: 1 },
+        // ── BOW ────────────────────────────────────────────────
+        { item: ALL_ITEMS['harpy_bow'],                   quantity: 1 },
+        { item: ALL_ITEMS['pyroclast_bow'],               quantity: 1 },
+        { item: ALL_ITEMS['thunder_bow'],                 quantity: 1 },
+        { item: ALL_ITEMS['void_bow'],                    quantity: 1 },
+        { item: ALL_ITEMS['wind_bow'],                    quantity: 1 },
         { item: ALL_ITEMS['leather_helm'],                quantity: 1 },
         { item: ALL_ITEMS['iron_helm'],                   quantity: 1 },
         { item: ALL_ITEMS['leather_chest'],               quantity: 1 },
