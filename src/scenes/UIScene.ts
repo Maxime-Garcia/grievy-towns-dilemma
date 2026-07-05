@@ -63,7 +63,7 @@ export class UIScene extends Phaser.Scene {
     const { width: W, height: H } = this.cameras.main;
 
     // ── DEV: build badge (top-left) — retirer avant release ─────────
-    const BUILD_LABEL = 'INV: tap-equip, long-press detail, Z-key (e6fecdd)';
+    const BUILD_LABEL = 'feat: mobile UX — skill slots 52px, INV/SKL boutons, tap feedback (e0576e8)';
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 4, badgePad + 4, BUILD_LABEL, {
       fontSize: '10px', color: '#000000', fontFamily: 'monospace', fontStyle: 'bold',
@@ -113,7 +113,8 @@ export class UIScene extends Phaser.Scene {
     this.xpBar = this.add.graphics();
 
     // ── Skill slots (centered bottom) ────────────
-    const SLOT_SZ  = 46;
+    // SLOT_SZ ≥ 52 so the touch hit zone meets the 44px accessibility minimum.
+    const SLOT_SZ  = 52;
     const SLOT_GAP = 5;
     const TOTAL_W  = 4 * SLOT_SZ + 3 * SLOT_GAP;
     const SX_START = W / 2 - TOTAL_W / 2;
@@ -127,7 +128,7 @@ export class UIScene extends Phaser.Scene {
       drawPanel(slotGfx, sx, SY, SLOT_SZ, SLOT_SZ, UI.SLOT_BG);
 
       const icon = this.add.image(sx + SLOT_SZ / 2, SY + SLOT_SZ / 2, 'skill_dash')
-        .setDisplaySize(30, 30);
+        .setDisplaySize(34, 34);
       this.skillSlots.push(icon);
 
       const cdOverlay = this.add.graphics();
@@ -144,7 +145,65 @@ export class UIScene extends Phaser.Scene {
         stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5);
       this.skillCdTexts.push(cdText);
+
+      // Invisible hit zone — slightly larger than visual slot for comfortable tapping.
+      // Emits mobile_action so GameScene fires the same code path as the keyboard.
+      const slotIdx = i;
+      const hitZone = this.add.rectangle(
+        sx + SLOT_SZ / 2, SY + SLOT_SZ / 2,
+        SLOT_SZ + 6, SLOT_SZ + 6, 0, 0,
+      ).setInteractive({ useHandCursor: true }).setDepth(5);
+      hitZone.on('pointerdown', () => {
+        this.game.events.emit('mobile_action', `skill${slotIdx}`);
+        const ic = this.skillSlots[slotIdx];
+        this.tweens.killTweensOf(ic);
+        ic.setAlpha(0.6);
+        this.tweens.add({
+          targets: ic,
+          alpha: 1,
+          duration: 80,
+          onComplete: () => {
+            this.tweens.add({
+              targets: ic,
+              scaleX: 1.15, scaleY: 1.15,
+              duration: 60,
+              yoyo: true,
+              ease: 'Back.easeOut',
+            });
+          },
+        });
+      });
     }
+
+    // ── Nav buttons: Inventory (I) and Skills (K) — bottom-right ────────
+    // Give mobile players the same access as the keyboard shortcuts.
+    const NAV_W = 54;
+    const NAV_H = 44;
+    const NAV_Y = SY + (SLOT_SZ - NAV_H) / 2;
+    const sklX  = W - 8 - NAV_W;
+    const invX  = sklX - 6 - NAV_W;
+
+    const buildNavBtn = (bx: number, label: string, action: string) => {
+      const gfx = this.add.graphics();
+      drawPanel(gfx, bx, NAV_Y, NAV_W, NAV_H, UI.BTN_BG);
+      this.add.text(bx + NAV_W / 2, NAV_Y + NAV_H / 2, label, pxStyle(8, UI.TXT_GOLD))
+        .setOrigin(0.5).setDepth(6);
+      const flash = this.add.rectangle(
+        bx + NAV_W / 2, NAV_Y + NAV_H / 2, NAV_W - 2, NAV_H - 2, 0xffffff, 0,
+      ).setDepth(6);
+      // Hit zone includes a 4px margin on all sides for comfortable tapping.
+      const hit = this.add.rectangle(
+        bx + NAV_W / 2, NAV_Y + NAV_H / 2, NAV_W + 4, NAV_H + 4, 0, 0,
+      ).setInteractive({ useHandCursor: true }).setDepth(7);
+      hit.on('pointerdown', () => {
+        flash.setAlpha(0.25);
+        this.tweens.add({ targets: flash, alpha: 0, duration: 150 });
+        this.game.events.emit('mobile_action', action);
+      });
+    };
+
+    buildNavBtn(invX, 'INV', 'inventory');
+    buildNavBtn(sklX, 'SKL', 'skills');
 
     // ── Notification (above skill slots) ─────────
     this.notifText = this.add.text(W / 2, H - SLOT_SZ - 20, '', {
