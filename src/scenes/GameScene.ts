@@ -166,6 +166,7 @@ export class GameScene extends Phaser.Scene {
     vx: number; vy: number;
     hit: boolean;
     destroyAt: number;
+    dmgMult: number;
   }> = [];
   private lootableLooted: Set<string> = new Set();
 
@@ -207,6 +208,7 @@ export class GameScene extends Phaser.Scene {
   private bufferedAttack = false; // réservé pour implémentation future zone buffer
   private comboWeaponType: WeaponType | undefined = undefined;
   private guardUntil = 0;       // timestamp fin de la garde (Sword finisher)
+  private inWindup = false;     // true pendant le chargement (windup) d'une arme lourde
   private playerModifiers!: TalentModifiers; // recalculé après unlock/respec/équipement
 
   // Interaction tracking
@@ -250,6 +252,7 @@ export class GameScene extends Phaser.Scene {
     this.bufferedAttack  = false;
     this.comboWeaponType = undefined;
     this.guardUntil      = 0;
+    this.inWindup        = false;
     this.playerModifiers = TalentSystem.getModifiers(this.gameState.player);
     // Reset zone-scoped refs on each scene start (full Phaser restart)
     this.zoneGraphics       = null;
@@ -379,7 +382,7 @@ export class GameScene extends Phaser.Scene {
     this.debugSpeedMult = this.speedBoostKey?.isDown ? 5 : 1;
 
     const player = this.gameState.player;
-    const speed  = (90 + player.stats.spd * 4) * this.debugSpeedMult;
+    const speed  = (90 + player.stats.spd * 4) * this.playerModifiers.moveSpeedMult * this.debugSpeedMult;
     const body   = this.player.body as Phaser.Physics.Arcade.Body;
 
     let targetVx = 0, targetVy = 0;
@@ -467,6 +470,11 @@ export class GameScene extends Phaser.Scene {
     this.dashCooldown = 1.5;
     this.isDashing = true;
     body.setVelocity(nx, ny);
+
+    // BUG5 fix: dashPreservesCombo gèle le timer de grace pendant 350ms
+    if (this.playerModifiers.dashPreservesCombo) {
+      this.lastAttackEnd = Math.max(this.lastAttackEnd, this.time.now + 350);
+    }
 
     this.spawnDashAfterimages();
 
@@ -558,7 +566,9 @@ export class GameScene extends Phaser.Scene {
     const cooldown = pattern.cooldown;
 
     // ── FINISHER ─────────────────────────────────────────────────
+    let finisherFired = false;
     if (comboConfig && this.comboCount >= comboConfig.chainLength) {
+      finisherFired = true;
       this.executeFinisherAttack(weaponType, pattern, comboConfig, now);
       this.comboCount = 0;
       const finisherCd = cooldown * comboConfig.finisher.cooldownMult;
@@ -601,19 +611,27 @@ export class GameScene extends Phaser.Scene {
     }
 
     // ── ÉVÉNEMENT COMBO HUD ──────────────────────────────────────
-    this.events.emit('combo-changed', {
-      count: this.comboCount,
-      max: comboConfig?.chainLength ?? 0,
-      weaponType,
-    });
+    // BUG3 fix: ne pas émettre combo-changed si le finisher a déjà réinitialisé l'état
+    if (!finisherFired) {
+      this.events.emit('combo-changed', {
+        count: this.comboCount,
+        max: comboConfig?.chainLength ?? 0,
+        weaponType,
+      });
+    }
   }
 
   private executeHitInCone(range: number, halfArc: number, damageMultiplier = 1.0) {
     const hits = this.findEnemiesInCone(range, halfArc);
     if (hits.length === 0) return;
 
-    // Talent modifier — recalculé après chaque unlock/respec, pas à chaque frame.
-    const meleeDmgMult = this.playerModifiers.meleeDmgMult;
+    // Talent modifiers — recalculés après chaque unlock/respec, pas à chaque frame.
+    // BUG6 fix: meleeDmgMult ne s'applique pas aux armes à sort (STAFF).
+    const currentWeaponType = this.gameState.player.equipment.weapon?.weaponType;
+    const isSpellWeapon = currentWeaponType === WeaponType.STAFF;
+    const appliedMeleeMult = isSpellWeapon ? 1.0 : this.playerModifiers.meleeDmgMult;
+    // BLOCKER-B: comboStackDmg — bonus cumulatif par coup dans la chaîne
+    const stackBonus = 1 + this.comboCount * this.playerModifiers.comboStackDmg / 100;
 
     let anyCrit = false;
     for (const sprite of hits) {
@@ -621,9 +639,9 @@ export class GameScene extends Phaser.Scene {
       if (!activeEnemy) continue;
       const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
 
-      // Combiné : multiplicateur du pattern + talents mêlée.
+      // Combiné : multiplicateur du pattern + talents mêlée + bonus de chaîne.
       // CombatSystem a déjà soustrait result.damage de currentHp — on applique le delta ici.
-      const finalDamage = Math.round(result.damage * damageMultiplier * meleeDmgMult);
+      const finalDamage = Math.round(result.damage * damageMultiplier * appliedMeleeMult * stackBonus);
       const bonus = finalDamage - result.damage;
       if (bonus > 0) {
         activeEnemy.currentHp = Math.max(0, activeEnemy.currentHp - bonus);
@@ -670,7 +688,7 @@ export class GameScene extends Phaser.Scene {
   // La détection de collision se fait manuellement dans updateArrowProjectiles()
   // — plus fiable que physics.add.overlap qui dépend d'une texture valide.
 
-  private fireArrowProjectile() {
+  private fireArrowProjectile(dmgMult = 1.0) {
     const SPEED = 600;  // px/s
     const RANGE = 460;
     const angle = this.facingAngle;
@@ -684,6 +702,7 @@ export class GameScene extends Phaser.Scene {
       vy: Math.sin(angle) * SPEED,
       hit: false,
       destroyAt: this.time.now + travelMs,
+      dmgMult,
     });
 
     // VFX cosmétique — voyage en parallèle, purement visuel
@@ -725,13 +744,19 @@ export class GameScene extends Phaser.Scene {
         if (!activeEnemy) break;
 
         const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
-        this.showDamageNumber(sprite.x, sprite.y - 20, result.damage, result.isCrit);
+        // BUG4 fix: apply the dmgMult from the finisher (or 1.0 for normal shots)
+        const arrowFinalDmg = Math.round(result.damage * arrow.dmgMult);
+        const arrowBonus = arrowFinalDmg - result.damage;
+        if (arrowBonus > 0)  activeEnemy.currentHp = Math.max(0, activeEnemy.currentHp - arrowBonus);
+        else if (arrowBonus < 0) activeEnemy.currentHp = Math.min(activeEnemy.maxHp, activeEnemy.currentHp - arrowBonus);
+        const arrowIsKill = activeEnemy.currentHp <= 0;
+        this.showDamageNumber(sprite.x, sprite.y - 20, arrowFinalDmg, result.isCrit);
         this.spawnHitParticles(sprite.x, sprite.y, result.element);
-        this.applyHitFeedback(sprite, activeEnemy, result.damage);
+        this.applyHitFeedback(sprite, activeEnemy, arrowFinalDmg);
         if (result.isCrit) this.cameras.main.shake(120, 0.007);
         else               this.cameras.main.shake(40, 0.002);
-        if (result.isKill) this.onEnemyKilled(activeEnemy, sprite);
-        else               this.checkStagger(sprite, activeEnemy, result.damage);
+        if (arrowIsKill) this.onEnemyKilled(activeEnemy, sprite);
+        else             this.checkStagger(sprite, activeEnemy, arrowFinalDmg);
         break;
       }
     }
@@ -745,7 +770,7 @@ export class GameScene extends Phaser.Scene {
     const nearest = this.findNearestEnemy(skill.range ?? 200);
     const activeEnemy = nearest ? this.activeEnemies.get(nearest.name) : undefined;
 
-    const result = CombatSystem.playerSkill(this.gameState.player, skill, activeEnemy);
+    const result = CombatSystem.playerSkill(this.gameState.player, skill, activeEnemy, this.playerModifiers);
     if (result) {
       if (result.damage > 0 && nearest) {
         if (skill.isProjectile) {
@@ -1006,14 +1031,30 @@ export class GameScene extends Phaser.Scene {
               sprite.setData(chargeKey, 'cooldown');
               const atkKey = `atk_${instanceId}`;
               if (!this.cooldowns[atkKey] || this.cooldowns[atkKey] <= 0) {
-                const result = CombatSystem.enemyAttack(ae, this.gameState.player);
-                if (result.damage > 0) {
-                  this.showDamageNumber(this.player.x, this.player.y - 20, result.damage, false, undefined, true);
-                  this.cameras.main.shake(100, 0.005);
+                if (this.inWindup && this.playerModifiers.windupArmor) {
+                  // BLOCKER-F: windup armor — immunité pendant le chargement d'une arme lourde
+                  this.cooldowns[atkKey] = 1.5;
+                } else {
+                  const guardActive = this.time.now < this.guardUntil;
+                  const result = CombatSystem.enemyAttack(ae, this.gameState.player);
+                  // BUG1 fix: garde active → −30% dégâts reçus
+                  if (guardActive && result.damage > 0) {
+                    const refund = Math.round(result.damage * 0.3);
+                    this.gameState.player.stats.hp = Math.min(
+                      this.gameState.player.stats.maxHp,
+                      this.gameState.player.stats.hp + refund,
+                    );
+                    result.damage = result.damage - refund;
+                    result.isKill = this.gameState.player.stats.hp <= 0;
+                  }
+                  if (result.damage > 0) {
+                    this.showDamageNumber(this.player.x, this.player.y - 20, result.damage, false, undefined, true);
+                    this.cameras.main.shake(100, 0.005);
+                  }
+                  this.events.emit('player_update', this.gameState.player);
+                  this.cooldowns[atkKey] = 1.5;
+                  if (result.isKill) this.onPlayerDeath();
                 }
-                this.events.emit('player_update', this.gameState.player);
-                this.cooldowns[atkKey] = 1.5;
-                if (result.isKill) this.onPlayerDeath();
               }
               this.time.delayedCall(1500, () => {
                 if (sprite.active) sprite.setData(chargeKey, 'idle');
@@ -1074,14 +1115,30 @@ export class GameScene extends Phaser.Scene {
       if (behavior !== 'ranged' && dist < 50) {
         const atkKey = `atk_${instanceId}`;
         if (!this.cooldowns[atkKey] || this.cooldowns[atkKey] <= 0) {
-          const result = CombatSystem.enemyAttack(ae, this.gameState.player);
-          if (result.damage > 0) {
-            this.showDamageNumber(this.player.x, this.player.y - 20, result.damage, false, undefined, true);
-            this.cameras.main.shake(100, 0.005);
+          if (this.inWindup && this.playerModifiers.windupArmor) {
+            // BLOCKER-F: windup armor — immunité pendant le chargement d'une arme lourde
+            this.cooldowns[atkKey] = 1.2;
+          } else {
+            const guardActive = this.time.now < this.guardUntil;
+            const result = CombatSystem.enemyAttack(ae, this.gameState.player);
+            // BUG1 fix: garde active → −30% dégâts reçus
+            if (guardActive && result.damage > 0) {
+              const refund = Math.round(result.damage * 0.3);
+              this.gameState.player.stats.hp = Math.min(
+                this.gameState.player.stats.maxHp,
+                this.gameState.player.stats.hp + refund,
+              );
+              result.damage = result.damage - refund;
+              result.isKill = this.gameState.player.stats.hp <= 0;
+            }
+            if (result.damage > 0) {
+              this.showDamageNumber(this.player.x, this.player.y - 20, result.damage, false, undefined, true);
+              this.cameras.main.shake(100, 0.005);
+            }
+            this.events.emit('player_update', this.gameState.player);
+            this.cooldowns[atkKey] = 1.2;
+            if (result.isKill) this.onPlayerDeath();
           }
-          this.events.emit('player_update', this.gameState.player);
-          this.cooldowns[atkKey] = 1.2;
-          if (result.isKill) this.onPlayerDeath();
         }
       }
 
@@ -1263,6 +1320,15 @@ export class GameScene extends Phaser.Scene {
   private onEnemyKilled(activeEnemy: ActiveEnemy, sprite: Phaser.Physics.Arcade.Sprite) {
     const enemyDef = ENEMY_MAP[activeEnemy.enemyId];
     if (!enemyDef) return;
+
+    // BLOCKER-D: killHealPct — soin au kill (approximation : appliqué sur toute mort)
+    if (this.playerModifiers.killHealPct > 0) {
+      const heal = Math.round(this.gameState.player.stats.maxHp * this.playerModifiers.killHealPct / 100);
+      this.gameState.player.stats.hp = Math.min(
+        this.gameState.player.stats.maxHp,
+        this.gameState.player.stats.hp + heal,
+      );
+    }
 
     this.activeEnemies.delete(activeEnemy.instanceId);
 
@@ -1791,8 +1857,11 @@ export class GameScene extends Phaser.Scene {
 
   // Windup : teinte jaune sur le joueur pendant le chargement d'une arme lourde
   private spawnWindupVfx(durationMs: number) {
+    // BLOCKER-F: flag inWindup pour windupArmor dans tickEnemyAI
+    this.inWindup = true;
     this.player.setTint(0xffffaa);
     this.time.delayedCall(durationMs, () => {
+      this.inWindup = false;
       if (this.player.active) this.player.clearTint();
     });
   }
@@ -2906,25 +2975,34 @@ export class GameScene extends Phaser.Scene {
     const windupMs = pattern.windupMs ?? 0;
     const finisher = comboConfig.finisher;
 
+    // BLOCKER-E: heavyFinisherBonus multiplie le damageMultiplier pour GS/HAMMER/AXE
+    const isHeavyWeapon = weaponType === WeaponType.GREATSWORD
+      || weaponType === WeaponType.HAMMER
+      || weaponType === WeaponType.AXE;
+    const heavyFinisherFactor = isHeavyWeapon
+      ? (1 + this.playerModifiers.heavyFinisherBonus / 100)
+      : 1.0;
+
     if (pattern.isProjectile) {
       // BOW finisher : 3 flèches en éventail via le système de projectile existant.
-      // Le pierce (pierceCount:1) est réservé au gamefeel-agent (nécessite refacto fireArrowProjectile).
+      // BUG4 fix: passe le damageMultiplier de chaque hit à fireArrowProjectile.
       if (windupMs > 0) this.spawnWindupVfx(windupMs);
       finisher.hits.forEach(hit => {
         this.time.delayedCall(windupMs + hit.delay, () => {
-          if (!this.isTraveling) this.fireArrowProjectile();
+          if (!this.isTraveling) this.fireArrowProjectile(hit.damageMultiplier);
         });
       });
     } else {
       if (windupMs > 0) this.spawnWindupVfx(windupMs);
       finisher.hits.forEach((hit, hitIndex) => {
+        const effectiveDmgMult = hit.damageMultiplier * heavyFinisherFactor;
         const fireAt = windupMs + hit.delay;
         const doHit = () => {
           if (this.isTraveling) return;
           const tx = this.player.x + Math.cos(this.facingAngle) * hit.range * 0.7;
           const ty = this.player.y + Math.sin(this.facingAngle) * hit.range * 0.7;
           this.spawnWeaponSwingVfx(this.player.x, this.player.y, tx, ty, weaponType, hitIndex);
-          this.executeHitInCone(hit.range, hit.halfArc, hit.damageMultiplier);
+          this.executeHitInCone(hit.range, hit.halfArc, effectiveDmgMult);
         };
         if (fireAt === 0) doHit();
         else this.time.delayedCall(fireAt, doHit);

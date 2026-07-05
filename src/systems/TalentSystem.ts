@@ -150,8 +150,7 @@ export class TalentSystem {
       if (e.HEAVY_FINISHER_BONUS !== undefined)   mods.heavyFinisherBonus  += e.HEAVY_FINISHER_BONUS;
       if (e.HEAVY_CD_REDUCTION_PCT !== undefined) mods.heavyCdReductionPct += e.HEAVY_CD_REDUCTION_PCT;
       if (e.LIGHT_FINISHER_BLEED !== undefined)   mods.lightFinisherBleed   = true;
-      // DEF_PCT, MANA_COST_PCT, POST_FINISHER_BUFF : consommés directement depuis node.effects
-      // par les systèmes qui gèrent le calcul de stat ou le buff post-finisher — pas de champ TalentModifiers dédié.
+      // TODO(talent-ui): DEF_PCT → ProgressionSystem.computeBaseStats(), MANA_COST_PCT → playerSkill(), POST_FINISHER_BUFF → executeFinisherAttack()
     }
 
     return mods;
