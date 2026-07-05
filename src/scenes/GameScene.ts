@@ -410,6 +410,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private performBasicAttack() {
+    console.log('[ATTACK] performBasicAttack() — facingAngle:', this.facingAngle, 'player:', this.player?.x, this.player?.y);
     const weapon = this.gameState.player.equipment.weapon;
     const weaponType = weapon?.weaponType;
     const spec = weaponType !== undefined ? (WEAPON_SPECS[weaponType] ?? FISTS_SPEC) : FISTS_SPEC;
@@ -576,6 +577,7 @@ export class GameScene extends Phaser.Scene {
     this.attackKey?.removeAllListeners();
     this.attackKey = kb.addKey(b.attack);
     this.attackKey.on('down', () => {
+      console.log('[J] key fired — menuOpen:', this.menuOpen, 'isInDialogue:', this.isInDialogue);
       if (!this.menuOpen && !this.isInDialogue) this.performBasicAttack();
     });
     this.dashKey   = kb.addKey(b.dash);
