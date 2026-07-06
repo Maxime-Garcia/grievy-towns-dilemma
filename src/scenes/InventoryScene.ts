@@ -154,7 +154,10 @@ export class InventoryScene extends Phaser.Scene {
 
     // ── Keyboard ──────────────────────────────────────────────────────────
     this.keyEsc = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
-    this.keyEsc.on('down', () => this.close());
+    this.keyEsc.on('down', () => {
+      if (this.consumePopupObjects.length > 0) { this.closeConsumePopup(); return; }
+      this.close();
+    });
 
     // Z → trigger main action on the currently selected item (equip / use).
     // Safe to use: GameScene.update() bails out early when menuOpen = true, so
@@ -840,7 +843,7 @@ export class InventoryScene extends Phaser.Scene {
 
     const confirmTxt = this.add.text(
       BTN_X1 + BTN_W / 2, BTN_Y + BTN_H / 2,
-      'Utiliser',
+      t('inventory.use_item'),
       pxStyle(7, UI.TXT_GREEN, true),
     ).setOrigin(0.5).setDepth(depth + 2);
 
@@ -874,7 +877,7 @@ export class InventoryScene extends Phaser.Scene {
 
     const cancelTxt = this.add.text(
       BTN_X2 + BTN_W / 2, BTN_Y + BTN_H / 2,
-      'Annuler',
+      t('inventory.cancel'),
       pxStyle(7, UI.TXT_RED, false),
     ).setOrigin(0.5).setDepth(depth + 2);
 
@@ -893,14 +896,40 @@ export class InventoryScene extends Phaser.Scene {
       })
       .on('pointerdown', () => this.closeConsumePopup());
 
+    // Timer re-armé quand le joueur survole un bouton (évite fermeture sous le doigt)
+    const rearmTimer = () => {
+      this.consumePopupTimer?.remove(false);
+      this.consumePopupTimer = this.time.addEvent({
+        delay: 4000,
+        callback: () => { this.consumePopupTimer = null; this.closeConsumePopup(); },
+      });
+    };
+    confirmHit.on('pointerover', rearmTimer);
+    cancelHit.on('pointerover', rearmTimer);
+
     this.consumePopupObjects.push(
       confirmGfx, confirmTxt, confirmHit,
       cancelGfx, cancelTxt, cancelHit,
     );
 
-    // ── Auto-dismiss timer (3 s) ───────────────────────────────────────────
+    // ── Pop-in animation (scale 0.9→1 + alpha 0→1, Back.easeOut) ─────────
+    // Toutes les pièces du popup sauf la zone de dismiss (elle doit rester en place)
+    const popObjects = this.consumePopupObjects.filter(o => o !== dismissHit);
+    popObjects.forEach(o => {
+      if ('setAlpha' in o) (o as Phaser.GameObjects.Components.Alpha).setAlpha(0);
+    });
+    this.tweens.add({
+      targets: popObjects.filter(o => 'setScale' in o),
+      scaleX: { from: 0.9, to: 1 },
+      scaleY: { from: 0.9, to: 1 },
+      alpha: { from: 0, to: 1 },
+      duration: 90,
+      ease: 'Back.easeOut',
+    });
+
+    // ── Auto-dismiss timer (4 s) ───────────────────────────────────────────
     this.consumePopupTimer = this.time.addEvent({
-      delay: 3000,
+      delay: 4000,
       callback: () => { this.consumePopupTimer = null; this.closeConsumePopup(); },
     });
   }
