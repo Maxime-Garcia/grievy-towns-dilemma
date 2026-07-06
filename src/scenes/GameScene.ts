@@ -1151,9 +1151,9 @@ export class GameScene extends Phaser.Scene {
           sprite.setData('aiStateUntil', now + 600); // max attack execution window
           sprite.clearTint();
           this.executeEnemyAttackPattern(sprite, ae, def, currentPattern);
-
-          const cfg = PATTERNS[currentPattern];
-          this.cooldowns[atkCdKey] = cfg.cooldownMs / 1000;
+          // BUG 1 fix: do NOT set this.cooldowns[atkCdKey] here — the FSM 'cooldown' state
+          // (aiStateUntil set in 'attack' → 'cooldown' transition) is the sole clock. A parallel
+          // this.cooldowns value caused the enemy to re-telegraph before the FSM cooldown expired.
         }
 
       // ── STATE: attack ─────────────────────────────────────────
@@ -1182,7 +1182,7 @@ export class GameScene extends Phaser.Scene {
       // Only for non-ranged enemies that are touching the player.
       // This is the cheap fallback when the pattern system hasn't triggered yet.
       const behavior = def.behavior ?? 'chaser';
-      if (behavior !== 'ranged' && dist < 50 && aiState !== 'telegraph') {
+      if (behavior !== 'ranged' && dist < 50 && aiState !== 'telegraph' && aiState !== 'attack') {
         const meleeCdKey = `melee_${instanceId}`;
         if (!this.cooldowns[meleeCdKey] || this.cooldowns[meleeCdKey] <= 0) {
           this.applyEnemyMeleeDamage(ae, 1.0);
@@ -1203,9 +1203,9 @@ export class GameScene extends Phaser.Scene {
   ): AttackPatternId {
     if (!assignment) return 'melee_basic';
 
-    // Summon at HP threshold (boss only, once per fight)
-    const def = ENEMY_MAP[ae.enemyId] as Enemy | undefined;
-    if (def?.isBoss && assignment.secondary === 'summon') {
+    // Summon at HP threshold (once per fight — applies whether primary or secondary is 'summon')
+    const hasSummon = assignment.primary === 'summon' || assignment.secondary === 'summon';
+    if (hasSummon) {
       const sprite = this.enemies.getChildren().find(
         c => (c as Phaser.Physics.Arcade.Sprite).name === ae.instanceId,
       ) as Phaser.Physics.Arcade.Sprite | undefined;
@@ -1214,6 +1214,10 @@ export class GameScene extends Phaser.Scene {
       const alreadyFired = sprite?.getData('summonFired') as boolean | null;
       if (!alreadyFired && hpPct <= threshold) {
         return 'summon';
+      }
+      // Guard: if summon was already fired and primary IS summon, force secondary to avoid infinite loop
+      if (alreadyFired && assignment.primary === 'summon') {
+        return (assignment.secondary !== 'summon' ? assignment.secondary : null) ?? 'melee_basic';
       }
     }
 
@@ -1750,8 +1754,9 @@ export class GameScene extends Phaser.Scene {
     const barFg = this.add.rectangle(x - barW / 2, y - 20, barW, 4, 0xff2222).setDepth(9).setOrigin(0, 0.5);
     this.enemyHpBars.set(active.instanceId, { bg: barBg, bar: barFg, baseW: barW });
 
-    // Re-add wall collider for this minion
-    this.physics.add.collider(sprite, this.wallGroup);
+    // Re-add wall collider for this minion — register in physicsColliders to avoid zombie collider on zone transition
+    const minionCollider = this.physics.add.collider(sprite, this.wallGroup);
+    this.physicsColliders.push(minionCollider);
 
     // Spawn flash
     sprite.setTintFill(0xffd700);
@@ -1798,6 +1803,13 @@ export class GameScene extends Phaser.Scene {
   private applyDamageToPlayer(damage: number) {
     if (damage <= 0) return;
     if (this.isDashing) return; // dash iframes
+
+    // BUG 3 fix: guard (guardUntil) also applies to projectile damage, not only melee
+    if (this.time.now < this.guardUntil) {
+      const refund = Math.round(damage * 0.3);
+      damage = Math.max(0, damage - refund);
+      if (damage <= 0) return;
+    }
 
     this.gameState.player.stats.hp = Math.max(
       0,
@@ -1996,6 +2008,20 @@ export class GameScene extends Phaser.Scene {
         this.gameState.player.stats.hp + heal,
       );
     }
+
+    // BLOCKER 1: cancel charge timers to prevent ghost damage after death
+    const telegraphTimer = sprite.getData('telegraphTimer') as Phaser.Time.TimerEvent | undefined;
+    const chargeTick     = sprite.getData('chargeTick')     as Phaser.Time.TimerEvent | undefined;
+    const chargeStop     = sprite.getData('chargeStopTimer') as Phaser.Time.TimerEvent | undefined;
+    telegraphTimer?.remove(false);
+    chargeTick?.remove(false);
+    chargeStop?.remove(false);
+
+    // BUG 4 fix: remove this enemy's cooldown entries immediately on death
+    const iid = activeEnemy.instanceId;
+    delete this.cooldowns[`atkcd_${iid}`];
+    delete this.cooldowns[`melee_${iid}`];
+    delete this.cooldowns[`bleed_${iid}`];
 
     this.activeEnemies.delete(activeEnemy.instanceId);
 
@@ -3554,6 +3580,13 @@ export class GameScene extends Phaser.Scene {
     this.enemyCrowns.clear();
     this.activeEnemies.clear();
     this.enemies.destroy(true);
+
+    // BUG 4 fix: purge orphaned enemy cooldown keys to prevent unbounded dict growth
+    for (const key of Object.keys(this.cooldowns)) {
+      if (key.startsWith('atkcd_') || key.startsWith('melee_') || key.startsWith('bleed_')) {
+        delete this.cooldowns[key];
+      }
+    }
 
     // NPCs
     this.npcs.destroy(true);
