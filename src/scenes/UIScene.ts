@@ -1,12 +1,12 @@
 import { PlayerState, Item, ItemRarity, RARITY_COLORS } from '../types';
 import { GameScene } from './GameScene';
 import { SKILL_MAP } from '../data/skills';
-import { UI, drawPanel, drawGlowPanel, drawBar, pxStyle } from '../utils/UITheme';
+import { UI, drawPanel, drawGlowPanel, drawBar, uiStyle } from '../utils/UITheme';
 import { t, localizeItem, localizeSkill } from '../i18n';
 
 const BAR_W = 178;
 const HP_H  = 16;
-const MP_H  = 9;
+const MP_H  = 11;
 const BAR_X = 42;
 
 export class UIScene extends Phaser.Scene {
@@ -67,16 +67,19 @@ export class UIScene extends Phaser.Scene {
     const { width: W, height: H } = this.cameras.main;
 
     // ── DEV: build badge (top-left) — retirer avant release ─────────
-    const BUILD_LABEL = 'feat: popup conso pop-in + ESC + i18n (e710c95)';
+    // Version discrète : petite pastille verte + texte 8px sur fond translucide.
+    const BUILD_LABEL = 'UI: refonte moderne lisible (en attente commit)';
     const badgePad = 6;
-    const badgeText = this.add.text(badgePad + 4, badgePad + 4, BUILD_LABEL, {
-      fontSize: '10px', color: '#000000', fontFamily: 'monospace', fontStyle: 'bold',
-    }).setDepth(200);
-    const bw = badgeText.width + 8;
-    const bh = badgeText.height + 8;
-    this.add.rectangle(badgePad, badgePad, bw, bh, 0x00cc55, 1)
+    const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
+      fontSize: '8px', color: '#7dffa8', fontFamily: 'monospace',
+    }).setDepth(200).setAlpha(0.85);
+    const bw = badgeText.width + 16;
+    const bh = badgeText.height + 6;
+    this.add.rectangle(badgePad, badgePad, bw, bh, 0x02160a, 0.75)
       .setOrigin(0, 0).setDepth(199);
-    badgeText.setPosition(badgePad + 4, badgePad + 4);
+    this.add.rectangle(badgePad, badgePad, 3, bh, 0x00cc55, 1)
+      .setOrigin(0, 0).setDepth(199);
+    badgeText.setPosition(badgePad + 10, badgePad + 3);
 
     // ── Player stat panel (bottom-left) ─────────
     const PANEL_H   = 66;
@@ -95,29 +98,27 @@ export class UIScene extends Phaser.Scene {
     panelGfx.fillRect(BAR_X - 5, this.MP_Y, 2, MP_H);
 
     // Label badges HP / MP
-    this.add.text(10, this.HP_Y + 1, t('ui.hp'), pxStyle(7, UI.TXT_GREEN));
-    this.add.text(10, this.MP_Y + 2, t('ui.mp'), pxStyle(7, UI.TXT_BLUE));
+    this.add.text(10, this.HP_Y + 3, t('ui.hp'), uiStyle(10, UI.TXT_GREEN, { bold: true }));
+    this.add.text(10, this.MP_Y + 1, t('ui.mp'), uiStyle(10, UI.TXT_BLUE, { bold: true }));
 
     // Player name (top of panel)
-    this.playerNameText = this.add.text(10, PANEL_TOP + 6, '', pxStyle(8, UI.TXT_GOLD));
+    this.playerNameText = this.add.text(10, PANEL_TOP + 5, '', uiStyle(11, UI.TXT_GOLD, { bold: true }));
 
     // Level (top-right of panel)
-    this.levelText = this.add.text(PANEL_W, PANEL_TOP + 6, '', pxStyle(8, UI.TXT_PARCHMENT))
+    this.levelText = this.add.text(PANEL_W, PANEL_TOP + 5, '', uiStyle(11, UI.TXT_PARCHMENT))
       .setOrigin(1, 0);
 
     // HP bar + centred text
     this.hpBar  = this.add.graphics();
-    this.hpText = this.add.text(BAR_X + BAR_W / 2, this.HP_Y + HP_H / 2, '', {
-      ...pxStyle(7, UI.TXT_WHITE),
-      stroke: '#000000', strokeThickness: 2,
-    }).setOrigin(0.5).setDepth(1);
+    this.hpText = this.add.text(BAR_X + BAR_W / 2, this.HP_Y + HP_H / 2, '',
+      uiStyle(10, UI.TXT_WHITE, { bold: true, stroke: true }),
+    ).setOrigin(0.5).setDepth(1);
 
     // MP bar + centred text
     this.manaBar  = this.add.graphics();
-    this.manaText = this.add.text(BAR_X + BAR_W / 2, this.MP_Y + MP_H / 2, '', {
-      ...pxStyle(7, UI.TXT_WHITE),
-      stroke: '#000000', strokeThickness: 2,
-    }).setOrigin(0.5).setDepth(1);
+    this.manaText = this.add.text(BAR_X + BAR_W / 2, this.MP_Y + MP_H / 2, '',
+      uiStyle(9, UI.TXT_WHITE, { bold: true, stroke: true }),
+    ).setOrigin(0.5).setDepth(1);
 
     // ── XP bar (bottom strip) ────────────────────
     this.xpBar = this.add.graphics();
@@ -147,13 +148,12 @@ export class UIScene extends Phaser.Scene {
       // Key label badge (top-left corner of slot)
       const badge = this.add.graphics();
       badge.fillStyle(0x08080f, 0.88);
-      badge.fillRect(sx + 2, SY + 2, 13, 11);
-      this.add.text(sx + 8, SY + 7, keys[i], pxStyle(6, UI.TXT_GOLD)).setOrigin(0.5);
+      badge.fillRect(sx + 2, SY + 2, 15, 13);
+      this.add.text(sx + 9, SY + 8, keys[i], uiStyle(9, UI.TXT_GOLD, { bold: true })).setOrigin(0.5);
 
-      const cdText = this.add.text(sx + SLOT_SZ / 2, SY + SLOT_SZ / 2, '', {
-        ...pxStyle(10, UI.TXT_WHITE),
-        stroke: '#000000', strokeThickness: 2,
-      }).setOrigin(0.5);
+      const cdText = this.add.text(sx + SLOT_SZ / 2, SY + SLOT_SZ / 2, '',
+        uiStyle(14, UI.TXT_WHITE, { bold: true, stroke: true }),
+      ).setOrigin(0.5);
       this.skillCdTexts.push(cdText);
 
       // Invisible hit zone — slightly larger than visual slot for comfortable tapping.
@@ -196,7 +196,7 @@ export class UIScene extends Phaser.Scene {
     const buildNavBtn = (bx: number, label: string, action: string) => {
       const gfx = this.add.graphics();
       drawPanel(gfx, bx, NAV_Y, NAV_W, NAV_H, UI.BTN_BG);
-      this.add.text(bx + NAV_W / 2, NAV_Y + NAV_H / 2, label, pxStyle(8, UI.TXT_GOLD))
+      this.add.text(bx + NAV_W / 2, NAV_Y + NAV_H / 2, label, uiStyle(11, UI.TXT_GOLD, { bold: true }))
         .setOrigin(0.5).setDepth(6);
       const flash = this.add.rectangle(
         bx + NAV_W / 2, NAV_Y + NAV_H / 2, NAV_W - 2, NAV_H - 2, 0xffffff, 0,
@@ -218,17 +218,17 @@ export class UIScene extends Phaser.Scene {
     // ── Notification (above skill slots) ─────────
     // Fond semi-opaque derrière la notif : lisible même sur zone claire.
     this.notifBg = this.add.graphics().setAlpha(0).setDepth(9);
-    this.notifText = this.add.text(W / 2, H - SLOT_SZ - 20, '', {
-      ...pxStyle(9, UI.TXT_PARCHMENT, true),
-    }).setOrigin(0.5).setAlpha(0).setDepth(10);
+    this.notifText = this.add.text(W / 2, H - SLOT_SZ - 20, '',
+      uiStyle(12, UI.TXT_PARCHMENT, { bold: true, stroke: true }),
+    ).setOrigin(0.5).setAlpha(0).setDepth(10);
 
     // ── Zone name (top-right) — encadré discret ───
     this.zoneBg = this.add.graphics().setAlpha(0).setDepth(4);
-    this.zoneText = this.add.text(W - 18, 15, '', pxStyle(9, UI.TXT_GOLD))
+    this.zoneText = this.add.text(W - 18, 15, '', uiStyle(12, UI.TXT_GOLD, { bold: true }))
       .setOrigin(1, 0).setAlpha(0).setDepth(5);
 
     // ── Hint (bottom-right) ───────────────────────
-    this.add.text(W - 8, H - 20, t('ui.hint'), pxStyle(6, UI.TXT_HINT))
+    this.add.text(W - 8, H - 20, t('ui.hint'), uiStyle(8, UI.TXT_HINT))
       .setOrigin(1, 0);
 
     // ── Combo HUD (pips qui suivent le joueur) ────

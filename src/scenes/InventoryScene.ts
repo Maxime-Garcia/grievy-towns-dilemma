@@ -6,7 +6,9 @@ import {
 import { InventorySystem, setInventoryPlayerContext } from '../systems/InventorySystem';
 import { StatsSystem } from '../systems/StatsSystem';
 import { ALL_ITEMS } from '../data/items';
-import { UI, drawPanel, drawGlowPanel, pxStyle } from '../utils/UITheme';
+import {
+  UI, drawPanel, drawGlowPanel, drawDivider, addCloseButton, uiStyle,
+} from '../utils/UITheme';
 import { itemTextureKey } from '../utils/ItemAssets';
 import { t, localizeItem } from '../i18n';
 
@@ -26,6 +28,15 @@ type EquipSlotKey = 'helm' | 'cape' | 'chest' | 'gloves' | 'weapon' | 'legs' | '
 const EQ_ORDER: EquipSlotKey[] = [
   'helm', 'cape', 'chest', 'gloves', 'weapon', 'legs', 'boots', 'ring1', 'ring2', 'amulet',
 ];
+
+// ── Paperdoll (style Dofus) : silhouette centrale + slots autour ─────────────
+// colonne 0 = gauche, 1 = centre (sur la silhouette), 2 = droite ; rangée 0-3.
+const PAPERDOLL_POS: Record<EquipSlotKey, { col: 0 | 1 | 2; row: number }> = {
+  amulet: { col: 0, row: 0 }, helm:  { col: 1, row: 0 }, cape:   { col: 2, row: 0 },
+  weapon: { col: 0, row: 1 }, chest: { col: 1, row: 1 }, gloves: { col: 2, row: 1 },
+  ring1:  { col: 0, row: 2 }, legs:  { col: 1, row: 2 }, ring2:  { col: 2, row: 2 },
+  boots:  { col: 1, row: 3 },
+};
 
 // Item types that have a direct equipment slot (used by doMainAction + renderItemDetail)
 const EQUIP_TYPES: ItemType[] = [
@@ -106,27 +117,27 @@ export class InventoryScene extends Phaser.Scene {
     drawPanel(frameGfx, MARGIN, MARGIN, W - MARGIN * 2, H - MARGIN * 2, UI.PANEL_BG, 0.85);
 
     // ── Header title ──────────────────────────────────────────────────────
-    this.add.text(W / 2, MARGIN + 6, t('inventory.title'), pxStyle(11, UI.TXT_GOLD, true)).setOrigin(0.5, 0);
+    this.add.text(W / 2, MARGIN + 8, t('inventory.title'), uiStyle(15, UI.TXT_GOLD, { bold: true, stroke: true }))
+      .setOrigin(0.5, 0);
 
     // ── Header separator ──────────────────────────────────────────────────
     const sepGfx = this.add.graphics();
-    sepGfx.lineStyle(1, UI.BORDER_LIT, 0.6);
-    sepGfx.beginPath();
-    sepGfx.moveTo(MARGIN + 4, HEADER_H);
-    sepGfx.lineTo(W - MARGIN - 4, HEADER_H);
-    sepGfx.strokePath();
+    drawDivider(sepGfx, MARGIN + 4, HEADER_H, W - (MARGIN + 4) * 2, UI.BORDER_LIT, 0.6);
 
-    // ── Gold display (top-right) ──────────────────────────────────────────
+    // ── Close button × (haut-droite, hit 48×48) ───────────────────────────
+    addCloseButton(this, W - MARGIN - 20, MARGIN + 14, () => this.close());
+
+    // ── Gold display (top-right, à gauche du bouton ×) ────────────────────
     const goldBg = this.add.graphics();
-    drawPanel(goldBg, W - MARGIN - 132, MARGIN + 4, 122, 20, UI.SLOT_BG);
+    drawPanel(goldBg, W - MARGIN - 178, MARGIN + 4, 130, 24, UI.SLOT_BG);
     this.goldText = this.add.text(
-      W - MARGIN - 71, MARGIN + 14,
+      W - MARGIN - 113, MARGIN + 16,
       `${this.player.gold} ${t('inventory.gold')}`,
-      pxStyle(7, UI.TXT_GOLD),
+      uiStyle(11, UI.TXT_GOLD, { bold: true }),
     ).setOrigin(0.5);
 
     // ── Footer close hint ─────────────────────────────────────────────────
-    this.add.text(W / 2, H - MARGIN - 4, t('inventory.close'), pxStyle(7, UI.TXT_HINT))
+    this.add.text(W / 2, H - MARGIN - 4, t('inventory.close'), uiStyle(9, UI.TXT_HINT))
       .setOrigin(0.5, 1)
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => this.close());
@@ -144,12 +155,12 @@ export class InventoryScene extends Phaser.Scene {
     // ── Static panel titles ───────────────────────────────────────────────
     this.add.text(
       this.eqBounds.x  + this.eqBounds.w  / 2, this.eqBounds.y  + 6,
-      t('inventory.equipment'), pxStyle(7, UI.TXT_GOLD),
+      t('inventory.equipment'), uiStyle(11, UI.TXT_GOLD, { bold: true }),
     ).setOrigin(0.5, 0);
 
     this.add.text(
       this.bagBounds.x + this.bagBounds.w / 2, this.bagBounds.y + 6,
-      'SACS', pxStyle(7, UI.TXT_GOLD),
+      'SAC', uiStyle(11, UI.TXT_GOLD, { bold: true }),
     ).setOrigin(0.5, 0);
 
     // ── Keyboard ──────────────────────────────────────────────────────────
@@ -173,30 +184,55 @@ export class InventoryScene extends Phaser.Scene {
     this.renderGrid();
   }
 
-  // ── Equipment paperdoll (left panel) ──────────────────────────────────────
-
+  // ── Equipment paperdoll (left panel, style Dofus) ─────────────────────────
+  // Silhouette centrale + slots positionnés autour (PAPERDOLL_POS) :
+  //   amulette | casque | cape
+  //   arme     | plastron | gants
+  //   anneau 1 | jambes  | anneau 2
+  //            | bottes  |
   private renderEquipment() {
-    const { x: PX, y: PY, h: PH } = this.eqBounds;
-    const TITLE_H  = 22;
-    const PAD_X    = 8;
-    const PAD_Y    = 4;
-    const LABEL_X  = PX + PAD_X + EQ_SLOT + 8;
-    const availH   = PH - TITLE_H;
-    const rowStep  = Math.min(EQ_SLOT + 6, Math.floor(availH / EQ_ORDER.length));
+    const { x: PX, y: PY, w: PW, h: PH } = this.eqBounds;
+    const TITLE_H = 24;
+    const GAP_Y   = 14;
+    const colX: [number, number, number] = [
+      PX + 10,                       // gauche
+      PX + (PW - EQ_SLOT) / 2,       // centre (sur la silhouette)
+      PX + PW - 10 - EQ_SLOT,        // droite
+    ];
+    const rowY = (r: number) => PY + TITLE_H + 10 + r * (EQ_SLOT + GAP_Y);
 
-    EQ_ORDER.forEach((key, i) => {
-      const sy       = PY + TITLE_H + PAD_Y + i * rowStep;
-      const sx       = PX + PAD_X;
-      const item     = this.player.equipment[key] as Item | undefined;
-      const rarHex   = item
+    // ── Silhouette du personnage (placeholder stylisé, derrière les slots) ─
+    const cx   = colX[1] + EQ_SLOT / 2;
+    const silG = this.add.graphics();
+    // Tête
+    silG.fillStyle(0xf5edd0, 0.06);
+    silG.fillCircle(cx, rowY(0) + EQ_SLOT / 2, 26);
+    silG.lineStyle(1, 0xf5edd0, 0.12);
+    silG.strokeCircle(cx, rowY(0) + EQ_SLOT / 2, 26);
+    // Corps (capsule verticale : torse → bottes)
+    const bodyTop = rowY(0) + EQ_SLOT + 2;
+    const bodyBot = rowY(3) + EQ_SLOT - 4;
+    silG.fillStyle(0xf5edd0, 0.05);
+    silG.fillRoundedRect(cx - 26, bodyTop, 52, bodyBot - bodyTop, 22);
+    silG.lineStyle(1, 0xf5edd0, 0.10);
+    silG.strokeRoundedRect(cx - 26, bodyTop, 52, bodyBot - bodyTop, 22);
+    this.dynamicObjs.push(silG);
+
+    // ── Slots ──────────────────────────────────────────────────────────────
+    EQ_ORDER.forEach((key) => {
+      const pos  = PAPERDOLL_POS[key];
+      const sx   = colX[pos.col];
+      const sy   = rowY(pos.row);
+      const item = this.player.equipment[key] as Item | undefined;
+      const rarHex = item
         ? parseInt((RARITY_COLORS[item.rarity] ?? '#666666').replace('#', ''), 16)
         : UI.SLOT_BORDER;
 
-      // Slot background
+      // Slot background — bordure = couleur de rareté (règle §7.5)
       const bg = this.add.graphics();
-      bg.fillStyle(UI.SLOT_BG, 1);
+      bg.fillStyle(UI.SLOT_BG, 0.94);
       bg.fillRect(sx, sy, EQ_SLOT, EQ_SLOT);
-      bg.lineStyle(2, rarHex, item ? 1 : 0.3);
+      bg.lineStyle(2, rarHex, item ? 1 : 0.55);
       bg.strokeRect(sx, sy, EQ_SLOT, EQ_SLOT);
       this.dynamicObjs.push(bg);
 
@@ -213,39 +249,25 @@ export class InventoryScene extends Phaser.Scene {
           this.addColorSquare(sx + 4, sy + 4, EQ_SLOT - 8, rarHex);
         }
       } else {
-        // Empty slot: abbreviated slot label centered inside
-        const abbr = t(`inventory.slot.${key}`).slice(0, 3).toUpperCase();
+        // Slot vide : abréviation lisible centrée à l'intérieur (ghost label)
+        const abbr = t(`inventory.slot.${key}`).slice(0, 4).toUpperCase();
         this.dynamicObjs.push(
-          this.add.text(sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, abbr, pxStyle(5, UI.TXT_HINT)).setOrigin(0.5),
+          this.add.text(sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, abbr, uiStyle(9, UI.TXT_HINT, { bold: true }))
+            .setOrigin(0.5),
         );
       }
 
-      // Slot name label
-      this.dynamicObjs.push(
-        this.add.text(LABEL_X, sy + 4, t(`inventory.slot.${key}`), pxStyle(5, UI.TXT_MUTED)).setOrigin(0, 0),
-      );
-
-      // Item name (truncated to fit label area)
+      // Hit zone (occupé → détail) — élargie de +4 px au-delà du visuel
       if (item) {
-        const raw   = localizeItem(item).name;
-        const name  = raw.length > 11 ? `${raw.slice(0, 9)}..` : raw;
-        const color = RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT;
-        this.dynamicObjs.push(
-          this.add.text(LABEL_X, sy + 16, name, pxStyle(5, color)).setOrigin(0, 0),
-        );
-      }
-
-      // Interactive hit zone on occupied slot
-      if (item) {
-        const hit = this.add.rectangle(sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, EQ_SLOT, EQ_SLOT, 0x000000, 0)
-          .setInteractive({ useHandCursor: true });
+        const hit = this.add.rectangle(
+          sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, EQ_SLOT + 8, EQ_SLOT + 8, 0x000000, 0,
+        ).setInteractive({ useHandCursor: true });
         this.dynamicObjs.push(hit);
         hit.on('pointerover', () => { bg.lineStyle(2, 0xffffff, 0.8); bg.strokeRect(sx, sy, EQ_SLOT, EQ_SLOT); });
         hit.on('pointerout',  () => { bg.lineStyle(2, rarHex, 1);     bg.strokeRect(sx, sy, EQ_SLOT, EQ_SLOT); });
         hit.on('pointerdown', () => this.showDetail(item.id));
 
-        // White flash overlay — drawn last so it renders above icon/hit zone.
-        // Triggered when this slot was just filled by a tap-equip action.
+        // White flash overlay — confirmation visuelle après un tap-equip.
         if (this.lastFlashSlotKey === key) {
           this.lastFlashSlotKey = null;
           const flash = this.add.graphics();
@@ -262,6 +284,21 @@ export class InventoryScene extends Phaser.Scene {
         }
       }
     });
+
+    // ── Identité du personnage sous le paperdoll ──────────────────────────
+    const infoY = rowY(3) + EQ_SLOT + 16;
+    const sepG  = this.add.graphics();
+    drawDivider(sepG, PX + 10, infoY, PW - 20, UI.BORDER_LIT, 0.4);
+    this.dynamicObjs.push(sepG);
+
+    this.dynamicObjs.push(
+      this.add.text(PX + PW / 2, infoY + 10, this.player.name, uiStyle(12, UI.TXT_GOLD, { bold: true }))
+        .setOrigin(0.5, 0),
+      this.add.text(PX + PW / 2, infoY + 28, `Niveau ${this.player.level}`, uiStyle(10, UI.TXT_PARCHMENT))
+        .setOrigin(0.5, 0),
+      this.add.text(PX + PW / 2, PY + PH - 10, 'Touchez un slot pour le détail', uiStyle(9, UI.TXT_HINT))
+        .setOrigin(0.5, 1),
+    );
   }
 
   // ── Center panel dispatcher ───────────────────────────────────────────────
@@ -280,15 +317,11 @@ export class InventoryScene extends Phaser.Scene {
     const { x: PX, y: PY, w: PW, h: PH } = this.stBounds;
 
     this.dynamicObjs.push(
-      this.add.text(PX + PW / 2, PY + 6, 'STATISTIQUES', pxStyle(7, UI.TXT_GOLD)).setOrigin(0.5, 0),
+      this.add.text(PX + PW / 2, PY + 6, 'STATISTIQUES', uiStyle(11, UI.TXT_GOLD, { bold: true })).setOrigin(0.5, 0),
     );
 
     const sepTop = this.add.graphics();
-    sepTop.lineStyle(1, UI.BORDER_LIT, 0.5);
-    sepTop.beginPath();
-    sepTop.moveTo(PX + 8, PY + 22);
-    sepTop.lineTo(PX + PW - 8, PY + 22);
-    sepTop.strokePath();
+    drawDivider(sepTop, PX + 8, PY + 24, PW - 16, UI.BORDER_LIT, 0.5);
     this.dynamicObjs.push(sepTop);
 
     const s = this.player.stats;
@@ -304,29 +337,32 @@ export class InventoryScene extends Phaser.Scene {
       ['Vitesse', String(s.spd)],
     ];
 
-    const COL1   = PX + 10;
-    const COL2   = PX + PW - 10;
-    const STARTY = PY + 28;
-    const ROW_H  = 18;
+    const COL1   = PX + 12;
+    const COL2   = PX + PW - 12;
+    const STARTY = PY + 34;
+    const ROW_H  = 22;
 
     rows.forEach(([label, value], i) => {
       const y = STARTY + i * ROW_H;
+      // Zébrage discret une ligne sur deux — lecture rapide en colonne
+      if (i % 2 === 0) {
+        const zebra = this.add.graphics();
+        zebra.fillStyle(0xffffff, 0.025);
+        zebra.fillRect(PX + 6, y - 3, PW - 12, ROW_H - 2);
+        this.dynamicObjs.push(zebra);
+      }
       this.dynamicObjs.push(
-        this.add.text(COL1, y, label, pxStyle(6, UI.TXT_MUTED)),
-        this.add.text(COL2, y, value, pxStyle(6, UI.TXT_PARCHMENT)).setOrigin(1, 0),
+        this.add.text(COL1, y, label, uiStyle(10, UI.TXT_MUTED)),
+        this.add.text(COL2, y, value, uiStyle(11, UI.TXT_PARCHMENT, { bold: true })).setOrigin(1, 0),
       );
     });
 
     const sepBot = this.add.graphics();
-    sepBot.lineStyle(1, UI.BORDER_LIT, 0.35);
-    sepBot.beginPath();
-    sepBot.moveTo(PX + 8,      STARTY + rows.length * ROW_H + 4);
-    sepBot.lineTo(PX + PW - 8, STARTY + rows.length * ROW_H + 4);
-    sepBot.strokePath();
+    drawDivider(sepBot, PX + 8, STARTY + rows.length * ROW_H + 6, PW - 16, UI.BORDER_LIT, 0.35);
     this.dynamicObjs.push(sepBot);
 
     this.dynamicObjs.push(
-      this.add.text(PX + PW / 2, PY + PH - 12, 'Tap = action  •  Maintenir = détail', pxStyle(5, UI.TXT_HINT)).setOrigin(0.5, 1),
+      this.add.text(PX + PW / 2, PY + PH - 12, 'Tap = action  •  Maintenir = détail', uiStyle(9, UI.TXT_HINT)).setOrigin(0.5, 1),
     );
   }
 
@@ -341,7 +377,7 @@ export class InventoryScene extends Phaser.Scene {
     const rarColor = RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT;
 
     // ── Header ───────────────────────────────────────────────────────────
-    const back = this.add.text(PX + 8, PY + 6, '← Stats', pxStyle(6, UI.TXT_BLUE))
+    const back = this.add.text(PX + 10, PY + 6, '← Stats', uiStyle(10, UI.TXT_BLUE, { bold: true }))
       .setInteractive({ useHandCursor: true })
       .on('pointerover', () => back.setColor(UI.TXT_GOLD))
       .on('pointerout',  () => back.setColor(UI.TXT_BLUE))
@@ -349,100 +385,90 @@ export class InventoryScene extends Phaser.Scene {
     this.dynamicObjs.push(back);
 
     this.dynamicObjs.push(
-      this.add.text(PX + PW / 2, PY + 6, 'DÉTAIL', pxStyle(7, UI.TXT_GOLD)).setOrigin(0.5, 0),
+      this.add.text(PX + PW / 2, PY + 6, 'DÉTAIL', uiStyle(11, UI.TXT_GOLD, { bold: true })).setOrigin(0.5, 0),
     );
 
     const sepTop = this.add.graphics();
-    sepTop.lineStyle(1, UI.BORDER_LIT, 0.5);
-    sepTop.beginPath();
-    sepTop.moveTo(PX + 8, PY + 22);
-    sepTop.lineTo(PX + PW - 8, PY + 22);
-    sepTop.strokePath();
+    drawDivider(sepTop, PX + 8, PY + 24, PW - 16, UI.BORDER_LIT, 0.5);
     this.dynamicObjs.push(sepTop);
 
     // ── Item identity ─────────────────────────────────────────────────────
-    let curY = PY + 28;
+    let curY = PY + 32;
 
     this.dynamicObjs.push(
-      this.add.text(PX + PW / 2, curY, `[${item.rarity}]`, pxStyle(6, rarColor)).setOrigin(0.5, 0),
+      this.add.text(PX + PW / 2, curY, `[${item.rarity}]`, uiStyle(9, rarColor, { bold: true })).setOrigin(0.5, 0),
     );
-    curY += 14;
+    curY += 16;
 
-    const nameTxt = this.add.text(PX + PW / 2, curY, locItem.name, {
-      ...pxStyle(8, rarColor, true),
-      wordWrap: { width: PW - 20 },
-      align: 'center',
-    }).setOrigin(0.5, 0);
+    const nameTxt = this.add.text(PX + PW / 2, curY, locItem.name, uiStyle(13, rarColor, {
+      bold: true, stroke: true, wordWrapWidth: PW - 20, align: 'center',
+    })).setOrigin(0.5, 0);
     this.dynamicObjs.push(nameTxt);
-    curY += nameTxt.height + 8;
+    curY += nameTxt.height + 10;
 
     // ── Main stat ─────────────────────────────────────────────────────────
     const mainLine = this.getItemMainStat(item);
     if (mainLine) {
       this.dynamicObjs.push(
-        this.add.text(PX + PW / 2, curY, mainLine, pxStyle(9, UI.TXT_GOLD, true)).setOrigin(0.5, 0),
+        this.add.text(PX + PW / 2, curY, mainLine, uiStyle(12, UI.TXT_GOLD, { bold: true, stroke: true })).setOrigin(0.5, 0),
       );
-      curY += 22;
+      curY += 24;
     }
 
     const sepMid = this.add.graphics();
-    sepMid.lineStyle(1, UI.BORDER_LIT, 0.3);
-    sepMid.beginPath();
-    sepMid.moveTo(PX + 8, curY);
-    sepMid.lineTo(PX + PW - 8, curY);
-    sepMid.strokePath();
+    drawDivider(sepMid, PX + 8, curY, PW - 16, UI.BORDER_LIT, 0.3);
     this.dynamicObjs.push(sepMid);
-    curY += 8;
+    curY += 10;
 
     // ── Substats ──────────────────────────────────────────────────────────
     for (const line of this.getItemSubstats(item)) {
       this.dynamicObjs.push(
-        this.add.text(PX + 14, curY, `• ${line}`, pxStyle(6, UI.TXT_PARCHMENT)),
+        this.add.text(PX + 14, curY, `• ${line}`, uiStyle(10, UI.TXT_PARCHMENT)),
       );
-      curY += 13;
+      curY += 17;
     }
-    curY += 4;
+    curY += 6;
 
     // ── Description ───────────────────────────────────────────────────────
-    const descTxt = this.add.text(PX + 10, curY, locItem.description, {
-      ...pxStyle(6, UI.TXT_MUTED),
-      wordWrap: { width: PW - 20 },
-    });
+    const descTxt = this.add.text(PX + 12, curY, locItem.description, uiStyle(10, UI.TXT_MUTED, {
+      italic: true, wordWrapWidth: PW - 24, lineSpacing: 3,
+    }));
     this.dynamicObjs.push(descTxt);
 
-    // ── Action buttons (bottom of panel) ─────────────────────────────────
+    // ── Action buttons (bottom of panel — zone de pouce) ─────────────────
     const isEquip = EQUIP_TYPES.includes(item.type);
     const isUse    = item.type === ItemType.CONSUMABLE;
     const isSell   = item.type !== ItemType.KEY_ITEM;
     const btnCount = (isEquip || isUse ? 1 : 0) + (isSell ? 1 : 0) + 1; // +1 for close
-    const BTN_H    = 20;
+    const BTN_H    = 32;   // visuel 32 px, hit zone 44 px (norme tactile)
+    const BTN_GAP  = 8;
     const BTN_W    = PW - 20;
     const BTN_X    = PX + 10;
-    let   btnY     = PY + PH - btnCount * (BTN_H + 6) - 4;
+    let   btnY     = PY + PH - btnCount * (BTN_H + BTN_GAP) - 4;
 
     const addBtn = (label: string, color: string, onClick: () => void) => {
       const y       = btnY;
       const bgGfx   = this.add.graphics();
       bgGfx.fillStyle(UI.BTN_BG, 1);
-      bgGfx.fillRect(BTN_X, y, BTN_W, BTN_H);
+      bgGfx.fillRoundedRect(BTN_X, y, BTN_W, BTN_H, 4);
       bgGfx.lineStyle(1, UI.BTN_BORDER, 1);
-      bgGfx.strokeRect(BTN_X, y, BTN_W, BTN_H);
-      const txt = this.add.text(BTN_X + BTN_W / 2, y + BTN_H / 2, label, pxStyle(6, color)).setOrigin(0.5);
-      const hit = this.add.rectangle(BTN_X + BTN_W / 2, y + BTN_H / 2, BTN_W, BTN_H, 0x000000, 0)
+      bgGfx.strokeRoundedRect(BTN_X, y, BTN_W, BTN_H, 4);
+      const txt = this.add.text(BTN_X + BTN_W / 2, y + BTN_H / 2, label, uiStyle(11, color, { bold: true })).setOrigin(0.5);
+      const hit = this.add.rectangle(BTN_X + BTN_W / 2, y + BTN_H / 2, BTN_W + 6, Math.max(44, BTN_H + BTN_GAP), 0x000000, 0)
         .setInteractive({ useHandCursor: true })
         .on('pointerover', () => {
           bgGfx.lineStyle(1, UI.BTN_BORDER_HOV, 1);
-          bgGfx.strokeRect(BTN_X, y, BTN_W, BTN_H);
+          bgGfx.strokeRoundedRect(BTN_X, y, BTN_W, BTN_H, 4);
           txt.setColor(UI.TXT_GOLD);
         })
         .on('pointerout', () => {
           bgGfx.lineStyle(1, UI.BTN_BORDER, 1);
-          bgGfx.strokeRect(BTN_X, y, BTN_W, BTN_H);
+          bgGfx.strokeRoundedRect(BTN_X, y, BTN_W, BTN_H, 4);
           txt.setColor(color);
         })
         .on('pointerdown', onClick);
       this.dynamicObjs.push(bgGfx, txt, hit);
-      btnY += BTN_H + 6;
+      btnY += BTN_H + BTN_GAP;
     };
 
     if (isEquip) {
@@ -483,6 +509,7 @@ export class InventoryScene extends Phaser.Scene {
 
   private renderGrid() {
     this.input.off('wheel');
+    this.input.off('pointermove');
 
     const { x: PX, y: PY, w: PW, h: PH } = this.bagBounds;
     const TITLE_H   = 22;
@@ -515,7 +542,7 @@ export class InventoryScene extends Phaser.Scene {
       this.dynamicObjs.push(
         this.add.text(
           PX + PW / 2, GRID_Y + VISIBLE_H / 2,
-          'Inventaire vide', pxStyle(7, UI.TXT_HINT),
+          'Inventaire vide', uiStyle(11, UI.TXT_HINT),
         ).setOrigin(0.5),
       );
     }
@@ -554,10 +581,13 @@ export class InventoryScene extends Phaser.Scene {
         reg(sqGfx, topY);
       }
 
-      // Stack quantity badge
+      // Stack quantity badge — lisible sur n'importe quelle icône (stroke noir)
       if (slot.quantity > 1) {
-        const qBaseY = topY + INV_SLOT - 5;
-        const qty    = this.add.text(sx + INV_SLOT - 5, qBaseY, `${slot.quantity}`, pxStyle(6, UI.TXT_WHITE)).setOrigin(1, 1);
+        const qBaseY = topY + INV_SLOT - 4;
+        const qty    = this.add.text(
+          sx + INV_SLOT - 5, qBaseY, `${slot.quantity}`,
+          uiStyle(10, UI.TXT_WHITE, { bold: true, stroke: true }),
+        ).setOrigin(1, 1);
         reg(qty, qBaseY);
       }
 
@@ -574,10 +604,12 @@ export class InventoryScene extends Phaser.Scene {
           this.showDetail(slot.item.id);
         }, 500);
       });
-      hit.on('pointerup', () => {
+      hit.on('pointerup', (p: Phaser.Input.Pointer) => {
         if (this.longPressTimer !== null) {
           clearTimeout(this.longPressTimer);
           this.longPressTimer = null;
+          // Un déplacement > 10 px = scroll tactile, pas un tap → aucune action
+          if (p.getDistance() > 10) return;
           // Pass screen coords so the popup can anchor near the tapped slot
           const screenX = sx + INV_SLOT / 2 - 1;
           const screenY = topY + INV_SLOT / 2 - 1;
@@ -592,12 +624,29 @@ export class InventoryScene extends Phaser.Scene {
       });
     });
 
-    // Mousewheel scroll
+    // Scroll : molette (desktop) + drag vertical (tactile — dette D2 résorbée)
     if (contentH > VISIBLE_H) {
       const maxScroll = contentH - VISIBLE_H;
       this.input.on('wheel', (_p: unknown, _g: unknown, _dx: number, dy: number) => {
         scrollY = Phaser.Math.Clamp(scrollY + dy * 0.8, 0, maxScroll);
         for (const { obj, baseY } of scrollables) obj.setY(baseY - scrollY);
+      });
+
+      const gridRight = GRID_X + INV_COLS * INV_SLOT + 4;
+      this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
+        if (!p.isDown) return;
+        // Seuls les drags démarrés dans la zone de la grille scrollent
+        if (p.downX < GRID_X - 4 || p.downX > gridRight) return;
+        if (p.downY < GRID_Y || p.downY > GRID_Y + VISIBLE_H) return;
+        const dy = p.y - p.prevPosition.y;
+        if (dy === 0) return;
+        scrollY = Phaser.Math.Clamp(scrollY - dy, 0, maxScroll);
+        for (const { obj, baseY } of scrollables) obj.setY(baseY - scrollY);
+        // Un drag en cours annule le long-press (le doigt scrolle, il ne maintient pas)
+        if (p.getDistance() > 10 && this.longPressTimer !== null) {
+          clearTimeout(this.longPressTimer);
+          this.longPressTimer = null;
+        }
       });
     }
   }
@@ -801,10 +850,11 @@ export class InventoryScene extends Phaser.Scene {
     const rawName = locItem.name;
     const name    = rawName.length > 18 ? `${rawName.slice(0, 16)}..` : rawName;
     this.consumePopupObjects.push(
-      this.add.text(px + MARGIN * 2 + iconSize + 2, py + MARGIN + 2, name, {
-        ...pxStyle(6, RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT, false),
-        wordWrap: { width: PW - iconSize - MARGIN * 3 - 2 },
-      }).setDepth(depth + 1),
+      this.add.text(px + MARGIN * 2 + iconSize + 2, py + MARGIN + 2, name,
+        uiStyle(11, RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT, {
+          bold: true, wordWrapWidth: PW - iconSize - MARGIN * 3 - 2,
+        }),
+      ).setDepth(depth + 1),
     );
 
     // ── Effect summary ────────────────────────────────────────────────────
@@ -812,9 +862,9 @@ export class InventoryScene extends Phaser.Scene {
     this.consumePopupObjects.push(
       this.add.text(
         px + MARGIN * 2 + iconSize + 2,
-        py + MARGIN + 16,
+        py + MARGIN + 18,
         effectLine,
-        pxStyle(6, UI.TXT_GREEN),
+        uiStyle(10, UI.TXT_GREEN),
       ).setDepth(depth + 1),
     );
 
@@ -844,7 +894,7 @@ export class InventoryScene extends Phaser.Scene {
     const confirmTxt = this.add.text(
       BTN_X1 + BTN_W / 2, BTN_Y + BTN_H / 2,
       t('inventory.use_item'),
-      pxStyle(7, UI.TXT_GREEN, true),
+      uiStyle(11, UI.TXT_GREEN, { bold: true, stroke: true }),
     ).setOrigin(0.5).setDepth(depth + 2);
 
     const confirmHit = this.add.rectangle(BTN_X1 + BTN_W / 2, BTN_Y + BTN_H / 2, BTN_W, BTN_H, 0x000000, 0)
@@ -878,7 +928,7 @@ export class InventoryScene extends Phaser.Scene {
     const cancelTxt = this.add.text(
       BTN_X2 + BTN_W / 2, BTN_Y + BTN_H / 2,
       t('inventory.cancel'),
-      pxStyle(7, UI.TXT_RED, false),
+      uiStyle(11, UI.TXT_RED, { bold: true }),
     ).setOrigin(0.5).setDepth(depth + 2);
 
     const cancelHit = this.add.rectangle(BTN_X2 + BTN_W / 2, BTN_Y + BTN_H / 2, BTN_W, BTN_H, 0x000000, 0)
@@ -993,6 +1043,7 @@ export class InventoryScene extends Phaser.Scene {
 
   private clearDynamic(): void {
     this.input.off('wheel');
+    this.input.off('pointermove');
     // Close any open consume popup before rebuilding the scene
     this.closeConsumePopup();
     for (const go of this.dynamicObjs) {
@@ -1015,6 +1066,7 @@ export class InventoryScene extends Phaser.Scene {
       this.longPressTimer = null;
     }
     this.input.off('wheel');
+    this.input.off('pointermove');
     // clearDynamic() calls closeConsumePopup() internally
     this.clearDynamic();
   }

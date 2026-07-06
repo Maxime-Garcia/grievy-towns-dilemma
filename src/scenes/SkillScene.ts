@@ -3,7 +3,7 @@ import { GameScene } from './GameScene';
 import { PlayerState, TalentNode, TalentEffectKey } from '../types';
 import { TALENT_MAP } from '../data/talents';
 import { TalentSystem } from '../systems/TalentSystem';
-import { UI, drawPanel, pxStyle } from '../utils/UITheme';
+import { UI, drawPanel, uiStyle } from '../utils/UITheme';
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 const TAB_H    = 36;   // height of one tab row (px)
@@ -16,7 +16,13 @@ const NODE_HIT = 7;    // extra px on each side to enlarge touch target
 
 const TAB_ROW1 = ['VIGOR', 'INSTINCT', 'ARCANE'] as const;
 const TAB_ROW2 = ['IGNIS', 'ZEPHYR', 'ABYSSAL', 'TENEBRES'] as const;
-const BRANCH_KEYS: string[] = [...TAB_ROW1, ...TAB_ROW2];
+const TAB_ROW3 = ['TERRA', 'FULGURIS', 'GLACIUS'] as const;
+const BRANCH_KEYS: string[] = [...TAB_ROW1, ...TAB_ROW2, ...TAB_ROW3];
+// All tab rows, in display order — used by buildTabs/refreshTabs so the layout
+// scales automatically if more rows are added later.
+const TAB_ROWS: readonly (readonly string[])[] = [TAB_ROW1, TAB_ROW2, TAB_ROW3];
+// Total vertical space occupied by the tab bar (all rows stacked).
+const TAB_TOTAL_H = TAB_H * TAB_ROWS.length;
 
 // ── Branch visual metadata ────────────────────────────────────────────────────
 const BRANCH_META: Record<string, { label: string; color: number; desc: string }> = {
@@ -26,8 +32,28 @@ const BRANCH_META: Record<string, { label: string; color: number; desc: string }
   IGNIS:    { label: 'Flamme',   color: 0xff6600, desc: 'Magie du feu, brûlures et explosions' },
   ZEPHYR:   { label: 'Vent',     color: 0x44ddaa, desc: 'Vitesse du vent, dashes et projectiles' },
   ABYSSAL:  { label: 'Abyssal',  color: 0x2255ee, desc: 'Profondeurs, glace et vol de vie' },
+  TERRA:    { label: 'Roc',        color: 0xbb7733, desc: 'Terre, poise et résistance au knockback' },
+  FULGURIS: { label: 'Étincelle',  color: 0xffdd22, desc: 'Foudre, critiques et vitesse d\'attaque' },
+  GLACIUS:  { label: 'Préservation', color: 0xcceeff, desc: 'Glace, réduction de dégâts et survie' },
   TENEBRES: { label: 'Ténèbres', color: 0x7700aa, desc: 'Magie interdite. NG+ uniquement.' },
 };
+
+// Branches gatées par un tier 3 d'une branche de base (miroir de TalentSystem.canUnlock).
+const BRANCH_GATE_REQUIREMENT: Record<string, string> = {
+  IGNIS: 'ARCANE',
+  TERRA: 'VIGOR',
+  FULGURIS: 'INSTINCT',
+};
+
+/** True si la branche `branchKey` est gatée et que le prérequis (tier ≥ 3) n'est pas rempli. */
+function isBranchGateUnmet(player: PlayerState, branchKey: string): boolean {
+  switch (BRANCH_GATE_REQUIREMENT[branchKey]) {
+    case 'ARCANE':   return !TalentSystem.hasArcaneTier3(player);
+    case 'VIGOR':    return !TalentSystem.hasVigorTier3(player);
+    case 'INSTINCT': return !TalentSystem.hasInstinctTier3(player);
+    default:         return false;
+  }
+}
 
 // Points-spent gate per tier (mirrors TalentSystem.canUnlock logic)
 const TIER_GATE: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 2, 3: 4, 4: 6, 5: 10 };
@@ -47,7 +73,7 @@ function getNodeStatus(player: PlayerState, nodeId: string): NodeStatus {
 
 // ── Tier vertical centre ──────────────────────────────────────────────────────
 function tierCenterY(tier: number, screenH: number, maxTier = 4): number {
-  const contentTop    = TAB_H * 2 + HDR_H;
+  const contentTop    = TAB_TOTAL_H + HDR_H;
   const contentBottom = screenH - BOTTOM_H;
   const available     = contentBottom - contentTop;
   const topMax        = Math.max(4, maxTier);
@@ -171,10 +197,7 @@ export class SkillScene extends Phaser.Scene {
     this.tabBgGraphics = [];
     this.tabTextObjs   = [];
 
-    const rows: readonly string[][] = [
-      [...TAB_ROW1],
-      [...TAB_ROW2],
-    ];
+    const rows: readonly (readonly string[])[] = TAB_ROWS;
 
     rows.forEach((row, rowIdx) => {
       const y = rowIdx * TAB_H;
@@ -195,7 +218,7 @@ export class SkillScene extends Phaser.Scene {
           x + tabW / 2,
           y + TAB_H / 2,
           meta?.label ?? branchKey,
-          pxStyle(7, isActive ? UI.TXT_WHITE : UI.TXT_MUTED),
+          uiStyle(11, isActive ? UI.TXT_WHITE : UI.TXT_MUTED, { bold: true }),
         ).setOrigin(0.5).setDepth(3);
         this.tabTextObjs.push(txt);
 
@@ -237,7 +260,7 @@ export class SkillScene extends Phaser.Scene {
   }
 
   private refreshTabs() {
-    const rows: readonly string[][] = [[...TAB_ROW1], [...TAB_ROW2]];
+    const rows: readonly (readonly string[])[] = TAB_ROWS;
     let idx = 0;
     rows.forEach((row, rowIdx) => {
       const W    = this.cameras.main.width;
@@ -260,7 +283,7 @@ export class SkillScene extends Phaser.Scene {
   // ── Branch header ─────────────────────────────────────────────────────────
 
   private buildBranchHeader(W: number) {
-    const y    = TAB_H * 2;
+    const y    = TAB_TOTAL_H;
     const meta = BRANCH_META[this.activeBranch];
 
     // Separator between tabs and header
@@ -269,21 +292,21 @@ export class SkillScene extends Phaser.Scene {
     sep.lineBetween(8, y, W - 8, y);
 
     this.branchNameTxt = this.add.text(
-      14, y + 7,
+      14, y + 3,
       meta?.label ?? this.activeBranch,
-      pxStyle(9, UI.TXT_GOLD, true),
+      uiStyle(13, UI.TXT_GOLD, { bold: true, stroke: true }),
     ).setDepth(2);
 
     this.branchDescTxt = this.add.text(
       14, y + 18,
       meta?.desc ?? '',
-      pxStyle(5, UI.TXT_MUTED),
+      uiStyle(9, UI.TXT_MUTED),
     ).setDepth(2);
 
     this.pointsText = this.add.text(
-      W - 52, y + 7,
+      W - 52, y + 6,
       this.buildPointsLabel(),
-      pxStyle(6, UI.TXT_PARCHMENT),
+      uiStyle(11, UI.TXT_PARCHMENT, { bold: true }),
     ).setOrigin(1, 0).setDepth(2);
   }
 
@@ -314,7 +337,7 @@ export class SkillScene extends Phaser.Scene {
     bg.lineStyle(1, 0x441111, 1);
     bg.strokeRect(bx, by, bw, bh);
 
-    this.add.text(bx + bw / 2, by + bh / 2, '×', pxStyle(12, UI.TXT_RED, true))
+    this.add.text(bx + bw / 2, by + bh / 2, '×', uiStyle(20, UI.TXT_RED, { bold: true, stroke: true }))
       .setOrigin(0.5).setDepth(3);
 
     // Touch target ≥ 44 × 44
@@ -370,7 +393,7 @@ export class SkillScene extends Phaser.Scene {
   }
 
   private renderEmptyBranch(W: number, H: number, branchColor: number) {
-    const cy = TAB_H * 2 + HDR_H + (H - TAB_H * 2 - HDR_H - BOTTOM_H) / 2;
+    const cy = TAB_TOTAL_H + HDR_H + (H - TAB_TOTAL_H - HDR_H - BOTTOM_H) / 2;
 
     // Decorative divider
     const g = this.add.graphics().setDepth(5);
@@ -380,7 +403,7 @@ export class SkillScene extends Phaser.Scene {
 
     const t = this.add.text(W / 2, cy,
       'Cette voie n\'est pas encore\ndécouverte...',
-      { ...pxStyle(8, UI.TXT_HINT), align: 'center', wordWrap: { width: W - 80 } },
+      uiStyle(12, UI.TXT_HINT, { align: 'center', wordWrapWidth: W - 80 }),
     ).setOrigin(0.5).setDepth(5);
     this.dynamicObjs.push(t);
   }
@@ -516,19 +539,19 @@ export class SkillScene extends Phaser.Scene {
           .setDepth(7);
         this.dynamicObjs.push(img);
       } catch {
-        const fb = this.add.text(cx, cy, `T${node.tier}`, pxStyle(8, '#ffffff', true))
+        const fb = this.add.text(cx, cy, `T${node.tier}`, uiStyle(12, '#ffffff', { bold: true, stroke: true }))
           .setOrigin(0.5).setAlpha(alpha).setDepth(7);
         this.dynamicObjs.push(fb);
       }
     }
 
-    // Label below node
+    // Label below node — lisible (9px moderne, tronqué à 13 caractères)
     const rawName    = node.name;
-    const label      = rawName.length > 10 ? rawName.slice(0, 9) + '…' : rawName;
+    const label      = rawName.length > 13 ? rawName.slice(0, 12) + '…' : rawName;
     const labelColor = status === 'unlocked' ? UI.TXT_GOLD
                      : status === 'available' ? UI.TXT_PARCHMENT
                      : UI.TXT_HINT;
-    const labelTxt = this.add.text(cx, cy + NODE_SZ / 2 + 4, label, pxStyle(5, labelColor))
+    const labelTxt = this.add.text(cx, cy + NODE_SZ / 2 + 4, label, uiStyle(9, labelColor, { stroke: true }))
       .setOrigin(0.5, 0).setDepth(7);
     this.dynamicObjs.push(labelTxt);
 
@@ -555,7 +578,7 @@ export class SkillScene extends Phaser.Scene {
   // ── NG+ lock overlay ──────────────────────────────────────────────────────
 
   private renderNgpOverlay(W: number, H: number) {
-    const oy = TAB_H * 2 + HDR_H;
+    const oy = TAB_TOTAL_H + HDR_H;
     const oh = H - oy - BOTTOM_H;
 
     const dim = this.add.rectangle(W / 2, oy + oh / 2, W - 16, oh, 0x000000, 0.76).setDepth(15);
@@ -564,12 +587,7 @@ export class SkillScene extends Phaser.Scene {
     const msg = this.add.text(
       W / 2, oy + oh / 2,
       'Je ne suis pas encore capable\nde maîtriser cette magie interdite...',
-      {
-        ...pxStyle(10, '#9966cc'),
-        align: 'center',
-        fontStyle: 'italic',
-        wordWrap: { width: W - 80 },
-      },
+      uiStyle(13, '#9966cc', { italic: true, align: 'center', wordWrapWidth: W - 80 }),
     ).setOrigin(0.5).setDepth(16);
     this.dynamicObjs.push(msg);
   }
@@ -583,20 +601,20 @@ export class SkillScene extends Phaser.Scene {
     const canRespec = hasSpent && canAfford;
 
     const btnW = 160;
-    const btnH = 22;
+    const btnH = 26;
     const btnX = W - 8 - btnW;
     const btnY = H - BOTTOM_H - btnH - 8;
 
     const bg = this.add.graphics().setDepth(10);
     bg.fillStyle(canRespec ? 0x1e0a2a : 0x0e0e18, 1);
-    bg.fillRect(btnX, btnY, btnW, btnH);
+    bg.fillRoundedRect(btnX, btnY, btnW, btnH, 4);
     bg.lineStyle(1, canRespec ? 0x7700aa : 0x282830, 1);
-    bg.strokeRect(btnX, btnY, btnW, btnH);
+    bg.strokeRoundedRect(btnX, btnY, btnW, btnH, 4);
     this.dynamicObjs.push(bg);
 
     const labelColor = canRespec ? '#cc99ff' : UI.TXT_HINT;
     const label      = `↺ Réspec — ${cost} or`;
-    const txt = this.add.text(btnX + btnW / 2, btnY + btnH / 2, label, pxStyle(5, labelColor))
+    const txt = this.add.text(btnX + btnW / 2, btnY + btnH / 2, label, uiStyle(10, labelColor, { bold: true }))
       .setOrigin(0.5).setDepth(11);
     this.dynamicObjs.push(txt);
 
@@ -649,7 +667,7 @@ export class SkillScene extends Phaser.Scene {
       const hint = this.add.text(
         W / 2, sy + sh / 2 - 8,
         'Sélectionne un talent pour voir ses détails',
-        pxStyle(6, UI.TXT_HINT),
+        uiStyle(11, UI.TXT_HINT),
       ).setOrigin(0.5).setDepth(21);
       this.sheetObjs.push(hint);
       return;
@@ -661,26 +679,23 @@ export class SkillScene extends Phaser.Scene {
     const status = getNodeStatus(this.player, nodeId);
 
     // ── Left column (name, description, effects) ──────────────────────────
-    const lx  = sx + 10;
+    const lx  = sx + 12;
     const ly0 = sy + 10;
-    const ly1 = sy + 24;
-    const ly2 = sy + 40;
+    const ly1 = sy + 30;
+    const ly2 = sy + 50;
     const colW = Math.floor(sw * 0.52) - 10;
 
-    const nameTxt = this.add.text(lx, ly0, node.name, pxStyle(9, UI.TXT_GOLD, true)).setDepth(21);
+    const nameTxt = this.add.text(lx, ly0, node.name, uiStyle(13, UI.TXT_GOLD, { bold: true, stroke: true })).setDepth(21);
     this.sheetObjs.push(nameTxt);
 
-    const descTxt = this.add.text(lx, ly1, node.description, {
-      ...pxStyle(6, UI.TXT_MUTED),
-      wordWrap: { width: colW },
-    }).setDepth(21);
+    const descTxt = this.add.text(lx, ly1, node.description, uiStyle(10, UI.TXT_MUTED, {
+      wordWrapWidth: colW,
+    })).setDepth(21);
     this.sheetObjs.push(descTxt);
 
-    const effTxt = this.add.text(lx, ly2, formatEffects(node.effects), {
-      ...pxStyle(6, UI.TXT_PARCHMENT),
-      wordWrap: { width: colW },
-      lineSpacing: 2,
-    }).setDepth(21);
+    const effTxt = this.add.text(lx, ly2, formatEffects(node.effects), uiStyle(10, UI.TXT_PARCHMENT, {
+      wordWrapWidth: colW, lineSpacing: 3,
+    })).setDepth(21);
     this.sheetObjs.push(effTxt);
 
     // ── Right column (cost, status, lore, unlock button) ─────────────────
@@ -692,10 +707,10 @@ export class SkillScene extends Phaser.Scene {
     const costTxt = this.add.text(
       rx, ry,
       `Coût : ${node.cost} point${node.cost !== 1 ? 's' : ''}`,
-      pxStyle(7, UI.TXT_GOLD),
+      uiStyle(11, UI.TXT_GOLD, { bold: true }),
     ).setDepth(21);
     this.sheetObjs.push(costTxt);
-    ry += 16;
+    ry += 18;
 
     // Status
     let statusStr: string;
@@ -710,13 +725,20 @@ export class SkillScene extends Phaser.Scene {
         statusColor = UI.TXT_PARCHMENT;
         break;
       case 'locked': {
-        const spent     = TalentSystem.pointsSpentInBranch(this.player, node.branch);
-        const need      = TIER_GATE[node.tier];
-        const remaining = Math.max(0, need - spent);
-        if (remaining > 0) {
-          statusStr = `Verrouillé — encore ${remaining} pt${remaining > 1 ? 's' : ''} requis`;
+        const branchKey = node.branch as string;
+        if (isBranchGateUnmet(this.player, branchKey)) {
+          const reqBranch = BRANCH_GATE_REQUIREMENT[branchKey]!;
+          const reqLabel  = BRANCH_META[reqBranch]?.label ?? reqBranch;
+          statusStr = `Verrouillé — nécessite ${reqLabel} tier 3`;
         } else {
-          statusStr = 'Verrouillé — points insuffisants';
+          const spent     = TalentSystem.pointsSpentInBranch(this.player, node.branch);
+          const need      = TIER_GATE[node.tier];
+          const remaining = Math.max(0, need - spent);
+          if (remaining > 0) {
+            statusStr = `Verrouillé — encore ${remaining} pt${remaining > 1 ? 's' : ''} requis`;
+          } else {
+            statusStr = 'Verrouillé — points insuffisants';
+          }
         }
         statusColor = UI.TXT_MUTED;
         break;
@@ -727,43 +749,41 @@ export class SkillScene extends Phaser.Scene {
         break;
     }
 
-    const statusTxt = this.add.text(rx, ry, statusStr, pxStyle(6, statusColor)).setDepth(21);
+    const statusTxt = this.add.text(rx, ry, statusStr, uiStyle(10, statusColor)).setDepth(21);
     this.sheetObjs.push(statusTxt);
-    ry += 18;
+    ry += 20;
 
     // Lore snippet (if vertical space allows)
     if (node.lore && ry < sy + sh - 50) {
       const loreSnip = node.lore.length > 72 ? node.lore.slice(0, 71) + '…' : node.lore;
-      const loreTxt  = this.add.text(rx, ry, `"${loreSnip}"`, {
-        ...pxStyle(5, UI.TXT_HINT),
-        fontStyle: 'italic',
-        wordWrap: { width: rColW },
-      }).setDepth(21);
+      const loreTxt  = this.add.text(rx, ry, `"${loreSnip}"`, uiStyle(9, UI.TXT_HINT, {
+        italic: true, wordWrapWidth: rColW,
+      })).setDepth(21);
       this.sheetObjs.push(loreTxt);
     }
 
     // Unlock button (only when available + enough points)
     if (status === 'available' && this.player.talentPoints >= node.cost) {
-      const btnW = 124;
-      const btnH = 36;
-      const btnX = sx + sw - btnW - 4;
+      const btnW = 136;
+      const btnH = 40;
+      const btnX = sx + sw - btnW - 8;
       const btnY = sy + sh - btnH - 8;
 
       const btnBg = this.add.graphics().setDepth(22);
       btnBg.fillStyle(branchColor, 0.88);
-      btnBg.fillRect(btnX, btnY, btnW, btnH);
+      btnBg.fillRoundedRect(btnX, btnY, btnW, btnH, 5);
       btnBg.lineStyle(2, 0xffffff, 0.45);
-      btnBg.strokeRect(btnX, btnY, btnW, btnH);
+      btnBg.strokeRoundedRect(btnX, btnY, btnW, btnH, 5);
       this.sheetObjs.push(btnBg);
 
       const btnTxt = this.add.text(
         btnX + btnW / 2, btnY + btnH / 2,
         'Débloquer',
-        pxStyle(8, UI.TXT_WHITE, true),
+        uiStyle(13, UI.TXT_WHITE, { bold: true, stroke: true }),
       ).setOrigin(0.5).setDepth(23);
       this.sheetObjs.push(btnTxt);
 
-      const btnHit = this.add.rectangle(btnX + btnW / 2, btnY + btnH / 2, btnW, btnH, 0, 0)
+      const btnHit = this.add.rectangle(btnX + btnW / 2, btnY + btnH / 2, btnW + 8, Math.max(44, btnH + 4), 0, 0)
         .setInteractive({ useHandCursor: true })
         .setDepth(24);
       this.sheetObjs.push(btnHit);
@@ -790,7 +810,7 @@ export class SkillScene extends Phaser.Scene {
 
   private onPointerDown(p: Phaser.Input.Pointer) {
     // Only track swipes in the tree content area (below header)
-    if (p.y < TAB_H * 2 + HDR_H) return;
+    if (p.y < TAB_TOTAL_H + HDR_H) return;
     this.swipeX      = p.x;
     this.swipeY      = p.y;
     this.swipeActive = true;

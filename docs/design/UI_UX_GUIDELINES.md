@@ -6,18 +6,44 @@
 > Les tokens de ce document sont extraits du code réel (`src/utils/UITheme.ts`, `src/types/index.ts`,
 > `src/main.ts`) — si le code et ce doc divergent, corriger l'un ou l'autre, jamais ignorer.
 
-**Dernière synchro avec le code :** branche `feat/ui-stats-combat-polish` (commit `e0576e8`).
+**Dernière synchro avec le code :** refonte « UI moderne lisible » (2026-07-06) —
+double système typographique, paperdoll Dofus, helpers `uiStyle`/`drawCard`/`drawDivider`/`addCloseButton`.
 
 ---
 
-## 0. Contexte technique — à connaître avant tout layout
+## 0. Direction artistique — « Dark modern RPG, readable first »
+
+Depuis la refonte de juillet 2026, l'UI suit une règle simple :
+
+> **Les sprites du jeu sont pixel art. L'INTERFACE, elle, est moderne, nette et lisible.**
+> Références : Genshin Impact / AFK Arena (clarté mobile), Dofus (inventaire, paperdoll,
+> slots à contour de rareté), Dead Cells / Hades (dark theme raffiné, panneaux translucides).
+
+Concrètement :
+
+1. **Deux polices, deux rôles** (voir §2.2) : la police pixel `'Press Start 2P'` est réservée à
+   l'**identité** (titre du jeu au menu principal, éventuels gros titres cérémoniels). **Tout le
+   reste** — corps, labels, stats, boutons, dialogues — utilise la police système moderne
+   `FONT_UI` (Verdana/Segoe UI), lisible sans zoom même après le downscale mobile.
+2. **Dark theme raffiné** : fonds très sombres (`PANEL_BG`, `BG_MID`), texte parchemin à fort
+   contraste (≥ 4.5:1), accents dorés parcimonieux. Jamais de gris moyen sur gris moyen.
+3. **La rareté colore tout** : bordure de slot ET nom d'item, partout (`RARITY_COLORS`).
+4. **La hiérarchie se lit en 1 seconde** : titre doré gras > valeur importante grasse >
+   corps normal > secondaire muted > hint quasi-invisible.
+5. Le médiéval fantasy reste dans les **couleurs et les cadres** (rivets dorés, parchemin),
+   pas dans l'illisibilité des textes.
+
+---
+
+## 0bis. Contexte technique — à connaître avant tout layout
 
 | Paramètre | Valeur | Source |
 |-----------|--------|--------|
 | Résolution logique | **800×600 px**, fixe | `src/main.ts` (`scale.width/height`) |
 | Scale mode | `Phaser.Scale.FIT` + `CENTER_BOTH` | `src/main.ts` |
 | Rendu | `pixelArt: true` (nearest-neighbor, zéro anti-aliasing) | `src/main.ts` |
-| Police UI | `'Press Start 2P', monospace` | `UITheme.ts` → `FONT` |
+| Police identité | `'Press Start 2P', monospace` → `FONT` | `UITheme.ts` |
+| Police UI | `Verdana, 'Segoe UI', Tahoma, Geneva, sans-serif` → `FONT_UI` | `UITheme.ts` |
 
 **Conséquence critique :** toutes les coordonnées UI sont en **unités logiques** (800×600).
 Sur un téléphone de 375 CSS px de large, `Scale.FIT` réduit tout d'un facteur **≈ 0.47**.
@@ -28,6 +54,8 @@ Un élément de 44 px logiques ne fait donc que ~21 px physiques à l'écran. C'
 - Toujours ajouter une **hit zone invisible** (`add.rectangle(..., 0, 0)`) de **+4 à +6 px** au-delà du visuel.
 - Ne jamais coller un élément interactif à un bord absolu de l'écran (le pouce rate les bords ; les
   gestes système iOS/Android mangent les 20 derniers px du bas).
+- C'est aussi pourquoi la police UI moderne est indispensable : Verdana 10 px logiques reste
+  lisible à ×0.47 ; Press Start 2P 5–7 px ne l'était pas.
 
 Toujours calculer les positions à partir de la caméra, jamais en dur :
 
@@ -39,13 +67,19 @@ const { width: W, height: H } = this.cameras.main;
 
 ## 1. Principes fondamentaux
 
-### 1.1 Touch-first, clavier-égal
+### 1.1 Readable first
+Aucun texte fonctionnel sous **9 px logiques** en `FONT_UI`. Les valeurs importantes (HP, nom
+d'item, main stat) sont en **gras** et/ou dorées. Texte sur fond variable (barre, sprite, icône) →
+**toujours** `stroke: true`. Si un texte doit être tronqué pour tenir, il doit être disponible en
+entier ailleurs (panneau détail, long-press).
+
+### 1.2 Touch-first, clavier-égal
 Phaser unifie tap et clic (`pointerdown`). Toute action clavier (Z, ESC, I, K, A/E/R/F, 1–4) **doit**
 avoir un équivalent tactile visible : boutons `INV`/`SKL` du HUD, hit zones des skill slots, tap-to-advance
 du dialogue, boutons d'action du panneau détail. Aucune fonctionnalité ne doit être hover-only ou
 keyboard-only. Le survol (`pointerover`) est un *bonus desktop*, jamais le seul chemin d'accès à une info.
 
-### 1.2 Feedback immédiat (< 100 ms)
+### 1.3 Feedback immédiat (< 100 ms)
 Règle héritée d'Alabaster Dawn (INSPIRATIONS.md §3) : *« Chaque action du joueur doit avoir un retour
 immédiat — jamais de silence. »* Concrètement dans le code :
 
@@ -56,16 +90,15 @@ immédiat — jamais de silence. »* Concrètement dans le code :
 
 Le retour visuel part sur `pointerdown`, pas `pointerup` — le joueur sent l'input à l'instant du contact.
 
-### 1.3 Hiérarchie visuelle — l'UI est discrète, le combat est roi
+### 1.4 Hiérarchie visuelle — l'UI est discrète, le combat est roi
 Référence HUD : Alabaster Dawn + SAO. Les barres sont lisibles mais ne gênent jamais la lecture de
 l'action. Maximum **3 niveaux d'information simultanés**. La rareté d'un item est TOUJOURS portée par
-sa couleur (`RARITY_COLORS`) dans toutes les interfaces. Les valeurs importantes (HP, nom d'item,
-main stat) sont en gros et/ou dorées ; le lore et les descriptions en `TXT_MUTED` petit.
+sa couleur (`RARITY_COLORS`) dans toutes les interfaces.
 
-### 1.4 Économie d'écran
-800×600 c'est petit. Labels de 2–3 mots max (`INV`, `SKL`, `← Stats`). Noms d'items tronqués à 11
-caractères dans les listes (`slice(0, 9) + '..'`), complets uniquement dans le panneau détail.
-Chaque panneau a un titre court en `TXT_GOLD` 7 px et un séparateur `BORDER_LIT`.
+### 1.5 Économie d'écran
+800×600 c'est petit. Labels de 2–3 mots max (`INV`, `SKL`, `← Stats`). Noms d'items complets
+uniquement dans le panneau détail. Chaque panneau a un titre court en `TXT_GOLD` 11 px gras et un
+séparateur `drawDivider`.
 
 ---
 
@@ -80,37 +113,27 @@ Chaque panneau a un titre court en `TXT_GOLD` 7 px et un séparateur `BORDER_LIT
 | `UI.BORDER` | `0x2c1e10` | Bordure externe sombre |
 | `UI.BORDER_LIT` | `0x6a4a22` | Liseré interne + séparateurs (alpha 0.3–0.7) |
 | `UI.CORNER` | `0xc8a030` | Rivets dorés 3×3 aux coins + surbrillance sélection |
+| `UI.BG_DEEP` | `0x060810` | Fond très sombre (menus overlay) |
+| `UI.BG_MID` | `0x0e1520` | Fond panneau mid / cartes |
+| `UI.SEPARATOR` | `0x1a2535` | Séparateurs discrets, bordure de carte |
 
-#### Texte (format string pour les Text objects)
-| Token | Hex | Usage |
-|-------|-----|-------|
-| `UI.TXT_PARCHMENT` | `#f5edd0` | Texte primaire par défaut |
-| `UI.TXT_GOLD` | `#c8a030` | Titres, valeurs importantes, or, nom du joueur |
-| `UI.TXT_MUTED` | `#88776a` | Texte secondaire, labels, descriptions |
-| `UI.TXT_HINT` | `#443322` | Hints clavier, texte tertiaire quasi-invisible |
-| `UI.TXT_BLUE` | `#88aaff` | MP, choix de dialogue, liens, skills |
-| `UI.TXT_GREEN` | `#55dd66` | HP, confirmations, actions positives (équiper) |
-| `UI.TXT_RED` | `#dd4433` | Danger, bouton ×, erreurs |
-| `UI.TXT_ORANGE` | `#ff9940` | Vente, quêtes, avertissements |
-| `UI.TXT_WHITE` | `#ffffff` | Valeurs sur barres (toujours avec stroke noir) |
+#### Texte (format string pour les Text objects) — contraste vérifié sur `PANEL_BG`
+| Token | Hex | Usage | Contraste |
+|-------|-----|-------|-----------|
+| `UI.TXT_PARCHMENT` | `#f5edd0` | Texte primaire par défaut | ≥ 12:1 |
+| `UI.TXT_GOLD` | `#c8a030` | Titres, valeurs importantes, or, nom du joueur | ≥ 6:1 |
+| `UI.TXT_MUTED` | `#88776a` | Texte secondaire, labels, descriptions | ≥ 4.5:1 |
+| `UI.TXT_HINT` | `#443322` | Hints clavier, texte tertiaire quasi-invisible (jamais d'info critique) | — |
+| `UI.TXT_BLUE` | `#88aaff` | MP, choix de dialogue, liens, skills | ≥ 7:1 |
+| `UI.TXT_GREEN` | `#55dd66` | HP, confirmations, actions positives (équiper) | ≥ 8:1 |
+| `UI.TXT_RED` | `#dd4433` | Danger, bouton ×, erreurs | ≥ 4.5:1 |
+| `UI.TXT_ORANGE` | `#ff9940` | Vente, quêtes, avertissements | ≥ 7:1 |
+| `UI.TXT_WHITE` | `#ffffff` | Valeurs sur barres (toujours avec stroke noir) | max |
 
-#### Slots et boutons
-| Token | Hex | Usage |
-|-------|-----|-------|
-| `UI.SLOT_BG` | `0x0a0a18` | Fond de slot (inventaire, équipement, skill) |
-| `UI.SLOT_BORDER` | `0x282040` | Bordure de slot vide |
-| `UI.SLOT_ACTIVE` | `0xc8a030` | Slot sélectionné/actif |
-| `UI.BTN_BG` | `0x121020` | Fond de bouton |
-| `UI.BTN_BG_HOVER` | `0x1e1a30` | Fond de bouton au survol |
-| `UI.BTN_BORDER` | `0x4a3520` | Bordure de bouton |
-| `UI.BTN_BORDER_HOV` | `0xc8a030` | Bordure de bouton au survol/press |
-
-#### Barres de ressources (style SAO — INSPIRATIONS.md §2)
-| Token | Hex | Usage |
-|-------|-----|-------|
-| `UI.HP_BG` / `UI.HP_GREEN` / `UI.HP_ORANGE` / `UI.HP_RED` / `UI.HP_SHINE` | `0x0a140a` / `0x44cc55` / `0xdd9920` / `0xcc2222` / `0xaaffbb` | HP : vert > 50 %, orange 25–50 %, rouge < 25 % |
-| `UI.MP_BG` / `UI.MP_FILL` / `UI.MP_SHINE` | `0x05050f` / `0x2255ee` / `0x99bbff` | MP : bleu uniforme |
-| `UI.XP_BG` / `UI.XP_FILL` / `UI.XP_SHINE` | `0x080012` / `0x8833cc` / `0xcc88ff` | XP : bande violette de 4 px en bas d'écran |
+#### Slots, boutons, barres, accents
+Identiques à l'existant : `SLOT_BG/SLOT_BORDER/SLOT_ACTIVE`, `BTN_BG/BTN_BG_HOVER/BTN_BORDER/BTN_BORDER_HOV`,
+`HP_*` (vert > 50 %, orange 25–50 %, rouge < 25 %), `MP_*` (bleu), `XP_*` (violet),
+`ACCENT_VIOLET 0x9966ff`, `ACCENT_CYAN 0x44ddcc`, `GLOW_GOLD 0xffcc66`.
 
 #### Raretés — `RARITY_COLORS` de `src/types/index.ts` (source de vérité pour l'UI)
 | Rareté | Hex |
@@ -124,7 +147,7 @@ Chaque panneau a un titre court en `TXT_GOLD` 7 px et un séparateur `BORDER_LIT
 | Hidden | `#ffd700` |
 
 > Note : le tableau de INSPIRATIONS.md §4 décrit Hidden en « rouge/noir » et ne mentionne pas Mythic —
-> le code fait foi pour l'UI tant que la divergence n'est pas arbitrée.
+> le code fait foi pour l'UI tant que la divergence n'est pas arbitrée (dette D10).
 
 #### Couleurs élémentaires (chiffres de dégâts — INSPIRATIONS.md §3)
 Feu `0xff4400` · Eau `0x2266ff` · Foudre `0xffee00` · Glace `0x88ddff` · Vent `0xaaddff` · Terre `0x88aa33`
@@ -133,38 +156,53 @@ Feu `0xff4400` · Eau `0x2266ff` · Foudre `0xffee00` · Glace `0x88ddff` · Ven
 Validé `0xf0e8d8` · Restant `0x444444` · Finisher prêt `0xffb347` (ambre) · Combo cassé `0x777777`
 **Interdits pour les pips :** azur `0x66ddff` et doré `0xffe066` (réservés à d'autres systèmes).
 
-### 2.2 Typographie
+### 2.2 Typographie — LE cœur de la refonte
 
-Une seule famille : `FONT = "'Press Start 2P', monospace"` — toujours via `pxStyle(size, color, stroke?)`.
+**Deux familles, deux fonctions :**
 
-| Rôle | Taille (px logiques) | Exemples dans le code |
-|------|---------------------|----------------------|
-| Titre d'écran | 11–14 | `INVENTAIRE` 11, `SKILLS` 12, `PAUSE` 14 |
-| Sous-titre / speaker | 9–10 | Nom du NPC 10, boutons de menu 9 |
-| Corps de texte | 8–9 | Dialogue 9 (+ `lineSpacing: 4`), noms d'items 8 |
-| Secondaire / labels | 6–7 | Titres de panneaux 7, stats 6, substats 6 |
-| Micro (à éviter en nouveau code) | 5 | Labels paperdoll — **7 px est le minimum recommandé** |
+| Constante | Famille | Rôle |
+|-----------|---------|------|
+| `FONT` | `'Press Start 2P', monospace` | **Identité uniquement** : titre du jeu (MainMenu 24 px). Ne plus l'utiliser pour du texte fonctionnel. |
+| `FONT_UI` | `Verdana, 'Segoe UI', Tahoma, Geneva, sans-serif` | **Tout le reste.** Créée via `uiStyle()`. |
+
+**Échelle typographique officielle** (constante `TYPE` de UITheme.ts, px logiques) :
+
+| Rôle | Taille | Style | Exemples dans le code |
+|------|--------|-------|----------------------|
+| Titre d'écran | **15** | bold + stroke, doré | `INVENTAIRE` |
+| Titre de section / nom (heading) | **13** | bold, souvent stroke | Nom d'item détail, speaker dialogue, nom de talent, boutons MainMenu |
+| Corps / valeur (body) | **12** | normal ou bold | Corps de dialogue (13), main stat, notifications, nom de zone |
+| Label / secondaire | **10–11** | normal | Labels de stats, substats, descriptions, tabs (11), boutons d'action (11) |
+| Badge / hint / micro | **9** | — | **MINIMUM ABSOLU.** Abréviations de slots, hints, lore, footer |
 
 Règles :
-- Texte blanc superposé à une barre ou un sprite → **toujours** `stroke: '#000000'`, `strokeThickness: 2–3`
-  (ou `pxStyle(size, color, true)` qui applique thickness 3).
-- Texte long → `wordWrap: { width: ... }`, jamais de débordement.
+- **Toujours passer par `uiStyle(size, color, opts)`** — jamais de style inline.
+- Texte superposé à une barre, un sprite ou une icône → `{ stroke: true }` (contour noir épaisseur 3).
+- Texte long → `{ wordWrapWidth: ... }`, jamais de débordement.
 - Chiffres/valeurs à droite : `.setOrigin(1, 0)` ; titres centrés : `.setOrigin(0.5, 0)`.
+- Chiffres de quantité sur les slots : 10 px bold + stroke.
+- `pxStyle()` reste dans le code pour les scènes non migrées (Pause, Shop, Bestiary, NameInput,
+  Intro, Ending) — **ne pas l'utiliser dans du nouveau code fonctionnel** (dette D11).
 
 ### 2.3 Espacements et dimensions standard
 
 | Constante | Valeur | Usage |
 |-----------|--------|-------|
+| `LAYOUT.PANEL_RADIUS` | 6 | rayon des panneaux arrondis |
+| `LAYOUT.CARD_RADIUS` | 4 | rayon des cartes / boutons |
+| `LAYOUT.SHADOW_COLOR/ALPHA` | noir / 0.45 | ombre portée de `drawCard` |
+| `LAYOUT.TOUCH_MIN` | 44 | zone tactile minimum |
 | Marge externe d'écran overlay | 6–8 px | `MARGIN = 8` (inventaire), 6 (skills) |
 | Gap entre panneaux | 6 px | `GAP = 6` |
-| Padding interne panneau | 8–10 px | textes à `x + 8` ou `x + 10` |
+| Padding interne panneau | 8–12 px | textes à `x + 10/12` |
 | Header d'écran overlay | 36 px | `HEADER_H = 36` |
 | Slot inventaire | 48 px | `INV_SLOT = 48` |
-| Slot équipement (paperdoll) | 44 px | `EQ_SLOT = 44` |
+| Slot équipement (paperdoll) | 44 px (+8 hit) | `EQ_SLOT = 44` |
 | Skill slot HUD | 52 px (+6 hit zone) | combat = cible élargie |
 | Bouton nav HUD | 54×44 px (+4 hit zone) | `INV` / `SKL` |
-| Bouton × fermeture | 40–44 px visuel, hit zone ≥ 44–48 | Dialogue, Skills |
-| Hauteur ligne de stats | 18 px | `ROW_H = 18` |
+| Bouton × fermeture | glyphe 20–22 px, hit zone 48×48 | `addCloseButton` partout |
+| Bouton d'action panneau | visuel 32 px, hit ≥ 44 px | InventoryScene détail |
+| Hauteur ligne de stats | 22 px | `ROW_H = 22` (lisible en 10/11 px) |
 | Bande XP | 4 px pleine largeur, bas d'écran | HUD |
 
 ### 2.4 Durées d'animation standard
@@ -174,10 +212,11 @@ Règles :
 | Feedback tap (alpha/flash) | 80–150 ms | skill slots, nav buttons |
 | Pop scale yoyo | 60 ms (×2 = 120 ms) | skill tap, combo pip |
 | Flash de confirmation (equip) | 400 ms | paperdoll |
-| Fade-in d'ouverture de scène overlay | **300 ms** (unifié) | `cameras.main.fadeIn(300, 0, 0, 0)` — appliqué partout (MainMenu, Pause, Shop, Inventory, Skill, Dialogue, NameInput) |
-| Fade-out avant `scene.start()` | **300 ms** | `fadeOut(300)` + `once(FADE_OUT_COMPLETE, () => scene.start(...))` avec garde `transitioning` anti double-tap — voir `MainMenuScene.transitionTo()` |
-| Hover bouton (scale) | 100 ms, scale 1.03 (`Quad.easeOut`) | MainMenu (container bouton), Pause (label) — retour à 1.0 sur `pointerout` |
-| Entrée échelonnée des boutons de menu | delay 0/80/160 ms, fade+slide 350 ms | MainMenuScene (`time.delayedCall`) |
+| Fade-in d'ouverture de scène overlay | **300 ms** (unifié) | `cameras.main.fadeIn(300, 0, 0, 0)` |
+| Fade-out avant `scene.start()` | **300 ms** | + garde `transitioning` anti double-tap (`MainMenuScene.transitionTo()`) |
+| Hover bouton (scale) | 100 ms, scale 1.03 (`Quad.easeOut`) | MainMenu, Pause |
+| Entrée échelonnée des boutons de menu | delay 0/80/160 ms, fade+slide 350 ms | MainMenuScene |
+| Pop-in popup (scale 0.9→1) | 90 ms `Back.easeOut` | popup consommable |
 | Notification visible | 2500 ms + fade out 400 ms | HUD |
 | Nom de zone | fade-in 400 ms, hold 3500 ms, fade partiel 1000 ms → alpha 0.4 | HUD |
 | Lerp des barres HP/MP | vitesse 8/s (jamais de saut sec) | HUD |
@@ -189,9 +228,9 @@ Règles :
 | < 0 | Tap zones d'arrière-plan (ex. tap-to-advance dialogue à -1) |
 | 0 | Contenu par défaut |
 | 5–7 | Hit zones interactives du HUD |
-| 10 | Notifications, bouton × dialogue |
+| 10 | Notifications, bouton × |
 | 30 | Tooltips |
-| 50–51 | Combo pips + particules finisher, messages de sauvegarde |
+| 50–51 | Combo pips + particules finisher, popups, messages de sauvegarde |
 | 199–200 | Badge de build DEV (jamais rien au-dessus) |
 
 ### 2.6 Overlays plein écran
@@ -201,69 +240,78 @@ Valeurs unifiées : **0.88 standard** (inventaire, skills, shop), 0.72 (pause �
 le jeu figé reste visible en fond).
 
 **Panneaux translucides** : les frames principaux passent `fillAlpha` à `drawPanel`/`drawGlowPanel` —
-0.85 pour un panneau principal (Pause, Inventory, Skill, Shop), 0.92 pour un panneau secondaire
-(dialogue, cartes de save). Les couleurs du jeu transparaissent derrière (réf. Hades / Hollow Knight).
+0.85 pour un panneau principal, 0.92 pour un panneau secondaire (réf. Hades / Hollow Knight).
 
 ---
 
-## 3. Composants UI réutilisables
+## 3. Composants UI réutilisables (`src/utils/UITheme.ts`)
 
-### 3.1 `drawPanel(g, x, y, w, h, fill?, fillAlpha?)` — LE panneau du jeu
-Fond sombre + double bordure (`BORDER` puis `BORDER_LIT` alpha 0.7) + 4 rivets dorés 3×3 aux coins.
-**Tout conteneur visuel passe par `drawPanel`** — jamais de `fillRect` nu pour un panneau.
-Fill par défaut `PANEL_BG` ; `SLOT_BG` pour les sous-panneaux et slots ; `BTN_BG` pour les boutons.
-`fillAlpha` (défaut 1) : 0.85 = frame principal translucide, 0.92 = panneau secondaire — les bordures
-et rivets restent opaques. `drawGlowPanel` accepte le même paramètre en 8e position (défaut 0.97).
+### 3.1 `uiStyle(size, color?, opts?)` — LE style de texte
+Chemin unique pour tout nouveau texte. Options : `bold`, `italic`, `stroke` (contour noir 3),
+`wordWrapWidth`, `align`, `lineSpacing`.
 
-### 3.1bis `drawGlow(g, x, y, w, h, color?, intensity?)` — halo lumineux
-4 anneaux `strokeRect` de plus en plus larges (pas de 3 px) et transparents (alpha 0.10 → 0.025 ×
-`intensity`). Pixel-art friendly (aucun blur). Utilisé derrière le titre du menu principal ; à réserver
-aux éléments « héros » (titres, level-up, items EPIC+) — jamais sur un composant répété en liste.
-
-### 3.2 `drawBar(g, x, y, w, h, pct, fill, bg, shine)` — barres de progression
-Remplissage + bande de brillance en haut (alpha 0.22, 32 % de la hauteur) + graduations noires tous
-les 25 px (si w > 50) + contour noir alpha 0.45. Utilisée pour HP (16 px de haut) et MP (9 px).
-Couleur HP dynamique : `HP_GREEN` > 50 %, `HP_ORANGE` > 25 %, `HP_RED` sinon. Texte `courant/max`
-centré sur la barre, blanc 7 px + stroke noir 2.
-
-### 3.3 `pxStyle(size, color?, stroke?)` — style de texte
-Le seul chemin autorisé pour créer un style de texte. `stroke: true` = contour noir épaisseur 3.
-
-### 3.4 Bouton standard (pattern, pas encore de helper)
 ```typescript
-// 1. Fond : drawPanel(gfx, x, y, w, h, UI.BTN_BG)
-// 2. Label : pxStyle(8–9, UI.TXT_GOLD | couleur sémantique), origin 0.5
-// 3. Hit zone invisible ≥ visuel + 4 px, setInteractive({ useHandCursor: true })
+this.add.text(x, y, 'INVENTAIRE', uiStyle(15, UI.TXT_GOLD, { bold: true, stroke: true }));
+this.add.text(x, y, desc, uiStyle(10, UI.TXT_MUTED, { italic: true, wordWrapWidth: 200 }));
+```
+
+### 3.2 `drawPanel(g, x, y, w, h, fill?, fillAlpha?)` — le panneau médiéval
+Fond sombre + double bordure + 4 rivets dorés. Pour les **frames** d'écran et sous-panneaux.
+`fillAlpha` 0.85 = frame principal translucide, 0.92 = panneau secondaire.
+
+### 3.3 `drawGlowPanel(g, x, y, w, h, accent?, bg?, radius?, fillAlpha?)` — le panneau moderne
+Fond arrondi + liseré fin + accent 30 %. Pour HUD, dialogue, cartes de save, popups.
+
+### 3.4 `drawCard(g, x, y, w, h, opts?)` — la carte de contenu
+Ombre portée douce + fond arrondi `BG_MID` + bordure `SEPARATOR` + **barre d'accent verticale
+optionnelle à gauche** (`opts.accent` — rareté d'un item, couleur de branche…). Pour les lignes
+d'item, cartes de quête, rangées de liste. Options : `bg`, `accent`, `radius`, `fillAlpha`, `shadow`.
+
+### 3.5 `drawDivider(g, x, y, w, color?, alpha?)` — séparateur horizontal
+Remplace tous les `lineStyle/moveTo/lineTo` répétés.
+
+### 3.6 `addCloseButton(scene, cx, cy, onClose, depth?)` — fermeture standard
+Glyphe `×` rouge 22 px bold + stroke, hit zone **48×48**, hover orange. À placer en **haut à
+droite** de tout écran/panneau fermable. ESC ferme toujours aussi. Retourne `{ glyph, hit }`
+pour gestion dynamique.
+
+### 3.7 `drawBar(g, x, y, w, h, pct, fill, bg, shine)` — barres de progression
+Remplissage + brillance + graduations + contour. HP 16 px de haut, MP 11 px. Texte `courant/max`
+centré, `uiStyle(9–10, WHITE, { bold, stroke })`.
+
+### 3.8 `drawBadge(scene, x, y, label, bgColor, textColor?)` — badge coloré
+Fond arrondi + label 9 px bold moderne, retourné en Container centré.
+
+### 3.9 `drawGlow(g, x, y, w, h, color?, intensity?)` — halo lumineux
+4 anneaux stroke pixel-friendly. Réservé aux éléments « héros » (titres, level-up, EPIC+) —
+jamais sur un composant répété en liste.
+
+### 3.10 Bouton standard (pattern)
+```typescript
+// 1. Fond : fillRoundedRect(x, y, w, h, 4) en UI.BTN_BG + bordure UI.BTN_BORDER
+// 2. Label : uiStyle(11, couleur sémantique, { bold: true }), origin 0.5
+// 3. Hit zone invisible ≥ max(44, visuel + 6), setInteractive({ useHandCursor: true })
 // 4. pointerover  → bordure UI.BTN_BORDER_HOV + label doré (bonus desktop)
 // 5. pointerout   → état normal
 // 6. pointerdown  → flash blanc alpha 0.25 → 0 en 150 ms + action
 ```
-Hauteur minimum d'un bouton : **44 px** dans tout nouveau code (les 20–34 px hérités sont de la dette,
-voir §7).
+Hauteur minimum de la **hit zone** d'un bouton : **44 px**. Le visuel peut descendre à 32 px.
 
-### 3.5 Slot d'item
-Fond `SLOT_BG`, **bordure = couleur de rareté** (`RARITY_COLORS`, alpha 0.3 si vide, 1 si occupé),
-icône 32×32 centrée (fallback : carré de couleur rareté alpha 0.5 si texture absente — via
-`resolveIcon()` + `addColorSquare()`), badge quantité en bas-droite (6 px blanc, origin (1,1)),
-survol = bordure blanche.
+### 3.11 Slot d'item
+Fond `SLOT_BG`, **bordure = couleur de rareté** (`RARITY_COLORS`, alpha 0.3–0.55 si vide, 1 si occupé),
+icône 32×32 centrée (fallback : carré de couleur rareté alpha 0.5 via `resolveIcon()` +
+`addColorSquare()`), badge quantité 10 px bold + stroke en bas-droite (origin (1,1)),
+survol = bordure blanche. Slot vide du paperdoll : abréviation fantôme 9 px bold `TXT_HINT` centrée.
 
-### 3.6 Bouton de fermeture (règle inter-écrans, voir §6)
-Glyphe `×` en `TXT_RED` 14 px, positionné **en haut à droite** du panneau, avec hit zone invisible
-de **44×44 px minimum** (48×48 recommandé). `pointerover` → orange. ESC ferme toujours aussi.
+### 3.12 Notifications (HUD)
+File FIFO, une seule visible à la fois, au-dessus des skill slots, centrée. 12 px bold + stroke,
+couleur sémantique (doré = level-up, orange = quête, bleu = skill, vert = zone, couleur de rareté =
+loot). 2.5 s + fade 400 ms. Les items Common ne notifient pas (anti-spam).
 
-### 3.7 Tabs horizontaux (PauseScene)
-120×24 px, actif = fond `0x1a2030` + liseré `CORNER` alpha 0.8 + texte doré ; inactif = `SLOT_BG` +
-texte `TXT_MUTED`, interactif avec survol parchemin. À élargir à 44 px de haut dans tout nouvel écran.
-
-### 3.8 Notifications (HUD)
-File FIFO, une seule visible à la fois, au-dessus des skill slots, centrée. 9 px, couleur sémantique
-(doré = level-up, orange = quête, bleu = skill, vert = zone, couleur de rareté = loot). 2.5 s + fade
-400 ms. Les items Common ne notifient pas (anti-spam).
-
-### 3.9 Tooltip (SkillScene)
-Panneau `drawPanel` 216×82, depth 30, nom doré 9 px + description muted 7 px wrapped + coûts bleus 7 px.
-Position clampée dans l'écran (`Math.min(sx + 84, W - TW - 8)`). **Attention :** actuellement
-hover-only — tout nouveau tooltip doit aussi s'ouvrir au long-press (cf. §5.2).
+### 3.13 Tooltip
+Panneau depth 30, nom doré 13 px bold + description muted 10 px wrapped. Position clampée dans
+l'écran. **Attention :** le tooltip SkillScene historique est hover-only — tout nouveau tooltip
+doit aussi s'ouvrir au long-press (cf. §5.2, dette D3).
 
 ---
 
@@ -274,17 +322,16 @@ hover-only — tout nouveau tooltip doit aussi s'ouvrir au long-press (cf. §5.2
 2. Panneau bas ancré : `PANEL_TOP = H - PANEL_H - 4` ; éléments à droite : `W - marge - largeur`.
 3. **Zone de pouce** = moitié basse de l'écran. Y vivent : barres HP/MP (bas-gauche), skill slots
    (bas-centre), boutons nav INV/SKL (bas-droite), boutons d'action des panneaux détail (bas du panneau),
-   panneau de dialogue (bande basse de 168 px).
+   panneau de dialogue (bande basse de 180 px).
 4. **Safe zone basse** : la bande XP occupe les 4 derniers px ; garder les hit zones interactives à
    ≥ 7 px du bord bas (les skill slots sont à `H - SLOT_SZ - 7`).
-5. Grilles : nombre de colonnes **calculé** depuis la largeur disponible quand c'est possible
-   (`COLS = Math.floor((W - 36) / (CELL_W + GAP))` dans SkillScene). Le `INV_COLS = 7` fixe de
-   l'inventaire fonctionne car les largeurs de panneaux sont fixes — ne pas copier ce pattern dans
-   un écran dont les panneaux sont fluides.
-6. Contenu scrollable : geometry mask (`createGeometryMask`) + clamp
-   (`Phaser.Math.Clamp(scrollY, 0, contentH - visibleH)`). Supporter wheel **et** drag vertical (§5.4).
+5. Grilles : nombre de colonnes **calculé** depuis la largeur disponible quand c'est possible.
+   Le `INV_COLS = 7` fixe de l'inventaire fonctionne car les largeurs de panneaux sont fixes — ne pas
+   copier ce pattern dans un écran dont les panneaux sont fluides.
+6. Contenu scrollable : geometry mask (`createGeometryMask`) + clamp + **wheel ET drag vertical**
+   (§5.4 — pattern de référence dans `InventoryScene.renderGrid`).
 7. Test mental obligatoire : « à 375 CSS px de large, ce bouton fait la moitié de sa taille logique —
-   est-il encore tapable ? » Si doute → agrandir la hit zone.
+   est-il encore tapable ? ce texte fait la moitié de sa taille — est-il encore lisible ? »
 
 ---
 
@@ -293,7 +340,8 @@ hover-only — tout nouveau tooltip doit aussi s'ouvrir au long-press (cf. §5.2
 ### 5.1 Tap = action primaire
 Équiper / utiliser / valider / avancer le dialogue / lancer un skill. Un seul tap, action immédiate,
 feedback < 100 ms. Dans la grille d'inventaire : tap court = `doMainAction()` (equip / use / détail
-pour les key items).
+pour les key items). **Un tap dont le pointeur a bougé de > 10 px est un scroll, pas un tap**
+(`pointer.getDistance() > 10` → ignorer l'action).
 
 ### 5.2 Long-press (≥ 500 ms) = action secondaire (détail)
 Pattern canonique du projet (InventoryScene) — **un seul timer, toujours nettoyé** :
@@ -306,10 +354,11 @@ hit.on('pointerdown', () => {
     this.showDetail(item.id);              // long-press → détail
   }, 500);
 });
-hit.on('pointerup', () => {
+hit.on('pointerup', (p: Phaser.Input.Pointer) => {
   if (this.longPressTimer !== null) {      // relâché avant 500 ms → tap
     clearTimeout(this.longPressTimer);
     this.longPressTimer = null;
+    if (p.getDistance() > 10) return;      // c'était un scroll
     this.doMainAction(item.id);
   }
 });
@@ -317,28 +366,23 @@ hit.on('pointerout', () => {               // le doigt sort → annule tout
   if (this.longPressTimer !== null) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
 });
 // ET dans shutdown() : clearTimeout + null — jamais de timer orphelin
+// ET le drag de scroll annule aussi le timer (voir InventoryScene.renderGrid)
 ```
 
 ### 5.3 Swipe horizontal = navigation entre panneaux/tabs
-Cible design (pas encore implémenté — voir §7). Seuil : **60 px logiques** de delta X entre
-`pointerdown` et `pointerup`.
-```typescript
-let startX = 0;
-this.input.on('pointerdown', (p: Phaser.Input.Pointer) => { startX = p.x; });
-this.input.on('pointerup',   (p: Phaser.Input.Pointer) => {
-  const dx = p.x - startX;
-  if (Math.abs(dx) > 60) dx < 0 ? nextPanel() : prevPanel();
-});
-```
+Implémenté dans SkillScene (branches). Seuil : **60 px logiques** de delta X, delta Y max 40 px.
 
 ### 5.4 Scroll vertical = wheel + drag
-Le wheel existe (grille d'inventaire). Tout nouveau contenu scrollable ajoute le drag tactile :
+Tout contenu scrollable supporte les deux (pattern de référence : `InventoryScene.renderGrid`) :
 ```typescript
 this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
   if (!p.isDown) return;
+  if (/* p.downX/downY hors de la zone scrollable */) return;
   scrollY = Phaser.Math.Clamp(scrollY - (p.y - p.prevPosition.y), 0, maxScroll);
   for (const { obj, baseY } of scrollables) obj.setY(baseY - scrollY);
+  if (p.getDistance() > 10) { /* annuler le long-press en cours */ }
 });
+// shutdown()/clear : this.input.off('pointermove')
 ```
 
 ### 5.5 Tap-to-advance (dialogue)
@@ -353,8 +397,8 @@ logique, deux inputs.
 
 ### 5.7 Hygiène des listeners (règle CLAUDE.md)
 Toute scène UI définit `shutdown()` : `events.off(...)` pour chaque `events.on(...)` sur GameScene,
-`removeKey()` pour chaque touche, `clearTimeout` des long-press, `input.off('wheel')`. Les handlers
-d'événements vérifient `if (!this.sys.isActive()) return;` en tête.
+`removeKey()` pour chaque touche, `clearTimeout` des long-press, `input.off('wheel')` ET
+`input.off('pointermove')`. Les handlers d'événements vérifient `if (!this.sys.isActive()) return;` en tête.
 
 ---
 
@@ -362,105 +406,138 @@ d'événements vérifient `if (!this.sys.isActive()) return;` en tête.
 
 ### 6.1 UIScene (HUD)
 Hérite de tout §1–5. Spécifique :
-- **Panneau stats bas-gauche** (66 px de haut, ancré `H - 66 - 4`) : nom joueur doré, niveau à droite,
-  barre HP 178×16 + barre MP 178×9, labels `HP`/`MP` vert/bleu 7 px, valeurs centrées sur les barres.
+- **Panneau stats bas-gauche** (66 px de haut, ancré `H - 66 - 4`) : nom joueur doré 11 px bold,
+  niveau 11 px à droite, barre HP 178×16 + barre MP 178×11, labels `HP`/`MP` vert/bleu 10 px bold,
+  valeurs 9–10 px bold + stroke centrées sur les barres.
 - **Barres lerpées** (vitesse 8/s) — jamais de saut instantané, redraw seulement si delta > 0.001.
+  Traîne de drain orange retardée sur la barre HP (lerp 1.5/s, snap sur soin).
 - **Skill slots bas-centre** : 4 slots de **52 px** (gap 5), icône 34×34, badge touche (A/E/R/F) doré
-  6 px en coin haut-gauche, overlay cooldown + texte 10 px, hit zone 58×58, feedback §1.2.
-- **Boutons nav bas-droite** : `INV` et `SKL` 54×44, flash blanc 150 ms, émettent `mobile_action`.
+  9 px bold en coin haut-gauche, overlay cooldown + texte 14 px bold + stroke, hit zone 58×58, feedback §1.3.
+- **Boutons nav bas-droite** : `INV` et `SKL` 54×44, label 11 px bold doré, flash blanc 150 ms,
+  émettent `mobile_action`.
 - **Bande XP** : 4 px pleine largeur tout en bas, violette, sans lerp.
-- **Nom de zone** haut-droite doré 9 px ; **notifications** au-dessus des slots (§3.8).
-- **Combo pips** : losanges 4×4 (carrés rotés 45°) sous le joueur (+26 px), espacés de 7 px, alpha 0.75,
-  fade-out après 2 s sans attaque. Couleurs §2.1. Échec de combo = gris + blink + fade — *« silencieux,
-  jamais humiliant »*.
-- **Badge de build DEV** haut-gauche (depth 199–200) — obligatoire, cf. CLAUDE.md.
+- **Nom de zone** haut-droite doré 12 px bold ; **notifications** 12 px bold + stroke au-dessus des slots.
+- **Combo pips** : losanges 4×4 sous le joueur (+26 px), espacés de 7 px, alpha 0.75, fade-out après
+  2 s sans attaque. Couleurs §2.1. Échec de combo = gris + blink + fade — *« silencieux, jamais humiliant »*.
+- **Badge de build DEV** haut-gauche (depth 199–200) — obligatoire (CLAUDE.md), mais **discret** :
+  texte monospace 8 px vert clair sur bande translucide sombre + tick vert 3 px, alpha 0.85.
 
 ### 6.2 InventoryScene
-Layout 3 panneaux fixes : équipement 180 px | stats/détail 220 px | grille (largeur restante, 7 col × 48 px).
-- **Tap = action, long-press = détail** (§5.2) — le hint « Tap = action • Maintenir = détail » est
-  affiché en bas du panneau stats.
-- Panneau central à double état : stats par défaut ↔ détail d'item (`selectedItemId`), retour via
-  `← Stats` bleu.
-- Panneau détail : `[RARETÉ]` + nom (couleur rareté, wrapped) → main stat dorée 9 px → séparateur →
-  substats à puces 6 px → description muted → **boutons d'action empilés en bas du panneau** (zone de
-  pouce) : Équiper/Utiliser (vert), Vendre (orange), Fermer (muted).
+Layout 3 panneaux fixes : **paperdoll 180 px | stats/détail 220 px | grille** (largeur restante, 7 col × 48 px).
+- **Header** : titre `INVENTAIRE` 15 px bold doré + stroke, **bouton × standard haut-droite**
+  (`addCloseButton`), encadré or (130×24, valeur 11 px bold) à gauche du ×.
+- **Paperdoll style Dofus** (panneau gauche) : silhouette stylisée semi-transparente (tête + capsule
+  corps, parchemin alpha 0.05–0.06) derrière la colonne centrale ; slots 44 px disposés en croix :
+  `amulette|casque|cape` / `arme|plastron|gants` / `anneau1|jambes|anneau2` / `bottes` (constante
+  `PAPERDOLL_POS`). Slot vide = abréviation fantôme 9 px ; slot occupé = bordure rareté + icône 32,
+  tap → détail, hit zone +8 px. Sous le paperdoll : divider + nom du joueur 12 px bold doré +
+  `Niveau X` 10 px + hint 9 px en bas.
+- **Tap = action, long-press = détail** (§5.2) — hint « Tap = action • Maintenir = détail »
+  en bas du panneau stats.
+- **Panneau stats** : titre 11 px bold, lignes de 22 px avec **zébrage** alpha 0.025 une ligne sur
+  deux, label 10 px muted à gauche, valeur 11 px bold parchemin à droite.
+- **Panneau détail** : `← Stats` 10 px bold bleu → `[RARETÉ]` 9 px bold → nom 13 px bold couleur
+  rareté (wrapped, stroke) → main stat 12 px bold doré → divider → substats à puces 10 px →
+  description 10 px muted italique → **boutons d'action empilés en bas** (zone de pouce) : visuel
+  32 px arrondi, hit ≥ 44 px, label 11 px bold — Équiper/Utiliser (vert), Vendre (orange), Fermer (muted).
 - Équiper flashe le slot paperdoll cible en blanc 400 ms (`lastFlashSlotKey`).
-- Grille scrollable par geometry mask + wheel ; raccourcis ESC (fermer) et Z (action principale).
-- Refresh par destruction/recréation des `dynamicObjs` — toujours pousser chaque objet dynamique dans
-  le tableau, sinon fuite visuelle au refresh.
+- **Grille** : bordure de cellule = rareté, badge quantité 10 px bold + stroke, scroll **wheel + drag
+  vertical** (§5.4), tap avec `getDistance() > 10` ignoré (anti-scroll-tap).
+- Popup consommable : `drawGlowPanel` accent vert, nom 11 px bold rareté, effet 10 px vert,
+  boutons 44 px, pop-in 90 ms, auto-dismiss 4 s, tap extérieur ferme.
+- Raccourcis ESC (fermer) et Z (action principale). Refresh par destruction/recréation des
+  `dynamicObjs` — toujours pousser chaque objet dynamique dans le tableau.
 
 ### 6.3 DialogueScene
-- Panneau = bande basse de **168 px** (`H - 168 - 6`), pleine largeur moins 16 px — zone de pouce.
-- Portrait 72×72 encadré à gauche (frame `drawPanel` fond `0x080810`), texture `portrait_<speaker>`.
-- Speaker doré 10 px ; corps parchemin **9 px + lineSpacing 4** avec wordWrap.
-- **Tap n'importe où sur le panneau = avancer** (§5.5) ; Z/Enter équivalents clavier ; ESC ferme.
-- Choix : `▸ texte` bleu 9 px, interligne 22 px, touches 1–4 en miroir, survol blanc.
-- Bouton `×` rouge haut-droite du panneau avec hit zone 44×44 (§3.6).
+- Panneau = bande basse de **180 px** (`H - 180 - 6`), pleine largeur moins 16 px — zone de pouce.
+- Portrait 80×80 encadré `drawGlowPanel` accent rôle ; placeholder = cercle accent + initiales 20 px bold.
+- Couleur d'accent par rôle de NPC (exception documentée aux tokens) : marchand or, forgeron orange,
+  quête bleu, lore violet, habitant vert.
+- **Speaker en badge teinté** : 13 px bold doré + stroke sur fond accent alpha 0.22 arrondi.
+- Corps **13 px parchemin + lineSpacing 6** avec wordWrap — lisible sans zoom.
+- Machine à écrire 30 ms/lettre ; tap pendant la frappe = skip.
+- **Tap n'importe où sur le panneau = avancer** (§5.5) ; Z/ESPACE/Entrée équivalents ; ESC ferme.
+- Choix : boutons `drawGlowPanel` 36 px (hit ≥ 44), numéro 9 px hint + texte 11 px bleu, touches 1–4.
+- Bouton `×` 20 px bold rouge haut-droite avec hit zone 44×44 ; bouton Commerce/Forge 128×36
+  (hit 44) label 11 px bold.
 
 ### 6.4 SkillScene
-- Overlay 0.88, frame plein écran moins 12 px, titre 12 px doré.
-- Flow **select-then-place** : tap sur un skill débloqué (cellules 78×66) → les slots équipés (86×64)
-  s'illuminent — vides en liseré doré alpha 0.85 (invitation), occupés en 0.35 — → tap sur un slot
-  pour équiper. Deux taps, zéro drag requis.
-- Slots équipés en bas d'écran (zone de pouce), labels A/E/R/F cohérents avec le HUD.
-- Bouton `×` 40 px + hit zone 48×48 haut-droite ; coût mana bleu en coin de cellule.
+- Overlay 0.88, frame plein écran moins 12 px.
+- **Tabs 2 rangées** (36 px, hit ≥ 44) : label 11 px bold — blanc si actif (fond couleur de branche +
+  bande d'accent basse 3 px), muted sinon. Swipe horizontal change de branche.
+- Header de branche : nom 13 px bold doré + stroke, description 9 px muted, compteur `✶ N pts`
+  11 px bold à droite.
+- Nodes 60 px (+7 hit) : débloqué = plein couleur branche + bord blanc ; disponible = fond 28 % +
+  bord branche + anneau interne ; verrouillé = sombre ; NG+ = croix. Label sous le node **9 px +
+  stroke** (tronqué à 13 caractères).
+- Bottom sheet 148 px : nom 13 px bold doré, description 10 px muted, effets 10 px parchemin
+  (lineSpacing 3), coût 11 px bold doré, statut 10 px, lore 9 px italique hint, bouton **Débloquer
+  136×40 arrondi** (hit ≥ 44) label 13 px bold + stroke.
+- Réspec : 160×26 arrondi, label 10 px bold, hit 44 px de haut.
+- Bouton `×` 20 px bold + hit zone ≥ 44 haut-droite ; ESC ferme.
+- Sélection = re-render de branche (dette D4 : pas de micro-feedback).
 
-### 6.5 PauseScene
+### 6.5 PauseScene *(non migrée typo — pxStyle encore présent, dette D11)*
 - Overlay 0.72 (plus léger : le jeu reste visible), panneau central 400 px de large.
-- **3 tabs** (Jeu / Touches / Réglages) 120×24, pattern §3.7.
-- Boutons de menu 260×34, hover = fond `BTN_BG_HOVER` + liseré doré + texte doré.
+- **3 tabs** (Jeu / Touches / Réglages) 120×24, boutons de menu 260×34 (dette D6).
 - Toggles ON/OFF : fond teinté vert `0x081a08` / rouge `0x1a0808`, texte `TXT_GREEN`/`TXT_RED`.
 - Rebind clavier : slot en attente = fond `0x1a2030` + liseré doré + `...` bleu, ESC annule.
-- Confirmation de sauvegarde : texte centré vert/rouge 11 px, fade-in 150 ms, hold 1600 ms, fade 300 ms.
-
----
+- Confirmation de sauvegarde : texte centré vert/rouge, fade-in 150 ms, hold 1600 ms, fade 300 ms.
 
 ### 6.6 MainMenuScene
-- **Fond animé 100 % procédural** (aucun asset) : ciel crépusculaire en 16 bandes (`0x0a0a1f` → `0x1a0a0a`),
-  ~50 étoiles fixes (LCG à graine fixe — jamais de `Math.random` dans `create()`), 10 étoiles à pulsation,
-  2 astres avec halo en cercles concentriques, 3 plans de montagnes en escaliers (silhouettes périodiques
-  sur W, dessinées sur 2×W, scroll infini par translation de `.x` — **zéro redraw** dans `update()`),
-  falaise fixe bas-gauche + silhouette du héros (corps 4×16, tête 6×6) avec respiration sinusoïdale
-  (±1.5 px, période 3 s). Vitesses parallax : 2.5 / 4.5 / 7.5 px/s.
-- Voile de lisibilité `0x060810` alpha 0.28 entre le fond et l'UI ; cadre décoratif **bordure seule**
-  (jamais de fill opaque qui masquerait le fond).
-- Titre : halo `drawGlow` + pulsation alpha 0.9 ↔ 1.0 (2 s, yoyo, infini) après le fade-in initial.
-- Boutons : entrée échelonnée 0/80 ms (fade + slide 8 px), hover scale 1.03 via container centré.
+- **Fond diorama procédural** (aucun asset) : ciel en bandes, nuages TileSprite 3 couches, montagnes
+  LCG à graine fixe (jamais de `Math.random` dans `create()`), lac animé, pont, héros silhouette avec
+  respiration sinusoïdale. Voile de lisibilité `0x000822` alpha 0.12 ; cadre décoratif bordure seule.
+- **Titre : SEUL usage restant de la police pixel** (`pxStyle(24)`) — identité du jeu, halo doré +
+  pulsation. Sous-titre 11 px muted, citation 10 px italique.
+- Boutons : **240×44** (norme tactile), label 13 px bold, entrée échelonnée, hover scale 1.03,
+  press scale 0.96.
+- Cartes de save : slot 10 px bold doré, nom+niveau 11 px, méta 10 px muted à droite.
+- Modales New Game / Load : titre 14 px bold + stroke, **hit zone = toute la carte 400×48**
+  (jamais le texte seul), cancel avec hit 200×44.
 - Toute sortie de scène passe par `transitionTo()` (fade-out 300 ms + garde `transitioning`).
+
+---
 
 ## 7. Cohérence inter-écrans — points NON NÉGOCIABLES
 
 Identiques sur **tous** les écrans, actuels et futurs :
 
-1. **Fermeture** : bouton `×` rouge en **haut à droite**, hit zone ≥ 44×44 px, hover orange, ET la
-   touche ESC. *(Dette : InventoryScene n'a qu'un hint texte en footer — à aligner à la prochaine passe.)*
+1. **Fermeture** : `addCloseButton()` en **haut à droite** (hit ≥ 44×44, hover orange) ET la touche ESC.
 2. **Feedback tap < 100 ms** sur `pointerdown` : flash, alpha ou scale — jamais d'action silencieuse.
 3. **Toute action clavier a un équivalent tactile** visible, via `mobile_action` si elle touche au gameplay.
-4. **`drawPanel` / `drawBar` / `pxStyle` / `UI.*`** exclusivement — aucune couleur ou style de texte en dur
-   (exceptions listées : couleurs de rareté via `RARITY_COLORS`, couleurs élémentaires §2.1, pips combo).
+4. **`uiStyle` / `drawPanel` / `drawGlowPanel` / `drawCard` / `drawBar` / `UI.*`** exclusivement —
+   aucune couleur ou style de texte en dur (exceptions listées : couleurs de rareté via
+   `RARITY_COLORS`, couleurs élémentaires §2.1, pips combo, accents de rôle NPC).
 5. **Couleur de rareté** = bordure de slot ET couleur du nom de l'item, partout où un item apparaît.
-6. **Labels de touches A/E/R/F** identiques entre HUD et SkillScene (doré, coin du slot).
-7. **Titres d'écran** : doré, 11–14 px, centrés, avec séparateur `BORDER_LIT` en dessous.
+6. **Labels de touches A/E/R/F** identiques entre HUD et SkillScene (doré bold, coin du slot).
+7. **Titres d'écran** : doré, 15 px bold + stroke, centrés, avec `drawDivider` en dessous.
 8. **Long-press 500 ms = détail** partout où un item/skill a des infos supplémentaires.
 9. **Fade-in 300 ms** à l'ouverture de tout écran overlay ; fond noir 0.88 (0.72 pour pause).
 10. **`shutdown()` complet** (§5.7) dans chaque scène UI — règle CLAUDE.md.
-11. **Hit zone invisible ≥ visuel + 4 px** pour tout élément interactif < 60 px.
+11. **Hit zone invisible ≥ visuel + 4 px** pour tout élément interactif < 60 px ; hit ≥ 44 px toujours.
 12. **Zone de pouce** : les boutons d'action (valider, équiper, utiliser, fermer un détail) vivent dans
     la moitié basse du panneau/écran.
+13. **Texte fonctionnel ≥ 9 px `FONT_UI`** ; la police pixel est réservée à l'identité (titre du jeu).
+14. **Tap vs scroll** : toute liste scrollable ignore les taps dont `pointer.getDistance() > 10`.
 
 ### Dette UX connue (à résorber, ne PAS répliquer dans du nouveau code)
-| # | Écart | Où |
-|---|-------|-----|
-| D1 | Pas de bouton × haut-droite (hint footer seul) | InventoryScene |
-| D2 | Scroll de la grille = wheel uniquement, pas de drag tactile | InventoryScene |
-| D3 | Tooltip skill hover-only, inaccessible au tap | SkillScene |
-| D4 | Sélection via `scene.restart()` — re-render complet, pas de micro-feedback | SkillScene |
-| D5 | Textes 5 px sous le minimum 7 px | InventoryScene (labels paperdoll) |
-| D6 | Boutons < 44 px de haut (20–34 px) | PauseScene (menu, tabs, toggles), InventoryScene (boutons détail 20 px) |
-| D7 | Choix de dialogue = hit zone du texte seul (~9 px de haut) | DialogueScene |
-| D8 | Swipe horizontal non implémenté (nav panneaux/tabs) | InventoryScene, PauseScene |
-| ~~D9~~ | **Résorbée** — fade-in unifié à 300 ms, overlays 0.88 standard (pause 0.72 volontaire), fade-out 300 ms avant tout `scene.start` du flow menu | — |
-| D10 | `RARITY_COLORS` (code) diverge du tableau INSPIRATIONS.md §4 (Hidden, Mythic) | `src/types/index.ts` |
+| # | Écart | Où | Statut |
+|---|-------|-----|--------|
+| ~~D1~~ | ~~Pas de bouton × haut-droite~~ | InventoryScene | **Résorbée** — `addCloseButton` (refonte 07/2026) |
+| ~~D2~~ | ~~Scroll grille = wheel uniquement~~ | InventoryScene | **Résorbée** — drag vertical + anti scroll-tap |
+| D3 | Tooltip skill hover-only, inaccessible au tap | SkillScene (ancien tooltip) | ouverte |
+| D4 | Sélection de node = re-render complet, pas de micro-feedback | SkillScene | ouverte |
+| ~~D5~~ | ~~Textes 5 px sous le minimum~~ | InventoryScene | **Résorbée** — plus aucun texte < 9 px dans les scènes migrées |
+| D6 | Boutons < 44 px de haut (20–34 px) | PauseScene (menu, tabs, toggles) | ouverte (InventoryScene et MainMenu corrigés) |
+| ~~D7~~ | ~~Choix de dialogue = hit zone du texte seul~~ | DialogueScene | **Résorbée** — hit ≥ 44 px |
+| D8 | Swipe horizontal non implémenté (nav panneaux) | InventoryScene, PauseScene | ouverte (fait dans SkillScene) |
+| ~~D9~~ | — | — | **Résorbée** (fade-in/out 300 ms unifiés) |
+| D10 | `RARITY_COLORS` (code) diverge du tableau INSPIRATIONS.md §4 (Hidden, Mythic) | `src/types/index.ts` | ouverte |
+| D11 | Scènes non migrées vers `uiStyle`/`FONT_UI` (encore en `pxStyle` pixel) | PauseScene, ShopScene, BestiaryScene, NameInputScene, IntroScene, EndingScene | **ouverte — prochaine passe prioritaire** |
+| D12 | Pas de drag-and-drop grille → paperdoll (le tap-equip couvre le besoin, D&D = confort desktop) | InventoryScene | ouverte, basse priorité |
+| D13 | Pas d'onglets de filtrage du sac (Tous / Équipement / Conso / Ressources / Quête) | InventoryScene | ouverte |
+| D14 | Pas de comparaison item survolé vs équipé (flèches vertes/rouges — INSPIRATIONS.md §4) | InventoryScene détail | ouverte |
 
 ---
 
@@ -469,24 +546,26 @@ Identiques sur **tous** les écrans, actuels et futurs :
 Cocher chaque point avant de considérer un écran UI comme terminé :
 
 - [ ] Toutes les positions dérivent de `this.cameras.main.width/height` — aucun 800/600 en dur
+- [ ] **Typo : 100 % `uiStyle` (FONT_UI)** — la police pixel uniquement pour un titre identitaire justifié
+- [ ] Aucun texte fonctionnel < 9 px ; texte sur barre/sprite/icône avec `stroke: true` ; wordWrap sur tout texte long
 - [ ] Tout élément interactif a une hit zone ≥ 44×44 px logiques (≥ 52 px si utilisé en combat)
 - [ ] Hit zones invisibles élargies de +4 à +6 px au-delà du visuel
 - [ ] Chaque `pointerdown` produit un feedback visuel < 100 ms
 - [ ] Aucune info ou action accessible uniquement au hover ou au clavier
-- [ ] Tap = action primaire ; long-press 500 ms = détail (timer nettoyé sur up/out/shutdown)
-- [ ] Bouton `×` rouge haut-droite (hit ≥ 44 px) + ESC pour fermer
+- [ ] Tap = action primaire ; long-press 500 ms = détail (timer nettoyé sur up/out/drag/shutdown)
+- [ ] `addCloseButton` haut-droite + ESC pour fermer
 - [ ] Boutons d'action dans la moitié basse (zone de pouce)
-- [ ] 100 % des styles via `pxStyle` / `drawPanel` / `drawBar` / `UI.*` — zéro hex sauvage
-- [ ] Tailles de texte ≥ 7 px ; texte sur barre/sprite avec stroke noir ; wordWrap sur tout texte long
+- [ ] 100 % des styles via `uiStyle` / `drawPanel` / `drawGlowPanel` / `drawCard` / `drawBar` / `UI.*` — zéro hex sauvage
 - [ ] Noms et bordures d'items colorés par `RARITY_COLORS`
-- [ ] Contenu scrollable : geometry mask + clamp + wheel + drag vertical
+- [ ] Contenu scrollable : geometry mask + clamp + wheel + drag vertical + anti scroll-tap (`getDistance() > 10`)
 - [ ] Fade-in 300 ms + overlay noir (0.88 standard)
 - [ ] Depths conformes au tableau §2.5 (rien au-dessus de 199 sauf badge build)
-- [ ] `shutdown()` retire TOUS les listeners, touches, timers et le wheel
+- [ ] `shutdown()` retire TOUS les listeners, touches, timers, le wheel ET le pointermove
 - [ ] `if (!this.sys.isActive()) return;` en tête des handlers d'événements externes
 - [ ] Actions gameplay tactiles émises via `mobile_action` (jamais d'appel direct à GameScene)
 - [ ] Vérification mentale à 375 CSS px : tout reste lisible et tapable au facteur ×0.47
-- [ ] Ton visuel conforme à INSPIRATIONS.md : médiéval fantasy pixel, sobre, jamais tech/générique
+- [ ] Ton visuel conforme à INSPIRATIONS.md : médiéval fantasy sombre, sobre, jamais tech/générique —
+      **UI moderne, sprites pixel**
 
 ---
 

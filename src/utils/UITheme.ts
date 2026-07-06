@@ -59,6 +59,75 @@ export const UI = {
 export const FONT = "'Press Start 2P', monospace";
 
 /**
+ * Police UI moderne — lisible sans zoom, même après le downscale Scale.FIT
+ * sur mobile (×0.47 à 375 CSS px). Verdana est large et très lisible aux
+ * petites tailles, disponible partout sans chargement externe.
+ *
+ * Règle : FONT (pixel) = identité — titre du jeu, gros titres d'écran.
+ *         FONT_UI (moderne) = TOUT le reste : corps, labels, stats, boutons.
+ */
+export const FONT_UI = "Verdana, 'Segoe UI', Tahoma, Geneva, sans-serif";
+
+/** Échelle typographique officielle (px logiques 800×600) — voir UI_UX_GUIDELINES.md §2.2 */
+export const TYPE = {
+  TITLE:   15,  // titre d'écran (INVENTAIRE, SKILLS…)
+  HEADING: 13,  // nom d'item / de talent / speaker
+  BODY:    12,  // corps de texte, dialogue, valeurs
+  LABEL:   10,  // labels de stats, texte secondaire
+  SMALL:    9,  // badges, hints, micro-texte — MINIMUM absolu
+} as const;
+
+/** Constantes de layout réutilisables */
+export const LAYOUT = {
+  PANEL_RADIUS:  6,
+  CARD_RADIUS:   4,
+  BORDER_WIDTH:  1,
+  SHADOW_COLOR:  0x000000,
+  SHADOW_ALPHA:  0.45,
+  TOUCH_MIN:     44,   // zone tactile minimum (px logiques)
+} as const;
+
+/** Options du style de texte moderne. */
+export interface UiStyleOpts {
+  bold?:          boolean;
+  italic?:        boolean;
+  /** Contour noir (obligatoire sur barre / sprite / fond variable). */
+  stroke?:        boolean;
+  wordWrapWidth?: number;
+  align?:         string;
+  lineSpacing?:   number;
+}
+
+/**
+ * Style de texte moderne — LE chemin standard pour tout nouveau texte UI.
+ * `pxStyle` reste disponible pour la police pixel (titres identitaires,
+ * scènes non migrées).
+ */
+export function uiStyle(
+  size: number,
+  color: string = UI.TXT_PARCHMENT,
+  opts: UiStyleOpts = {},
+): Phaser.Types.GameObjects.Text.TextStyle {
+  const s: Phaser.Types.GameObjects.Text.TextStyle = {
+    fontSize:   `${size}px`,
+    color,
+    fontFamily: FONT_UI,
+  };
+  const styleParts: string[] = [];
+  if (opts.bold)   styleParts.push('bold');
+  if (opts.italic) styleParts.push('italic');
+  if (styleParts.length) s.fontStyle = styleParts.join(' ');
+  if (opts.stroke) {
+    s.stroke = '#000000';
+    s.strokeThickness = 3;
+  }
+  if (opts.wordWrapWidth !== undefined) s.wordWrap = { width: opts.wordWrapWidth };
+  if (opts.align !== undefined)         s.align = opts.align;
+  if (opts.lineSpacing !== undefined)   s.lineSpacing = opts.lineSpacing;
+  return s;
+}
+
+/**
  * Draw a pixel-art panel: dark fill + dark border + gold inner line + gold corner rivets.
  *
  * @param fillAlpha Opacité du fond uniquement (bordures et rivets restent opaques).
@@ -138,6 +207,80 @@ export function drawGlow(
 }
 
 /**
+ * Modern card: soft drop shadow + rounded dark fill + fine border +
+ * optional coloured accent bar on the left edge (Dofus-like item rows,
+ * quest cards, save slots). Complements drawPanel (medieval frame) and
+ * drawGlowPanel (glow frame) for content that must read as "a card".
+ */
+export function drawCard(
+  g: Phaser.GameObjects.Graphics,
+  x: number, y: number, w: number, h: number,
+  opts: {
+    bg?: number;
+    accent?: number;       // barre d'accent verticale à gauche (rareté, branche…)
+    radius?: number;
+    fillAlpha?: number;
+    shadow?: boolean;
+  } = {},
+): void {
+  const {
+    bg        = UI.BG_MID,
+    accent,
+    radius    = LAYOUT.CARD_RADIUS,
+    fillAlpha = 1,
+    shadow    = true,
+  } = opts;
+
+  if (shadow) {
+    g.fillStyle(LAYOUT.SHADOW_COLOR, LAYOUT.SHADOW_ALPHA * 0.6);
+    g.fillRoundedRect(x + 2, y + 3, w, h, radius);
+  }
+  g.fillStyle(bg, fillAlpha);
+  g.fillRoundedRect(x, y, w, h, radius);
+  g.lineStyle(1, UI.SEPARATOR, 1);
+  g.strokeRoundedRect(x, y, w, h, radius);
+
+  if (accent !== undefined) {
+    g.fillStyle(accent, 0.9);
+    g.fillRoundedRect(x, y, 3, h, { tl: radius, bl: radius, tr: 0, br: 0 });
+  }
+}
+
+/** Séparateur horizontal discret — remplace les lineStyle/moveTo/lineTo répétés. */
+export function drawDivider(
+  g: Phaser.GameObjects.Graphics,
+  x: number, y: number, w: number,
+  color: number = UI.BORDER_LIT,
+  alpha = 0.5,
+): void {
+  g.lineStyle(1, color, alpha);
+  g.lineBetween(x, y, x + w, y);
+}
+
+/**
+ * Bouton de fermeture standard (règle inter-écrans §7.1 des guidelines) :
+ * glyphe × rouge + hit zone invisible 48×48 + hover orange.
+ * (cx, cy) = CENTRE du bouton. Retourne les objets pour gestion dynamique.
+ */
+export function addCloseButton(
+  scene: Phaser.Scene,
+  cx: number, cy: number,
+  onClose: () => void,
+  depth = 10,
+): { glyph: Phaser.GameObjects.Text; hit: Phaser.GameObjects.Rectangle } {
+  const glyph = scene.add.text(cx, cy, '×', uiStyle(22, UI.TXT_RED, { bold: true, stroke: true }))
+    .setOrigin(0.5)
+    .setDepth(depth);
+  const hit = scene.add.rectangle(cx, cy, 48, 48, 0, 0)
+    .setInteractive({ useHandCursor: true })
+    .setDepth(depth + 1);
+  hit.on('pointerover', () => glyph.setColor(UI.TXT_ORANGE));
+  hit.on('pointerout',  () => glyph.setColor(UI.TXT_RED));
+  hit.on('pointerdown', () => onClose());
+  return { glyph, hit };
+}
+
+/**
  * Small coloured badge (rarity, element, status): rounded background +
  * centred label, returned as a Container positioned at (x, y) — the
  * container's origin is the badge centre.
@@ -149,7 +292,7 @@ export function drawBadge(
   bgColor: number,
   textColor: string = '#ffffff',
 ): Phaser.GameObjects.Container {
-  const txt = scene.add.text(0, 0, label, pxStyle(6, textColor)).setOrigin(0.5);
+  const txt = scene.add.text(0, 0, label, uiStyle(9, textColor, { bold: true })).setOrigin(0.5);
   const padX = 6;
   const padY = 4;
   const w = Math.ceil(txt.width)  + padX * 2;

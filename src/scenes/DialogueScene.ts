@@ -1,7 +1,7 @@
 import { NPC, PlayerState, DialogueLine } from '../types';
 import { DialogueSystem, DialogueSession } from '../systems/DialogueSystem';
 import { SHOP_INVENTORY } from '../data/shops';
-import { UI, drawGlowPanel, pxStyle } from '../utils/UITheme';
+import { UI, drawGlowPanel, uiStyle } from '../utils/UITheme';
 import { t } from '../i18n';
 
 // ─────────────────────────────────────────────────────────────────
@@ -140,10 +140,9 @@ export class DialogueScene extends Phaser.Scene {
 
     // Placeholder si aucune texture de portrait : cercle accent + initiales
     this.placeholderGfx = this.add.graphics().setVisible(false);
-    this.placeholderTxt = this.add.text(this.portCX, this.portCY, '', {
-      ...pxStyle(16, UI.TXT_PARCHMENT),
-      stroke: '#000000', strokeThickness: 2,
-    }).setOrigin(0.5).setVisible(false);
+    this.placeholderTxt = this.add.text(this.portCX, this.portCY, '',
+      uiStyle(20, UI.TXT_PARCHMENT, { bold: true, stroke: true }),
+    ).setOrigin(0.5).setVisible(false);
 
     // ── Zone de texte ──────────────────────────────────────────
     this.textX = PORTRAIT_X + PORTRAIT_SIZE + 14;
@@ -151,14 +150,13 @@ export class DialogueScene extends Phaser.Scene {
 
     // Badge de nom (fond redessiné à chaque ligne, largeur = texte)
     this.badgeGfx    = this.add.graphics();
-    this.speakerText = this.add.text(0, 0, '', pxStyle(10, UI.TXT_GOLD, true))
+    this.speakerText = this.add.text(0, 0, '', uiStyle(13, UI.TXT_GOLD, { bold: true, stroke: true }))
       .setOrigin(0, 0.5);
 
-    this.bodyText = this.add.text(this.textX, PY + 44, '', {
-      ...pxStyle(9, UI.TXT_PARCHMENT),
-      wordWrap: { width: this.textW },
-      lineSpacing: 4,
-    });
+    this.bodyText = this.add.text(this.textX, PY + 44, '', uiStyle(13, UI.TXT_PARCHMENT, {
+      wordWrapWidth: this.textW,
+      lineSpacing: 6,
+    }));
 
     // ── Bouton Commerce / Forge (marchands & forgerons) ────────
     const shopVisuals: Phaser.GameObjects.GameObject[] = [];
@@ -181,7 +179,7 @@ export class DialogueScene extends Phaser.Scene {
       drawShopBtn(false);
 
       const sbLabel = this.role === 'blacksmith' ? t('dialogue.forge') : t('dialogue.shop');
-      const sbTxt = this.add.text(sbX + SB_W / 2, sbY + SB_H / 2, sbLabel, pxStyle(8, UI.TXT_GOLD))
+      const sbTxt = this.add.text(sbX + SB_W / 2, sbY + SB_H / 2, sbLabel, uiStyle(11, UI.TXT_GOLD, { bold: true }))
         .setOrigin(0.5);
 
       // Hit zone élargie (≥ 44 px de haut) — reste hors du container
@@ -205,7 +203,7 @@ export class DialogueScene extends Phaser.Scene {
 
     // ── Indicateur de suite ▼ (clignotant) ─────────────────────
     const indX = this.shopBtnX > 0 ? this.shopBtnX - 12 : PX + PW - 14;
-    this.nextIndicator = this.add.text(indX, PY + PH - 10, '▼', pxStyle(9, colorToCss(this.accent)))
+    this.nextIndicator = this.add.text(indX, PY + PH - 10, '▼', uiStyle(12, colorToCss(this.accent)))
       .setOrigin(1, 1).setVisible(false);
     this.tweens.add({
       targets: this.nextIndicator,
@@ -225,10 +223,9 @@ export class DialogueScene extends Phaser.Scene {
     this.enterKey.on('down', () => this.onAdvanceInput());
 
     // ── Bouton × (glyphe visible + hit zone 44×44 invisible) ───
-    const closeBtn = this.add.text(PX + PW - 10, PY + 8, '×', {
-      ...pxStyle(14, UI.TXT_RED),
-      stroke: '#000000', strokeThickness: 2,
-    }).setOrigin(1, 0).setDepth(10);
+    const closeBtn = this.add.text(PX + PW - 10, PY + 6, '×',
+      uiStyle(20, UI.TXT_RED, { bold: true, stroke: true }),
+    ).setOrigin(1, 0).setDepth(10);
     const closeHit = this.add.rectangle(PX + PW - 26, PY + 22, 44, 44, 0, 0)
       .setInteractive({ useHandCursor: true }).setDepth(11);
     closeHit.on('pointerover', () => closeBtn.setStyle({ color: UI.TXT_ORANGE }));
@@ -243,7 +240,7 @@ export class DialogueScene extends Phaser.Scene {
     tapZone.on('pointerdown', () => this.onAdvanceInput());
 
     // Hint clavier (bonus desktop)
-    const hint = this.add.text(PX + 12, H - 10, t('dialogue.advance_hint'), pxStyle(6, UI.TXT_HINT))
+    const hint = this.add.text(PX + 12, H - 10, t('dialogue.advance_hint'), uiStyle(8, UI.TXT_HINT))
       .setOrigin(0, 1);
 
     // ── Animation d'entrée : le panneau monte + fade (200 ms) ──
@@ -444,12 +441,11 @@ export class DialogueScene extends Phaser.Scene {
       drawBtn(false);
 
       // Hint de touche [1..4] — bonus desktop, discret
-      const num = this.add.text(bx + 8, by + BH / 2, `${i + 1}`, pxStyle(7, UI.TXT_HINT))
+      const num = this.add.text(bx + 8, by + BH / 2, `${i + 1}`, uiStyle(9, UI.TXT_HINT))
         .setOrigin(0, 0.5);
-      const txt = this.add.text(bx + 22, by + BH / 2, choice.text, {
-        ...pxStyle(7, UI.TXT_BLUE),
-        wordWrap: { width: bw - 30 },
-      }).setOrigin(0, 0.5);
+      const txt = this.add.text(bx + 22, by + BH / 2, choice.text, uiStyle(11, UI.TXT_BLUE, {
+        wordWrapWidth: bw - 32,
+      })).setOrigin(0, 0.5);
 
       // Alignés au plan du panneau (container) pour suivre l'animation d'entrée
       this.panelRoot.add([g, num, txt]);

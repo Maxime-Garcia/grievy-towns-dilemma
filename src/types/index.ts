@@ -89,6 +89,9 @@ export enum TalentBranch {
   IGNIS = 'IGNIS',       // Voie de la Flamme — couleur UI #ff6600
   ZEPHYR = 'ZEPHYR',     // Voie du Vent — couleur UI #44ddaa
   ABYSSAL = 'ABYSSAL',   // Voie des Profondeurs — couleur UI #2244cc
+  TERRA = 'TERRA',       // Voie du Roc — couleur UI #bb7733
+  FULGURIS = 'FULGURIS', // Voie de l'Étincelle — couleur UI #ffdd22
+  GLACIUS = 'GLACIUS',   // Voie de la Préservation — couleur UI #cceeff
   TENEBRES = 'TENEBRES', // Voie de la Magie Noire — NG+ uniquement — couleur UI #7700aa
 }
 
@@ -133,6 +136,29 @@ export type TalentEffectKey =
   | 'FREEZE_ON_FINISHER'   // flag : finisher → FREEZE garanti 2s
   | 'MANA_ON_KILL_PCT'     // % du mana max restauré par kill
   | 'BURN_BLEED_IMMUNITY'  // flag : immunité BURN + BLEED
+  // ── TERRA ────────────────────────────────────────────────────────────────────
+  | 'KNOCKBACK_RES_PCT'    // % de réduction du knockback subi (cap 100 = immunité)
+  | 'STAGGER_BONUS_PCT'    // % d'accumulation de jauge de stagger supplémentaire sur tous les coups
+  | 'STUN_DMG_PCT'         // % de dégâts bonus contre les ennemis sous CC dur (stun/stagger plein/FREEZE)
+  | 'RETALIATION_DEF_PCT'  // % de la DEF finale infligé en dégâts EARTH aux attaquants en mêlée
+  | 'QUAKE_FINISHER'       // flag : finisher → onde de choc au sol (r100, 40% ATK EARTH, stagger ×2)
+  | 'UNSHAKABLE'           // flag : immunité totale au knockback et à l'interruption de stagger
+  | 'DEF_TO_ATK_PCT'       // % de la DEF finale ajouté à l'ATK en bonus plat
+  // ── FULGURIS ─────────────────────────────────────────────────────────────────
+  | 'SHOCK_CHANCE_PCT'     // % de chance d'infliger SHOCK (+10% dégâts subis, 3s) sur coup de base
+  | 'CRIT_SURGE_ASPD_PCT'  // % de vitesse d'attaque après un critique (2s, refresh, no-stack)
+  | 'ARC_CHANCE_PCT'       // % de chance qu'un coup arque vers l'ennemi le plus proche (≤120px)
+  | 'STATIC_RETORT_PCT'    // % de chance d'émettre une nova électrique en subissant un coup (CD 1s)
+  | 'CHAIN_FINISHER'       // flag : finisher → éclair en chaîne (3 ennemis max, LIGHTNING)
+  | 'CRIT_ARC'             // flag : tout critique déclenche l'arc automatiquement (60% dégâts)
+  // ── GLACIUS ──────────────────────────────────────────────────────────────────
+  | 'DAMAGE_REDUCTION_PCT' // % de réduction de tous les dégâts subis (cap absolu 30)
+  | 'STATUS_RES_DURATION_PCT' // % de réduction de la durée des debuffs subis (cap 60)
+  | 'HEALING_RECEIVED_PCT' // % bonus sur tous les soins reçus
+  | 'CHILL_AURA'           // flag : aura passive (r130) qui ralentit les ennemis proches (-10% vitesse/ASPD)
+  | 'LAST_BASTION'         // flag : 1×/combat sous 30% HP → bouclier 25% HP max, 5s
+  | 'GUARD_FINISHER'       // flag : finisher → bouclier 8% HP max, 3s
+  | 'PRESERVED'            // flag : 1×/zone, un coup fatal laisse à 1 HP + 2s d'invulnérabilité
   // ── TENEBRES (NG+ uniquement) ────────────────────────────────────────────────
   | 'DARK_DMG_MULT'        // % de multiplicateur dégâts sombres
   | 'SOUL_STACK_BONUS'     // stacks Soul Echo bonus par zone cleared

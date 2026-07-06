@@ -71,6 +71,32 @@ export interface TalentModifiers {
   darkBurn: boolean;            // les BURN infligés deviennent des dégâts sombres
   phantomStrikePct: number;     // % de chance de coup fantôme sans cooldown
   sacrificeFinisher: boolean;   // finisher : consume 20% HP max → dégâts ×3
+
+  // ── TERRA ──────────────────────────────────────────────────────────────────
+  knockbackResPct: number;      // % de réduction du knockback subi (cap 100)
+  staggerBonusPct: number;      // % d'accumulation de jauge de stagger supplémentaire
+  stunDmgPct: number;           // % de dégâts bonus contre ennemis sous CC dur
+  retaliationDefPct: number;    // % de la DEF finale infligé en dégâts EARTH aux attaquants
+  quakeFinisher: boolean;       // finisher : onde de choc au sol (r100, 40% ATK EARTH, stagger x2)
+  unshakable: boolean;          // immunité totale au knockback et à l'interruption de stagger
+  defToAtkPct: number;          // % de la DEF finale ajouté à l'ATK en bonus plat
+
+  // ── FULGURIS ───────────────────────────────────────────────────────────────
+  shockChancePct: number;       // % de chance d'infliger SHOCK sur coup de base
+  critSurgeAspdPct: number;     // % de vitesse d'attaque après un critique (2s)
+  arcChancePct: number;         // % de chance qu'un coup arque vers l'ennemi le plus proche
+  staticRetortPct: number;      // % de chance d'émettre une nova électrique en subissant un coup
+  chainFinisher: boolean;       // finisher : éclair en chaîne (3 ennemis max, LIGHTNING)
+  critArc: boolean;             // tout critique déclenche l'arc automatiquement (60% dégâts)
+
+  // ── GLACIUS ────────────────────────────────────────────────────────────────
+  damageReductionPct: number;   // % de réduction de tous les dégâts subis (cap absolu 30)
+  statusResDurationPct: number; // % de réduction de la durée des debuffs subis (cap 60)
+  healingReceivedPct: number;   // % bonus sur tous les soins reçus
+  chillAura: boolean;           // aura passive (r130) : -10% vitesse/ASPD des ennemis proches
+  lastBastion: boolean;         // 1x/combat sous 30% HP → bouclier 25% HP max, 5s
+  guardFinisher: boolean;       // finisher : bouclier 8% HP max, 3s
+  preserved: boolean;           // 1x/zone, un coup fatal laisse à 1 HP + 2s d'invulnérabilité
 }
 
 export class TalentSystem {
@@ -91,6 +117,22 @@ export class TalentSystem {
     });
   }
 
+  /** True si le joueur a débloqué au moins un nœud VIGOR de tier ≥ 3 (gate d'accès TERRA). */
+  static hasVigorTier3(player: PlayerState): boolean {
+    return player.unlockedTalents.some(id => {
+      const n = TALENT_MAP[id];
+      return n?.branch === TalentBranch.VIGOR && n.tier >= 3;
+    });
+  }
+
+  /** True si le joueur a débloqué au moins un nœud INSTINCT de tier ≥ 3 (gate d'accès FULGURIS). */
+  static hasInstinctTier3(player: PlayerState): boolean {
+    return player.unlockedTalents.some(id => {
+      const n = TALENT_MAP[id];
+      return n?.branch === TalentBranch.INSTINCT && n.tier >= 3;
+    });
+  }
+
   /**
    * Vérifie si un nœud peut être débloqué :
    * - non déjà acquis
@@ -99,6 +141,9 @@ export class TalentSystem {
    *   grisé avec "Je ne suis pas encore capable de maîtriser cette magie..."
    * - prérequis directs (node.requires, AND) tous débloqués
    * - accès IGNIS : au moins un nœud ARCANE tier ≥ 3 débloqué
+   * - accès TERRA : au moins un nœud VIGOR tier ≥ 3 débloqué
+   * - accès FULGURIS : au moins un nœud INSTINCT tier ≥ 3 débloqué
+   * - GLACIUS (comme ZEPHYR/ABYSSAL) : accès libre, aucun gate
    * - gate par investissement : tier2=2pts, tier3=4pts, tier4=6pts, tier5=10pts dans la branche
    */
   static canUnlock(player: PlayerState, talentId: string): boolean {
@@ -112,6 +157,8 @@ export class TalentSystem {
     if (node.requires?.some(req => !player.unlockedTalents.includes(req))) return false;
 
     if (node.branch === TalentBranch.IGNIS && !TalentSystem.hasArcaneTier3(player)) return false;
+    if (node.branch === TalentBranch.TERRA && !TalentSystem.hasVigorTier3(player)) return false;
+    if (node.branch === TalentBranch.FULGURIS && !TalentSystem.hasInstinctTier3(player)) return false;
 
     const spent = TalentSystem.pointsSpentInBranch(player, node.branch);
     const GATE: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 2, 3: 4, 4: 6, 5: 10 };
@@ -221,6 +268,29 @@ export class TalentSystem {
       darkBurn: false,
       phantomStrikePct: 0,
       sacrificeFinisher: false,
+
+      knockbackResPct: 0,
+      staggerBonusPct: 0,
+      stunDmgPct: 0,
+      retaliationDefPct: 0,
+      quakeFinisher: false,
+      unshakable: false,
+      defToAtkPct: 0,
+
+      shockChancePct: 0,
+      critSurgeAspdPct: 0,
+      arcChancePct: 0,
+      staticRetortPct: 0,
+      chainFinisher: false,
+      critArc: false,
+
+      damageReductionPct: 0,
+      statusResDurationPct: 0,
+      healingReceivedPct: 0,
+      chillAura: false,
+      lastBastion: false,
+      guardFinisher: false,
+      preserved: false,
     };
 
     for (const id of player.unlockedTalents) {
@@ -293,6 +363,32 @@ export class TalentSystem {
       if (e.DARK_BURN !== undefined)              mods.darkBurn             = true;
       if (e.PHANTOM_STRIKE_PCT !== undefined)     mods.phantomStrikePct    += e.PHANTOM_STRIKE_PCT;
       if (e.SACRIFICE_FINISHER !== undefined)     mods.sacrificeFinisher    = true;
+
+      // ── TERRA ────────────────────────────────────────────────────────────
+      if (e.KNOCKBACK_RES_PCT !== undefined)      mods.knockbackResPct      = Math.min(100, mods.knockbackResPct + e.KNOCKBACK_RES_PCT);
+      if (e.STAGGER_BONUS_PCT !== undefined)      mods.staggerBonusPct     += e.STAGGER_BONUS_PCT;
+      if (e.STUN_DMG_PCT !== undefined)           mods.stunDmgPct          += e.STUN_DMG_PCT;
+      if (e.RETALIATION_DEF_PCT !== undefined)    mods.retaliationDefPct   += e.RETALIATION_DEF_PCT;
+      if (e.QUAKE_FINISHER !== undefined)         mods.quakeFinisher        = true;
+      if (e.UNSHAKABLE !== undefined)             mods.unshakable           = true;
+      if (e.DEF_TO_ATK_PCT !== undefined)         mods.defToAtkPct         += e.DEF_TO_ATK_PCT;
+
+      // ── FULGURIS ─────────────────────────────────────────────────────────
+      if (e.SHOCK_CHANCE_PCT !== undefined)       mods.shockChancePct      += e.SHOCK_CHANCE_PCT;
+      if (e.CRIT_SURGE_ASPD_PCT !== undefined)    mods.critSurgeAspdPct    += e.CRIT_SURGE_ASPD_PCT;
+      if (e.ARC_CHANCE_PCT !== undefined)         mods.arcChancePct        += e.ARC_CHANCE_PCT;
+      if (e.STATIC_RETORT_PCT !== undefined)      mods.staticRetortPct     += e.STATIC_RETORT_PCT;
+      if (e.CHAIN_FINISHER !== undefined)         mods.chainFinisher        = true;
+      if (e.CRIT_ARC !== undefined)               mods.critArc              = true;
+
+      // ── GLACIUS ──────────────────────────────────────────────────────────
+      if (e.DAMAGE_REDUCTION_PCT !== undefined)   mods.damageReductionPct   = Math.min(30, mods.damageReductionPct + e.DAMAGE_REDUCTION_PCT);
+      if (e.STATUS_RES_DURATION_PCT !== undefined) mods.statusResDurationPct = Math.min(60, mods.statusResDurationPct + e.STATUS_RES_DURATION_PCT);
+      if (e.HEALING_RECEIVED_PCT !== undefined)   mods.healingReceivedPct  += e.HEALING_RECEIVED_PCT;
+      if (e.CHILL_AURA !== undefined)              mods.chillAura            = true;
+      if (e.LAST_BASTION !== undefined)            mods.lastBastion          = true;
+      if (e.GUARD_FINISHER !== undefined)          mods.guardFinisher        = true;
+      if (e.PRESERVED !== undefined)               mods.preserved            = true;
     }
 
     return mods;

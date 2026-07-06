@@ -1,13 +1,18 @@
 import { TalentNode, TalentBranch } from '../types';
 
-// 68 nœuds.
+// 95 nœuds.
 // Branches de base : VIGOR / INSTINCT / ARCANE — 8 nœuds, capstone tier 4 (cost 2).
-// Branches élémentaires : IGNIS / ZEPHYR / ABYSSAL / TENEBRES — 9 nœuds sur 5 tiers,
+// Branches élémentaires : IGNIS / ZEPHYR / ABYSSAL / TERRA / FULGURIS / GLACIUS /
+//   TENEBRES — 9 nœuds sur 5 tiers,
 //   coûts : t1-2 = 1pt, t3 = 2pts, t4-5 = 3pts. Capstone tier 5 (requiert les deux tier 4).
-// IDs préfixés : vig_ / ins_ / arc_ / ignis_ / zephyr_ / abyssal_ / ten_
+// IDs préfixés : vig_ / ins_ / arc_ / ignis_ / zephyr_ / abyssal_ / terra_ /
+//   fulguris_ / glacius_ / ten_
 // icons : talent_<id>
 // Gates d'accès gérés dans TalentSystem (pas dans les données) :
 //   - IGNIS exige au moins un nœud ARCANE de tier ≥ 3 débloqué
+//   - TERRA exige au moins un nœud VIGOR de tier ≥ 3 débloqué
+//   - FULGURIS exige au moins un nœud INSTINCT de tier ≥ 3 débloqué
+//   - ZEPHYR / ABYSSAL / GLACIUS : accès libre
 //   - TENEBRES exige player.isNewGamePlus === true (nœuds ngPlusOnly)
 
 export const TALENTS: TalentNode[] = [
@@ -801,6 +806,370 @@ export const TALENTS: TalentNode[] = [
     ngPlusOnly: true,
     effects: { DARK_DMG_MULT: 40, ATK_PCT: 30 },
     lore: 'Le monde tremble sous mes pas. Je suis devenu ce que je combattais.',
+  },
+
+  // ── BRANCHE TERRA (Voie du Roc) — #bb7733 — Terravast ───────────────────────
+  // Juggernaut du roc : poise, jauge de stagger, la DEF devient une arme.
+  // Accès : au moins un nœud VIGOR tier ≥ 3 débloqué (vérifié dans TalentSystem).
+
+  {
+    id: 'terra_stone_fist',
+    name: 'Poing de Pierre',
+    description: '+15% d\'accumulation de jauge de stagger sur tous les coups.',
+    branch: TalentBranch.TERRA,
+    tier: 1,
+    cost: 1,
+    icon: 'talent_terra_stone_fist',
+    requires: [],
+    effects: { STAGGER_BONUS_PCT: 15 },
+    lore: 'Ce que la terre soutient ne tombe pas. À Deepdelve, les mineurs frappaient la roche en rythme — pour que Gorvun sache qu\'ils étaient là.',
+  },
+
+  {
+    id: 'terra_roots',
+    name: 'Racines',
+    description: '−30% de knockback subi.',
+    branch: TalentBranch.TERRA,
+    tier: 1,
+    cost: 1,
+    icon: 'talent_terra_roots',
+    requires: [],
+    effects: { KNOCKBACK_RES_PCT: 30 },
+    lore: 'Ce que la terre soutient ne tombe pas.',
+  },
+
+  {
+    id: 'terra_crushing_weight',
+    name: 'Poids Écrasant',
+    description: '+10% de dégâts sur les ennemis sous contrôle dur (stun, stagger plein, gel) ; +10% de stagger supplémentaire.',
+    branch: TalentBranch.TERRA,
+    tier: 2,
+    cost: 1,
+    icon: 'talent_terra_crushing_weight',
+    requires: ['terra_stone_fist'],
+    effects: { STUN_DMG_PCT: 10, STAGGER_BONUS_PCT: 10 },
+    lore: 'Ce que la terre soutient ne tombe pas.',
+  },
+
+  {
+    id: 'terra_bedrock_stance',
+    name: 'Roche-Mère',
+    description: '+8% DEF et Magic DEF ; résistance au knockback portée à 50% cumulés.',
+    branch: TalentBranch.TERRA,
+    tier: 2,
+    cost: 1,
+    icon: 'talent_terra_bedrock_stance',
+    requires: ['terra_roots'],
+    effects: { DEF_PCT: 8, KNOCKBACK_RES_PCT: 20 },
+    lore: 'Ce que la terre soutient ne tombe pas.',
+  },
+
+  {
+    id: 'terra_gorvuns_wrath',
+    name: 'Courroux de Gorvun',
+    description: 'Sorts de terre : +30% de dégâts élémentaires.',
+    branch: TalentBranch.TERRA,
+    tier: 3,
+    cost: 2,
+    icon: 'talent_terra_gorvuns_wrath',
+    requires: ['terra_crushing_weight'],
+    // ELEM_BONUS_PCT restreint aux sorts de terre — vérification d'élément côté combat.
+    effects: { ELEM_BONUS_PCT: 30 },
+    lore: 'Ce que la terre soutient ne tombe pas.',
+  },
+
+  {
+    id: 'terra_shale_skin',
+    name: 'Peau de Schiste',
+    description: 'Les attaquants en mêlée subissent 50% de la DEF finale en dégâts de terre.',
+    branch: TalentBranch.TERRA,
+    tier: 3,
+    cost: 2,
+    icon: 'talent_terra_shale_skin',
+    requires: ['terra_bedrock_stance'],
+    effects: { RETALIATION_DEF_PCT: 50 },
+    lore: 'Ce que la terre soutient ne tombe pas.',
+  },
+
+  {
+    id: 'terra_faultline',
+    name: 'Ligne de Faille',
+    description: 'Les finishers émettent une onde de choc au sol (rayon 100) : 40% ATK en dégâts de terre, accumulation de stagger ×2.',
+    branch: TalentBranch.TERRA,
+    tier: 4,
+    cost: 3,
+    icon: 'talent_terra_faultline',
+    requires: ['terra_gorvuns_wrath'],
+    effects: { QUAKE_FINISHER: 1 },
+    lore: 'Ce que la terre soutient ne tombe pas.',
+  },
+
+  {
+    id: 'terra_mountain_patience',
+    name: 'Patience de la Montagne',
+    description: 'Immunité permanente au knockback et à l\'interruption ; +8% HP max.',
+    branch: TalentBranch.TERRA,
+    tier: 4,
+    cost: 3,
+    icon: 'talent_terra_mountain_patience',
+    requires: ['terra_shale_skin'],
+    effects: { UNSHAKABLE: 1, MAX_HP_PCT: 8 },
+    lore: 'Ce que la terre soutient ne tombe pas.',
+  },
+
+  {
+    id: 'terra_unshaking_foundation',
+    name: 'Fondation Inébranlable',
+    description: '30% de la DEF finale ajoutés à l\'ATK, +15% DEF, +15% d\'accumulation de stagger.',
+    branch: TalentBranch.TERRA,
+    tier: 5,
+    cost: 3,
+    icon: 'talent_terra_unshaking_foundation',
+    requires: ['terra_faultline', 'terra_mountain_patience'],
+    effects: { DEF_TO_ATK_PCT: 30, DEF_PCT: 15, STAGGER_BONUS_PCT: 15 },
+    lore: 'La montagne ne rend pas les coups tout de suite. Elle les garde. Puis elle les rend tous à la fois.',
+  },
+
+  // ── BRANCHE FULGURIS (Voie de l'Étincelle) — #ffdd22 — Volterra ─────────────
+  // Escarmoucheur haute-fréquence : tempo, critiques, SHOCK et arcs en cascade.
+  // Accès : au moins un nœud INSTINCT tier ≥ 3 débloqué (vérifié dans TalentSystem).
+
+  {
+    id: 'fulguris_conductor',
+    name: 'Conducteur',
+    description: '+8% vitesse d\'attaque.',
+    branch: TalentBranch.FULGURIS,
+    tier: 1,
+    cost: 1,
+    icon: 'talent_fulguris_conductor',
+    requires: [],
+    effects: { ASPD_PCT: 8 },
+    lore: 'Ce que la foudre choisit, elle l\'atteint. À Volterra, on ne priait pas Volkran — on le mesurait.',
+  },
+
+  {
+    id: 'fulguris_spark_touch',
+    name: 'Étincelle au Poing',
+    description: 'Les coups de base ont 15% de chance d\'infliger SHOCK (+10% de dégâts subis pendant 3s).',
+    branch: TalentBranch.FULGURIS,
+    tier: 1,
+    cost: 1,
+    icon: 'talent_fulguris_spark_touch',
+    requires: [],
+    effects: { SHOCK_CHANCE_PCT: 15 },
+    lore: 'Ce que la foudre choisit, elle l\'atteint.',
+  },
+
+  {
+    id: 'fulguris_overclock',
+    name: 'Surrégime',
+    description: 'Après un coup critique : +15% vitesse d\'attaque pendant 2s (se rafraîchit).',
+    branch: TalentBranch.FULGURIS,
+    tier: 2,
+    cost: 1,
+    icon: 'talent_fulguris_overclock',
+    requires: ['fulguris_conductor'],
+    effects: { CRIT_SURGE_ASPD_PCT: 15 },
+    lore: 'Ce que la foudre choisit, elle l\'atteint.',
+  },
+
+  {
+    id: 'fulguris_arc_conduit',
+    name: 'Conduit d\'Arc',
+    description: '10% de chance qu\'un coup produise un arc vers l\'ennemi le plus proche (40% des dégâts, foudre).',
+    branch: TalentBranch.FULGURIS,
+    tier: 2,
+    cost: 1,
+    icon: 'talent_fulguris_arc_conduit',
+    requires: ['fulguris_spark_touch'],
+    effects: { ARC_CHANCE_PCT: 10 },
+    lore: 'Ce que la foudre choisit, elle l\'atteint.',
+  },
+
+  {
+    id: 'fulguris_static_retort',
+    name: 'Riposte Statique',
+    description: '20% de chance en subissant un coup d\'émettre une nova électrique (rayon 80, 50% Magic ATK, applique SHOCK).',
+    branch: TalentBranch.FULGURIS,
+    tier: 3,
+    cost: 2,
+    icon: 'talent_fulguris_static_retort',
+    requires: ['fulguris_overclock'],
+    effects: { STATIC_RETORT_PCT: 20 },
+    lore: 'Ce que la foudre choisit, elle l\'atteint.',
+  },
+
+  {
+    id: 'fulguris_storm_engine',
+    name: 'Moteur d\'Orage',
+    description: 'Sorts de foudre : +30% de dégâts élémentaires.',
+    branch: TalentBranch.FULGURIS,
+    tier: 3,
+    cost: 2,
+    icon: 'talent_fulguris_storm_engine',
+    requires: ['fulguris_arc_conduit'],
+    // ELEM_BONUS_PCT restreint aux sorts de foudre — vérification d'élément côté combat.
+    effects: { ELEM_BONUS_PCT: 30 },
+    lore: 'Ce que la foudre choisit, elle l\'atteint.',
+  },
+
+  {
+    id: 'fulguris_overload',
+    name: 'Surcharge',
+    description: '+10% vitesse d\'attaque ; chance de SHOCK portée à 35% cumulés.',
+    branch: TalentBranch.FULGURIS,
+    tier: 4,
+    cost: 3,
+    icon: 'talent_fulguris_overload',
+    requires: ['fulguris_static_retort'],
+    effects: { ASPD_PCT: 10, SHOCK_CHANCE_PCT: 10 },
+    lore: 'Ce que la foudre choisit, elle l\'atteint.',
+  },
+
+  {
+    id: 'fulguris_tempest_relay',
+    name: 'Relais de Tempête',
+    description: 'Les finishers lancent un éclair en chaîne : jusqu\'à 3 ennemis, 60% Magic ATK, foudre.',
+    branch: TalentBranch.FULGURIS,
+    tier: 4,
+    cost: 3,
+    icon: 'talent_fulguris_tempest_relay',
+    requires: ['fulguris_storm_engine'],
+    effects: { CHAIN_FINISHER: 1 },
+    lore: 'Ce que la foudre choisit, elle l\'atteint.',
+  },
+
+  {
+    id: 'fulguris_directed_spark',
+    name: 'L\'Étincelle Dirigée',
+    description: '+10% chance de critique, +15% vitesse d\'attaque, et chaque coup critique déclenche un arc garanti (60% des dégâts).',
+    branch: TalentBranch.FULGURIS,
+    tier: 5,
+    cost: 3,
+    icon: 'talent_fulguris_directed_spark',
+    requires: ['fulguris_overload', 'fulguris_tempest_relay'],
+    effects: { CRIT_PCT: 10, ASPD_PCT: 15, CRIT_ARC: 1 },
+    lore: 'La foudre va où je regarde. Les ingénieurs de Volterra auraient donné leur vie pour comprendre comment. Beaucoup l\'ont fait.',
+  },
+
+  // ── BRANCHE GLACIUS (Voie de la Préservation) — #cceeff — Glaciem ───────────
+  // Gardien d'attrition : aucun nœud offensif, tout pour durer. Accès libre.
+
+  {
+    id: 'glacius_rime_ward',
+    name: 'Garde de Givre',
+    description: '−5% sur tous les dégâts subis.',
+    branch: TalentBranch.GLACIUS,
+    tier: 1,
+    cost: 1,
+    icon: 'talent_glacius_rime_ward',
+    requires: [],
+    effects: { DAMAGE_REDUCTION_PCT: 5 },
+    lore: 'Ce que la glace préserve ne meurt pas. Pas encore. À Glaciem, on ne demandait rien à Crysthea — on lui confiait ce qu\'on ne voulait pas perdre.',
+  },
+
+  {
+    id: 'glacius_unmelting_memory',
+    name: 'Mémoire Inaltérée',
+    description: 'Durée des debuffs subis −20% (BURN, BLEED, SLOW, stun, gel).',
+    branch: TalentBranch.GLACIUS,
+    tier: 1,
+    cost: 1,
+    icon: 'talent_glacius_unmelting_memory',
+    requires: [],
+    effects: { STATUS_RES_DURATION_PCT: 20 },
+    lore: 'Ce que la glace préserve ne meurt pas. Pas encore.',
+  },
+
+  {
+    id: 'glacius_layered_ice',
+    name: 'Strates de Glace',
+    description: 'stone_shield / ice_barrier : valeur +20% (se cumule avec Garde d\'Acier).',
+    branch: TalentBranch.GLACIUS,
+    tier: 2,
+    cost: 1,
+    icon: 'talent_glacius_layered_ice',
+    requires: ['glacius_rime_ward'],
+    effects: { SHIELD_SKILL_PCT: 20 },
+    lore: 'Ce que la glace préserve ne meurt pas. Pas encore.',
+  },
+
+  {
+    id: 'glacius_keepers_warmth',
+    name: 'Chaleur de la Gardienne',
+    description: '+15% sur tous les soins reçus.',
+    branch: TalentBranch.GLACIUS,
+    tier: 2,
+    cost: 1,
+    icon: 'talent_glacius_keepers_warmth',
+    requires: ['glacius_unmelting_memory'],
+    effects: { HEALING_RECEIVED_PCT: 15 },
+    lore: 'Ce que la glace préserve ne meurt pas. Pas encore.',
+  },
+
+  {
+    id: 'glacius_last_bastion',
+    name: 'Dernier Bastion',
+    description: '1 fois par combat : passer sous 30% HP accorde un bouclier de 25% des HP max pendant 5s.',
+    branch: TalentBranch.GLACIUS,
+    tier: 3,
+    cost: 2,
+    icon: 'talent_glacius_last_bastion',
+    requires: ['glacius_layered_ice'],
+    effects: { LAST_BASTION: 1 },
+    lore: 'Ce que la glace préserve ne meurt pas. Pas encore.',
+  },
+
+  {
+    id: 'glacius_deep_stillness',
+    name: 'Immobilité Profonde',
+    description: 'Aura passive (rayon 130) : les ennemis proches ont −10% vitesse de déplacement et d\'attaque.',
+    branch: TalentBranch.GLACIUS,
+    tier: 3,
+    cost: 2,
+    icon: 'talent_glacius_deep_stillness',
+    requires: ['glacius_keepers_warmth'],
+    effects: { CHILL_AURA: 1 },
+    lore: 'Ce que la glace préserve ne meurt pas. Pas encore.',
+  },
+
+  {
+    id: 'glacius_guarded_strikes',
+    name: 'Rempart en Mouvement',
+    description: 'Les finishers accordent un bouclier de 8% des HP max pendant 3s (se rafraîchit).',
+    branch: TalentBranch.GLACIUS,
+    tier: 4,
+    cost: 3,
+    icon: 'talent_glacius_guarded_strikes',
+    requires: ['glacius_last_bastion'],
+    effects: { GUARD_FINISHER: 1 },
+    lore: 'Ce que la glace préserve ne meurt pas. Pas encore.',
+  },
+
+  {
+    id: 'glacius_eternal_vigil',
+    name: 'Veille Éternelle',
+    description: '−8% de dégâts subis supplémentaires ; +10% de soins reçus supplémentaires.',
+    branch: TalentBranch.GLACIUS,
+    tier: 4,
+    cost: 3,
+    icon: 'talent_glacius_eternal_vigil',
+    requires: ['glacius_deep_stillness'],
+    effects: { DAMAGE_REDUCTION_PCT: 8, HEALING_RECEIVED_PCT: 10 },
+    lore: 'Ce que la glace préserve ne meurt pas. Pas encore.',
+  },
+
+  {
+    id: 'glacius_deep_patience',
+    name: 'La Patience Profonde',
+    description: '+15% HP max, −7% de dégâts subis supplémentaires, et 1 fois par zone un coup fatal laisse à 1 HP + 2s d\'invulnérabilité.',
+    branch: TalentBranch.GLACIUS,
+    tier: 5,
+    cost: 3,
+    icon: 'talent_glacius_deep_patience',
+    requires: ['glacius_guarded_strikes', 'glacius_eternal_vigil'],
+    effects: { MAX_HP_PCT: 15, DAMAGE_REDUCTION_PCT: 7, PRESERVED: 1 },
+    lore: 'Tout se perd, à la fin. La glace ne le conteste pas. Elle demande seulement un délai.',
   },
 ];
 

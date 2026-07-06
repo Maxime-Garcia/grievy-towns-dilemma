@@ -1,5 +1,5 @@
 import { SaveSystem } from '../systems/SaveSystem';
-import { UI, drawGlowPanel, pxStyle } from '../utils/UITheme';
+import { UI, drawGlowPanel, pxStyle, uiStyle } from '../utils/UITheme';
 import { t } from '../i18n';
 
 const GAME_VERSION = 'v0.7.0';
@@ -127,9 +127,9 @@ export class MainMenuScene extends Phaser.Scene {
       },
     });
 
-    this.add.text(W / 2, 64, t('menu.subtitle'), pxStyle(8, UI.TXT_MUTED))
+    this.add.text(W / 2, 64, t('menu.subtitle'), uiStyle(11, UI.TXT_MUTED))
       .setOrigin(0.5).setDepth(91).setScrollFactor(0);
-    this.add.text(W / 2, 82, '« Chaque victoire est une perte. »', pxStyle(7, UI.TXT_HINT))
+    this.add.text(W / 2, 82, '« Chaque victoire est une perte. »', uiStyle(10, UI.TXT_HINT, { italic: true }))
       .setOrigin(0.5).setDepth(91).setScrollFactor(0);
 
     // ── Boutons ──
@@ -144,7 +144,7 @@ export class MainMenuScene extends Phaser.Scene {
     }
 
     // ── Save slot cards ──
-    this.add.text(W / 2, 276, t('menu.save_slots'), pxStyle(7, UI.TXT_HINT))
+    this.add.text(W / 2, 276, t('menu.save_slots'), uiStyle(10, UI.TXT_HINT))
       .setOrigin(0.5).setDepth(91).setScrollFactor(0);
 
     for (let i = 0; i < 3; i++) {
@@ -156,19 +156,19 @@ export class MainMenuScene extends Phaser.Scene {
       const cardTexts: Phaser.GameObjects.Text[] = [];
       if (s) {
         cardTexts.push(
-          this.add.text(W / 2 - 188, cy + 8,
-            `${t('menu.slot')} ${i + 1}`, pxStyle(7, UI.TXT_GOLD)).setDepth(91).setScrollFactor(0),
-          this.add.text(W / 2 - 188, cy + 24,
-            `${s.playerName}  Lv.${s.level}`, pxStyle(7, UI.TXT_PARCHMENT)).setDepth(91).setScrollFactor(0),
-          this.add.text(W / 2 + 190, cy + 8,
-            `${s.clearedZones}/6 zones`, pxStyle(7, UI.TXT_MUTED)).setOrigin(1, 0).setDepth(91).setScrollFactor(0),
-          this.add.text(W / 2 + 190, cy + 24,
-            SaveSystem.formatPlaytime(s.playtime), pxStyle(7, UI.TXT_MUTED)).setOrigin(1, 0).setDepth(91).setScrollFactor(0),
+          this.add.text(W / 2 - 188, cy + 6,
+            `${t('menu.slot')} ${i + 1}`, uiStyle(10, UI.TXT_GOLD, { bold: true })).setDepth(91).setScrollFactor(0),
+          this.add.text(W / 2 - 188, cy + 23,
+            `${s.playerName}  Lv.${s.level}`, uiStyle(11, UI.TXT_PARCHMENT)).setDepth(91).setScrollFactor(0),
+          this.add.text(W / 2 + 190, cy + 6,
+            `${s.clearedZones}/6 zones`, uiStyle(10, UI.TXT_MUTED)).setOrigin(1, 0).setDepth(91).setScrollFactor(0),
+          this.add.text(W / 2 + 190, cy + 23,
+            SaveSystem.formatPlaytime(s.playtime), uiStyle(10, UI.TXT_MUTED)).setOrigin(1, 0).setDepth(91).setScrollFactor(0),
         );
       } else {
         cardTexts.push(
           this.add.text(W / 2, cy + 22,
-            `${t('menu.slot')} ${i + 1}  —  ${t('menu.slot.empty')}`, pxStyle(7, UI.TXT_HINT))
+            `${t('menu.slot')} ${i + 1}  —  ${t('menu.slot.empty')}`, uiStyle(10, UI.TXT_HINT))
             .setOrigin(0.5).setDepth(91).setScrollFactor(0),
         );
       }
@@ -180,9 +180,9 @@ export class MainMenuScene extends Phaser.Scene {
     }
 
     // ── Footer ──
-    this.add.text(W / 2, H - 14, t('menu.controls'), pxStyle(6, UI.TXT_HINT))
+    this.add.text(W / 2, H - 14, t('menu.controls'), uiStyle(9, UI.TXT_HINT))
       .setOrigin(0.5, 1).setDepth(91).setScrollFactor(0);
-    this.add.text(W - 14, H - 14, GAME_VERSION, pxStyle(6, UI.TXT_HINT))
+    this.add.text(W - 14, H - 14, GAME_VERSION, uiStyle(9, UI.TXT_HINT))
       .setOrigin(1, 1).setDepth(91).setScrollFactor(0);
   }
 
@@ -772,7 +772,7 @@ export class MainMenuScene extends Phaser.Scene {
     action: () => void,
   ) {
     const BW = 240;
-    const BH = 34;
+    const BH = 44;   // hauteur tactile standard (≥ 44 px)
     const bg = this.add.graphics().setScrollFactor(0);
 
     const draw = (hover: boolean) => {
@@ -786,7 +786,7 @@ export class MainMenuScene extends Phaser.Scene {
     };
     draw(false);
 
-    const txt = this.add.text(0, 0, label, pxStyle(9, UI.TXT_PARCHMENT))
+    const txt = this.add.text(0, 0, label, uiStyle(13, UI.TXT_PARCHMENT, { bold: true }))
       .setOrigin(0.5).setScrollFactor(0);
     const box = this.add.container(x, y + 8, [bg, txt])
       .setAlpha(0).setDepth(90).setScrollFactor(0);
@@ -825,7 +825,7 @@ export class MainMenuScene extends Phaser.Scene {
     drawGlowPanel(frame, W / 2 - 240, H / 2 - 150, 480, 300, UI.ACCENT_VIOLET, UI.BG_DEEP, 6);
     elems.push(frame);
     elems.push(
-      this.add.text(W / 2, H / 2 - 130, t('menu.select_slot'), pxStyle(11, UI.TXT_GOLD, true))
+      this.add.text(W / 2, H / 2 - 130, t('menu.select_slot'), uiStyle(14, UI.TXT_GOLD, { bold: true, stroke: true }))
         .setOrigin(0.5).setDepth(97),
     );
 
@@ -840,20 +840,25 @@ export class MainMenuScene extends Phaser.Scene {
         ? `${t('menu.slot')} ${i + 1}  [${t('menu.slot.overwrite')}]  ${s.playerName} Lv.${s.level}`
         : `${t('menu.slot')} ${i + 1}  —  ${t('menu.new_game')}`;
       const col = s ? UI.TXT_RED : UI.TXT_GREEN;
-      const btn = this.add.text(W / 2, by + 24, label, pxStyle(8, col))
-        .setOrigin(0.5).setDepth(97).setInteractive({ useHandCursor: true });
-      btn.on('pointerover', () => btn.setStyle({ color: UI.TXT_WHITE }));
-      btn.on('pointerout',  () => btn.setStyle({ color: col }));
-      btn.on('pointerdown', () => { elems.forEach(e => e.destroy()); this.transitionTo('NameInputScene', { slot: i }); });
-      elems.push(btn);
+      const btn = this.add.text(W / 2, by + 24, label, uiStyle(11, col, { bold: true }))
+        .setOrigin(0.5).setDepth(97);
+      // Hit zone = toute la carte (400×48 ≥ 44 px), pas seulement le texte
+      const hit = this.add.rectangle(W / 2, by + 24, 400, 48, 0, 0)
+        .setDepth(98).setInteractive({ useHandCursor: true });
+      hit.on('pointerover', () => btn.setStyle({ color: UI.TXT_WHITE }));
+      hit.on('pointerout',  () => btn.setStyle({ color: col }));
+      hit.on('pointerdown', () => { elems.forEach(e => e.destroy()); this.transitionTo('NameInputScene', { slot: i }); });
+      elems.push(btn, hit);
     }
 
-    const cancel = this.add.text(W / 2, H / 2 + 120, t('menu.cancel'), pxStyle(9, UI.TXT_MUTED))
-      .setOrigin(0.5).setDepth(97).setInteractive({ useHandCursor: true });
-    cancel.on('pointerover', () => cancel.setStyle({ color: UI.TXT_RED }));
-    cancel.on('pointerout',  () => cancel.setStyle({ color: UI.TXT_MUTED }));
-    cancel.on('pointerdown', () => elems.forEach(e => e.destroy()));
-    elems.push(cancel);
+    const cancel = this.add.text(W / 2, H / 2 + 120, t('menu.cancel'), uiStyle(12, UI.TXT_MUTED))
+      .setOrigin(0.5).setDepth(97);
+    const cancelHit = this.add.rectangle(W / 2, H / 2 + 120, 200, 44, 0, 0)
+      .setDepth(98).setInteractive({ useHandCursor: true });
+    cancelHit.on('pointerover', () => cancel.setStyle({ color: UI.TXT_RED }));
+    cancelHit.on('pointerout',  () => cancel.setStyle({ color: UI.TXT_MUTED }));
+    cancelHit.on('pointerdown', () => elems.forEach(e => e.destroy()));
+    elems.push(cancel, cancelHit);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -870,7 +875,7 @@ export class MainMenuScene extends Phaser.Scene {
     drawGlowPanel(frame, W / 2 - 240, H / 2 - 150, 480, 300, UI.GLOW_GOLD, UI.BG_DEEP, 6);
     elems.push(frame);
     elems.push(
-      this.add.text(W / 2, H / 2 - 130, t('menu.load_title'), pxStyle(11, UI.TXT_GOLD, true))
+      this.add.text(W / 2, H / 2 - 130, t('menu.load_title'), uiStyle(14, UI.TXT_GOLD, { bold: true, stroke: true }))
         .setOrigin(0.5).setDepth(97),
     );
 
@@ -883,11 +888,14 @@ export class MainMenuScene extends Phaser.Scene {
       drawGlowPanel(card, W / 2 - 200, by, 400, 48, UI.SEPARATOR, UI.BG_MID, 4);
       elems.push(card);
       const label = `${t('menu.slot')} ${i + 1}  ${s.playerName}  Lv.${s.level}  |  ${s.clearedZones}/6 zones`;
-      const btn   = this.add.text(W / 2, by + 24, label, pxStyle(8, UI.TXT_GREEN))
-        .setOrigin(0.5).setDepth(97).setInteractive({ useHandCursor: true });
-      btn.on('pointerover', () => btn.setStyle({ color: UI.TXT_WHITE }));
-      btn.on('pointerout',  () => btn.setStyle({ color: UI.TXT_GREEN }));
-      btn.on('pointerdown', () => {
+      const btn   = this.add.text(W / 2, by + 24, label, uiStyle(11, UI.TXT_GREEN, { bold: true }))
+        .setOrigin(0.5).setDepth(97);
+      // Hit zone = toute la carte (400×48 ≥ 44 px), pas seulement le texte
+      const hit = this.add.rectangle(W / 2, by + 24, 400, 48, 0, 0)
+        .setDepth(98).setInteractive({ useHandCursor: true });
+      hit.on('pointerover', () => btn.setStyle({ color: UI.TXT_WHITE }));
+      hit.on('pointerout',  () => btn.setStyle({ color: UI.TXT_GREEN }));
+      hit.on('pointerdown', () => {
         const state = SaveSystem.load(i);
         if (state) {
           state.saveSlot = i;
@@ -895,15 +903,17 @@ export class MainMenuScene extends Phaser.Scene {
           this.transitionTo('GameScene', { gameState: state });
         }
       });
-      elems.push(btn);
+      elems.push(btn, hit);
       found++;
     }
 
-    const cancel = this.add.text(W / 2, H / 2 + 120, t('menu.cancel'), pxStyle(9, UI.TXT_MUTED))
-      .setOrigin(0.5).setDepth(97).setInteractive({ useHandCursor: true });
-    cancel.on('pointerover', () => cancel.setStyle({ color: UI.TXT_RED }));
-    cancel.on('pointerout',  () => cancel.setStyle({ color: UI.TXT_MUTED }));
-    cancel.on('pointerdown', () => elems.forEach(e => e.destroy()));
-    elems.push(cancel);
+    const cancel = this.add.text(W / 2, H / 2 + 120, t('menu.cancel'), uiStyle(12, UI.TXT_MUTED))
+      .setOrigin(0.5).setDepth(97);
+    const cancelHit = this.add.rectangle(W / 2, H / 2 + 120, 200, 44, 0, 0)
+      .setDepth(98).setInteractive({ useHandCursor: true });
+    cancelHit.on('pointerover', () => cancel.setStyle({ color: UI.TXT_RED }));
+    cancelHit.on('pointerout',  () => cancel.setStyle({ color: UI.TXT_MUTED }));
+    cancelHit.on('pointerdown', () => elems.forEach(e => e.destroy()));
+    elems.push(cancel, cancelHit);
   }
 }
