@@ -60,13 +60,18 @@ export const FONT = "'Press Start 2P', monospace";
 
 /**
  * Draw a pixel-art panel: dark fill + dark border + gold inner line + gold corner rivets.
+ *
+ * @param fillAlpha Opacité du fond uniquement (bordures et rivets restent opaques).
+ *                  0.85 = panneau principal translucide (le jeu reste visible derrière),
+ *                  0.92 = panneau secondaire / tooltip, 1 = opaque (défaut, rétro-compatible).
  */
 export function drawPanel(
   g: Phaser.GameObjects.Graphics,
   x: number, y: number, w: number, h: number,
   fill = UI.PANEL_BG,
+  fillAlpha = 1,
 ): void {
-  g.fillStyle(fill, 1);
+  g.fillStyle(fill, fillAlpha);
   g.fillRect(x, y, w, h);
 
   g.lineStyle(1, UI.BORDER, 1);
@@ -98,13 +103,38 @@ export function drawGlowPanel(
   accentColor: number = UI.BORDER_LIT,
   bgColor: number = UI.PANEL_BG,
   radius: number = 4,
+  fillAlpha: number = 0.97,
 ): void {
-  g.fillStyle(bgColor, 0.97);
+  g.fillStyle(bgColor, fillAlpha);
   g.fillRoundedRect(x, y, w, h, radius);
   g.lineStyle(1, UI.SEPARATOR, 1);
   g.strokeRoundedRect(x, y, w, h, radius);
   g.lineStyle(1, accentColor, 0.3);
   g.strokeRoundedRect(x + 2, y + 2, w - 4, h - 4, Math.max(1, radius - 2));
+}
+
+/**
+ * Draw a soft luminous halo around a rectangular area — a stack of
+ * progressively larger, progressively more transparent stroked rects.
+ * Pixel-art friendly (straight edges, no blur filter), très léger à
+ * redessiner. Utilisé derrière les titres et panneaux "héros"
+ * (référence : lueurs discrètes d'Alabaster Dawn).
+ *
+ * @param intensity 0..1 — multiplie l'alpha de chaque anneau (défaut 1).
+ */
+export function drawGlow(
+  g: Phaser.GameObjects.Graphics,
+  x: number, y: number, w: number, h: number,
+  color: number = UI.GLOW_GOLD,
+  intensity: number = 1,
+): void {
+  const RINGS = 4;
+  for (let i = 1; i <= RINGS; i++) {
+    const pad   = i * 3;                                  // 3, 6, 9, 12 px
+    const alpha = 0.10 * (1 - (i - 1) / RINGS) * intensity;
+    g.lineStyle(3, color, alpha);
+    g.strokeRect(x - pad, y - pad, w + pad * 2, h + pad * 2);
+  }
 }
 
 /**

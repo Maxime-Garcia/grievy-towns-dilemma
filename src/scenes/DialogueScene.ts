@@ -66,7 +66,8 @@ export class DialogueScene extends Phaser.Scene {
     this.px = PX; this.py = PY; this.pw = PW; this.ph = PH;
 
     this.panel = this.add.graphics();
-    drawGlowPanel(this.panel, PX, PY, PW, PH, UI.BORDER_LIT, UI.PANEL_BG, 5);
+    // 0.92 : quasi opaque mais laisse transparaître les couleurs du jeu
+    drawGlowPanel(this.panel, PX, PY, PW, PH, UI.BORDER_LIT, UI.PANEL_BG, 5, 0.92);
 
     // ── Portrait frame ────────────────────────────
     const PORTRAIT_SIZE = 72;

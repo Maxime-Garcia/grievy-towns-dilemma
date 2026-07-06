@@ -140,12 +140,12 @@ export class SkillScene extends Phaser.Scene {
 
     this.cameras.main.fadeIn(300, 0, 0, 0);
 
-    // Full-screen dark overlay
-    this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.92);
+    // Full-screen dark overlay (0.88 standard — le jeu reste visible derrière)
+    this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88);
 
-    // Outer frame
+    // Outer frame (fond translucide 0.85)
     const frame = this.add.graphics();
-    drawPanel(frame, 4, 4, W - 8, H - 8);
+    drawPanel(frame, 4, 4, W - 8, H - 8, UI.PANEL_BG, 0.85);
 
     this.buildTabs(W);
     this.buildBranchHeader(W);

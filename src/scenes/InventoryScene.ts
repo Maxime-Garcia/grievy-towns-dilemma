@@ -92,12 +92,12 @@ export class InventoryScene extends Phaser.Scene {
     this.stBounds  = { x: stX,  y: CONT_Y, w: STAT_PAN_W, h: CONT_H };
     this.bagBounds = { x: bagX, y: CONT_Y, w: bagW,        h: CONT_H };
 
-    // ── Background overlay ────────────────────────────────────────────────
-    this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.92);
+    // ── Background overlay (0.88 standard — le jeu reste visible derrière) ─
+    this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88);
 
-    // ── Outer frame ───────────────────────────────────────────────────────
+    // ── Outer frame (fond translucide 0.85) ──────────────────────────────
     const frameGfx = this.add.graphics();
-    drawPanel(frameGfx, MARGIN, MARGIN, W - MARGIN * 2, H - MARGIN * 2);
+    drawPanel(frameGfx, MARGIN, MARGIN, W - MARGIN * 2, H - MARGIN * 2, UI.PANEL_BG, 0.85);
 
     // ── Header title ──────────────────────────────────────────────────────
     this.add.text(W / 2, MARGIN + 6, t('inventory.title'), pxStyle(11, UI.TXT_GOLD, true)).setOrigin(0.5, 0);
