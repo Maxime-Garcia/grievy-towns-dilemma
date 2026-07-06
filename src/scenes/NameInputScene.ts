@@ -6,15 +6,17 @@ export class NameInputScene extends Phaser.Scene {
   private nameInput!: HTMLInputElement;
   private placeholderStyle?: HTMLStyleElement;
   private slot = 0;
+  private transitioning = false;
 
   constructor() { super({ key: 'NameInputScene' }); }
 
   init(data: { slot?: number }) {
     this.slot = data?.slot ?? 0;
+    this.transitioning = false;
   }
 
   create() {
-    this.cameras.main.fadeIn(400, 0, 0, 0);
+    this.cameras.main.fadeIn(300, 0, 0, 0);
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
 
@@ -129,11 +131,18 @@ export class NameInputScene extends Phaser.Scene {
   }
 
   private startGame() {
+    if (this.transitioning) return;
+    this.transitioning = true;
     const name = this.nameInput.value.trim() || 'Stranger';
     this.cleanupInput();
     const gameState = SaveSystem.createNewGame(name, this.slot);
     SaveSystem.save(gameState, this.slot);
-    this.scene.start('IntroScene', { gameState });
+    // Transition standard : fade out 300 ms avant le changement de scène
+    this.cameras.main.fadeOut(300, 0, 0, 0);
+    this.cameras.main.once(
+      Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
+      () => this.scene.start('IntroScene', { gameState }),
+    );
   }
 
   private cleanupInput() {

@@ -174,7 +174,10 @@ Règles :
 | Feedback tap (alpha/flash) | 80–150 ms | skill slots, nav buttons |
 | Pop scale yoyo | 60 ms (×2 = 120 ms) | skill tap, combo pip |
 | Flash de confirmation (equip) | 400 ms | paperdoll |
-| Fade-in d'ouverture de scène overlay | 300–400 ms | `cameras.main.fadeIn(300–400, 0, 0, 0)` — **standardiser à 300 ms** pour le nouveau code |
+| Fade-in d'ouverture de scène overlay | **300 ms** (unifié) | `cameras.main.fadeIn(300, 0, 0, 0)` — appliqué partout (MainMenu, Pause, Shop, Inventory, Skill, Dialogue, NameInput) |
+| Fade-out avant `scene.start()` | **300 ms** | `fadeOut(300)` + `once(FADE_OUT_COMPLETE, () => scene.start(...))` avec garde `transitioning` anti double-tap — voir `MainMenuScene.transitionTo()` |
+| Hover bouton (scale) | 100 ms, scale 1.03 (`Quad.easeOut`) | MainMenu (container bouton), Pause (label) — retour à 1.0 sur `pointerout` |
+| Entrée échelonnée des boutons de menu | delay 0/80/160 ms, fade+slide 350 ms | MainMenuScene (`time.delayedCall`) |
 | Notification visible | 2500 ms + fade out 400 ms | HUD |
 | Nom de zone | fade-in 400 ms, hold 3500 ms, fade partiel 1000 ms → alpha 0.4 | HUD |
 | Lerp des barres HP/MP | vitesse 8/s (jamais de saut sec) | HUD |
@@ -194,17 +197,28 @@ Règles :
 ### 2.6 Overlays plein écran
 
 Fond noir semi-opaque derrière tout écran modal : `add.rectangle(W/2, H/2, W, H, 0x000000, alpha)`.
-Valeurs actuelles : 0.92 (inventaire), 0.88 (skills), 0.72 (pause). **Pour le nouveau code : 0.88**
-(pause reste plus léger volontairement — le jeu figé reste visible en fond).
+Valeurs unifiées : **0.88 standard** (inventaire, skills, shop), 0.72 (pause — plus léger volontairement,
+le jeu figé reste visible en fond).
+
+**Panneaux translucides** : les frames principaux passent `fillAlpha` à `drawPanel`/`drawGlowPanel` —
+0.85 pour un panneau principal (Pause, Inventory, Skill, Shop), 0.92 pour un panneau secondaire
+(dialogue, cartes de save). Les couleurs du jeu transparaissent derrière (réf. Hades / Hollow Knight).
 
 ---
 
 ## 3. Composants UI réutilisables
 
-### 3.1 `drawPanel(g, x, y, w, h, fill?)` — LE panneau du jeu
+### 3.1 `drawPanel(g, x, y, w, h, fill?, fillAlpha?)` — LE panneau du jeu
 Fond sombre + double bordure (`BORDER` puis `BORDER_LIT` alpha 0.7) + 4 rivets dorés 3×3 aux coins.
 **Tout conteneur visuel passe par `drawPanel`** — jamais de `fillRect` nu pour un panneau.
 Fill par défaut `PANEL_BG` ; `SLOT_BG` pour les sous-panneaux et slots ; `BTN_BG` pour les boutons.
+`fillAlpha` (défaut 1) : 0.85 = frame principal translucide, 0.92 = panneau secondaire — les bordures
+et rivets restent opaques. `drawGlowPanel` accepte le même paramètre en 8e position (défaut 0.97).
+
+### 3.1bis `drawGlow(g, x, y, w, h, color?, intensity?)` — halo lumineux
+4 anneaux `strokeRect` de plus en plus larges (pas de 3 px) et transparents (alpha 0.10 → 0.025 ×
+`intensity`). Pixel-art friendly (aucun blur). Utilisé derrière le titre du menu principal ; à réserver
+aux éléments « héros » (titres, level-up, items EPIC+) — jamais sur un composant répété en liste.
 
 ### 3.2 `drawBar(g, x, y, w, h, pct, fill, bg, shine)` — barres de progression
 Remplissage + bande de brillance en haut (alpha 0.22, 32 % de la hauteur) + graduations noires tous
@@ -401,6 +415,19 @@ Layout 3 panneaux fixes : équipement 180 px | stats/détail 220 px | grille (la
 
 ---
 
+### 6.6 MainMenuScene
+- **Fond animé 100 % procédural** (aucun asset) : ciel crépusculaire en 16 bandes (`0x0a0a1f` → `0x1a0a0a`),
+  ~50 étoiles fixes (LCG à graine fixe — jamais de `Math.random` dans `create()`), 10 étoiles à pulsation,
+  2 astres avec halo en cercles concentriques, 3 plans de montagnes en escaliers (silhouettes périodiques
+  sur W, dessinées sur 2×W, scroll infini par translation de `.x` — **zéro redraw** dans `update()`),
+  falaise fixe bas-gauche + silhouette du héros (corps 4×16, tête 6×6) avec respiration sinusoïdale
+  (±1.5 px, période 3 s). Vitesses parallax : 2.5 / 4.5 / 7.5 px/s.
+- Voile de lisibilité `0x060810` alpha 0.28 entre le fond et l'UI ; cadre décoratif **bordure seule**
+  (jamais de fill opaque qui masquerait le fond).
+- Titre : halo `drawGlow` + pulsation alpha 0.9 ↔ 1.0 (2 s, yoyo, infini) après le fade-in initial.
+- Boutons : entrée échelonnée 0/80 ms (fade + slide 8 px), hover scale 1.03 via container centré.
+- Toute sortie de scène passe par `transitionTo()` (fade-out 300 ms + garde `transitioning`).
+
 ## 7. Cohérence inter-écrans — points NON NÉGOCIABLES
 
 Identiques sur **tous** les écrans, actuels et futurs :
@@ -432,7 +459,7 @@ Identiques sur **tous** les écrans, actuels et futurs :
 | D6 | Boutons < 44 px de haut (20–34 px) | PauseScene (menu, tabs, toggles), InventoryScene (boutons détail 20 px) |
 | D7 | Choix de dialogue = hit zone du texte seul (~9 px de haut) | DialogueScene |
 | D8 | Swipe horizontal non implémenté (nav panneaux/tabs) | InventoryScene, PauseScene |
-| D9 | Fade-in 300 vs 400 ms et overlays 0.72/0.88/0.92 non unifiés | toutes les scènes overlay |
+| ~~D9~~ | **Résorbée** — fade-in unifié à 300 ms, overlays 0.88 standard (pause 0.72 volontaire), fade-out 300 ms avant tout `scene.start` du flow menu | — |
 | D10 | `RARITY_COLORS` (code) diverge du tableau INSPIRATIONS.md §4 (Hidden, Mythic) | `src/types/index.ts` |
 
 ---

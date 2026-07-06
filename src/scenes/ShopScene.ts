@@ -23,14 +23,14 @@ export class ShopScene extends Phaser.Scene {
   }
 
   create() {
-    this.cameras.main.fadeIn(400, 0, 0, 0);
+    this.cameras.main.fadeIn(300, 0, 0, 0);
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
 
-    // ── Dark overlay + main panel ────────────────────────────────
-    this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.75).setDepth(0);
+    // ── Dark overlay + main panel (translucide : le jeu reste visible) ──
+    this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88).setDepth(0);
     const frame = this.add.graphics().setDepth(0);
-    drawPanel(frame, 20, 20, W - 40, H - 40);
+    drawPanel(frame, 20, 20, W - 40, H - 40, UI.PANEL_BG, 0.85);
 
     // ── Title ────────────────────────────────────────────────────
     const npcName = this.npcId.charAt(0).toUpperCase() + this.npcId.slice(1);
@@ -101,7 +101,7 @@ export class ShopScene extends Phaser.Scene {
       bg.on('pointerout', () => {
         bg.setFillStyle(this.gameScene.gameState.player.gold >= entry.price ? UI.BTN_BG : UI.PANEL_BG);
       });
-      bg.on('pointerdown', () => this.buyItem(entry, i));
+      bg.on('pointerdown', () => this.buyItem(entry));
     });
 
     // ── Bottom bar ───────────────────────────────────────────────
@@ -116,7 +116,7 @@ export class ShopScene extends Phaser.Scene {
     this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.I).once('down',   () => this.closeShop());
   }
 
-  private buyItem(entry: ShopEntry, rowIndex: number) {
+  private buyItem(entry: ShopEntry) {
     const player = this.gameScene.gameState.player;
     if (player.gold < entry.price) return;
     const item = ALL_ITEMS[entry.itemId];

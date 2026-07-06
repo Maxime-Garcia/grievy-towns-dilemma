@@ -25,7 +25,7 @@ export class PauseScene extends Phaser.Scene {
   }
 
   create() {
-    this.cameras.main.fadeIn(400, 0, 0, 0);
+    this.cameras.main.fadeIn(300, 0, 0, 0);
     this.renderUI();
   }
 
@@ -43,7 +43,8 @@ export class PauseScene extends Phaser.Scene {
     // ── Overlay panel ─────────────────────────────
     this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.72);
     const frame = this.add.graphics();
-    drawPanel(frame, W / 2 - 200, 20, 400, H - 40);
+    // Panneau translucide : le jeu figé reste perceptible derrière (Hades/HK)
+    drawPanel(frame, W / 2 - 200, 20, 400, H - 40, UI.PANEL_BG, 0.85);
 
     // Title
     this.add.text(W / 2, 38, t('pause.title'), pxStyle(14, UI.TXT_GOLD, true)).setOrigin(0.5);
@@ -261,9 +262,21 @@ export class PauseScene extends Phaser.Scene {
 
     const txt = this.add.text(x, y, label, pxStyle(9, col)).setOrigin(0.5);
     const hit = this.add.rectangle(x, y, w, H, 0, 0).setInteractive({ useHandCursor: true });
-    hit.on('pointerover',  () => { draw(true);  txt.setStyle({ color: UI.TXT_GOLD });  });
-    hit.on('pointerout',   () => { draw(false); txt.setStyle({ color: col }); });
-    hit.on('pointerdown',  action);
+    hit.on('pointerover',  () => {
+      draw(true);
+      txt.setStyle({ color: UI.TXT_GOLD });
+      this.tweens.add({ targets: txt, scaleX: 1.03, scaleY: 1.03, duration: 100, ease: 'Quad.easeOut' });
+    });
+    hit.on('pointerout',   () => {
+      draw(false);
+      txt.setStyle({ color: col });
+      this.tweens.add({ targets: txt, scaleX: 1, scaleY: 1, duration: 100, ease: 'Quad.easeOut' });
+    });
+    hit.on('pointerdown',  () => {
+      // Feedback tap < 100 ms avant l'action
+      this.tweens.add({ targets: txt, scaleX: 0.96, scaleY: 0.96, duration: 50, yoyo: true });
+      action();
+    });
   }
 
   private startRebind(action: keyof KeyBindings) {
