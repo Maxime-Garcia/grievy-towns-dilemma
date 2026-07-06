@@ -928,7 +928,12 @@ export class GameScene extends Phaser.Scene {
     }
     this._attackHandler = (e: KeyboardEvent) => {
       if (e.keyCode === b.attack && !this.menuOpen && !this.isInDialogue && !this.isTraveling) {
-        this.performBasicAttack();
+        // Priorité interaction NPC : si un NPC est à portée, J ouvre le dialogue au lieu d'attaquer
+        if (this.nearbyNPC) {
+          this.startNPCDialogue(this.nearbyNPC);
+        } else {
+          this.performBasicAttack();
+        }
       }
     };
     window.addEventListener('keydown', this._attackHandler);
@@ -1007,6 +1012,17 @@ export class GameScene extends Phaser.Scene {
           delete flags[shopFlagKey];
           this.isInDialogue = true;
           this.scene.launch('ShopScene', { gameScene: this, npcId: shopNpcId });
+        }
+
+        // open_craft / open_craft_<npcId>: set by forge/tailor NPC dialogue trigger
+        // Re-uses ShopScene since CraftScene n'existe pas encore — l'inventaire
+        // de la boutique du forgeron affiche ses items vendus comme référence.
+        const craftFlagKey = Object.keys(flags).find(k => k === 'open_craft' || k.startsWith('open_craft_'));
+        if (craftFlagKey) {
+          const craftNpcId = craftFlagKey.startsWith('open_craft_') ? craftFlagKey.slice('open_craft_'.length) : npcId;
+          delete flags[craftFlagKey];
+          this.isInDialogue = true;
+          this.scene.launch('ShopScene', { gameScene: this, npcId: craftNpcId });
         }
       },
     });
