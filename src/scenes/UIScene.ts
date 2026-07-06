@@ -46,6 +46,8 @@ export class UIScene extends Phaser.Scene {
 
   private lerpHp          = 1;
   private lerpMp          = 1;
+  /** Traîne "drain retardé" : suit le ratio HP réel avec du retard (lerp 6/s). */
+  private hpBarDelayed    = 1.0;
   private targetHp        = 1;
   private targetMp        = 1;
   private barsInitialized = false;
@@ -65,7 +67,7 @@ export class UIScene extends Phaser.Scene {
     const { width: W, height: H } = this.cameras.main;
 
     // ── DEV: build badge (top-left) — retirer avant release ─────────
-    const BUILD_LABEL = 'feat: ui-stats-combat-polish — talents + StatsSystem + InventoryUX (549ac37)';
+    const BUILD_LABEL = 'GAMEFEEL: iframes + hit FX + HP drain retarde';
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 4, badgePad + 4, BUILD_LABEL, {
       fontSize: '10px', color: '#000000', fontFamily: 'monospace', fontStyle: 'bold',
@@ -290,13 +292,22 @@ export class UIScene extends Phaser.Scene {
       }
     }
 
-    const speed = 8 * (delta / 1000);
+    const dt = delta / 1000;
+    const speed = 8 * dt;
     const prevHp = this.lerpHp;
     const prevMp = this.lerpMp;
+    const prevDelayed = this.hpBarDelayed;
     this.lerpHp = Phaser.Math.Linear(this.lerpHp, this.targetHp, Math.min(1, speed));
     this.lerpMp = Phaser.Math.Linear(this.lerpMp, this.targetMp, Math.min(1, speed));
+    // Traîne "drain retardé" : converge plus lentement (6/s) vers le ratio HP réel —
+    // reste visible en orange derrière la barre verte le temps de rattraper.
+    this.hpBarDelayed = Phaser.Math.Linear(this.hpBarDelayed, this.targetHp, Math.min(1, 6 * dt));
 
-    if (Math.abs(this.lerpHp - prevHp) > 0.001 || Math.abs(this.lerpMp - prevMp) > 0.001) {
+    if (
+      Math.abs(this.lerpHp - prevHp) > 0.001 ||
+      Math.abs(this.lerpMp - prevMp) > 0.001 ||
+      Math.abs(this.hpBarDelayed - prevDelayed) > 0.001
+    ) {
       this.drawLerpedBars();
     }
   }
@@ -493,6 +504,7 @@ export class UIScene extends Phaser.Scene {
     if (!this.barsInitialized) {
       this.lerpHp = this.targetHp;
       this.lerpMp = this.targetMp;
+      this.hpBarDelayed = this.targetHp;
       this.barsInitialized = true;
       this.drawLerpedBars();
     }
@@ -530,8 +542,40 @@ export class UIScene extends Phaser.Scene {
 
   private drawLerpedBars() {
     const hpColor = this.lerpHp > 0.5 ? UI.HP_GREEN : this.lerpHp > 0.25 ? UI.HP_ORANGE : UI.HP_RED;
-    this.hpBar.clear();
-    drawBar(this.hpBar, BAR_X, this.HP_Y, BAR_W, HP_H, this.lerpHp, hpColor, UI.HP_BG, UI.HP_SHINE);
+    // Barre HP dessinée à la main (drawBar repeindrait le fond par-dessus la traîne).
+    // Ordre : fond → traîne orange retardée → barre verte → shine → ticks → bordure.
+    const g = this.hpBar;
+    g.clear();
+    g.fillStyle(UI.HP_BG, 1);
+    g.fillRect(BAR_X, this.HP_Y, BAR_W, HP_H);
+
+    // Traîne "drain retardé" — orange, AVANT la barre verte, même X de départ
+    const trailW = Math.max(0, Math.floor(BAR_W * Math.min(1, this.hpBarDelayed)));
+    if (trailW > 0) {
+      g.fillStyle(0xffaa00, 1);
+      g.fillRect(BAR_X, this.HP_Y, trailW, HP_H);
+    }
+
+    // Barre HP réelle (lissée) par-dessus la traîne
+    const fw = Math.max(0, Math.floor(BAR_W * Math.max(0, Math.min(1, this.lerpHp))));
+    if (fw > 0) {
+      g.fillStyle(hpColor, 1);
+      g.fillRect(BAR_X, this.HP_Y, fw, HP_H);
+      g.fillStyle(UI.HP_SHINE, 0.22);
+      g.fillRect(BAR_X, this.HP_Y, fw, Math.max(2, Math.ceil(HP_H * 0.32)));
+    }
+
+    // Ticks de segments tous les 25px + bordure (mêmes valeurs que drawBar)
+    const segEnd = Math.max(fw, trailW);
+    if (segEnd > 0) {
+      g.fillStyle(0x000000, 0.22);
+      for (let tx = BAR_X + 25; tx < BAR_X + segEnd; tx += 25) {
+        g.fillRect(tx, this.HP_Y, 1, HP_H);
+      }
+    }
+    g.lineStyle(1, 0x000000, 0.45);
+    g.strokeRect(BAR_X, this.HP_Y, BAR_W, HP_H);
+
     this.hpText.setText(`${this.cachedHpInt}/${this.cachedMaxHp}`);
 
     this.manaBar.clear();

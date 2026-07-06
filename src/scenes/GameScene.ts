@@ -209,6 +209,8 @@ export class GameScene extends Phaser.Scene {
   private enemyCrowns: Map<string, Phaser.GameObjects.Text> = new Map();
   private cooldowns: Record<string, number> = {};
   private dashCooldown = 0;
+  /** Invincibilité post-hit : timestamp (ms) jusqu'auquel le joueur ne peut pas être touché. */
+  private iframeUntil = 0;
   private wasDashReady = true;
   private isDashing = false;
   private lastDirX = 0;
@@ -266,6 +268,7 @@ export class GameScene extends Phaser.Scene {
     this.lastAutoSave        = 0;
     this.attackCooldownUntil    = 0;
     this.altAttackCooldownUntil = 0;
+    this.iframeUntil            = 0;
     this.isDashing      = false;
     this.lastDirX       = 0;
     this.lastDirY       = 1;
@@ -365,6 +368,17 @@ export class GameScene extends Phaser.Scene {
     this.handleAttackInput();
     this.handleSkillInput();
     this.updateArrowProjectiles(dt);
+
+    // ── IFRAMES : clignotement du joueur pendant l'invincibilité post-hit ──
+    // Alterne alpha 0.25 / 1 toutes les 80ms ; alpha restauré à la fin de la fenêtre.
+    if (this.iframeUntil > 0) {
+      if (time < this.iframeUntil) {
+        this.player.setAlpha(Math.floor(time / 80) % 2 === 0 ? 0.25 : 1);
+      } else {
+        this.iframeUntil = 0;
+        this.player.setAlpha(1);
+      }
+    }
 
     // Interaction hint
     const showHint = !!this.nearbyNPC || !!this.nearbyLootable;
@@ -1068,6 +1082,9 @@ export class GameScene extends Phaser.Scene {
                 if (this.inWindup && this.playerModifiers.windupArmor) {
                   // BLOCKER-F: windup armor — immunité pendant le chargement d'une arme lourde
                   this.cooldowns[atkKey] = 1.5;
+                } else if (this.time.now < this.iframeUntil) {
+                  // IFRAMES : le joueur est invincible — l'attaque ne passe pas
+                  this.cooldowns[atkKey] = 1.5;
                 } else {
                   const guardActive = this.time.now < this.guardUntil;
                   const result = CombatSystem.enemyAttack(ae, this.gameState.player);
@@ -1083,8 +1100,9 @@ export class GameScene extends Phaser.Scene {
                   }
                   if (result.damage > 0) {
                     this.showDamageNumber(this.player.x, this.player.y - 20, result.damage, false, undefined, true);
-                    this.cameras.main.shake(100, 0.005);
+                    this.applyPlayerHitFx();
                   }
+                  this.iframeUntil = this.time.now + 800;
                   this.events.emit('player_update', this.gameState.player);
                   this.cooldowns[atkKey] = 1.5;
                   if (result.isKill) this.onPlayerDeath();
@@ -1152,6 +1170,9 @@ export class GameScene extends Phaser.Scene {
           if (this.inWindup && this.playerModifiers.windupArmor) {
             // BLOCKER-F: windup armor — immunité pendant le chargement d'une arme lourde
             this.cooldowns[atkKey] = 1.2;
+          } else if (this.time.now < this.iframeUntil) {
+            // IFRAMES : le joueur est invincible — l'attaque ne passe pas
+            this.cooldowns[atkKey] = 1.2;
           } else {
             const guardActive = this.time.now < this.guardUntil;
             const result = CombatSystem.enemyAttack(ae, this.gameState.player);
@@ -1167,8 +1188,9 @@ export class GameScene extends Phaser.Scene {
             }
             if (result.damage > 0) {
               this.showDamageNumber(this.player.x, this.player.y - 20, result.damage, false, undefined, true);
-              this.cameras.main.shake(100, 0.005);
+              this.applyPlayerHitFx();
             }
+            this.iframeUntil = this.time.now + 800;
             this.events.emit('player_update', this.gameState.player);
             this.cooldowns[atkKey] = 1.2;
             if (result.isKill) this.onPlayerDeath();
@@ -1249,14 +1271,17 @@ export class GameScene extends Phaser.Scene {
       (_playerGO, projGO) => {
         const proj = projGO as Phaser.Physics.Arcade.Sprite;
         if (proj.getData('isPlayer')) return;
+        // IFRAMES : le joueur est invincible — le projectile est absorbé sans dégâts
+        if (this.time.now < this.iframeUntil) { proj.destroy(); return; }
         const damage = (proj.getData('damage') as number) ?? 8;
         proj.destroy();
         this.gameState.player.stats.hp = Math.max(
           0,
           this.gameState.player.stats.hp - damage,
         );
+        this.iframeUntil = this.time.now + 800;
         this.showDamageNumber(this.player.x, this.player.y - 20, damage, false, undefined, true);
-        this.cameras.main.shake(80, 0.004);
+        this.applyPlayerHitFx();
         this.events.emit('player_update', this.gameState.player);
         if (this.gameState.player.stats.hp <= 0) this.onPlayerDeath();
       },
@@ -1565,6 +1590,16 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // ── PLAYER HIT FX ───────────────────────────────────────────
+  // Feedback quand le joueur encaisse un coup : shake léger + flash rouge caméra
+  // + burst de particules rouges. Appelé aux trois points de dégâts joueur
+  // (mêlée charger, mêlée générique, projectile ennemi).
+  private applyPlayerHitFx() {
+    this.cameras.main.shake(150, 0.006);
+    this.cameras.main.flash(100, 200, 0, 0, false);
+    this.spawnHitParticles(this.player.x, this.player.y, undefined, 0xff3333);
+  }
+
   private applyHitFeedback(sprite: Phaser.Physics.Arcade.Sprite, _ae: ActiveEnemy, _damage: number) {
     sprite.setTintFill(0xffffff);
     this.time.delayedCall(80, () => { if (sprite.active) sprite.clearTint(); });
@@ -1587,7 +1622,7 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private spawnHitParticles(x: number, y: number, element?: ElementType) {
+  private spawnHitParticles(x: number, y: number, element?: ElementType, colorOverride?: number) {
     const ELEMENT_HEX: Partial<Record<ElementType, number>> = {
       [ElementType.FIRE]:      0xff4400,
       [ElementType.WATER]:     0x2266ff,
@@ -1598,7 +1633,7 @@ export class GameScene extends Phaser.Scene {
       [ElementType.DARK]:      0xaa44ff,
       [ElementType.DIVINE]:    0xffd700,
     };
-    const color = element ? (ELEMENT_HEX[element] ?? 0xffffff) : 0xffffff;
+    const color = colorOverride ?? (element ? (ELEMENT_HEX[element] ?? 0xffffff) : 0xffffff);
     const count = 8;
 
     for (let i = 0; i < count; i++) {
@@ -2876,6 +2911,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private destroyCurrentZoneObjects() {
+    // Reset iframes — pas de clignotement résiduel après une transition de zone
+    this.iframeUntil = 0;
+    if (this.player?.active) this.player.setAlpha(1);
+
     // Destroy all tracked physics colliders/overlaps individually
     for (const c of this.physicsColliders) c.destroy();
     this.physicsColliders = [];
