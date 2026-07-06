@@ -1,330 +1,747 @@
-// src/scenes/BestiaryScene.ts
-// Scène Bestiaire — UI en 2 colonnes : liste gauche + détail droite.
-// Lancée depuis PauseScene, fermée via ESC.
+// ============================================================
+// BESTIARY SCENE — encyclopédie des créatures (style Dofus)
+// Liste scrollable à gauche (groupée par zone), panneau détail
+// à droite : portrait, badges, lore, butin avec drops cachés.
+//
+// UX (docs/design/UI_UX_GUIDELINES.md) :
+//  - overlay 0.88 + fade-in 300 ms
+//  - tap = action, feedback < 100 ms sur pointerdown
+//  - scroll = molette + drag vertical + flèches + touches ↑↓
+//  - bouton × rouge haut-droite (hit 48×48) + ESC (géré par GameScene)
+//  - shutdown() complet (touches, wheel, drag, timers)
+// ============================================================
 
-import Phaser from 'phaser';
-import { WorldState } from '../types';
-import { BESTIARY_DATA } from '../data/bestiary';
-import { BestiarySystem } from '../systems/BestiarySystem';
+import { WorldState, ElementType, ItemRarity, RARITY_COLORS } from '../types';
+import { UI, drawPanel, drawGlowPanel, drawBadge, pxStyle } from '../utils/UITheme';
 import { ENEMY_MAP } from '../data/enemies';
-import { UI, drawPanel, pxStyle } from '../utils/UITheme';
+import { BESTIARY_IDS, BESTIARY_RECORD, BestiaryDropData } from '../data/bestiary';
+import { BestiarySystem } from '../systems/BestiarySystem';
+import { ALL_ITEMS } from '../data/items';
+import { t, localizeEnemy, localizeItem } from '../i18n';
+import { GameScene } from './GameScene';
 
-// Largeur de la colonne liste gauche
-const LIST_W = 240;
-// Taille d'une ligne de liste
-const ITEM_H = 32;
-// Couleur par élément (pour l'icône de preview)
-const ELEMENT_COLORS: Record<string, number> = {
-  FIRE:      0xff4400,
-  EARTH:     0x88aa33,
-  WIND:      0xaaddff,
-  WATER:     0x2266ff,
-  LIGHTNING: 0xffee00,
-  ICE:       0x88ddff,
-  DARK:      0x8833cc,
-  DIVINE:    0xffd700,
-  NEUTRAL:   0xaaaaaa,
+// Couleurs élémentaires — mêmes valeurs que GameScene.ELEMENT_PROJECTILE_COLORS
+const ELEMENT_COLORS: Record<ElementType, number> = {
+  [ElementType.FIRE]:      0xff4400,
+  [ElementType.EARTH]:     0x88aa33,
+  [ElementType.WIND]:      0xaaddff,
+  [ElementType.WATER]:     0x2266ff,
+  [ElementType.LIGHTNING]: 0xffee00,
+  [ElementType.ICE]:       0x88ddff,
+  [ElementType.DARK]:      0x8833cc,
+  [ElementType.DIVINE]:    0xffffff,
+  [ElementType.NEUTRAL]:   0x888888,
 };
 
+/** Éléments clairs → texte de badge sombre pour garder le contraste. */
+const BRIGHT_ELEMENTS: ElementType[] = [
+  ElementType.LIGHTNING, ElementType.ICE, ElementType.WIND, ElementType.DIVINE,
+];
+
+/** Mapping élément → clé de zone (groupement de la liste). */
+const ZONE_HABITAT_KEYS: Partial<Record<ElementType, string>> = {
+  [ElementType.FIRE]:      'zone.ignis_reach',
+  [ElementType.EARTH]:     'zone.terravast',
+  [ElementType.WIND]:      'zone.zephyr_peaks',
+  [ElementType.WATER]:     'zone.abyssmar',
+  [ElementType.LIGHTNING]: 'zone.volterra',
+  [ElementType.ICE]:       'zone.glaciem',
+  [ElementType.DARK]:      'zone.malachars_spire',
+  [ElementType.NEUTRAL]:   'zone.grievy_town',
+  [ElementType.DIVINE]:    'zone.grievy_town',
+};
+
+type RowDef =
+  | { kind: 'header'; label: string; color: number }
+  | { kind: 'enemy'; id: string };
+
+const ENEMY_ROW_H  = 50;
+const HEADER_ROW_H = 22;
+const ROW_GAP      = 2;
+
 export class BestiaryScene extends Phaser.Scene {
+  private gameScene!: GameScene;
   private world!: WorldState;
-  private selectedIndex = 0;
 
-  // Keyboard refs pour cleanup dans shutdown()
-  private keyUp!:   Phaser.Input.Keyboard.Key;
-  private keyDown!: Phaser.Input.Keyboard.Key;
-  private keyEsc!:  Phaser.Input.Keyboard.Key;
+  private rows: RowDef[] = [];
+  private enemyRowIndices: number[] = [];
+  private scrollOffset = 0;
+  private maxScrollOffset = 0;
+  private lastVisibleIndex = 0;
+  private selectedId: string | null = null;
 
-  // Refs aux objets UI régénérés lors d'un changement de sélection
-  private detailPanel!: Phaser.GameObjects.Container;
-  private listPanel!:   Phaser.GameObjects.Container;
+  private listObjs:   Phaser.GameObjects.GameObject[] = [];
+  private detailObjs: Phaser.GameObjects.GameObject[] = [];
+  private tooltip: Phaser.GameObjects.Container | null = null;
+  private tooltipTimer: Phaser.Time.TimerEvent | null = null;
+  private tooltipJustOpened = false;
+
+  private keyUp:   Phaser.Input.Keyboard.Key | null = null;
+  private keyDown: Phaser.Input.Keyboard.Key | null = null;
+
+  private dragging  = false;
+  private dragAccum = 0;
+  private wheelHandler:   ((p: Phaser.Input.Pointer, o: unknown, dx: number, dy: number) => void) | null = null;
+  private pointerDownHandler: ((p: Phaser.Input.Pointer) => void) | null = null;
+  private pointerMoveHandler: ((p: Phaser.Input.Pointer) => void) | null = null;
+  private pointerUpHandler:   (() => void) | null = null;
+
+  // Layout (calculé dans create() depuis la caméra)
+  private LIST_X = 0; private LIST_Y = 0; private LIST_W = 0; private LIST_H = 0;
+  private DET_X = 0;  private DET_Y = 0;  private DET_W = 0;  private DET_H = 0;
+  private rowsTop = 0; private rowsBottom = 0;
 
   constructor() { super({ key: 'BestiaryScene' }); }
 
-  init(data: { world: WorldState }) {
-    this.world = data.world;
-    this.selectedIndex = 0;
+  init(data: { gameScene: GameScene; world?: WorldState }) {
+    this.gameScene = data.gameScene;
+    this.world     = data.world ?? data.gameScene.gameState.world;
+    this.rows = [];
+    this.enemyRowIndices = [];
+    this.scrollOffset = 0;
+    this.selectedId = null;
+    this.listObjs = [];
+    this.detailObjs = [];
+    this.tooltip = null;
+    this.tooltipTimer = null;
+    this.dragging = false;
+    this.dragAccum = 0;
   }
 
   create() {
     const { width: W, height: H } = this.cameras.main;
+    this.cameras.main.fadeIn(300, 0, 0, 0);
 
-    this.cameras.main.fadeIn(200, 0, 0, 0);
-
-    // Overlay opaque
+    // ── Overlay + cadre ──────────────────────────────────────
     this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88);
+    const frame = this.add.graphics();
+    drawPanel(frame, 6, 6, W - 12, H - 12);
 
-    // Panneau principal
-    const panelG = this.add.graphics();
-    drawPanel(panelG, 8, 8, W - 16, H - 16, UI.PANEL_BG, 0.97);
+    // ── Header ───────────────────────────────────────────────
+    this.add.text(W / 2, 24, t('bestiary.title'), pxStyle(12, UI.TXT_GOLD, true)).setOrigin(0.5);
 
-    // Titre
-    this.add.text(W / 2, 22, 'BESTIAIRE', pxStyle(12, UI.TXT_GOLD, true)).setOrigin(0.5);
+    const counts = BestiarySystem.counts(this.world);
+    const progressLabel = t('bestiary.progress')
+      .replace('{seen}',  String(counts.seen))
+      .replace('{slain}', String(counts.slain))
+      .replace('{total}', String(counts.total));
+    this.add.text(20, 24, progressLabel, pxStyle(7, UI.TXT_MUTED)).setOrigin(0, 0.5);
 
-    // Séparateur titre
-    const sepG = this.add.graphics();
-    sepG.lineStyle(1, UI.BORDER_LIT, 0.6);
-    sepG.beginPath();
-    sepG.moveTo(16, 38); sepG.lineTo(W - 16, 38);
-    sepG.strokePath();
+    // Bouton × (règle inter-écrans §7.1 : rouge, haut-droite, hit ≥ 44 px)
+    const closeTxt = this.add.text(W - 28, 24, '×', pxStyle(16, UI.TXT_RED)).setOrigin(0.5).setDepth(10);
+    const closeHit = this.add.rectangle(W - 28, 24, 48, 48, 0, 0)
+      .setInteractive({ useHandCursor: true }).setDepth(10);
+    closeHit.on('pointerover', () => closeTxt.setStyle({ color: UI.TXT_ORANGE }));
+    closeHit.on('pointerout',  () => closeTxt.setStyle({ color: UI.TXT_RED }));
+    closeHit.on('pointerdown', () => { this.flashAt(W - 28, 24, 48, 48); this.close(); });
 
-    // Séparateur vertical liste/détail
-    const sepV = this.add.graphics();
-    sepV.lineStyle(1, UI.BORDER_LIT, 0.4);
-    sepV.beginPath();
-    sepV.moveTo(LIST_W + 16, 42); sepV.lineTo(LIST_W + 16, H - 24);
-    sepV.strokePath();
+    const sep = this.add.graphics();
+    sep.lineStyle(1, UI.BORDER_LIT, 0.6);
+    sep.beginPath(); sep.moveTo(16, 42); sep.lineTo(W - 16, 42); sep.strokePath();
 
-    // Hint navigation
-    this.add.text(W / 2, H - 14, '↑ ↓  naviguer   ESC  fermer', pxStyle(5, UI.TXT_HINT)).setOrigin(0.5);
+    // ── Layout des panneaux ──────────────────────────────────
+    this.LIST_X = 16;  this.LIST_Y = 50;
+    this.LIST_W = 212; this.LIST_H = H - 50 - 26;
+    this.DET_X  = this.LIST_X + this.LIST_W + 8;
+    this.DET_Y  = 50;
+    this.DET_W  = W - this.DET_X - 16;
+    this.DET_H  = H - 50 - 26;
+    this.rowsTop    = this.LIST_Y + 24;
+    this.rowsBottom = this.LIST_Y + this.LIST_H - 24;
 
-    // Containers mutables
-    this.listPanel   = this.add.container(0, 0);
-    this.detailPanel = this.add.container(0, 0);
+    const listBg = this.add.graphics();
+    drawGlowPanel(listBg, this.LIST_X, this.LIST_Y, this.LIST_W, this.LIST_H, UI.BORDER_LIT, UI.BG_DEEP);
 
-    // Input
-    this.keyUp   = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
-    this.keyDown = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN);
-    this.keyEsc  = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    // Hint navigation (bas d'écran, hors des panneaux)
+    this.add.text(W / 2, H - 16, t('bestiary.hint'), pxStyle(6, UI.TXT_HINT)).setOrigin(0.5);
 
-    this.keyUp.on('down',   () => this.navigate(-1));
-    this.keyDown.on('down', () => this.navigate(1));
-    this.keyEsc.on('down',  () => this.close());
+    // ── Construction des lignes (groupées par zone) ──────────
+    this.buildRows();
+    this.maxScrollOffset = this.computeMaxOffset();
+
+    // Sélection initiale : premier ennemi découvert, sinon premier
+    const firstDiscovered = BESTIARY_IDS.find(id => BestiarySystem.peekEntry(this.world, id).discovered);
+    this.selectedId = firstDiscovered ?? BESTIARY_IDS[0] ?? null;
+    if (this.selectedId) this.ensureVisible(this.rowIndexOf(this.selectedId));
 
     this.renderList();
     this.renderDetail();
+
+    // ── Inputs ───────────────────────────────────────────────
+    this.setupInputs();
+
+    // Phaser n'appelle pas shutdown() automatiquement — câblage explicite
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
   }
 
-  // ── Navigation ───────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════
+  // DONNÉES DE LISTE
+  // ════════════════════════════════════════════════════════════
 
-  private navigate(dir: -1 | 1) {
-    const total = BESTIARY_DATA.length;
-    if (total === 0) return;
-    this.selectedIndex = (this.selectedIndex + dir + total) % total;
+  private buildRows() {
+    let lastZoneKey = '';
+    for (const id of BESTIARY_IDS) {
+      const data = BESTIARY_RECORD[id];
+      const def  = ENEMY_MAP[id];
+      if (!data || !def) continue;
+      const zoneKey = ZONE_HABITAT_KEYS[def.element] ?? 'zone.grievy_town';
+      if (zoneKey !== lastZoneKey) {
+        lastZoneKey = zoneKey;
+        this.rows.push({
+          kind: 'header',
+          label: t(zoneKey).toUpperCase(),
+          color: ELEMENT_COLORS[def.element] ?? ELEMENT_COLORS[ElementType.NEUTRAL],
+        });
+      }
+      this.enemyRowIndices.push(this.rows.length);
+      this.rows.push({ kind: 'enemy', id });
+    }
+  }
+
+  private rowIndexOf(enemyId: string): number {
+    return this.rows.findIndex(r => r.kind === 'enemy' && r.id === enemyId);
+  }
+
+  /** Dernier index de ligne entièrement visible depuis un offset donné. */
+  private lastVisibleFrom(offset: number): number {
+    let y = this.rowsTop;
+    let i = offset;
+    while (i < this.rows.length) {
+      const rh = this.rows[i].kind === 'header' ? HEADER_ROW_H : ENEMY_ROW_H;
+      if (y + rh > this.rowsBottom) break;
+      y += rh + ROW_GAP;
+      i++;
+    }
+    return i - 1;
+  }
+
+  private computeMaxOffset(): number {
+    for (let off = 0; off < this.rows.length; off++) {
+      if (this.lastVisibleFrom(off) >= this.rows.length - 1) return off;
+    }
+    return Math.max(0, this.rows.length - 1);
+  }
+
+  private ensureVisible(rowIndex: number) {
+    if (rowIndex < 0) return;
+    if (rowIndex < this.scrollOffset) {
+      const prev = this.rows[rowIndex - 1];
+      this.scrollOffset = prev && prev.kind === 'header' ? rowIndex - 1 : rowIndex;
+      return;
+    }
+    let guard = 0;
+    while (rowIndex > this.lastVisibleFrom(this.scrollOffset)
+           && this.scrollOffset < this.maxScrollOffset
+           && guard++ < this.rows.length) {
+      this.scrollOffset++;
+    }
+  }
+
+  private scroll(delta: number) {
+    const next = Phaser.Math.Clamp(this.scrollOffset + delta, 0, this.maxScrollOffset);
+    if (next === this.scrollOffset) return;
+    this.scrollOffset = next;
+    this.destroyTooltip();
     this.renderList();
-    this.renderDetail();
   }
 
-  // ── Rendu liste gauche ───────────────────────────────────────
+  // ════════════════════════════════════════════════════════════
+  // RENDU DE LA LISTE
+  // ════════════════════════════════════════════════════════════
 
   private renderList() {
-    const { height: H } = this.cameras.main;
-    this.listPanel.removeAll(true);
+    this.listObjs.forEach(o => o.destroy());
+    this.listObjs = [];
 
-    const maxVisible = Math.floor((H - 70) / ITEM_H);
-    const total = BESTIARY_DATA.length;
+    const x = this.LIST_X + 4;
+    const w = this.LIST_W - 8;
 
-    if (total === 0) {
-      const empty = this.add.text(16 + LIST_W / 2, H / 2, 'Aucune créature\ndans le bestiaire', {
-        ...pxStyle(7, UI.TXT_MUTED),
-        align: 'center',
-      }).setOrigin(0.5);
-      this.listPanel.add(empty);
-      return;
+    let y = this.rowsTop;
+    let i = this.scrollOffset;
+    while (i < this.rows.length) {
+      const row = this.rows[i];
+      const rh = row.kind === 'header' ? HEADER_ROW_H : ENEMY_ROW_H;
+      if (y + rh > this.rowsBottom) break;
+      if (row.kind === 'header') this.renderHeaderRow(row, x, y, w);
+      else                       this.renderEnemyRow(row.id, x, y, w);
+      y += rh + ROW_GAP;
+      i++;
     }
+    this.lastVisibleIndex = i - 1;
 
-    // Calcul fenêtre de scroll centrée sur la sélection
-    let startIdx = Math.max(0, this.selectedIndex - Math.floor(maxVisible / 2));
-    startIdx = Math.min(startIdx, Math.max(0, total - maxVisible));
-
-    for (let i = 0; i < maxVisible && startIdx + i < total; i++) {
-      const dataIdx  = startIdx + i;
-      const entry    = BESTIARY_DATA[dataIdx];
-      const state    = this.world.bestiary?.[entry.enemyId];
-      const isKnown  = state?.discovered ?? false;
-      const isActive = dataIdx === this.selectedIndex;
-
-      const itemY = 46 + i * ITEM_H;
-
-      // Fond de sélection
-      if (isActive) {
-        const selBg = this.add.graphics();
-        selBg.fillStyle(0x1a2a3a, 0.9);
-        selBg.fillRect(12, itemY - 2, LIST_W, ITEM_H - 2);
-        selBg.lineStyle(1, UI.CORNER, 0.6);
-        selBg.strokeRect(12, itemY - 2, LIST_W, ITEM_H - 2);
-        this.listPanel.add(selBg);
-      }
-
-      // Icône colorée (cercle représentant l'élément)
-      const enemyDef = ENEMY_MAP[entry.enemyId];
-      const elemColor = enemyDef
-        ? (ELEMENT_COLORS[enemyDef.element as string] ?? ELEMENT_COLORS['NEUTRAL'])
-        : ELEMENT_COLORS['NEUTRAL'];
-
-      const iconG = this.add.graphics();
-      if (isKnown) {
-        iconG.fillStyle(elemColor, 0.85);
-        iconG.fillCircle(26, itemY + ITEM_H / 2 - 2, 8);
-        iconG.lineStyle(1, 0xffffff, 0.3);
-        iconG.strokeCircle(26, itemY + ITEM_H / 2 - 2, 8);
-      } else {
-        iconG.fillStyle(0x333333, 0.5);
-        iconG.fillCircle(26, itemY + ITEM_H / 2 - 2, 8);
-      }
-      this.listPanel.add(iconG);
-
-      // Nom (ou ???)
-      const nameStr = isKnown ? entry.name : '???';
-      const col     = isKnown ? (isActive ? UI.TXT_GOLD : UI.TXT_PARCHMENT) : UI.TXT_MUTED;
-      const nameTxt = this.add.text(42, itemY + ITEM_H / 2 - 2, nameStr, pxStyle(7, col)).setOrigin(0, 0.5);
-      this.listPanel.add(nameTxt);
+    if (this.scrollOffset > 0) {
+      this.renderScrollArrow(this.LIST_Y + 11, '▲', () => this.scroll(-1));
     }
-
-    // Indicateurs de scroll si nécessaire
-    if (startIdx > 0) {
-      const arrowUp = this.add.text(LIST_W / 2 + 16, 44, '▲', pxStyle(6, UI.TXT_MUTED)).setOrigin(0.5);
-      this.listPanel.add(arrowUp);
-    }
-    if (startIdx + maxVisible < total) {
-      const arrowDown = this.add.text(LIST_W / 2 + 16, H - 28, '▼', pxStyle(6, UI.TXT_MUTED)).setOrigin(0.5);
-      this.listPanel.add(arrowDown);
+    if (this.lastVisibleIndex < this.rows.length - 1) {
+      this.renderScrollArrow(this.LIST_Y + this.LIST_H - 11, '▼', () => this.scroll(1));
     }
   }
 
-  // ── Rendu panneau détail droite ──────────────────────────────
-
-  private renderDetail() {
-    const { width: W, height: H } = this.cameras.main;
-    this.detailPanel.removeAll(true);
-
-    if (BESTIARY_DATA.length === 0) return;
-
-    const entry      = BESTIARY_DATA[this.selectedIndex];
-    if (!entry) return;
-
-    const state      = this.world.bestiary?.[entry.enemyId];
-    const isDiscov   = state?.discovered ?? false;
-    const isKilled   = state?.killed     ?? false;
-
-    const detailX = LIST_W + 24;
-    const detailW = W - detailX - 16;
-    let   curY    = 48;
-
-    if (!isDiscov) {
-      // Créature jamais rencontrée
-      const unk = this.add.text(detailX + detailW / 2, H / 2, '???', {
-        ...pxStyle(16, UI.TXT_MUTED),
-        align: 'center',
-      }).setOrigin(0.5);
-      this.detailPanel.add(unk);
-      const subunk = this.add.text(detailX + detailW / 2, H / 2 + 28, 'Explorez le monde\npour découvrir cette créature.', {
-        ...pxStyle(7, UI.TXT_HINT),
-        align: 'center',
-      }).setOrigin(0.5);
-      this.detailPanel.add(subunk);
-      return;
-    }
-
-    // Nom + habitat
-    const nameTxt = this.add.text(detailX, curY, entry.name, pxStyle(10, UI.TXT_GOLD, true)).setOrigin(0, 0);
-    this.detailPanel.add(nameTxt);
-    curY += 18;
-
-    const habTxt = this.add.text(detailX, curY, entry.habitat, pxStyle(6, UI.TXT_MUTED)).setOrigin(0, 0);
-    this.detailPanel.add(habTxt);
-    curY += 18;
-
-    // Séparateur
-    const sepG = this.add.graphics();
-    sepG.lineStyle(1, UI.BORDER_LIT, 0.4);
-    sepG.beginPath(); sepG.moveTo(detailX, curY); sepG.lineTo(detailX + detailW, curY); sepG.strokePath();
-    this.detailPanel.add(sepG);
-    curY += 10;
-
-    // Description courte
-    const descTxt = this.add.text(detailX, curY, entry.shortDesc, {
-      ...pxStyle(7, UI.TXT_PARCHMENT),
-      wordWrap: { width: detailW, useAdvancedWrap: true },
-    }).setOrigin(0, 0);
-    this.detailPanel.add(descTxt);
-    curY += descTxt.height + 14;
-
-    // Lore (débloqué après premier kill)
-    if (isKilled) {
-      const loreG = this.add.graphics();
-      loreG.fillStyle(0x0a0a18, 0.5);
-      loreG.fillRect(detailX - 4, curY - 4, detailW + 8, 0); // sera étiré dynamiquement
-      this.detailPanel.add(loreG);
-
-      const loreTxt = this.add.text(detailX, curY, entry.lore, {
-        ...pxStyle(6, UI.TXT_MUTED),
-        wordWrap: { width: detailW, useAdvancedWrap: true },
-        fontStyle: 'italic',
-      }).setOrigin(0, 0);
-      this.detailPanel.add(loreTxt);
-      // Retracer le fond lore avec la vraie hauteur
-      loreG.clear();
-      loreG.fillStyle(0x0a0a18, 0.5);
-      loreG.fillRect(detailX - 4, curY - 4, detailW + 8, loreTxt.height + 10);
-      curY += loreTxt.height + 18;
-    } else {
-      const loreHint = this.add.text(detailX, curY, '[ Lore débloqué après le premier kill ]', {
-        ...pxStyle(6, UI.TXT_HINT),
-        fontStyle: 'italic',
-      }).setOrigin(0, 0);
-      this.detailPanel.add(loreHint);
-      curY += 20;
-    }
-
-    // Séparateur drops
-    const sepG2 = this.add.graphics();
-    sepG2.lineStyle(1, UI.BORDER_LIT, 0.3);
-    sepG2.beginPath(); sepG2.moveTo(detailX, curY); sepG2.lineTo(detailX + detailW, curY); sepG2.strokePath();
-    this.detailPanel.add(sepG2);
-    curY += 10;
-
-    // Titre section drops
-    const dropTitle = this.add.text(detailX, curY, 'BUTINS', pxStyle(7, UI.TXT_GOLD)).setOrigin(0, 0);
-    this.detailPanel.add(dropTitle);
-    curY += 16;
-
-    if (entry.drops.length === 0) {
-      const noDrops = this.add.text(detailX, curY, 'Aucun butin connu.', pxStyle(6, UI.TXT_MUTED)).setOrigin(0, 0);
-      this.detailPanel.add(noDrops);
-    } else {
-      for (const drop of entry.drops) {
-        if (curY > H - 40) break; // eviter de sortir de l'écran
-
-        const isRevealed = !drop.isHidden || BestiarySystem.isDropRevealed(this.world, entry.enemyId, drop.itemId);
-
-        // Puce
-        const dotG = this.add.graphics();
-        dotG.fillStyle(isRevealed ? UI.CORNER : 0x333333, 1);
-        dotG.fillCircle(detailX + 4, curY + 6, 3);
-        this.detailPanel.add(dotG);
-
-        // Nom de l'item (ou ???)
-        const itemName = isRevealed ? drop.itemId : '???';
-        const itemCol  = isRevealed ? UI.TXT_PARCHMENT : UI.TXT_MUTED;
-        const itemTxt  = this.add.text(detailX + 14, curY, itemName, pxStyle(6, itemCol)).setOrigin(0, 0);
-        this.detailPanel.add(itemTxt);
-
-        // Taux de drop
-        const rateTxt = this.add.text(detailX + detailW, curY, `${drop.dropRatePct}%`, pxStyle(6, UI.TXT_MUTED)).setOrigin(1, 0);
-        this.detailPanel.add(rateTxt);
-
-        curY += 14;
-      }
-    }
+  private renderScrollArrow(cy: number, glyph: string, onTap: () => void) {
+    const cx = this.LIST_X + this.LIST_W / 2;
+    const txt = this.add.text(cx, cy, glyph, pxStyle(8, UI.TXT_GOLD)).setOrigin(0.5).setAlpha(0.8);
+    const hit = this.add.rectangle(cx, cy, this.LIST_W - 8, 26, 0, 0)
+      .setInteractive({ useHandCursor: true });
+    hit.on('pointerover', () => txt.setAlpha(1));
+    hit.on('pointerout',  () => txt.setAlpha(0.8));
+    hit.on('pointerdown', () => {
+      this.flashAt(cx, cy, this.LIST_W - 8, 22);
+      onTap();
+    });
+    this.listObjs.push(txt, hit);
   }
 
-  // ── Fermeture ────────────────────────────────────────────────
+  private renderHeaderRow(row: { label: string; color: number }, x: number, y: number, w: number) {
+    const cy = y + HEADER_ROW_H / 2;
+    const g = this.add.graphics();
+    g.fillStyle(row.color, 1);
+    g.fillRect(x + 6, cy - 3, 6, 6);
+    const txt = this.add.text(x + 18, cy, row.label, pxStyle(6, UI.TXT_GOLD)).setOrigin(0, 0.5);
+    g.lineStyle(1, UI.BORDER_LIT, 0.3);
+    g.beginPath();
+    g.moveTo(x + 22 + txt.width, cy);
+    g.lineTo(x + w - 4, cy);
+    g.strokePath();
+    this.listObjs.push(g, txt);
+  }
 
-  private close() {
-    this.cameras.main.fadeOut(200, 0, 0, 0);
-    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
-      this.scene.stop();
-      // Relancer PauseScene si elle est pausée (elle se met en pause lors du launch de BestiaryScene)
-      if (this.scene.isPaused('PauseScene')) {
-        this.scene.resume('PauseScene');
-      }
+  private renderEnemyRow(id: string, x: number, y: number, w: number) {
+    const def = ENEMY_MAP[id];
+    if (!def) return;
+    const entry = BestiarySystem.peekEntry(this.world, id);
+    const isSelected = id === this.selectedId;
+    const elemColor  = ELEMENT_COLORS[def.element] ?? ELEMENT_COLORS[ElementType.NEUTRAL];
+    const cy = y + ENEMY_ROW_H / 2;
+
+    const baseFill = isSelected ? UI.BTN_BG_HOVER : UI.BTN_BG;
+    const bg = this.add.rectangle(x + w / 2, cy, w, ENEMY_ROW_H, baseFill, 1)
+      .setInteractive({ useHandCursor: true });
+
+    const deco = this.add.graphics();
+    if (isSelected) {
+      deco.fillStyle(UI.CORNER, 1);
+      deco.fillRect(x, y, 3, ENEMY_ROW_H);
+      deco.lineStyle(1, UI.BTN_BORDER_HOV, 0.7);
+    } else {
+      deco.lineStyle(1, UI.SLOT_BORDER, 0.6);
+    }
+    deco.strokeRect(x, y, w, ENEMY_ROW_H);
+
+    // Pastille d'élément
+    deco.fillStyle(entry.discovered ? elemColor : 0x3a3a44, 1);
+    deco.fillCircle(x + 19, cy, 9);
+    deco.lineStyle(1, 0x000000, 0.6);
+    deco.strokeCircle(x + 19, cy, 9);
+    if (def.isBoss && entry.discovered) {
+      deco.lineStyle(1, UI.CORNER, 0.9);
+      deco.strokeCircle(x + 19, cy, 12);
+    }
+    this.listObjs.push(bg, deco);
+
+    if (!entry.discovered) {
+      this.listObjs.push(
+        this.add.text(x + 19, cy, '?', pxStyle(8, UI.TXT_WHITE, true)).setOrigin(0.5),
+      );
+    }
+
+    const rawName = entry.discovered ? localizeEnemy(def).name : t('bestiary.unknown');
+    const name = rawName.length > 14 ? rawName.slice(0, 13) + '..' : rawName;
+    const nameColor = !entry.discovered ? UI.TXT_MUTED
+      : def.isBoss  ? UI.TXT_GOLD
+      : def.isElite ? UI.TXT_ORANGE
+      : UI.TXT_PARCHMENT;
+    this.listObjs.push(
+      this.add.text(x + 34, y + 10, name, pxStyle(7, nameColor)),
+    );
+
+    const lvlLabel = entry.discovered
+      ? t('bestiary.level').replace('{lvl}', String(def.baseLevel))
+      : t('bestiary.level_unknown');
+    this.listObjs.push(
+      this.add.text(x + 34, y + 30, lvlLabel, pxStyle(6, UI.TXT_MUTED)),
+    );
+    if (entry.killed) {
+      this.listObjs.push(
+        this.add.text(x + w - 8, y + 30, t('bestiary.slain'), pxStyle(6, UI.TXT_RED)).setOrigin(1, 0),
+      );
+    } else if (entry.discovered) {
+      this.listObjs.push(
+        this.add.text(x + w - 8, y + 30, t('bestiary.seen'), pxStyle(6, UI.TXT_GREEN)).setOrigin(1, 0),
+      );
+    }
+
+    bg.on('pointerover', () => { if (id !== this.selectedId) bg.setFillStyle(0x181628, 1); });
+    bg.on('pointerout',  () => { if (id !== this.selectedId) bg.setFillStyle(UI.BTN_BG, 1); });
+    bg.on('pointerdown', () => {
+      this.flashAt(x + w / 2, cy, w, ENEMY_ROW_H);
+      this.selectEnemy(id);
     });
   }
 
+  private selectEnemy(id: string) {
+    if (this.selectedId === id) return;
+    this.selectedId = id;
+    this.destroyTooltip();
+    this.renderList();
+    this.renderDetail();
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // PANNEAU DÉTAIL
+  // ════════════════════════════════════════════════════════════
+
+  private renderDetail() {
+    this.detailObjs.forEach(o => o.destroy());
+    this.detailObjs = [];
+    this.destroyTooltip();
+    if (!this.selectedId) return;
+
+    const def   = ENEMY_MAP[this.selectedId];
+    const data  = BESTIARY_RECORD[this.selectedId];
+    if (!def || !data) return;
+    const entry = BestiarySystem.peekEntry(this.world, this.selectedId);
+    const elemColor = ELEMENT_COLORS[def.element] ?? ELEMENT_COLORS[ElementType.NEUTRAL];
+    const accent    = entry.discovered ? elemColor : UI.BORDER_LIT;
+    const pad = 14;
+
+    const bg = this.add.graphics();
+    drawGlowPanel(bg, this.DET_X, this.DET_Y, this.DET_W, this.DET_H, accent, UI.BG_MID);
+    this.detailObjs.push(bg);
+
+    // ── Portrait (96×96) ─────────────────────────────────────
+    const px = this.DET_X + pad;
+    const py = this.DET_Y + pad;
+    const pFrame = this.add.graphics();
+    drawGlowPanel(pFrame, px, py, 96, 96, accent, 0x080810);
+    this.detailObjs.push(pFrame);
+
+    if (entry.discovered && this.textures.exists(def.sprite)) {
+      this.detailObjs.push(
+        this.add.image(px + 48, py + 48, def.sprite).setDisplaySize(80, 80),
+      );
+    } else {
+      const ph = this.add.graphics();
+      ph.fillStyle(entry.discovered ? elemColor : 0x444450, 0.85);
+      ph.fillCircle(px + 48, py + 48, 32);
+      ph.lineStyle(2, 0x000000, 0.5);
+      ph.strokeCircle(px + 48, py + 48, 32);
+      this.detailObjs.push(ph);
+      const glyph = entry.discovered
+        ? def.name.split(' ').map(wd => wd[0] ?? '').join('').slice(0, 2).toUpperCase()
+        : '?';
+      this.detailObjs.push(
+        this.add.text(px + 48, py + 48, glyph, pxStyle(entry.discovered ? 12 : 18, UI.TXT_WHITE, true)).setOrigin(0.5),
+      );
+    }
+
+    // ── Bloc identité (à droite du portrait) ─────────────────
+    const ix = px + 96 + 14;
+    const iw = this.DET_X + this.DET_W - pad - ix;
+    let iy = py + 2;
+
+    const displayName = entry.discovered ? localizeEnemy(def).name : t('bestiary.unknown');
+    const nameHex = entry.discovered ? '#' + elemColor.toString(16).padStart(6, '0') : UI.TXT_MUTED;
+    const nameTxt = this.add.text(ix, iy, displayName, {
+      ...pxStyle(12, nameHex, true),
+      wordWrap: { width: iw },
+    });
+    this.detailObjs.push(nameTxt);
+    iy += nameTxt.height + 8;
+
+    // Habitat — toujours visible : guide le joueur vers la créature manquante
+    const zoneKey = ZONE_HABITAT_KEYS[def.element];
+    const habitatStr = zoneKey ? t(zoneKey) : data.habitat;
+    this.detailObjs.push(
+      this.add.text(ix, iy, `${t('bestiary.habitat')} ${habitatStr}`, pxStyle(7, UI.TXT_MUTED)),
+    );
+    iy += 16;
+
+    // Badges : niveau, élément, boss/élite
+    let bx = ix;
+    bx += this.addInfoBadge(bx, iy + 7,
+      entry.discovered ? t('bestiary.level').replace('{lvl}', String(def.baseLevel)) : t('bestiary.level_unknown'),
+      0x1a2030, UI.TXT_GOLD);
+    if (entry.discovered) {
+      const elemTxtColor = BRIGHT_ELEMENTS.includes(def.element) ? '#101018' : '#f5edd0';
+      bx += this.addInfoBadge(bx, iy + 7, t(`element.${def.element}`), elemColor, elemTxtColor);
+      if (def.isBoss)       bx += this.addInfoBadge(bx, iy + 7, t('bestiary.boss'),  0x551111, '#ffdddd');
+      else if (def.isElite) bx += this.addInfoBadge(bx, iy + 7, t('bestiary.elite'), 0x553311, '#ffe6cc');
+    }
+    iy += 24;
+
+    // Faiblesse + compteur de victoires
+    if (entry.discovered && def.weakness) {
+      const wkColor = ELEMENT_COLORS[def.weakness] ?? ELEMENT_COLORS[ElementType.NEUTRAL];
+      const wkLabel = this.add.text(ix, iy, t('bestiary.weakness'), pxStyle(7, UI.TXT_MUTED));
+      const wkValue = this.add.text(ix + wkLabel.width + 6, iy, t(`element.${def.weakness}`),
+        pxStyle(7, '#' + wkColor.toString(16).padStart(6, '0')));
+      this.detailObjs.push(wkLabel, wkValue);
+      iy += 14;
+    }
+    if (entry.kills > 0) {
+      this.detailObjs.push(
+        this.add.text(ix, iy, t('bestiary.kills').replace('{n}', String(entry.kills)), pxStyle(7, UI.TXT_MUTED)),
+      );
+    }
+
+    // ── Section Histoire ─────────────────────────────────────
+    const loreY = this.DET_Y + pad + 96 + 18;
+    this.addSectionTitle(t('bestiary.lore_title'), loreY);
+
+    let loreText: string;
+    let loreColor: string;
+    if (!entry.discovered)   { loreText = t('bestiary.not_discovered'); loreColor = UI.TXT_MUTED; }
+    else if (!entry.killed)  { loreText = t('bestiary.lore_locked');    loreColor = UI.TXT_MUTED; }
+    else {
+      loreText  = data.lore;
+      loreColor = UI.TXT_PARCHMENT;
+    }
+    this.detailObjs.push(
+      this.add.text(this.DET_X + pad, loreY + 18, loreText, {
+        ...pxStyle(7, loreColor),
+        wordWrap: { width: this.DET_W - pad * 2 },
+        lineSpacing: 5,
+      }),
+    );
+
+    // ── Section Butin (zone basse = zone de pouce) ───────────
+    const dropsY = this.DET_Y + this.DET_H - 130;
+    this.addSectionTitle(t('bestiary.loot_title'), dropsY);
+
+    if (!entry.discovered) {
+      this.detailObjs.push(
+        this.add.text(this.DET_X + pad, dropsY + 22, t('bestiary.loot_unknown'), pxStyle(7, UI.TXT_MUTED)),
+      );
+      return;
+    }
+
+    const SLOT = 48;
+    const GAP  = 10;
+    data.drops.forEach((drop, idx) => {
+      const sx = this.DET_X + pad + idx * (SLOT + GAP);
+      const sy = dropsY + 22;
+      this.renderDropSlot(drop, entry.revealedDrops, sx, sy, SLOT);
+    });
+  }
+
+  /** Badge d'info compact — retourne la largeur occupée (badge + marge). */
+  private addInfoBadge(x: number, cy: number, label: string, bgColor: number, textColor: string): number {
+    const w = label.length * 6 + 12;
+    const badge = drawBadge(this, x + w / 2, cy, label, bgColor, textColor);
+    this.detailObjs.push(badge);
+    return w + 8;
+  }
+
+  private addSectionTitle(label: string, y: number) {
+    const txt = this.add.text(this.DET_X + 14, y, label, pxStyle(7, UI.TXT_GOLD)).setOrigin(0, 0.5);
+    const g = this.add.graphics();
+    g.lineStyle(1, UI.BORDER_LIT, 0.5);
+    g.beginPath();
+    g.moveTo(this.DET_X + 14 + txt.width + 8, y);
+    g.lineTo(this.DET_X + this.DET_W - 14, y);
+    g.strokePath();
+    this.detailObjs.push(txt, g);
+  }
+
+  private renderDropSlot(drop: BestiaryDropData, revealedDrops: string[], sx: number, sy: number, size: number) {
+    const item = ALL_ITEMS[drop.itemId];
+    const revealed = !drop.isHidden || revealedDrops.includes(drop.itemId);
+    const rarityHexStr = item ? RARITY_COLORS[item.rarity] : RARITY_COLORS[ItemRarity.COMMON];
+    const rarityHex = parseInt(rarityHexStr.slice(1), 16);
+
+    const g = this.add.graphics();
+    if (revealed) {
+      g.fillStyle(UI.SLOT_BG, 1);
+      g.fillRect(sx, sy, size, size);
+      g.lineStyle(2, rarityHex, 1);
+      g.strokeRect(sx, sy, size, size);
+    } else {
+      g.fillStyle(0x111111, 1);
+      g.fillRect(sx, sy, size, size);
+      g.lineStyle(1, UI.SLOT_BORDER, 1);
+      g.strokeRect(sx, sy, size, size);
+    }
+    this.detailObjs.push(g);
+
+    if (revealed && item) {
+      if (this.textures.exists(item.icon)) {
+        this.detailObjs.push(
+          this.add.image(sx + size / 2, sy + size / 2, item.icon).setDisplaySize(32, 32),
+        );
+      } else {
+        const sq = this.add.graphics();
+        sq.fillStyle(rarityHex, 0.5);
+        sq.fillRect(sx + 10, sy + 10, size - 20, size - 20);
+        this.detailObjs.push(sq);
+      }
+    } else {
+      this.detailObjs.push(
+        this.add.text(sx + size / 2, sy + size / 2, '???', pxStyle(7, UI.TXT_WHITE, true)).setOrigin(0.5),
+      );
+    }
+
+    // Taux de drop sous le slot — info immédiate sans tap (dropRatePct / 100 → ratio 0-1)
+    const rate = drop.dropRatePct / 100;
+    this.detailObjs.push(
+      this.add.text(sx + size / 2, sy + size + 10, this.formatRate(rate),
+        pxStyle(6, revealed ? UI.TXT_MUTED : UI.TXT_HINT)).setOrigin(0.5),
+    );
+
+    // Hit zone élargie : tap = tooltip détaillé
+    const hit = this.add.rectangle(sx + size / 2, sy + size / 2, size + 6, size + 6, 0, 0)
+      .setInteractive({ useHandCursor: true });
+    hit.on('pointerdown', () => {
+      this.flashAt(sx + size / 2, sy + size / 2, size, size);
+      this.showDropTooltip(drop, revealed, sx, sy);
+    });
+    this.detailObjs.push(hit);
+  }
+
+  private formatRate(rate: number): string {
+    const pct = rate * 100;
+    return pct >= 10 ? `${Math.round(pct)}%` : pct >= 1 ? `${pct.toFixed(1)}%` : `${pct.toFixed(2)}%`;
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // TOOLTIP DE DROP
+  // ════════════════════════════════════════════════════════════
+
+  private showDropTooltip(drop: BestiaryDropData, revealed: boolean, slotX: number, slotY: number) {
+    this.destroyTooltip();
+    this.tooltipJustOpened = true;
+
+    const item = revealed ? ALL_ITEMS[drop.itemId] : undefined;
+    const TW = 208;
+    const padT = 10;
+
+    const parts: Phaser.GameObjects.GameObject[] = [];
+    let ty = padT;
+
+    const nameLabel = item ? localizeItem(item).name : t('bestiary.hidden_drop_name');
+    const nameColor = item ? RARITY_COLORS[item.rarity] : UI.TXT_WHITE;
+    const nameTxt = this.add.text(padT, ty, nameLabel, {
+      ...pxStyle(8, nameColor),
+      wordWrap: { width: TW - padT * 2 },
+    });
+    parts.push(nameTxt);
+    ty += nameTxt.height + 6;
+
+    const rate = drop.dropRatePct / 100;
+    const rateTxt = this.add.text(padT, ty,
+      t('bestiary.drop_rate').replace('{rate}', this.formatRate(rate)),
+      pxStyle(7, UI.TXT_GOLD));
+    parts.push(rateTxt);
+    ty += rateTxt.height + 6;
+
+    const descRaw = item ? localizeItem(item).description : t('bestiary.hidden_drop_desc');
+    const desc = descRaw.length > 110 ? descRaw.slice(0, 108) + '..' : descRaw;
+    const descTxt = this.add.text(padT, ty, desc, {
+      ...pxStyle(6, UI.TXT_MUTED),
+      wordWrap: { width: TW - padT * 2 },
+      lineSpacing: 3,
+    });
+    parts.push(descTxt);
+    ty += descTxt.height + padT;
+
+    const g = this.add.graphics();
+    drawPanel(g, 0, 0, TW, ty, UI.PANEL_BG);
+
+    const tx = Phaser.Math.Clamp(slotX + 24 - TW / 2, this.DET_X + 6, this.DET_X + this.DET_W - TW - 6);
+    const tyPos = Math.max(this.DET_Y + 6, slotY - ty - 8);
+    this.tooltip = this.add.container(tx, tyPos, [g, ...parts]).setDepth(30);
+
+    this.tooltipTimer = this.time.delayedCall(3000, () => this.destroyTooltip());
+  }
+
+  private destroyTooltip() {
+    if (this.tooltipTimer) { this.tooltipTimer.remove(); this.tooltipTimer = null; }
+    if (this.tooltip) { this.tooltip.destroy(); this.tooltip = null; }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // INPUTS
+  // ════════════════════════════════════════════════════════════
+
+  private setupInputs() {
+    const kb = this.input.keyboard;
+    if (kb) {
+      this.keyUp   = kb.addKey(Phaser.Input.Keyboard.KeyCodes.UP,   true, true);
+      this.keyDown = kb.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN, true, true);
+      this.keyUp.on('down',   () => this.navigate(-1));
+      this.keyDown.on('down', () => this.navigate(1));
+    }
+
+    const onWheel = (_p: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number) =>
+      this.scroll(dy > 0 ? 1 : -1);
+    this.wheelHandler = onWheel;
+    this.input.on('wheel', onWheel);
+
+    const onDown = (p: Phaser.Input.Pointer) => {
+      if (this.tooltipJustOpened) { this.tooltipJustOpened = false; }
+      else this.destroyTooltip();
+      if (p.x >= this.LIST_X && p.x <= this.LIST_X + this.LIST_W
+        && p.y >= this.LIST_Y && p.y <= this.LIST_Y + this.LIST_H) {
+        this.dragging = true;
+        this.dragAccum = 0;
+      }
+    };
+    const onMove = (p: Phaser.Input.Pointer) => {
+      if (!this.dragging || !p.isDown) return;
+      this.dragAccum += p.y - p.prevPosition.y;
+      while (this.dragAccum <= -ENEMY_ROW_H) { this.scroll(1);  this.dragAccum += ENEMY_ROW_H; }
+      while (this.dragAccum >=  ENEMY_ROW_H) { this.scroll(-1); this.dragAccum -= ENEMY_ROW_H; }
+    };
+    const onUp = () => { this.dragging = false; };
+    this.pointerDownHandler = onDown;
+    this.pointerMoveHandler = onMove;
+    this.pointerUpHandler   = onUp;
+    this.input.on('pointerdown', onDown);
+    this.input.on('pointermove', onMove);
+    this.input.on('pointerup',   onUp);
+  }
+
+  /** Navigation clavier ↑/↓ dans les ennemis (headers sautés), avec wrap. */
+  private navigate(dir: number) {
+    if (!this.selectedId || this.enemyRowIndices.length === 0) return;
+    const currentRow = this.rowIndexOf(this.selectedId);
+    const pos = this.enemyRowIndices.indexOf(currentRow);
+    const nextPos = (pos + dir + this.enemyRowIndices.length) % this.enemyRowIndices.length;
+    const nextRow = this.rows[this.enemyRowIndices[nextPos]];
+    if (nextRow.kind !== 'enemy') return;
+    this.selectedId = nextRow.id;
+    this.ensureVisible(this.enemyRowIndices[nextPos]);
+    this.destroyTooltip();
+    this.renderList();
+    this.renderDetail();
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // HELPERS / LIFECYCLE
+  // ════════════════════════════════════════════════════════════
+
+  /** Flash blanc bref — feedback tactile < 100 ms. */
+  private flashAt(cx: number, cy: number, w: number, h: number) {
+    const flash = this.add.rectangle(cx, cy, w, h, 0xffffff, 0.2).setDepth(40);
+    this.tweens.add({
+      targets: flash, alpha: 0, duration: 150,
+      onComplete: () => flash.destroy(),
+    });
+  }
+
+  private close() {
+    this.gameScene.setPaused(false);
+    this.scene.stop();
+  }
+
   shutdown() {
-    if (this.keyUp)   this.input.keyboard?.removeKey(this.keyUp);
-    if (this.keyDown) this.input.keyboard?.removeKey(this.keyDown);
-    if (this.keyEsc)  this.input.keyboard?.removeKey(this.keyEsc);
+    if (this.keyUp)   { this.keyUp.removeAllListeners();   this.input.keyboard?.removeKey(this.keyUp, true);   this.keyUp = null; }
+    if (this.keyDown) { this.keyDown.removeAllListeners(); this.input.keyboard?.removeKey(this.keyDown, true); this.keyDown = null; }
+    if (this.wheelHandler)       { this.input.off('wheel', this.wheelHandler);             this.wheelHandler = null; }
+    if (this.pointerDownHandler) { this.input.off('pointerdown', this.pointerDownHandler); this.pointerDownHandler = null; }
+    if (this.pointerMoveHandler) { this.input.off('pointermove', this.pointerMoveHandler); this.pointerMoveHandler = null; }
+    if (this.pointerUpHandler)   { this.input.off('pointerup', this.pointerUpHandler);     this.pointerUpHandler = null; }
+    this.destroyTooltip();
+    this.listObjs = [];
+    this.detailObjs = [];
   }
 }
