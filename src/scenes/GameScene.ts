@@ -228,6 +228,10 @@ export class GameScene extends Phaser.Scene {
   private activeEnemies: Map<string, ActiveEnemy> = new Map();
   private enemyHpBars: Map<string, { bg: Phaser.GameObjects.Rectangle; bar: Phaser.GameObjects.Rectangle; baseW: number }> = new Map();
   private enemyCrowns: Map<string, Phaser.GameObjects.Text> = new Map();
+  // ── PSEUDO-2.5D : y-sort + ombres portées ────────────────────
+  private playerShadow!: Phaser.GameObjects.Ellipse;
+  private enemyShadows: Map<string, Phaser.GameObjects.Ellipse> = new Map();
+  private npcShadows: Phaser.GameObjects.Ellipse[] = [];
   private cooldowns: Record<string, number> = {};
   private dashCooldown = 0;
   /** Invincibilité post-hit : timestamp (ms) jusqu'auquel le joueur ne peut pas être touché. */
@@ -277,6 +281,8 @@ export class GameScene extends Phaser.Scene {
     this.activeEnemies      = new Map();
     this.enemyHpBars        = new Map();
     this.enemyCrowns        = new Map();
+    this.enemyShadows       = new Map();
+    this.npcShadows         = [];
     this.lootableLooted     = new Set();
     this._homingProjectiles = [];
     this.cooldowns           = {};
@@ -418,6 +424,7 @@ export class GameScene extends Phaser.Scene {
     this.wasDashReady = dashReady;
 
     this.tickEnemyAI(dt);
+    this.updateDepthSort();
     this.tickXpOrbs();
 
     if (this.activeEnemies.size === 0 && time - this.lastRegenTime > 2000) {
@@ -1784,7 +1791,7 @@ export class GameScene extends Phaser.Scene {
     const sprite = this.physics.add.sprite(x, y, texKey);
     sprite.setDisplaySize(28, 28);
     (sprite.body as Phaser.Physics.Arcade.Body).setSize(24, 24);
-    sprite.setDepth(4);
+    sprite.setDepth(this.entityDepthForY(y));
 
     const active = CombatSystem.spawnEnemy(minionDef, this.gameState.player.level);
     active.x = x;
@@ -1792,6 +1799,10 @@ export class GameScene extends Phaser.Scene {
     sprite.name = active.instanceId;
     this.activeEnemies.set(active.instanceId, active);
     this.enemies.add(sprite);
+
+    const shadow = this.add.ellipse(x, y + 28 * 0.42, 28 * 0.8, 28 * 0.32, 0x000000, 0.35)
+      .setDepth(this.entityDepthForY(y) - 0.001);
+    this.enemyShadows.set(active.instanceId, shadow);
 
     // HP bar
     const barW = 32;
@@ -1879,6 +1890,37 @@ export class GameScene extends Phaser.Scene {
     if (crown) {
       crown.setPosition(sprite.x, sprite.y - sprite.displayHeight / 2 - 18);
     }
+  }
+
+  // ── PSEUDO-2.5D : y-sort ─────────────────────────────────────
+  // Toutes les entités (joueur, ennemis, PNJ) partagent la bande de profondeur
+  // fractionnaire [4, 5.9]. Elle reste toujours sous les barres de vie/VFX (depth >= 8)
+  // et au-dessus des télégraphes au sol (depth <= 3) : aucun autre setDepth() du fichier
+  // n'a besoin d'être renuméroté. Le plafond n'est atteint qu'à y=9500px, bien au-delà
+  // des plus grandes maps du jeu (4000×3200) — la marge est volontaire.
+  private entityDepthForY(y: number): number {
+    return 4 + Math.min(Math.max(y, 0) / 5000, 1.9);
+  }
+
+  private updateDepthSort() {
+    const playerDepth = this.entityDepthForY(this.player.y);
+    this.player.setDepth(playerDepth);
+    if (this.playerShadow?.active) {
+      this.playerShadow.setPosition(this.player.x, this.player.y + this.player.displayHeight * 0.42);
+      this.playerShadow.setDepth(playerDepth - 0.001);
+    }
+
+    this.enemies.getChildren().forEach((go) => {
+      const sprite = go as Phaser.Physics.Arcade.Sprite;
+      if (!sprite.active) return;
+      const depth = this.entityDepthForY(sprite.y);
+      sprite.setDepth(depth);
+      const shadow = this.enemyShadows.get(sprite.name);
+      if (shadow?.active) {
+        shadow.setPosition(sprite.x, sprite.y + sprite.displayHeight * 0.42);
+        shadow.setDepth(depth - 0.001);
+      }
+    });
   }
 
   private moveEnemyToward(
@@ -2075,6 +2117,8 @@ export class GameScene extends Phaser.Scene {
     if (barData) { barData.bg.destroy(); barData.bar.destroy(); this.enemyHpBars.delete(activeEnemy.instanceId); }
     const crown = this.enemyCrowns.get(activeEnemy.instanceId);
     if (crown) { crown.destroy(); this.enemyCrowns.delete(activeEnemy.instanceId); }
+    const shadow = this.enemyShadows.get(activeEnemy.instanceId);
+    this.enemyShadows.delete(activeEnemy.instanceId);
 
     const xpMult   = activeEnemy.isElite ? 2.5 : 1;
     const deathX   = sprite.x;
@@ -2085,9 +2129,9 @@ export class GameScene extends Phaser.Scene {
     sprite.disableBody(true, false);
 
     if (isBoss) {
-      this.playBossDeathSequence(sprite, activeEnemy, enemyDef);
+      this.playBossDeathSequence(sprite, activeEnemy, enemyDef, shadow);
     } else {
-      this.playEnemyDeathSequence(sprite);
+      this.playEnemyDeathSequence(sprite, shadow);
     }
 
     const loot = LootSystem.rollLoot(
@@ -2135,7 +2179,7 @@ export class GameScene extends Phaser.Scene {
     hidden.forEach(s => this.events.emit('skill_unlocked', s));
   }
 
-  private playEnemyDeathSequence(sprite: Phaser.Physics.Arcade.Sprite) {
+  private playEnemyDeathSequence(sprite: Phaser.Physics.Arcade.Sprite, shadow?: Phaser.GameObjects.Ellipse) {
     sprite.setTintFill(0xffffff);
     this.tweens.add({
       targets: sprite,
@@ -2146,12 +2190,16 @@ export class GameScene extends Phaser.Scene {
       ease: 'Power3',
       onComplete: () => { if (sprite.active) sprite.destroy(); },
     });
+    if (shadow?.active) {
+      this.tweens.add({ targets: shadow, alpha: 0, duration: 350, ease: 'Power3', onComplete: () => { if (shadow.active) shadow.destroy(); } });
+    }
   }
 
   private playBossDeathSequence(
     sprite: Phaser.Physics.Arcade.Sprite,
     _ae: ActiveEnemy,
     enemyDef: Enemy,
+    shadow?: Phaser.GameObjects.Ellipse,
   ) {
     const { width: W, height: H } = this.cameras.main;
 
@@ -2181,6 +2229,9 @@ export class GameScene extends Phaser.Scene {
           ease: 'Power2',
           onComplete: () => { if (sprite.active) sprite.destroy(); },
         });
+      }
+      if (shadow?.active) {
+        this.tweens.add({ targets: shadow, alpha: 0, duration: 800, ease: 'Power2', onComplete: () => { if (shadow.active) shadow.destroy(); } });
       }
     });
 
@@ -3221,7 +3272,10 @@ export class GameScene extends Phaser.Scene {
     this.player.setDisplaySize(28, 28);
     this.player.setBodySize(24, 24);
     this.player.setCollideWorldBounds(true);
-    this.player.setDepth(5);
+    this.player.setDepth(this.entityDepthForY(startY));
+
+    this.playerShadow = this.add.ellipse(startX, startY + 12, 22, 9, 0x000000, 0.35)
+      .setDepth(this.entityDepthForY(startY) - 0.001);
   }
 
   private createEnemiesForZone(zoneId: string) {
@@ -3252,7 +3306,7 @@ export class GameScene extends Phaser.Scene {
         const dispSize = isElite ? 44 : 28;
         sprite.setDisplaySize(dispSize, dispSize);
         (sprite.body as Phaser.Physics.Arcade.Body).setSize(dispSize - 4, dispSize - 4);
-        sprite.setDepth(4);
+        sprite.setDepth(this.entityDepthForY(ey));
 
         const active = CombatSystem.spawnEnemy(def, this.gameState.player.level);
         active.x       = ex;
@@ -3266,6 +3320,10 @@ export class GameScene extends Phaser.Scene {
         sprite.name = active.instanceId;
         this.activeEnemies.set(active.instanceId, active);
         this.enemies.add(sprite);
+
+        const shadow = this.add.ellipse(ex, ey + dispSize * 0.42, dispSize * 0.8, dispSize * 0.32, 0x000000, 0.35)
+          .setDepth(this.entityDepthForY(ey) - 0.001);
+        this.enemyShadows.set(active.instanceId, shadow);
 
         // HP bar (bg + foreground)
         const barW = dispSize + 4;
@@ -3298,7 +3356,7 @@ export class GameScene extends Phaser.Scene {
         const bossSprite = this.physics.add.sprite(bx, by, bossTexKey);
         bossSprite.setDisplaySize(64, 64);
         (bossSprite.body as Phaser.Physics.Arcade.Body).setSize(60, 60);
-        bossSprite.setDepth(5);
+        bossSprite.setDepth(this.entityDepthForY(by));
 
         const activeBoss = CombatSystem.spawnEnemy(bossDef, this.gameState.player.level);
         activeBoss.x = bx;
@@ -3306,6 +3364,10 @@ export class GameScene extends Phaser.Scene {
         bossSprite.name = activeBoss.instanceId;
         this.activeEnemies.set(activeBoss.instanceId, activeBoss);
         this.enemies.add(bossSprite);
+
+        const bossShadow = this.add.ellipse(bx, by + 64 * 0.42, 64 * 0.8, 64 * 0.32, 0x000000, 0.4)
+          .setDepth(this.entityDepthForY(by) - 0.001);
+        this.enemyShadows.set(activeBoss.instanceId, bossShadow);
 
         const bossBarW = 72;
         const bossBg = this.add.rectangle(bx, by - 44, bossBarW, 8, 0x220000).setDepth(8);
@@ -3352,16 +3414,20 @@ export class GameScene extends Phaser.Scene {
       const sprite = this.physics.add.staticImage(pos.x, pos.y, texKey);
       sprite.setDisplaySize(28, 28);
       (sprite.body as Phaser.Physics.Arcade.StaticBody).setSize(24, 24);
-      sprite.setDepth(4);
+      sprite.setDepth(this.entityDepthForY(pos.y));
       sprite.setData('npcId', npc.id);
       sprite.refreshBody();
       this.npcs.add(sprite);
+
+      const npcShadow = this.add.ellipse(pos.x, pos.y + 12, 22, 9, 0x000000, 0.3)
+        .setDepth(this.entityDepthForY(pos.y) - 0.001);
+      this.npcShadows.push(npcShadow);
 
       // Name label above NPC
       const nameLabel = this.add.text(pos.x, pos.y - 22, npc.name, {
         fontSize: '9px', color: '#ffee88', fontFamily: 'monospace',
         stroke: '#000000', strokeThickness: 2,
-      }).setOrigin(0.5, 1).setDepth(5);
+      }).setOrigin(0.5, 1).setDepth(this.entityDepthForY(pos.y) + 1);
       this.zoneLabels.push(nameLabel);
       // nearbyNPC est détecté par distance dans update() — pas d'overlap nécessaire
     }
@@ -3638,11 +3704,13 @@ export class GameScene extends Phaser.Scene {
     for (const img of this.teleportZoneImages) img.destroy();
     this.teleportZoneImages = [];
 
-    // Enemies — destroy HP bars and crowns first, then sprites
+    // Enemies — destroy HP bars, crowns and shadows first, then sprites
     this.enemyHpBars.forEach(({ bg, bar }) => { bg.destroy(); bar.destroy(); });
     this.enemyHpBars.clear();
     this.enemyCrowns.forEach(crown => crown.destroy());
     this.enemyCrowns.clear();
+    this.enemyShadows.forEach(shadow => shadow.destroy());
+    this.enemyShadows.clear();
     this.activeEnemies.clear();
     this.enemies.destroy(true);
 
@@ -3655,6 +3723,8 @@ export class GameScene extends Phaser.Scene {
 
     // NPCs
     this.npcs.destroy(true);
+    for (const shadow of this.npcShadows) shadow.destroy();
+    this.npcShadows = [];
 
     // Wall group
     this.wallGroup.destroy(true);
