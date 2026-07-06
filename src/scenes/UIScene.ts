@@ -307,14 +307,16 @@ export class UIScene extends Phaser.Scene {
     // une bande orange visible au-dessus de la barre verte.
     if (this.hpBarDelayed > this.targetHp) {
       this.hpBarDelayed = Phaser.Math.Linear(this.hpBarDelayed, this.targetHp, Math.min(1, 1.5 * dt));
+      // Snap sub-pixel : évite l'orange résiduel dû au seuil de redraw ci-dessous
+      if (this.hpBarDelayed - this.targetHp < 0.003) this.hpBarDelayed = this.targetHp;
     } else {
       this.hpBarDelayed = this.targetHp;
     }
 
     if (
-      Math.abs(this.lerpHp - prevHp) > 0.001 ||
-      Math.abs(this.lerpMp - prevMp) > 0.001 ||
-      Math.abs(this.hpBarDelayed - prevDelayed) > 0.001
+      Math.abs(this.lerpHp - prevHp) > 0.0005 ||
+      Math.abs(this.lerpMp - prevMp) > 0.0005 ||
+      Math.abs(this.hpBarDelayed - prevDelayed) > 0.0005
     ) {
       this.drawLerpedBars();
     }
