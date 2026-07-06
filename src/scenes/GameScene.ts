@@ -949,7 +949,8 @@ export class GameScene extends Phaser.Scene {
     }
     this._interactHandler = (e: KeyboardEvent) => {
       if (e.keyCode === b.interact && !this.menuOpen && !this.isInDialogue && !this.isTraveling) {
-        if (this.nearbyNPC) this.startNPCDialogue(this.nearbyNPC);
+        if (this.nearbyNPC) { this.startNPCDialogue(this.nearbyNPC); return; }
+        if (this.nearbyLootable) { this.interactWithLootable(this.nearbyLootable); }
       }
     };
     window.addEventListener('keydown', this._interactHandler);

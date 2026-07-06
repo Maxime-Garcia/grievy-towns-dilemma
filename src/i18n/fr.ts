@@ -166,7 +166,7 @@ export const FR: Record<string, string> = {
   'notif.loot_plant': '[Plante]',
   'notif.loot_mineral': '[Minerai]',
   'hint.talk': '[F] Parler',
-  'hint.loot': '[J] Ramasser',
+  'hint.loot': '[F] Ramasser',
   'notif.loot_shrine': '[Sanctuaire]',
   'notif.level_up': '✦ Niveau {level} ! ✦',
   'notif.quest_done': 'Quête accomplie !',
