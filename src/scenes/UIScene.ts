@@ -67,7 +67,7 @@ export class UIScene extends Phaser.Scene {
     const { width: W, height: H } = this.cameras.main;
 
     // ── DEV: build badge (top-left) — retirer avant release ─────────
-    const BUILD_LABEL = 'fix: F ramasse sync Phaser JustDown (c2dc233)';
+    const BUILD_LABEL = 'feat: assets procéduraux items + popup conso (15dca5f)';
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 4, badgePad + 4, BUILD_LABEL, {
       fontSize: '10px', color: '#000000', fontFamily: 'monospace', fontStyle: 'bold',
