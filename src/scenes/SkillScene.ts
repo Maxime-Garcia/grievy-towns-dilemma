@@ -30,7 +30,7 @@ const BRANCH_META: Record<string, { label: string; color: number; desc: string }
 };
 
 // Points-spent gate per tier (mirrors TalentSystem.canUnlock logic)
-const TIER_GATE: Record<1 | 2 | 3 | 4, number> = { 1: 0, 2: 2, 3: 4, 4: 6 };
+const TIER_GATE: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 2, 3: 4, 4: 6, 5: 10 };
 
 // ── Node status ───────────────────────────────────────────────────────────────
 type NodeStatus = 'unlocked' | 'available' | 'locked' | 'ngplus_only';
@@ -46,13 +46,13 @@ function getNodeStatus(player: PlayerState, nodeId: string): NodeStatus {
 }
 
 // ── Tier vertical centre ──────────────────────────────────────────────────────
-function tierCenterY(tier: number, screenH: number): number {
-  const contentTop    = TAB_H * 2 + HDR_H;         // 100 at 600 px
-  const contentBottom = screenH - BOTTOM_H;         // 452 at 600 px
+function tierCenterY(tier: number, screenH: number, maxTier = 4): number {
+  const contentTop    = TAB_H * 2 + HDR_H;
+  const contentBottom = screenH - BOTTOM_H;
   const available     = contentBottom - contentTop;
-  // span: 3 gaps + 1 node height to cover tiers 1-4
-  const totalSpan = (4 - 1) * TIER_GAP + NODE_SZ;  // 270 + 60 = 330
-  const topPad    = Math.max(10, (available - totalSpan) / 2);
+  const topMax        = Math.max(4, maxTier);
+  const totalSpan     = (topMax - 1) * TIER_GAP + NODE_SZ;
+  const topPad        = Math.max(10, (available - totalSpan) / 2);
   return contentTop + topPad + NODE_SZ / 2 + (tier - 1) * TIER_GAP;
 }
 
@@ -400,13 +400,14 @@ export class SkillScene extends Phaser.Scene {
     }
 
     const tiers   = [...byTier.keys()].sort((a, b) => a - b);
+    const maxTier = tiers[tiers.length - 1] ?? 4;
     const centerX = W / 2;
 
     // Pre-compute (cx, cy) per node id
     const nodePos = new Map<string, { cx: number; cy: number }>();
     tiers.forEach(tier => {
       const tierNodes = byTier.get(tier)!;
-      const cy  = tierCenterY(tier, H);
+      const cy  = tierCenterY(tier, H, maxTier);
       const cxs = tierNodeXs(tierNodes.length, centerX);
       tierNodes.forEach((node, i) => {
         nodePos.set(node.id, { cx: cxs[i]!, cy });

@@ -101,7 +101,7 @@ export class ShopScene extends Phaser.Scene {
       bg.on('pointerout', () => {
         bg.setFillStyle(this.gameScene.gameState.player.gold >= entry.price ? UI.BTN_BG : UI.PANEL_BG);
       });
-      bg.on('pointerdown', () => this.buyItem(entry, i));
+      bg.on('pointerdown', () => this.buyItem(entry));
     });
 
     // ── Bottom bar ───────────────────────────────────────────────
@@ -116,7 +116,7 @@ export class ShopScene extends Phaser.Scene {
     this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.I).once('down',   () => this.closeShop());
   }
 
-  private buyItem(entry: ShopEntry, rowIndex: number) {
+  private buyItem(entry: ShopEntry) {
     const player = this.gameScene.gameState.player;
     if (player.gold < entry.price) return;
     const item = ALL_ITEMS[entry.itemId];

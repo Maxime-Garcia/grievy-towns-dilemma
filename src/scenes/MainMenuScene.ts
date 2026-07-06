@@ -461,6 +461,7 @@ export class MainMenuScene extends Phaser.Scene {
       btn.on('pointerover', () => btn.setStyle({ color: UI.TXT_WHITE }));
       btn.on('pointerout',  () => btn.setStyle({ color: col }));
       btn.on('pointerdown', () => {
+        elems.forEach(e => e.destroy());
         this.transitionTo('NameInputScene', { slot: i });
       });
       elems.push(btn);
@@ -510,6 +511,7 @@ export class MainMenuScene extends Phaser.Scene {
         const state = SaveSystem.load(i);
         if (state) {
           state.saveSlot = i;
+          elems.forEach(e => e.destroy());
           this.transitionTo('GameScene', { gameState: state });
         }
       });
