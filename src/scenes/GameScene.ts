@@ -15,6 +15,8 @@ import { getZoneLayout, ZoneLayout, LootableObject, WaterArea } from '../data/zo
 import { ALL_ITEMS } from '../data/items';
 import { loadBindings, KeyBindings } from '../data/keyBindings';
 import { t, localizeItem } from '../i18n';
+import { BestiarySystem } from '../systems/BestiarySystem';
+import { getBestiaryEntry } from '../data/bestiary';
 
 const ELEMENT_PROJECTILE_COLORS: Partial<Record<ElementType, number>> = {
   [ElementType.FIRE]:      0xff4400,
@@ -856,7 +858,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.pause();
 
     // Stop overlay scenes immediately
-    for (const key of ['PauseScene', 'InventoryScene', 'SkillScene', 'DialogueScene', 'ShopScene']) {
+    for (const key of ['PauseScene', 'InventoryScene', 'SkillScene', 'DialogueScene', 'ShopScene', 'BestiaryScene']) {
       if (this.scene.isActive(key) || this.scene.isPaused(key)) this.scene.stop(key);
     }
 
@@ -998,6 +1000,17 @@ export class GameScene extends Phaser.Scene {
       const aggroRange = def.aggroRange ?? 220;
       const attackRange = def.attackRange ?? (behavior === 'ranged' ? 300 : 50);
       const moveSpeed  = def.moveSpeed ?? 90;
+
+      // Bestiaire — découverte au premier contact (entrée dans la portée d'aggro)
+      if (dist < aggroRange && !sprite.getData('bestiary_discovered')) {
+        sprite.setData('bestiary_discovered', true);
+        const isNew = BestiarySystem.discover(this.gameState.world, ae.enemyId);
+        if (isNew) {
+          const bestiaryData = getBestiaryEntry(ae.enemyId);
+          const creatureName = bestiaryData?.name ?? def.name;
+          this.events.emit('new_creature_discovered', { enemyId: ae.enemyId, name: creatureName });
+        }
+      }
 
       switch (behavior) {
         case 'patrol': {
@@ -1390,10 +1403,15 @@ export class GameScene extends Phaser.Scene {
       activeEnemy.level, this.gameState.player,
     );
 
+    // Bestiaire — premier kill
+    BestiarySystem.recordKill(this.gameState.world, activeEnemy.enemyId);
+
     this.gameState.player.gold += loot.gold;
     for (const { item, quantity } of loot.items) {
       LootSystem.addToInventory(this.gameState.player, item, quantity);
       this.events.emit('item_looted', { item, quantity });
+      // Bestiaire — révéler les drops hidden au premier loot
+      BestiarySystem.revealDrop(this.gameState.world, activeEnemy.enemyId, item.id);
     }
 
     this.spawnXpOrbs(deathX, deathY, Math.floor(loot.xp * xpMult));

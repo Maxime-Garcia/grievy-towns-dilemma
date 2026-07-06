@@ -40,6 +40,7 @@ export const FR: Record<string, string> = {
   'pause.resume': 'Reprendre',
   'pause.inventory': 'Inventaire',
   'pause.skills': 'Compétences',
+  'pause.bestiary': 'Bestiaire',
   'pause.save': 'Sauvegarder',
   'pause.mainmenu': 'Menu principal',
   'pause.esc_hint': '[Échap] reprendre',
