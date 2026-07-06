@@ -1,7 +1,7 @@
 import { GameState, SaveData, PlayerState, WorldState, EndingChoice } from '../types';
 import { ProgressionSystem } from './ProgressionSystem';
 
-const SAVE_VERSION = '1.4.0';
+const SAVE_VERSION = '1.4.1';
 const SAVE_KEY_PREFIX = 'gtd_save_';
 const MAX_SLOTS = 3;
 
@@ -52,6 +52,19 @@ const MIGRATION_MAP: Record<string, (state: GameState) => GameState> = {
     world: {
       ...state.world,
       bestiary: (state.world as any).bestiary ?? {},
+    },
+  }),
+  // Ajout du compteur kills dans chaque BestiaryEntryState
+  '1.4.0': (state) => ({
+    ...state,
+    version: '1.4.1',
+    world: {
+      ...state.world,
+      bestiary: Object.fromEntries(
+        Object.entries((state.world as any).bestiary ?? {}).map(([id, e]: [string, any]) => [
+          id, { ...e, kills: e.kills ?? 0 },
+        ])
+      ),
     },
   }),
 };

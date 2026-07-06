@@ -599,6 +599,7 @@ export interface PlayerState {
 export interface BestiaryEntryState {
   discovered: boolean;     // true au premier contact (notification affichée)
   killed: boolean;         // true au premier kill (lore complet débloqué)
+  kills: number;           // compteur de kills (pour révélation progressive des drops)
   revealedDrops: string[]; // itemIds des drops hidden révélés après premier loot
 }
 

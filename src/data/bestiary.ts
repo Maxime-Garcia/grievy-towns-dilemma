@@ -758,3 +758,11 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
 export function getBestiaryEntry(enemyId: string): BestiaryEnemyData | undefined {
   return BESTIARY_DATA.find(e => e.enemyId === enemyId);
 }
+
+/** IDs dans l'ordre canonique du bestiaire (même ordre que BESTIARY_DATA). */
+export const BESTIARY_IDS: string[] = BESTIARY_DATA.map(e => e.enemyId);
+
+/** Lookup rapide par enemyId — même données que BESTIARY_DATA. */
+export const BESTIARY_RECORD: Record<string, BestiaryEnemyData> = Object.fromEntries(
+  BESTIARY_DATA.map(e => [e.enemyId, e]),
+);
