@@ -301,7 +301,13 @@ export class UIScene extends Phaser.Scene {
     this.lerpMp = Phaser.Math.Linear(this.lerpMp, this.targetMp, Math.min(1, speed));
     // Traîne "drain retardé" : converge plus lentement (6/s) vers le ratio HP réel —
     // reste visible en orange derrière la barre verte le temps de rattraper.
-    this.hpBarDelayed = Phaser.Math.Linear(this.hpBarDelayed, this.targetHp, Math.min(1, 6 * dt));
+    // Traîne uniquement vers le bas (drain) — snap immédiat sur soin pour éviter
+    // une bande orange visible au-dessus de la barre verte.
+    if (this.hpBarDelayed > this.targetHp) {
+      this.hpBarDelayed = Phaser.Math.Linear(this.hpBarDelayed, this.targetHp, Math.min(1, 6 * dt));
+    } else {
+      this.hpBarDelayed = this.targetHp;
+    }
 
     if (
       Math.abs(this.lerpHp - prevHp) > 0.001 ||

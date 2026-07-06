@@ -1596,7 +1596,7 @@ export class GameScene extends Phaser.Scene {
   // (mêlée charger, mêlée générique, projectile ennemi).
   private applyPlayerHitFx() {
     this.cameras.main.shake(150, 0.006);
-    this.cameras.main.flash(100, 200, 0, 0, false);
+    this.cameras.main.flash(100, 200, 0, 0, true);
     this.spawnHitParticles(this.player.x, this.player.y, undefined, 0xff3333);
   }
 
