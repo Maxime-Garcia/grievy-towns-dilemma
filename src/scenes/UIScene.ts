@@ -65,7 +65,7 @@ export class UIScene extends Phaser.Scene {
     const { width: W, height: H } = this.cameras.main;
 
     // ── DEV: build badge (top-left) — retirer avant release ─────────
-    const BUILD_LABEL = 'feat: ui-stats-combat-polish — talents + StatsSystem + InventoryUX (549ac37)';
+    const BUILD_LABEL = 'DIORAMA: mainmenu pixel art landscape (a34d0d7)';
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 4, badgePad + 4, BUILD_LABEL, {
       fontSize: '10px', color: '#000000', fontFamily: 'monospace', fontStyle: 'bold',
