@@ -1,148 +1,126 @@
 import { SaveSystem } from '../systems/SaveSystem';
-import { UI, drawGlowPanel, drawGlow, pxStyle } from '../utils/UITheme';
+import { UI, drawGlowPanel, pxStyle } from '../utils/UITheme';
 import { t } from '../i18n';
 
 const GAME_VERSION = 'v0.7.0';
 
-// ── Fond animé — constantes ───────────────────────────────────────────────────
-// Ciel crépusculaire : dégradé vertical en bandes (pixel art, pas de blur)
-const SKY_TOP    = 0x0a0a1f;   // nuit profonde
-const SKY_BOTTOM = 0x1a0a0a;   // braise à l'horizon (le monde qui se ternit)
-const SKY_BANDS  = 16;
-
-// Silhouettes de montagnes — 3 plans, du plus lointain au plus proche.
-// Chaque ridge est périodique sur la largeur W (scroll infini sans couture).
-// Points : [fraction de W, hauteur en px au-dessus de la baseline].
-const RIDGE_FAR: ReadonlyArray<readonly [number, number]> = [
-  [0.00, 34], [0.09, 58], [0.16, 40], [0.26, 76], [0.33, 52],
-  [0.44, 66], [0.52, 30], [0.62, 84], [0.71, 48], [0.82, 62], [0.92, 38],
-];
-const RIDGE_MID: ReadonlyArray<readonly [number, number]> = [
-  [0.00, 22], [0.11, 52], [0.20, 30], [0.30, 64], [0.41, 36],
-  [0.50, 58], [0.61, 26], [0.73, 70], [0.84, 40], [0.93, 28],
-];
-const RIDGE_NEAR: ReadonlyArray<readonly [number, number]> = [
-  [0.00, 14], [0.13, 40], [0.24, 20], [0.37, 50], [0.48, 26],
-  [0.60, 44], [0.72, 18], [0.85, 54], [0.94, 24],
-];
-
-// Couleurs des plans (désaturées, sombres — INSPIRATIONS.md : lumière ternissante)
-const COL_FAR   = 0x181832;
-const COL_MID   = 0x121226;
-const COL_NEAR  = 0x0d0c1c;
-const COL_CLIFF = 0x0a0916;
-const COL_HERO  = 0x08070f;
-
-// Vitesses de parallax (px/s) — lointain lent, proche plus rapide
-const SPEED_FAR  = 2.5;
-const SPEED_MID  = 4.5;
-const SPEED_NEAR = 7.5;
-
-// Étoiles à pulsation — positions relatives fixes (rendu identique à chaque
-// ouverture du menu, pas de Math.random dans create()).
-const PULSE_STARS: ReadonlyArray<readonly [number, number, number]> = [
-  // [fx, fy, durée de pulsation ms]
-  [0.08, 0.14, 1900],
-  [0.16, 0.42, 2600],
-  [0.24, 0.09, 2200],
-  [0.31, 0.36, 2900],
-  [0.44, 0.06, 2400],
-  [0.58, 0.31, 2100],
-  [0.71, 0.08, 2700],
-  [0.83, 0.35, 2000],
-  [0.90, 0.17, 2500],
-  [0.94, 0.40, 2300],
-];
+// ── Diorama crépusculaire — palette ──────────────────────────────────────────
+// Ciel gauche (coucher de soleil)
+const SKY_LEFT_TOP    = 0xc45c28;
+const SKY_LEFT_MID    = 0xe87a35;
+const SKY_LEFT_HORIZ  = 0xf5a050;
+// Ciel droit (nuit)
+const SKY_RIGHT_TOP   = 0x0d1333;
+const SKY_RIGHT_MID   = 0x1a2555;
+const SKY_RIGHT_HORIZ = 0x2a3870;
+// Soleil / Lune
+const SUN_HALO  = 0xffe080;
+const SUN_CORE  = 0xffffd0;
+const MOON_COL  = 0xe8eeff;
+// Montagnes
+const MTNL1 = 0x3a4580;
+const MTNL2 = 0x2a3570;
+const MTNL3 = 0x1f4060;
+const MTNL4 = 0x1a3040;
+const SNOW  = 0xd0d8e0;
+// Végétation
+const GRASS_BRIGHT  = 0x4a9020;
+const GRASS_MID     = 0x65b030;
+const GRASS_DARK    = 0x2d6010;
+const PINE_DARK     = 0x1a4028;
+const PINE_TRUNK    = 0x3a2010;
+// Roche
+const ROCK_LIGHT    = 0x708090;
+const ROCK_SHADOW   = 0x506070;
+const ROCK_EDGE     = 0x3a4a5a;
+// Fleurs
+const FLOWER_PINK   = 0xff80a0;
+const FLOWER_WHITE  = 0xfff0d0;
+const FLOWER_YELLOW = 0xffff80;
+// Héros
+const HERO_COL = 0x1a1020;
 
 export class MainMenuScene extends Phaser.Scene {
-  // Couches parallax (dessinées sur 2×W, translatées puis rebouclées)
-  private layerFar!:  Phaser.GameObjects.Graphics;
-  private layerMid!:  Phaser.GameObjects.Graphics;
-  private layerNear!: Phaser.GameObjects.Graphics;
-  private offFar  = 0;
-  private offMid  = 0;
-  private offNear = 0;
+  // TileSprites nuages (scrollés dans update)
+  private cloudsFar!:  Phaser.GameObjects.TileSprite;
+  private cloudsNear!: Phaser.GameObjects.TileSprite;
 
-  // Silhouette du personnage (respiration sinusoïdale)
+  // Silhouette héros
   private hero!:     Phaser.GameObjects.Graphics;
   private heroBaseY = 0;
 
-  // Garde anti double-tap pendant le fade out de transition
+  // Garde anti double-tap fade out
   private transitioning = false;
 
   constructor() { super({ key: 'MainMenuScene' }); }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // create
+  // ─────────────────────────────────────────────────────────────────────────────
   create() {
     this.transitioning = false;
-    this.cameras.main.fadeIn(300, 0, 0, 0);
+    this.cameras.main.fadeIn(400, 0, 0, 0);
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
 
-    // ── Fond animé (ciel → astres → montagnes → falaise + héros) ──
-    this.drawSky(W, H);
-    this.drawStars(W, H);
-    this.drawMoons(W, H);
+    // Fond diorama (depth croissant arrière → avant)
+    this.drawSky(W, H);              // depth 0–2
+    this.drawClouds(W, H);           // depth 5 & 8
+    this.drawMountainLayer(1, W, H); // depth 15
+    this.drawMountainLayer(2, W, H); // depth 20
+    this.drawMountainLayer(3, W, H); // depth 25
+    this.drawMountainLayer(4, W, H); // depth 30
+    this.drawForeground(W, H);       // depth 40–60
+    this.drawHero(W, H);             // depth 70
 
-    this.layerFar  = this.buildRidge(COL_FAR,  Math.round(H * 0.62), RIDGE_FAR,  W, H);
-    this.layerMid  = this.buildRidge(COL_MID,  Math.round(H * 0.74), RIDGE_MID,  W, H);
-    this.layerNear = this.buildRidge(COL_NEAR, Math.round(H * 0.86), RIDGE_NEAR, W, H);
+    // Voile de lisibilité
+    this.add.rectangle(W / 2, H / 2, W, H, 0x060810, 0.22)
+      .setDepth(80).setScrollFactor(0);
 
-    this.drawCliffAndHero(W, H);
-
-    // Voile de lisibilité : assombrit légèrement le fond sous les textes
-    this.add.rectangle(W / 2, H / 2, W, H, 0x060810, 0.28);
-
-    // Cadre décoratif — bordure seule, le fond reste visible
-    const frame = this.add.graphics();
+    // ── Cadre décoratif ──
+    const frame = this.add.graphics().setDepth(85).setScrollFactor(0);
     frame.lineStyle(1, UI.SEPARATOR, 1);
     frame.strokeRoundedRect(6, 6, W - 12, H - 12, 6);
     frame.lineStyle(1, UI.BORDER_LIT, 0.3);
     frame.strokeRoundedRect(8, 8, W - 16, H - 16, 4);
 
-    // Subtle separator lines (top and bottom horizontal)
-    const deco = this.add.graphics();
+    const deco = this.add.graphics().setDepth(85).setScrollFactor(0);
     deco.lineStyle(1, UI.SEPARATOR, 1);
     deco.beginPath(); deco.moveTo(18, 96);     deco.lineTo(W - 18, 96);     deco.strokePath();
     deco.beginPath(); deco.moveTo(18, H - 70); deco.lineTo(W - 18, H - 70); deco.strokePath();
     deco.lineStyle(1, UI.GLOW_GOLD, 0.18);
     deco.beginPath(); deco.moveTo(W / 2 - 120, 96); deco.lineTo(W / 2 + 120, 96); deco.strokePath();
 
-    // ── Title (halo doré + pulsation lumineuse douce) ──
-    const titleGlow = this.add.graphics().setAlpha(0);
-    drawGlow(titleGlow, W / 2 - 250, 22, 500, 30, UI.GLOW_GOLD, 0.9);
+    // ── Titre ── halo doré derrière le texte (dégradé radial pixel art)
+    const titleGlow = this.add.graphics().setAlpha(0).setDepth(90).setScrollFactor(0);
+    titleGlow.fillStyle(UI.GLOW_GOLD, 0.06); titleGlow.fillEllipse(W / 2, 40, 520, 60);
+    titleGlow.fillStyle(UI.GLOW_GOLD, 0.10); titleGlow.fillEllipse(W / 2, 40, 400, 44);
+    titleGlow.fillStyle(UI.GLOW_GOLD, 0.15); titleGlow.fillEllipse(W / 2, 40, 300, 32);
 
     const title = this.add.text(W / 2, 36, "GRIEVY TOWN'S DILEMMA", {
       ...pxStyle(24, UI.TXT_GOLD, true),
       stroke: '#000000',
       strokeThickness: 5,
-    }).setOrigin(0.5).setAlpha(0);
+    }).setOrigin(0.5).setAlpha(0).setDepth(91).setScrollFactor(0);
 
     this.tweens.add({
-      targets: [title, titleGlow],
-      alpha: 1,
-      duration: 500,
-      ease: 'Quad.easeOut',
+      targets: [title, titleGlow], alpha: 1, duration: 500, ease: 'Quad.easeOut',
       onComplete: () => {
-        // Pulsation infinie : le titre respire entre 0.9 et 1.0
         this.tweens.add({
-          targets: title, alpha: 0.9, duration: 2000,
-          yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+          targets: title, alpha: 0.9, duration: 2000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
         });
         this.tweens.add({
-          targets: titleGlow, alpha: 0.55, duration: 2000,
-          yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+          targets: titleGlow, alpha: 0.55, duration: 2000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
         });
       },
     });
 
     this.add.text(W / 2, 64, t('menu.subtitle'), pxStyle(8, UI.TXT_MUTED))
-      .setOrigin(0.5);
-
-    // Phrase inspirationnelle — le dilemme central (INSPIRATIONS.md §5)
+      .setOrigin(0.5).setDepth(91).setScrollFactor(0);
     this.add.text(W / 2, 82, '« Chaque victoire est une perte. »', pxStyle(7, UI.TXT_HINT))
-      .setOrigin(0.5);
+      .setOrigin(0.5).setDepth(91).setScrollFactor(0);
 
-    // ── Buttons (entrée échelonnée : 0 / 80 / 160 ms) ─
+    // ── Boutons ──
     const slots      = SaveSystem.listSlots();
     const hasAnySave = slots.some(s => s !== null);
 
@@ -153,212 +131,404 @@ export class MainMenuScene extends Phaser.Scene {
         () => this.showLoadMenu(slots));
     }
 
-    // ── Save slot cards ───────────────────────────
-    this.add.text(W / 2, 276, t('menu.save_slots'), pxStyle(7, UI.TXT_HINT)).setOrigin(0.5);
+    // ── Save slot cards ──
+    this.add.text(W / 2, 276, t('menu.save_slots'), pxStyle(7, UI.TXT_HINT))
+      .setOrigin(0.5).setDepth(91).setScrollFactor(0);
 
     for (let i = 0; i < 3; i++) {
       const s    = slots[i];
       const cy   = 298 + i * 56;
-      const card = this.add.graphics().setAlpha(0);
-      drawGlowPanel(card, W / 2 - 200, cy, 400, 44, UI.SEPARATOR, UI.BG_MID, 4, 0.92);
+      const card = this.add.graphics().setAlpha(0).setDepth(90).setScrollFactor(0);
+      drawGlowPanel(card, W / 2 - 200, cy, 400, 44, UI.SEPARATOR, UI.BG_MID, 4);
 
       const cardTexts: Phaser.GameObjects.Text[] = [];
       if (s) {
         cardTexts.push(
-          this.add.text(W / 2 - 188, cy + 8,  `${t('menu.slot')} ${i + 1}`, pxStyle(7, UI.TXT_GOLD)),
-          this.add.text(W / 2 - 188, cy + 24, `${s.playerName}  Lv.${s.level}`, pxStyle(7, UI.TXT_PARCHMENT)),
-          this.add.text(W / 2 + 190, cy + 8,  `${s.clearedZones}/6 zones`, pxStyle(7, UI.TXT_MUTED)).setOrigin(1, 0),
-          this.add.text(W / 2 + 190, cy + 24, SaveSystem.formatPlaytime(s.playtime), pxStyle(7, UI.TXT_MUTED)).setOrigin(1, 0),
+          this.add.text(W / 2 - 188, cy + 8,
+            `${t('menu.slot')} ${i + 1}`, pxStyle(7, UI.TXT_GOLD)).setDepth(91).setScrollFactor(0),
+          this.add.text(W / 2 - 188, cy + 24,
+            `${s.playerName}  Lv.${s.level}`, pxStyle(7, UI.TXT_PARCHMENT)).setDepth(91).setScrollFactor(0),
+          this.add.text(W / 2 + 190, cy + 8,
+            `${s.clearedZones}/6 zones`, pxStyle(7, UI.TXT_MUTED)).setOrigin(1, 0).setDepth(91).setScrollFactor(0),
+          this.add.text(W / 2 + 190, cy + 24,
+            SaveSystem.formatPlaytime(s.playtime), pxStyle(7, UI.TXT_MUTED)).setOrigin(1, 0).setDepth(91).setScrollFactor(0),
         );
       } else {
         cardTexts.push(
-          this.add.text(W / 2, cy + 22, `${t('menu.slot')} ${i + 1}  —  ${t('menu.slot.empty')}`, pxStyle(7, UI.TXT_HINT)).setOrigin(0.5),
+          this.add.text(W / 2, cy + 22,
+            `${t('menu.slot')} ${i + 1}  —  ${t('menu.slot.empty')}`, pxStyle(7, UI.TXT_HINT))
+            .setOrigin(0.5).setDepth(91).setScrollFactor(0),
         );
       }
       cardTexts.forEach(txt => txt.setAlpha(0));
       this.tweens.add({
-        targets: [card, ...cardTexts],
-        alpha: 1,
-        duration: 350,
-        delay: 400 + i * 100,
-        ease: 'Quad.easeOut',
+        targets: [card, ...cardTexts], alpha: 1, duration: 350,
+        delay: 400 + i * 100, ease: 'Quad.easeOut',
       });
     }
 
-    // ── Footer: controls hint (centre) + version (bas droite) ──
+    // ── Footer ──
     this.add.text(W / 2, H - 14, t('menu.controls'), pxStyle(6, UI.TXT_HINT))
-      .setOrigin(0.5, 1);
+      .setOrigin(0.5, 1).setDepth(91).setScrollFactor(0);
     this.add.text(W - 14, H - 14, GAME_VERSION, pxStyle(6, UI.TXT_HINT))
-      .setOrigin(1, 1);
+      .setOrigin(1, 1).setDepth(91).setScrollFactor(0);
   }
 
-  // ── Boucle : parallax + respiration du héros ────────────────────────────────
-  update(time: number, delta: number) {
-    if (!this.layerFar) return;
-    const W  = this.cameras.main.width;
-    const dt = delta / 1000;
-
-    this.offFar  = (this.offFar  + SPEED_FAR  * dt) % W;
-    this.offMid  = (this.offMid  + SPEED_MID  * dt) % W;
-    this.offNear = (this.offNear + SPEED_NEAR * dt) % W;
-
-    // Les couches sont dessinées sur [0, 2W] : translater de -offset puis
-    // reboucler à W suffit pour un scroll infini sans redraw.
-    this.layerFar.x  = -Math.round(this.offFar);
-    this.layerMid.x  = -Math.round(this.offMid);
-    this.layerNear.x = -Math.round(this.offNear);
-
-    // Micro-oscillation verticale du héros (respiration, période ~3 s, ±1.5 px)
-    if (this.hero) {
-      this.hero.y = this.heroBaseY + Math.round(Math.sin((time / 3000) * Math.PI * 2) * 1.5);
-    }
+  // ─────────────────────────────────────────────────────────────────────────────
+  // update : drift des nuages
+  // ─────────────────────────────────────────────────────────────────────────────
+  update(_time: number, delta: number) {
+    const dt = delta / 16;
+    if (this.cloudsFar)  this.cloudsFar.tilePositionX  += 0.04 * dt;
+    if (this.cloudsNear) this.cloudsNear.tilePositionX += 0.02 * dt;
   }
 
-  // ── Fond animé — dessin ─────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────────
+  // LCG déterministe (stable entre frames, pas de Math.random)
+  // ─────────────────────────────────────────────────────────────────────────────
+  private makeLcg(seed: number): () => number {
+    let s = seed >>> 0;
+    return () => {
+      s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+      return s / 0x100000000;
+    };
+  }
 
-  /** Ciel crépusculaire en bandes horizontales (dégradé pixel art, sans blur). */
+  // ─────────────────────────────────────────────────────────────────────────────
+  // drawSky — gradient split gauche/droite avec dithering central
+  // ─────────────────────────────────────────────────────────────────────────────
   private drawSky(W: number, H: number) {
-    const g = this.add.graphics();
-    const top    = Phaser.Display.Color.ValueToColor(SKY_TOP);
-    const bottom = Phaser.Display.Color.ValueToColor(SKY_BOTTOM);
-    const bandH  = Math.ceil(H / SKY_BANDS);
-    for (let i = 0; i < SKY_BANDS; i++) {
-      const c = Phaser.Display.Color.Interpolate.ColorWithColor(top, bottom, SKY_BANDS - 1, i);
-      g.fillStyle(Phaser.Display.Color.GetColor(c.r, c.g, c.b), 1);
-      g.fillRect(0, i * bandH, W, bandH);
+    const g = this.add.graphics().setDepth(0).setScrollFactor(0);
+    const BANDS = 24;
+    const bandH = Math.ceil(H / BANDS);
+
+    for (let i = 0; i < BANDS; i++) {
+      const tBand = i / (BANDS - 1);
+
+      const lTop = Phaser.Display.Color.ValueToColor(SKY_LEFT_TOP);
+      const lMid = Phaser.Display.Color.ValueToColor(SKY_LEFT_MID);
+      const lBot = Phaser.Display.Color.ValueToColor(SKY_LEFT_HORIZ);
+      const leftC = tBand < 0.5
+        ? Phaser.Display.Color.Interpolate.ColorWithColor(lTop, lMid, 1, tBand * 2)
+        : Phaser.Display.Color.Interpolate.ColorWithColor(lMid, lBot, 1, (tBand - 0.5) * 2);
+
+      const rTop = Phaser.Display.Color.ValueToColor(SKY_RIGHT_TOP);
+      const rMid = Phaser.Display.Color.ValueToColor(SKY_RIGHT_MID);
+      const rBot = Phaser.Display.Color.ValueToColor(SKY_RIGHT_HORIZ);
+      const rightC = tBand < 0.5
+        ? Phaser.Display.Color.Interpolate.ColorWithColor(rTop, rMid, 1, tBand * 2)
+        : Phaser.Display.Color.Interpolate.ColorWithColor(rMid, rBot, 1, (tBand - 0.5) * 2);
+
+      const ly       = i * bandH;
+      const splitX   = W / 2;
+      const ditherW  = 100;
+      const leftEnd  = Math.round(splitX - ditherW / 2);
+      const rightSt  = Math.round(splitX + ditherW / 2);
+
+      g.fillStyle(Phaser.Display.Color.GetColor(leftC.r, leftC.g, leftC.b), 1);
+      g.fillRect(0, ly, leftEnd, bandH);
+      g.fillStyle(Phaser.Display.Color.GetColor(rightC.r, rightC.g, rightC.b), 1);
+      g.fillRect(rightSt, ly, W - rightSt, bandH);
+
+      // Dithering en bandes de 2px
+      for (let dx = leftEnd; dx < rightSt; dx += 2) {
+        const mixT     = (dx - leftEnd) / (rightSt - leftEnd);
+        const useRight = (Math.floor(dx / 2) % 2 === 0) ? mixT > 0.5 : mixT > 0.3;
+        const c = useRight ? rightC : leftC;
+        g.fillStyle(Phaser.Display.Color.GetColor(c.r, c.g, c.b), 1);
+        g.fillRect(dx, ly, 2, bandH);
+      }
     }
-  }
 
-  /** ~50 étoiles fixes (LCG déterministe) + 10 étoiles à pulsation douce. */
-  private drawStars(W: number, H: number) {
-    // Étoiles statiques — générées par un LCG à graine fixe : même ciel à
-    // chaque ouverture, zéro Math.random.
-    let seed = 1337;
-    const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    // ── Soleil bas-gauche ──
+    const sunX = Math.round(W * 0.22);
+    const sunY = Math.round(H * 0.68);
+    g.fillStyle(SUN_HALO, 0.15); g.fillCircle(sunX, sunY, 80);
+    g.fillStyle(SUN_HALO, 0.25); g.fillCircle(sunX, sunY, 55);
+    g.fillStyle(SUN_HALO, 0.40); g.fillCircle(sunX, sunY, 38);
+    g.fillStyle(SUN_HALO, 0.70); g.fillCircle(sunX, sunY, 22);
+    g.fillStyle(SUN_CORE, 1);    g.fillCircle(sunX, sunY, 12);
 
-    const g = this.add.graphics();
-    for (let i = 0; i < 42; i++) {
-      const x    = Math.round(rnd() * W);
-      const y    = Math.round(rnd() * H * 0.55);           // au-dessus des montagnes
-      const size = rnd() < 0.8 ? 1 : 2;
-      g.fillStyle(0xf5edd0, 0.10 + rnd() * 0.25);
-      g.fillRect(x, y, size, size);
+    // ── Lune croissant haut-droite ──
+    const moonX = Math.round(W * 0.82);
+    const moonY = Math.round(H * 0.13);
+    g.fillStyle(MOON_COL, 1);       g.fillCircle(moonX, moonY, 22);
+    g.fillStyle(SKY_RIGHT_TOP, 1);  g.fillCircle(moonX + 8, moonY - 2, 18);
+
+    // ── Étoiles (moitié droite, LCG seed=42) ──
+    const rng42 = this.makeLcg(42);
+    const starG = this.add.graphics().setDepth(1).setScrollFactor(0);
+    for (let i = 0; i < 32; i++) {
+      const sx  = Math.round(W / 2 + 20 + rng42() * (W / 2 - 30));
+      const sy  = Math.round(rng42() * H * 0.50);
+      const sz  = rng42() < 0.75 ? 1 : 2;
+      const col = rng42() < 0.5 ? 0xffffff : 0xffd0a0;
+      starG.fillStyle(col, 0.3 + rng42() * 0.5);
+      starG.fillRect(sx, sy, sz, sz);
     }
 
-    // Étoiles à pulsation (tweens détruits au shutdown de la scène)
-    PULSE_STARS.forEach(([fx, fy, dur], i) => {
+    // Étoiles scintillantes (tweens yoyo)
+    const twinkles: Array<[number, number]> = [
+      [0.58, 0.08], [0.65, 0.22], [0.73, 0.06], [0.79, 0.30],
+      [0.85, 0.12], [0.91, 0.25], [0.96, 0.09], [0.70, 0.40],
+    ];
+    twinkles.forEach(([fx, fy], idx) => {
       const star = this.add.rectangle(
-        Math.round(W * fx), Math.round(H * fy), 2, 2, 0xf5edd0, 1,
-      ).setAlpha(0.12);
+        Math.round(W * fx), Math.round(H * fy), 2, 2,
+        idx % 2 === 0 ? 0xffffff : 0xffd0a0, 1,
+      ).setAlpha(0.15).setDepth(2).setScrollFactor(0);
       this.tweens.add({
-        targets: star,
-        alpha: 0.5,
-        duration: dur,
-        delay: i * 180,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
+        targets: star, alpha: 0.85,
+        duration: 1600 + idx * 300, delay: idx * 220,
+        yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
       });
     });
   }
 
-  /** Deux astres : lune principale (lueur douce) + compagne lointaine. */
-  private drawMoons(W: number, H: number) {
-    const g = this.add.graphics();
+  // ─────────────────────────────────────────────────────────────────────────────
+  // drawClouds — 2 couches TileSprite
+  // ─────────────────────────────────────────────────────────────────────────────
+  private drawClouds(W: number, H: number) {
+    // Couche lointaine
+    const gFar     = this.add.graphics();
+    const farTexW  = W * 2;
+    const farTexH  = 80;
+    const farPos   = [0.05, 0.18, 0.30, 0.45, 0.57, 0.68, 0.80, 0.92];
+    farPos.forEach((fx, idx) => {
+      const cx = Math.round(fx * farTexW);
+      const cy = Math.round(farTexH * 0.5 + (idx % 3) * 10);
+      this.drawCloudShape(gFar, cx, cy, 50, 10, 0x8090b0, 0.6);
+    });
+    gFar.generateTexture('clouds_far', farTexW, farTexH);
+    gFar.destroy();
+    this.cloudsFar = this.add
+      .tileSprite(0, Math.round(H * 0.25), farTexW, farTexH, 'clouds_far')
+      .setOrigin(0, 0.5).setDepth(5).setScrollFactor(0);
 
-    // Lune principale — haut droite, halo en cercles concentriques
-    const mx = Math.round(W * 0.80);
-    const my = Math.round(H * 0.20);
-    g.fillStyle(0xcfc8b8, 0.02); g.fillCircle(mx, my, 36);
-    g.fillStyle(0xcfc8b8, 0.04); g.fillCircle(mx, my, 27);
-    g.fillStyle(0xcfc8b8, 0.07); g.fillCircle(mx, my, 21);
-    g.fillStyle(0xcfc8b8, 1);    g.fillCircle(mx, my, 15);
-    // Cratères (pixels sombres)
-    g.fillStyle(0x9a9284, 0.7);
-    g.fillRect(mx - 6, my - 4, 4, 4);
-    g.fillRect(mx + 3, my + 2, 3, 3);
-    g.fillRect(mx - 1, my + 7, 2, 2);
-
-    // Compagne lointaine — plus petite, violacée, discrète
-    const sx = Math.round(W * 0.14);
-    const sy = Math.round(H * 0.31);
-    g.fillStyle(0x9088a8, 0.04); g.fillCircle(sx, sy, 12);
-    g.fillStyle(0x9088a8, 0.85); g.fillCircle(sx, sy, 6);
-    g.fillStyle(0x6f688a, 0.8);  g.fillRect(sx - 2, sy - 1, 2, 2);
+    // Couche proche
+    const gNear     = this.add.graphics();
+    const nearTexW  = W * 2;
+    const nearTexH  = 90;
+    const nearPos: Array<[number, number, number, string]> = [
+      [0.06, 0.5, 100, 'warm'], [0.20, 0.4,  85, 'warm'],
+      [0.38, 0.6,  95, 'cool'], [0.52, 0.45, 80, 'cool'],
+      [0.70, 0.55, 90, 'cool'], [0.86, 0.4, 110, 'warm'],
+    ];
+    nearPos.forEach(([fx, fy, cw, side]) => {
+      const col = side === 'warm' ? 0xfff0d0 : 0xa0b0c0;
+      this.drawCloudShape(gNear, Math.round(fx * nearTexW), Math.round(fy * nearTexH), cw, 20, col, 0.75);
+    });
+    gNear.generateTexture('clouds_near', nearTexW, nearTexH);
+    gNear.destroy();
+    this.cloudsNear = this.add
+      .tileSprite(0, Math.round(H * 0.30), nearTexW, nearTexH, 'clouds_near')
+      .setOrigin(0, 0.5).setDepth(8).setScrollFactor(0);
   }
 
-  /**
-   * Silhouette de montagnes en escaliers (pixel art), périodique sur W et
-   * dessinée deux fois (largeur 2W) pour un scroll infini par translation.
-   */
-  private buildRidge(
-    color: number,
-    baseY: number,
-    pts: ReadonlyArray<readonly [number, number]>,
-    W: number,
-    H: number,
-  ): Phaser.GameObjects.Graphics {
-    const g = this.add.graphics();
-    g.fillStyle(color, 1);
-    g.beginPath();
-    g.moveTo(0, H);
-    let lastY = baseY - pts[0][1];
-    g.lineTo(0, lastY);
-    for (let copy = 0; copy < 2; copy++) {
-      for (const [fx, rise] of pts) {
-        const px = Math.round((copy + fx) * W);
-        const py = baseY - rise;
-        // Marches horizontales puis verticales → crêtes en escalier 8-bit
-        g.lineTo(px, lastY);
-        g.lineTo(px, py);
-        lastY = py;
-      }
+  private drawCloudShape(
+    g: Phaser.GameObjects.Graphics,
+    cx: number, cy: number, width: number, height: number,
+    color: number, alpha: number,
+  ) {
+    g.fillStyle(color, alpha);
+    [
+      { w: Math.round(width * 0.4), h: 4, oy: -height },
+      { w: Math.round(width * 0.7), h: 6, oy: -height + 4 },
+      { w: width,                   h: 8, oy: -height + 10 },
+      { w: Math.round(width * 0.9), h: 6, oy: -height + 18 },
+      { w: Math.round(width * 0.6), h: 4, oy: -height + 24 },
+    ].forEach(({ w, h, oy }) => g.fillRect(cx - Math.round(w / 2), cy + oy, w, h));
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // drawMountainLayer — texture générée puis Image fixe
+  // ─────────────────────────────────────────────────────────────────────────────
+  private drawMountainLayer(layer: number, W: number, H: number) {
+    const key = `mountain_layer_${layer}`;
+    const g   = this.add.graphics();
+
+    type LayerCfg = { color: number; baseYR: number; minH: number; maxH: number; snow: boolean; pines: boolean; depth: number };
+    const cfgs: Record<number, LayerCfg> = {
+      1: { color: MTNL1, baseYR: 0.62, minH: 80,  maxH: 120, snow: true,  pines: false, depth: 15 },
+      2: { color: MTNL2, baseYR: 0.70, minH: 130, maxH: 180, snow: true,  pines: false, depth: 20 },
+      3: { color: MTNL3, baseYR: 0.78, minH: 180, maxH: 250, snow: false, pines: true,  depth: 25 },
+      4: { color: MTNL4, baseYR: 0.85, minH: 250, maxH: 350, snow: false, pines: true,  depth: 30 },
+    };
+    const cfg   = cfgs[layer];
+    const baseY = Math.round(H * cfg.baseYR);
+    const rng   = this.makeLcg(layer * 137 + 99);
+
+    // Fond plein sous la ligne de base
+    g.fillStyle(cfg.color, 1);
+    g.fillRect(0, baseY, W, H - baseY);
+
+    const numPeaks = Math.round(W / (40 + layer * 8));
+    const peaks: Array<{ px: number; ph: number }> = [];
+    for (let i = 0; i <= numPeaks; i++) {
+      peaks.push({
+        px: Math.round((i / numPeaks) * W),
+        ph: Math.round(cfg.minH + rng() * (cfg.maxH - cfg.minH)),
+      });
     }
-    // Refermer la 2e copie sur la hauteur du point de départ (sans couture)
-    g.lineTo(2 * W, lastY);
-    g.lineTo(2 * W, H);
-    g.closePath();
-    g.fillPath();
-    return g;
+
+    peaks.forEach(({ px, ph }, idx) => {
+      if (idx === 0) return;
+      const prevPx   = peaks[idx - 1].px;
+      const peakX    = Math.round((prevPx + px) / 2);
+      const peakTopY = baseY - ph;
+      const steps    = Math.max(1, Math.round(ph / 4));
+
+      g.fillStyle(cfg.color, 1);
+      for (let s = 0; s < steps; s++) {
+        const stepT = s / steps;
+        const stepW = Math.max(2, Math.round(((px - prevPx) * stepT) * 0.9));
+        g.fillRect(peakX - Math.round(stepW / 2), peakTopY + Math.round(stepT * ph), stepW, 4);
+      }
+
+      if (cfg.snow) {
+        g.fillStyle(SNOW, 1);
+        const snowH = Math.max(2, Math.round(ph * 0.12));
+        for (let s = 0; s < Math.round(snowH / 2); s++) {
+          const sw = Math.max(2, (snowH - s) * 2);
+          g.fillRect(peakX - Math.round(sw / 2), peakTopY + s * 2, sw, 2);
+        }
+        g.fillStyle(cfg.color, 1);
+      }
+
+      if (cfg.pines) {
+        const numPines = 2 + Math.round(rng() * 3);
+        for (let p = 0; p < numPines; p++) {
+          const px2      = prevPx + Math.round(rng() * (px - prevPx));
+          const pineBase = baseY - Math.round(rng() * ph * 0.4 + ph * 0.05);
+          this.drawPine(g, px2, pineBase, layer === 4 ? 18 : 12);
+        }
+      }
+    });
+
+    g.generateTexture(key, W, H);
+    g.destroy();
+    this.add.image(0, 0, key).setOrigin(0, 0).setDepth(cfg.depth).setScrollFactor(0);
   }
 
-  /** Falaise fixe en bas-gauche + silhouette du héros qui regarde l'horizon. */
-  private drawCliffAndHero(W: number, H: number) {
-    const cliffTop = H - 92;
-
-    // Falaise : promontoire en marches descendantes vers la droite
-    const cliff = this.add.graphics();
-    cliff.fillStyle(COL_CLIFF, 1);
-    cliff.beginPath();
-    cliff.moveTo(0, H);
-    cliff.lineTo(0, cliffTop);
-    cliff.lineTo(118, cliffTop);
-    cliff.lineTo(118, cliffTop + 14);
-    cliff.lineTo(142, cliffTop + 14);
-    cliff.lineTo(142, cliffTop + 34);
-    cliff.lineTo(160, cliffTop + 34);
-    cliff.lineTo(160, H);
-    cliff.closePath();
-    cliff.fillPath();
-    // Arête éclairée par la lune (1 px, très discret)
-    cliff.lineStyle(1, 0x2a2440, 0.8);
-    cliff.beginPath();
-    cliff.moveTo(0, cliffTop); cliff.lineTo(118, cliffTop);
-    cliff.strokePath();
-
-    // Héros — silhouette pixel : corps 4×16, tête 6×6, tourné vers l'horizon
-    this.heroBaseY = cliffTop;
-    this.hero = this.add.graphics({ x: 84, y: this.heroBaseY });
-    this.hero.fillStyle(COL_HERO, 1);
-    this.hero.fillRect(-2, -16, 4, 16);       // corps (pieds sur la falaise)
-    this.hero.fillRect(-3, -22, 6, 6);        // tête
-    this.hero.fillRect(2, -14, 2, 7);         // bras vers l'horizon (droite)
-    // Liseré lunaire sur l'épaule — le seul pixel de lumière du personnage
-    this.hero.fillStyle(0x4a4468, 0.9);
-    this.hero.fillRect(-3, -17, 1, 4);
+  private drawPine(g: Phaser.GameObjects.Graphics, x: number, baseY: number, h: number) {
+    const tw   = Math.round(h * 0.6);
+    const rows = Math.max(1, Math.round(h * 0.75 / 3));
+    g.fillStyle(PINE_DARK, 1);
+    for (let r = 0; r < rows; r++) {
+      const rw = Math.max(2, Math.round((tw * (r + 1)) / rows));
+      g.fillRect(x - Math.round(rw / 2), baseY - h + r * 3, rw, 3);
+    }
+    g.fillStyle(PINE_TRUNK, 1);
+    g.fillRect(x - 2, baseY - 8, 4, 8);
   }
 
-  // ── Transition sortante standard : fade out 300 ms puis scene.start ─────────
+  // ─────────────────────────────────────────────────────────────────────────────
+  // drawForeground — falaise, herbe, fleurs, rochers
+  // ─────────────────────────────────────────────────────────────────────────────
+  private drawForeground(W: number, H: number) {
+    const cliffBaseW = 160;
+    const cliffBaseH = 120;
+    const cliffX     = Math.round(W / 2 - cliffBaseW / 2);
+    const cliffY     = H - cliffBaseH;
+
+    // Falaise
+    const cliffG = this.add.graphics().setDepth(40).setScrollFactor(0);
+    cliffG.fillStyle(ROCK_LIGHT, 1);
+    cliffG.fillRect(cliffX, cliffY, cliffBaseW, cliffBaseH);
+    cliffG.fillStyle(ROCK_SHADOW, 1);
+    cliffG.fillRect(cliffX + Math.round(cliffBaseW * 0.6), cliffY + 10,
+      Math.round(cliffBaseW * 0.4), cliffBaseH - 10);
+    cliffG.fillStyle(ROCK_EDGE, 1);
+    cliffG.fillRect(cliffX + cliffBaseW - 6, cliffY, 6, cliffBaseH);
+    cliffG.fillRect(cliffX, cliffY, 4, cliffBaseH);
+
+    // Bord irrégulier
+    const rngC = this.makeLcg(7);
+    for (let bx = cliffX; bx < cliffX + cliffBaseW; bx += 8) {
+      const bump = Math.round(rngC() * 16);
+      cliffG.fillStyle(ROCK_LIGHT, 1);
+      cliffG.fillRect(bx, cliffY - bump, 8, bump + 2);
+      cliffG.fillStyle(ROCK_EDGE, 1);
+      cliffG.fillRect(bx, cliffY - bump, 8, 2);
+    }
+
+    // Herbe bande du bas
+    const grassG = this.add.graphics().setDepth(50).setScrollFactor(0);
+    const grassY = H - 30;
+    const rngG   = this.makeLcg(17);
+    for (let gx = 0; gx < W; gx += 2) {
+      const h2  = 4 + Math.round(rngG() * 4);
+      const cp  = rngG();
+      const col = cp < 0.33 ? GRASS_BRIGHT : cp < 0.66 ? GRASS_MID : GRASS_DARK;
+      grassG.fillStyle(col, 1);
+      grassG.fillRect(gx, grassY, 2, h2);
+    }
+    grassG.fillStyle(GRASS_DARK, 1);
+    grassG.fillRect(0, grassY + 8, W, H - grassY - 8);
+    // Herbe sur la falaise
+    for (let gx = cliffX; gx < cliffX + cliffBaseW; gx += 2) {
+      const h2  = 3 + Math.round(rngG() * 3);
+      const col = rngG() < 0.5 ? GRASS_BRIGHT : GRASS_MID;
+      grassG.fillStyle(col, 1);
+      grassG.fillRect(gx, cliffY - h2, 2, h2);
+    }
+
+    // Fleurs (seed=31)
+    const flowerG    = this.add.graphics().setDepth(55).setScrollFactor(0);
+    const rngF       = this.makeLcg(31);
+    const flowerCols = [FLOWER_PINK, FLOWER_WHITE, FLOWER_YELLOW];
+    for (let i = 0; i < 28; i++) {
+      const fx = Math.round(rngF() * W);
+      const fy = grassY - Math.round(rngF() * 6);
+      flowerG.fillStyle(flowerCols[Math.floor(rngF() * 3)], 1);
+      flowerG.fillRect(fx, fy, 2, 2);
+    }
+    for (let i = 0; i < 12; i++) {
+      const fx = cliffX + Math.round(rngF() * cliffBaseW);
+      const fy = cliffY - Math.round(rngF() * 10) - 4;
+      flowerG.fillStyle(flowerCols[Math.floor(rngF() * 3)], 1);
+      flowerG.fillRect(fx, fy, 2, 2);
+    }
+
+    // Petits rochers avant-plan
+    const rockFG = this.add.graphics().setDepth(60).setScrollFactor(0);
+    ([
+      [30,      H - 28, 22, 14],
+      [62,      H - 22, 16, 10],
+      [W - 48,  H - 26, 20, 12],
+      [W - 80,  H - 20, 14,  9],
+    ] as Array<[number, number, number, number]>).forEach(([rx, ry, rw, rh]) => {
+      rockFG.fillStyle(ROCK_SHADOW, 1);
+      rockFG.fillEllipse(rx, ry, rw, rh);
+      rockFG.fillStyle(ROCK_LIGHT, 1);
+      rockFG.fillEllipse(rx - 3, ry - 2, Math.round(rw * 0.6), Math.round(rh * 0.6));
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // drawHero — silhouette + breathing tween
+  // ─────────────────────────────────────────────────────────────────────────────
+  private drawHero(W: number, H: number) {
+    this.heroBaseY = H - 120 - 10;   // cliffY - bump moyen
+    this.hero = this.add.graphics().setDepth(70).setScrollFactor(0);
+    this.hero.setPosition(Math.round(W / 2), this.heroBaseY);
+    this.hero.fillStyle(HERO_COL, 1);
+    this.hero.fillRect(-5, -28, 10, 14); // torse
+    this.hero.fillRect(-5, -14,  4, 10); // jambe gauche
+    this.hero.fillRect( 1, -14,  4, 10); // jambe droite
+    this.hero.fillRect(-3, -38,  8,  8); // tête
+    this.hero.fillRect(-7, -32, 12, 10); // cape/sac
+    this.hero.fillRect( 6, -48,  2, 30); // bâton
+
+    this.tweens.add({
+      targets: this.hero, y: this.heroBaseY - 1.5,
+      duration: 3000, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Transition sortante
+  // ─────────────────────────────────────────────────────────────────────────────
   private transitionTo(key: string, data?: object) {
     if (this.transitioning) return;
     this.transitioning = true;
@@ -369,6 +539,9 @@ export class MainMenuScene extends Phaser.Scene {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // makeBtn
+  // ─────────────────────────────────────────────────────────────────────────────
   private makeBtn(
     x: number, y: number,
     label: string,
@@ -376,135 +549,120 @@ export class MainMenuScene extends Phaser.Scene {
     entryDelay: number,
     action: () => void,
   ) {
-    const W  = 240;
-    const H  = 34;
-    const bg = this.add.graphics();
+    const BW = 240;
+    const BH = 34;
+    const bg = this.add.graphics().setScrollFactor(0);
 
     const draw = (hover: boolean) => {
       bg.clear();
-      drawGlowPanel(
-        bg, -W / 2, -H / 2, W, H,
-        accent, hover ? UI.BTN_BG_HOVER : UI.BTN_BG, 4, 0.92,
-      );
+      drawGlowPanel(bg, -BW / 2, -BH / 2, BW, BH, accent,
+        hover ? UI.BTN_BG_HOVER : UI.BTN_BG, 4);
       if (hover) {
-        // Accent renforcé au survol / tap — feedback immédiat
         bg.lineStyle(1, accent, 0.85);
-        bg.strokeRoundedRect(-W / 2 + 2, -H / 2 + 2, W - 4, H - 4, 2);
+        bg.strokeRoundedRect(-BW / 2 + 2, -BH / 2 + 2, BW - 4, BH - 4, 2);
       }
     };
-
     draw(false);
 
-    const txt = this.add.text(0, 0, label, pxStyle(9, UI.TXT_PARCHMENT)).setOrigin(0.5);
+    const txt = this.add.text(0, 0, label, pxStyle(9, UI.TXT_PARCHMENT))
+      .setOrigin(0.5).setScrollFactor(0);
+    const box = this.add.container(x, y + 8, [bg, txt])
+      .setAlpha(0).setDepth(90).setScrollFactor(0);
 
-    // Container centré : permet le scale hover autour du centre du bouton
-    const box = this.add.container(x, y + 8, [bg, txt]).setAlpha(0);
-
-    // Entrée échelonnée : fade + petite montée, déclenchée par delayedCall
     this.time.delayedCall(entryDelay, () => {
-      this.tweens.add({
-        targets: box, alpha: 1, y, duration: 350, ease: 'Quad.easeOut',
-      });
+      this.tweens.add({ targets: box, alpha: 1, y, duration: 350, ease: 'Quad.easeOut' });
     });
 
-    const hit = this.add.rectangle(x, y, W, H + 10, 0, 0).setInteractive({ useHandCursor: true });
+    const hit = this.add.rectangle(x, y, BW, BH + 10, 0, 0)
+      .setInteractive({ useHandCursor: true }).setDepth(92).setScrollFactor(0);
     hit.on('pointerover',  () => {
-      draw(true);
-      txt.setStyle({ color: UI.TXT_GOLD });
+      draw(true); txt.setStyle({ color: UI.TXT_GOLD });
       this.tweens.add({ targets: box, scaleX: 1.03, scaleY: 1.03, duration: 100, ease: 'Quad.easeOut' });
     });
     hit.on('pointerout',   () => {
-      draw(false);
-      txt.setStyle({ color: UI.TXT_PARCHMENT });
+      draw(false); txt.setStyle({ color: UI.TXT_PARCHMENT });
       this.tweens.add({ targets: box, scaleX: 1, scaleY: 1, duration: 100, ease: 'Quad.easeOut' });
     });
     hit.on('pointerdown',  () => {
-      // Feedback tap < 100ms : petit squash avant l'action
-      this.tweens.add({
-        targets: box, scaleX: 0.96, scaleY: 0.96, duration: 50, yoyo: true,
-      });
+      this.tweens.add({ targets: box, scaleX: 0.96, scaleY: 0.96, duration: 50, yoyo: true });
       action();
     });
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // showNewGameMenu
+  // ─────────────────────────────────────────────────────────────────────────────
   private showNewGameMenu(slots: ReturnType<typeof SaveSystem.listSlots>) {
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
     const elems: Phaser.GameObjects.GameObject[] = [];
 
-    const ov = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.75).setDepth(20);
+    const ov = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.75).setDepth(95);
     elems.push(ov);
-
-    const frame = this.add.graphics().setDepth(21);
+    const frame = this.add.graphics().setDepth(96);
     drawGlowPanel(frame, W / 2 - 240, H / 2 - 150, 480, 300, UI.ACCENT_VIOLET, UI.BG_DEEP, 6);
     elems.push(frame);
-
     elems.push(
       this.add.text(W / 2, H / 2 - 130, t('menu.select_slot'), pxStyle(11, UI.TXT_GOLD, true))
-        .setOrigin(0.5).setDepth(22)
+        .setOrigin(0.5).setDepth(97),
     );
 
     for (let i = 0; i < 3; i++) {
       const s    = slots[i];
       const by   = H / 2 - 60 + i * 62;
-      const card = this.add.graphics().setDepth(21);
+      const card = this.add.graphics().setDepth(96);
       drawGlowPanel(card, W / 2 - 200, by, 400, 48, UI.SEPARATOR, UI.BG_MID, 4);
       elems.push(card);
 
       const label = s
         ? `${t('menu.slot')} ${i + 1}  [${t('menu.slot.overwrite')}]  ${s.playerName} Lv.${s.level}`
         : `${t('menu.slot')} ${i + 1}  —  ${t('menu.new_game')}`;
-      const col  = s ? UI.TXT_RED : UI.TXT_GREEN;
-
+      const col = s ? UI.TXT_RED : UI.TXT_GREEN;
       const btn = this.add.text(W / 2, by + 24, label, pxStyle(8, col))
-        .setOrigin(0.5).setDepth(22).setInteractive({ useHandCursor: true });
+        .setOrigin(0.5).setDepth(97).setInteractive({ useHandCursor: true });
       btn.on('pointerover', () => btn.setStyle({ color: UI.TXT_WHITE }));
       btn.on('pointerout',  () => btn.setStyle({ color: col }));
-      btn.on('pointerdown', () => {
-        elems.forEach(e => e.destroy());
-        this.transitionTo('NameInputScene', { slot: i });
-      });
+      btn.on('pointerdown', () => { elems.forEach(e => e.destroy()); this.transitionTo('NameInputScene', { slot: i }); });
       elems.push(btn);
     }
 
     const cancel = this.add.text(W / 2, H / 2 + 120, t('menu.cancel'), pxStyle(9, UI.TXT_MUTED))
-      .setOrigin(0.5).setDepth(22).setInteractive({ useHandCursor: true });
+      .setOrigin(0.5).setDepth(97).setInteractive({ useHandCursor: true });
     cancel.on('pointerover', () => cancel.setStyle({ color: UI.TXT_RED }));
     cancel.on('pointerout',  () => cancel.setStyle({ color: UI.TXT_MUTED }));
     cancel.on('pointerdown', () => elems.forEach(e => e.destroy()));
     elems.push(cancel);
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // showLoadMenu
+  // ─────────────────────────────────────────────────────────────────────────────
   private showLoadMenu(slots: ReturnType<typeof SaveSystem.listSlots>) {
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
     const elems: Phaser.GameObjects.GameObject[] = [];
 
-    const ov = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.75).setDepth(20);
+    const ov = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.75).setDepth(95);
     elems.push(ov);
-
-    const frame = this.add.graphics().setDepth(21);
+    const frame = this.add.graphics().setDepth(96);
     drawGlowPanel(frame, W / 2 - 240, H / 2 - 150, 480, 300, UI.GLOW_GOLD, UI.BG_DEEP, 6);
     elems.push(frame);
-
     elems.push(
       this.add.text(W / 2, H / 2 - 130, t('menu.load_title'), pxStyle(11, UI.TXT_GOLD, true))
-        .setOrigin(0.5).setDepth(22)
+        .setOrigin(0.5).setDepth(97),
     );
 
     let found = 0;
     for (let i = 0; i < 3; i++) {
       const s = slots[i];
       if (!s) continue;
-
       const by   = H / 2 - 60 + found * 62;
-      const card = this.add.graphics().setDepth(21);
+      const card = this.add.graphics().setDepth(96);
       drawGlowPanel(card, W / 2 - 200, by, 400, 48, UI.SEPARATOR, UI.BG_MID, 4);
       elems.push(card);
-
       const label = `${t('menu.slot')} ${i + 1}  ${s.playerName}  Lv.${s.level}  |  ${s.clearedZones}/6 zones`;
-      const btn = this.add.text(W / 2, by + 24, label, pxStyle(8, UI.TXT_GREEN))
-        .setOrigin(0.5).setDepth(22).setInteractive({ useHandCursor: true });
+      const btn   = this.add.text(W / 2, by + 24, label, pxStyle(8, UI.TXT_GREEN))
+        .setOrigin(0.5).setDepth(97).setInteractive({ useHandCursor: true });
       btn.on('pointerover', () => btn.setStyle({ color: UI.TXT_WHITE }));
       btn.on('pointerout',  () => btn.setStyle({ color: UI.TXT_GREEN }));
       btn.on('pointerdown', () => {
@@ -520,7 +678,7 @@ export class MainMenuScene extends Phaser.Scene {
     }
 
     const cancel = this.add.text(W / 2, H / 2 + 120, t('menu.cancel'), pxStyle(9, UI.TXT_MUTED))
-      .setOrigin(0.5).setDepth(22).setInteractive({ useHandCursor: true });
+      .setOrigin(0.5).setDepth(97).setInteractive({ useHandCursor: true });
     cancel.on('pointerover', () => cancel.setStyle({ color: UI.TXT_RED }));
     cancel.on('pointerout',  () => cancel.setStyle({ color: UI.TXT_MUTED }));
     cancel.on('pointerdown', () => elems.forEach(e => e.destroy()));
