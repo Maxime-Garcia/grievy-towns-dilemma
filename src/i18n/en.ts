@@ -154,6 +154,9 @@ export const EN: Record<string, string> = {
   'inventory.slot.ring1': 'Ring 1',
   'inventory.slot.ring2': 'Ring 2',
   'inventory.slot.amulet': 'Amulet',
+  'inventory.use_item':    'Use',
+  'inventory.cancel':      'Cancel',
+  'inventory.confirm_use': 'Use this item?',
 
   // ── NOTIFICATIONS ────────────────────────────────────────────
   'notif.saved': 'Game saved.',

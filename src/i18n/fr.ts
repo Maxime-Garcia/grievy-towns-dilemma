@@ -155,6 +155,9 @@ export const FR: Record<string, string> = {
   'inventory.slot.ring1': 'Bague 1',
   'inventory.slot.ring2': 'Bague 2',
   'inventory.slot.amulet': 'Amulette',
+  'inventory.use_item':    'Utiliser',
+  'inventory.cancel':      'Annuler',
+  'inventory.confirm_use': 'Utiliser cet objet ?',
 
   // ── NOTIFICATIONS ────────────────────────────────────────────
   'notif.saved': 'Partie sauvegardée.',
