@@ -31,7 +31,12 @@
       align-items: center;
       font-family: 'Press Start 2P', monospace;
     }
-    canvas { display: block; image-rendering: pixelated; }
+    canvas {
+      display: block;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      -ms-interpolation-mode: nearest-neighbor;
+    }
   </style>
 </head>
 <body>
