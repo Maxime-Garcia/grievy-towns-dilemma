@@ -1,6 +1,6 @@
 import { TalentNode, TalentBranch } from '../types';
 
-// 95 nœuds.
+// 87 nœuds (3 branches de base × 8 + 7 branches élémentaires × 9).
 // Branches de base : VIGOR / INSTINCT / ARCANE — 8 nœuds, capstone tier 4 (cost 2).
 // Branches élémentaires : IGNIS / ZEPHYR / ABYSSAL / TERRA / FULGURIS / GLACIUS /
 //   TENEBRES — 9 nœuds sur 5 tiers,

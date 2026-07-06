@@ -116,6 +116,67 @@ function formatEffects(effects: Partial<Record<TalentEffectKey, number>>): strin
   if (effects.PROJECTILE_SKILL_PCT   !== undefined) l.push(`+${effects.PROJECTILE_SKILL_PCT}% skills projectiles`);
   if (effects.SHIELD_SKILL_PCT       !== undefined) l.push(`+${effects.SHIELD_SKILL_PCT}% boucliers magiques`);
   if (effects.FINISHER_NOVA          !== undefined) l.push('Finisher → nova élémentaire (r90)');
+  // ── Génériques (branches élémentaires) ────────────────────────────────
+  if (effects.ATK_PCT                !== undefined) l.push(`+${effects.ATK_PCT}% ATK`);
+  if (effects.ASPD_PCT               !== undefined) l.push(`+${effects.ASPD_PCT}% vitesse d'attaque`);
+  if (effects.ELEM_BONUS_PCT         !== undefined) l.push(`+${effects.ELEM_BONUS_PCT}% dégâts élémentaires`);
+  if (effects.MANA_MAX_PCT           !== undefined) l.push(`+${effects.MANA_MAX_PCT}% mana max`);
+  if (effects.MANA_REGEN_PCT         !== undefined) l.push(`+${effects.MANA_REGEN_PCT}% mana max régénéré/s hors combat`);
+  if (effects.LIFESTEAL_PCT          !== undefined) l.push(`+${effects.LIFESTEAL_PCT}% vol de vie`);
+  // ── IGNIS ───────────────────────────────────────────────────────────────
+  if (effects.BURN_CHANCE_PCT        !== undefined) l.push(`+${effects.BURN_CHANCE_PCT}% chance de BURN`);
+  if (effects.BURN_DMG_PCT           !== undefined) l.push(`+${effects.BURN_DMG_PCT}% dégâts de BURN`);
+  if (effects.ATK_PER_BURNING_PCT    !== undefined) l.push(`+${effects.ATK_PER_BURNING_PCT}% ATK par ennemi en feu`);
+  if (effects.LOW_HP_DEF_PCT         !== undefined) l.push(`+${effects.LOW_HP_DEF_PCT}% DEF sous 50% HP`);
+  if (effects.MAGMA_GUARD            !== undefined) l.push('Absorbe entièrement 1 coup par combat');
+  if (effects.BURN_ON_FINISHER       !== undefined) l.push('Finisher → BURN garanti (3s)');
+  if (effects.BURNING_PACK_DMG_PCT   !== undefined) l.push(`+${effects.BURNING_PACK_DMG_PCT}% dégâts si 3+ ennemis brûlent`);
+  // ── ZEPHYR ──────────────────────────────────────────────────────────────
+  if (effects.DASH_CD_PCT            !== undefined) l.push(`-${effects.DASH_CD_PCT}% cooldown de dash`);
+  if (effects.RANGED_CRIT_PCT        !== undefined) l.push(`+${effects.RANGED_CRIT_PCT}% critique à distance`);
+  if (effects.DOUBLE_DASH            !== undefined) l.push('Second dash immédiat autorisé (CD 8s)');
+  if (effects.PROJECTILE_RANGE_PCT   !== undefined) l.push(`+${effects.PROJECTILE_RANGE_PCT}% portée des projectiles`);
+  if (effects.PROJECTILE_DMG_PCT     !== undefined) l.push(`+${effects.PROJECTILE_DMG_PCT}% dégâts des projectiles`);
+  if (effects.CYCLONE_FINISHER       !== undefined) l.push('Finisher → zone de vent qui repousse');
+  if (effects.DASH_DMG_PCT           !== undefined) l.push(`+${effects.DASH_DMG_PCT}% dégâts pendant un dash`);
+  if (effects.AUTO_DODGE             !== undefined) l.push('Esquive automatique 1 attaque / 5s');
+  // ── ABYSSAL ─────────────────────────────────────────────────────────────
+  if (effects.SLOW_ON_HIT            !== undefined) l.push('Attaques → SLOW 20% (2s)');
+  if (effects.FREEZE_CHANCE_PCT      !== undefined) l.push(`+${effects.FREEZE_CHANCE_PCT}% chance de FREEZE`);
+  if (effects.AQUATIC_DEF_PCT        !== undefined) l.push(`+${effects.AQUATIC_DEF_PCT}% DEF en zone aquatique`);
+  if (effects.FREEZE_ON_FINISHER     !== undefined) l.push('Finisher → FREEZE garanti (2s)');
+  if (effects.MANA_ON_KILL_PCT       !== undefined) l.push(`+${effects.MANA_ON_KILL_PCT}% mana max par kill`);
+  if (effects.BURN_BLEED_IMMUNITY    !== undefined) l.push('Immunité BURN et BLEED');
+  // ── TERRA ───────────────────────────────────────────────────────────────
+  if (effects.KNOCKBACK_RES_PCT      !== undefined) l.push(`-${effects.KNOCKBACK_RES_PCT}% knockback subi`);
+  if (effects.STAGGER_BONUS_PCT      !== undefined) l.push(`+${effects.STAGGER_BONUS_PCT}% accumulation de stagger`);
+  if (effects.STUN_DMG_PCT           !== undefined) l.push(`+${effects.STUN_DMG_PCT}% dégâts contre CC dur`);
+  if (effects.RETALIATION_DEF_PCT    !== undefined) l.push(`${effects.RETALIATION_DEF_PCT}% de la DEF renvoyé en dégâts de terre`);
+  if (effects.QUAKE_FINISHER         !== undefined) l.push('Finisher → onde de choc au sol (r100)');
+  if (effects.UNSHAKABLE             !== undefined) l.push('Immunité totale au knockback et à l\'interruption');
+  if (effects.DEF_TO_ATK_PCT         !== undefined) l.push(`+${effects.DEF_TO_ATK_PCT}% de la DEF ajouté à l'ATK`);
+  // ── FULGURIS ────────────────────────────────────────────────────────────
+  if (effects.SHOCK_CHANCE_PCT       !== undefined) l.push(`+${effects.SHOCK_CHANCE_PCT}% chance de SHOCK`);
+  if (effects.CRIT_SURGE_ASPD_PCT    !== undefined) l.push(`+${effects.CRIT_SURGE_ASPD_PCT}% vitesse d'attaque après critique`);
+  if (effects.ARC_CHANCE_PCT         !== undefined) l.push(`+${effects.ARC_CHANCE_PCT}% chance d'arc électrique`);
+  if (effects.STATIC_RETORT_PCT      !== undefined) l.push(`+${effects.STATIC_RETORT_PCT}% chance de nova en étant touché`);
+  if (effects.CHAIN_FINISHER         !== undefined) l.push('Finisher → éclair en chaîne (3 ennemis)');
+  if (effects.CRIT_ARC               !== undefined) l.push('Critique → arc électrique automatique');
+  // ── GLACIUS ─────────────────────────────────────────────────────────────
+  if (effects.DAMAGE_REDUCTION_PCT    !== undefined) l.push(`-${effects.DAMAGE_REDUCTION_PCT}% dégâts subis`);
+  if (effects.STATUS_RES_DURATION_PCT !== undefined) l.push(`-${effects.STATUS_RES_DURATION_PCT}% durée des debuffs subis`);
+  if (effects.HEALING_RECEIVED_PCT    !== undefined) l.push(`+${effects.HEALING_RECEIVED_PCT}% soins reçus`);
+  if (effects.CHILL_AURA              !== undefined) l.push('Aura : ralentit les ennemis proches (r130)');
+  if (effects.LAST_BASTION            !== undefined) l.push('1×/combat sous 30% HP → bouclier (5s)');
+  if (effects.GUARD_FINISHER          !== undefined) l.push('Finisher → bouclier (3s)');
+  if (effects.PRESERVED               !== undefined) l.push('1×/zone : coup fatal → 1 HP + invulnérabilité (2s)');
+  // ── TENEBRES (NG+) ──────────────────────────────────────────────────────
+  if (effects.DARK_DMG_MULT          !== undefined) l.push(`+${effects.DARK_DMG_MULT}% dégâts sombres`);
+  if (effects.SOUL_STACK_BONUS       !== undefined) l.push(`+${effects.SOUL_STACK_BONUS} stacks Soul Echo par zone nettoyée`);
+  if (effects.VOID_CHANNEL           !== undefined) l.push('Sacrifie 15% HP au cast → sort +100%');
+  if (effects.DARK_BURN              !== undefined) l.push('BURN infligés → dégâts sombres');
+  if (effects.PHANTOM_STRIKE_PCT     !== undefined) l.push(`+${effects.PHANTOM_STRIKE_PCT}% chance de coup fantôme`);
+  if (effects.SACRIFICE_FINISHER     !== undefined) l.push('Finisher : sacrifie 20% HP max → dégâts ×3');
   return l.join('\n') || '—';
 }
 
