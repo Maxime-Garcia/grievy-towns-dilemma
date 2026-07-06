@@ -729,8 +729,13 @@ export class BestiaryScene extends Phaser.Scene {
   }
 
   private close() {
-    this.gameScene.setPaused(false);
     this.scene.stop();
+    // Reprendre PauseScene si elle était en pause (cas nominal : ouvert depuis PauseScene)
+    if (this.scene.isPaused('PauseScene')) {
+      this.scene.resume('PauseScene');
+    } else if (this.gameScene) {
+      this.gameScene.setPaused(false);
+    }
   }
 
   shutdown() {

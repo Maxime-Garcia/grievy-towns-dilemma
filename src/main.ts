@@ -19,11 +19,18 @@ const config: Phaser.Types.Core.GameConfig = {
   parent: 'game-container',
   backgroundColor: '#000000',
   pixelArt: true,
+  render: {
+    antialias: false,
+    antialiasGL: false,
+    roundPixels: true,
+    pixelArt: true,
+  },
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
     width: 800,
     height: 600,
+    zoom: Phaser.Scale.MAX_ZOOM,
   },
   physics: {
     default: 'arcade',

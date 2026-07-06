@@ -283,6 +283,7 @@ export class PauseScene extends Phaser.Scene {
   private openBestiary() {
     if (this.scene.isActive('BestiaryScene')) return;
     this.scene.launch('BestiaryScene', {
+      gameScene: this.gameScene,
       world: this.gameScene.gameState.world,
     });
     this.scene.pause('PauseScene');
