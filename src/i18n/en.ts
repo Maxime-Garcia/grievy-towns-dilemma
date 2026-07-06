@@ -39,6 +39,7 @@ export const EN: Record<string, string> = {
   'pause.resume': 'Resume',
   'pause.inventory': 'Inventory',
   'pause.skills': 'Skills',
+  'pause.bestiary': 'Bestiary',
   'pause.save': 'Save',
   'pause.mainmenu': 'Main Menu',
   'pause.esc_hint': '[Esc] resume',

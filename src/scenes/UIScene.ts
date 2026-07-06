@@ -67,7 +67,7 @@ export class UIScene extends Phaser.Scene {
     const { width: W, height: H } = this.cameras.main;
 
     // ── DEV: build badge (top-left) — retirer avant release ─────────
-    const BUILD_LABEL = 'DIORAMA: mainmenu pixel art landscape (a34d0d7)';
+    const BUILD_LABEL = 'BESTIARY: système + scène + notifications (0dd5cb2)';
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 4, badgePad + 4, BUILD_LABEL, {
       fontSize: '10px', color: '#000000', fontFamily: 'monospace', fontStyle: 'bold',
@@ -252,24 +252,26 @@ export class UIScene extends Phaser.Scene {
     this.gameScene.events.on('zone_entered',     this.onZoneEntered,     this);
     this.gameScene.events.on('show_notification',this.onShowNotification,this);
     this.gameScene.events.on('language_changed', this.onLanguageChanged,  this);
-    this.gameScene.events.on('combo-changed',     this.onComboChanged,     this);
-    this.gameScene.events.on('combo-broken',      this.onComboBroken,      this);
-    this.gameScene.events.on('finisher-executed', this.onFinisherExecuted, this);
+    this.gameScene.events.on('combo-changed',           this.onComboChanged,          this);
+    this.gameScene.events.on('combo-broken',            this.onComboBroken,           this);
+    this.gameScene.events.on('finisher-executed',       this.onFinisherExecuted,      this);
+    this.gameScene.events.on('new_creature_discovered', this.onNewCreatureDiscovered, this);
   }
 
   shutdown() {
-    this.gameScene.events.off('player_update',    this.onPlayerUpdate,    this);
-    this.gameScene.events.off('level_up',         this.onLevelUp,         this);
-    this.gameScene.events.off('item_looted',      this.onItemLooted,      this);
-    this.gameScene.events.off('quest_completed',  this.onQuestCompleted,  this);
-    this.gameScene.events.off('skill_unlocked',   this.onSkillUnlocked,   this);
-    this.gameScene.events.off('zone_cleared',     this.onZoneCleared,     this);
-    this.gameScene.events.off('zone_entered',     this.onZoneEntered,     this);
-    this.gameScene.events.off('show_notification',this.onShowNotification,this);
-    this.gameScene.events.off('language_changed', this.onLanguageChanged,  this);
-    this.gameScene.events.off('combo-changed',     this.onComboChanged,     this);
-    this.gameScene.events.off('combo-broken',      this.onComboBroken,      this);
-    this.gameScene.events.off('finisher-executed', this.onFinisherExecuted, this);
+    this.gameScene.events.off('player_update',           this.onPlayerUpdate,          this);
+    this.gameScene.events.off('level_up',                this.onLevelUp,               this);
+    this.gameScene.events.off('item_looted',             this.onItemLooted,            this);
+    this.gameScene.events.off('quest_completed',         this.onQuestCompleted,        this);
+    this.gameScene.events.off('skill_unlocked',          this.onSkillUnlocked,         this);
+    this.gameScene.events.off('zone_cleared',            this.onZoneCleared,           this);
+    this.gameScene.events.off('zone_entered',            this.onZoneEntered,           this);
+    this.gameScene.events.off('show_notification',       this.onShowNotification,      this);
+    this.gameScene.events.off('language_changed',        this.onLanguageChanged,       this);
+    this.gameScene.events.off('combo-changed',           this.onComboChanged,          this);
+    this.gameScene.events.off('combo-broken',            this.onComboBroken,           this);
+    this.gameScene.events.off('finisher-executed',       this.onFinisherExecuted,      this);
+    this.gameScene.events.off('new_creature_discovered', this.onNewCreatureDiscovered, this);
     this.pipTween = null;
   }
 
@@ -635,6 +637,10 @@ export class UIScene extends Phaser.Scene {
     this.time.delayedCall(3500, () => {
       this.tweens.add({ targets: [this.zoneText, this.zoneBg], alpha: 0.4, duration: 1000 });
     });
+  }
+
+  private onNewCreatureDiscovered({ name }: { name: string }) {
+    this.pushNotif(`Nouvelle créature : ${name} !`, UI.TXT_BLUE);
   }
 
   private pushNotif(msg: string, color = UI.TXT_PARCHMENT) {

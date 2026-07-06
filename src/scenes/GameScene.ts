@@ -20,6 +20,8 @@ import { getZoneLayout, ZoneLayout, LootableObject, WaterArea } from '../data/zo
 import { ALL_ITEMS } from '../data/items';
 import { loadBindings, KeyBindings } from '../data/keyBindings';
 import { t, localizeItem } from '../i18n';
+import { BestiarySystem } from '../systems/BestiarySystem';
+import { getBestiaryEntry } from '../data/bestiary';
 
 const ELEMENT_PROJECTILE_COLORS: Partial<Record<ElementType, number>> = {
   [ElementType.FIRE]:      0xff4400,
@@ -889,7 +891,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.pause();
 
     // Stop overlay scenes immediately
-    for (const key of ['PauseScene', 'InventoryScene', 'SkillScene', 'DialogueScene', 'ShopScene']) {
+    for (const key of ['PauseScene', 'InventoryScene', 'SkillScene', 'DialogueScene', 'ShopScene', 'BestiaryScene']) {
       if (this.scene.isActive(key) || this.scene.isPaused(key)) this.scene.stop(key);
     }
 
@@ -1051,7 +1053,6 @@ export class GameScene extends Phaser.Scene {
       const moveSpeed   = def.moveSpeed  ?? 90;
 
       // ── STUN check ──────────────────────────────────────────
-      // If the enemy has an active STUN status, freeze it completely.
       const stunEffect = ae.statusEffects.find(e => e.type === 'STUN');
       if (stunEffect && stunEffect.duration > 0) {
         stunEffect.duration -= dt;
@@ -1067,7 +1068,6 @@ export class GameScene extends Phaser.Scene {
       const bleedEffect = ae.statusEffects.find(e => e.type === 'BLEED');
       if (bleedEffect && bleedEffect.duration > 0) {
         bleedEffect.duration -= dt;
-        // Bleed damage applied at 1 Hz (tracked via cooldown key)
         const bleedKey = `bleed_${instanceId}`;
         if (!this.cooldowns[bleedKey] || this.cooldowns[bleedKey] <= 0) {
           ae.currentHp = Math.max(0, ae.currentHp - bleedEffect.strength);
@@ -1079,6 +1079,17 @@ export class GameScene extends Phaser.Scene {
         }
         if (bleedEffect.duration <= 0) {
           ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'BLEED');
+        }
+      }
+
+      // Bestiaire — découverte au premier contact (entrée dans la portée d'aggro)
+      if (dist < aggroRange && !sprite.getData('bestiary_discovered')) {
+        sprite.setData('bestiary_discovered', true);
+        const isNew = BestiarySystem.discover(this.gameState.world, ae.enemyId);
+        if (isNew) {
+          const bestiaryData = getBestiaryEntry(ae.enemyId);
+          const creatureName = bestiaryData?.name ?? def.name;
+          this.events.emit('new_creature_discovered', { enemyId: ae.enemyId, name: creatureName });
         }
       }
 
@@ -2064,10 +2075,15 @@ export class GameScene extends Phaser.Scene {
       activeEnemy.level, this.gameState.player,
     );
 
+    // Bestiaire — premier kill
+    BestiarySystem.recordKill(this.gameState.world, activeEnemy.enemyId);
+
     this.gameState.player.gold += loot.gold;
     for (const { item, quantity } of loot.items) {
       LootSystem.addToInventory(this.gameState.player, item, quantity);
       this.events.emit('item_looted', { item, quantity });
+      // Bestiaire — révéler les drops hidden au premier loot
+      BestiarySystem.revealDrop(this.gameState.world, activeEnemy.enemyId, item.id);
     }
 
     this.spawnXpOrbs(deathX, deathY, Math.floor(loot.xp * xpMult));

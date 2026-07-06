@@ -1,13 +1,13 @@
 import { GameState, SaveData, PlayerState, WorldState, EndingChoice } from '../types';
 import { ProgressionSystem } from './ProgressionSystem';
 
-const SAVE_VERSION = '1.3.0';
+const SAVE_VERSION = '1.4.0';
 const SAVE_KEY_PREFIX = 'gtd_save_';
 const MAX_SLOTS = 3;
 
 // Each entry migrates a save from its key version to the next.
 // Add a new entry here whenever PlayerState, WorldState, or GameState changes.
-const FRESH_WORLD: WorldState = { clearedZones: [], degradationLevel: 0, malacharDefeated: false };
+const FRESH_WORLD: WorldState = { clearedZones: [], degradationLevel: 0, malacharDefeated: false, bestiary: {} };
 
 const MIGRATION_MAP: Record<string, (state: GameState) => GameState> = {
   '1.0.0': (state) => ({
@@ -43,6 +43,15 @@ const MIGRATION_MAP: Record<string, (state: GameState) => GameState> = {
       talentPoints: Math.min((state.player as any).talentPoints ?? Math.min(state.player.level ?? 1, 20), 20),
       unlockedTalents: (state.player as any).unlockedTalents ?? [],
       respecCount: (state.player as any).respecCount ?? 0,
+    },
+  }),
+  // Ajout du champ bestiary dans WorldState
+  '1.3.0': (state) => ({
+    ...state,
+    version: '1.4.0',
+    world: {
+      ...state.world,
+      bestiary: (state.world as any).bestiary ?? {},
     },
   }),
 };
@@ -112,6 +121,7 @@ export class SaveSystem {
       clearedZones: [],
       degradationLevel: 0,
       malacharDefeated: false,
+      bestiary: {},
     };
     return {
       player,

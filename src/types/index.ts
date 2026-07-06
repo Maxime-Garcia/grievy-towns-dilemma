@@ -593,6 +593,16 @@ export interface PlayerState {
 }
 
 // ============================================================
+// BESTIARY
+// ============================================================
+
+export interface BestiaryEntryState {
+  discovered: boolean;     // true au premier contact (notification affichée)
+  killed: boolean;         // true au premier kill (lore complet débloqué)
+  revealedDrops: string[]; // itemIds des drops hidden révélés après premier loot
+}
+
+// ============================================================
 // WORLD STATE
 // ============================================================
 
@@ -601,6 +611,7 @@ export interface WorldState {
   degradationLevel: number;
   malacharDefeated: boolean;
   endingChosen?: EndingChoice;
+  bestiary: Record<string, BestiaryEntryState>;
 }
 
 // ============================================================

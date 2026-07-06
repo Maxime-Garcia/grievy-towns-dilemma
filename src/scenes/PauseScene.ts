@@ -82,12 +82,13 @@ export class PauseScene extends Phaser.Scene {
       { label: t('pause.resume'),    action: () => this.resume()                                      },
       { label: t('pause.inventory'), action: () => { this.resume(); this.gameScene.openInventory(); } },
       { label: t('pause.skills'),    action: () => { this.resume(); this.gameScene.openSkills();    } },
+      { label: t('pause.bestiary'),  action: () => this.openBestiary()                               },
       { label: t('pause.save'),      action: () => this.saveGame()                                    },
       { label: t('pause.mainmenu'),  action: () => this.goMainMenu(), color: UI.TXT_ORANGE            },
     ];
 
     items.forEach((item, i) => {
-      const y = 122 + i * 50;
+      const y = 116 + i * 44;
       this.makeMenuBtn(W / 2, y, 260, item.label, item.action, item.color);
     });
   }
@@ -277,6 +278,14 @@ export class PauseScene extends Phaser.Scene {
       this.tweens.add({ targets: txt, scaleX: 0.96, scaleY: 0.96, duration: 50, yoyo: true });
       action();
     });
+  }
+
+  private openBestiary() {
+    if (this.scene.isActive('BestiaryScene')) return;
+    this.scene.launch('BestiaryScene', {
+      world: this.gameScene.gameState.world,
+    });
+    this.scene.pause('PauseScene');
   }
 
   private startRebind(action: keyof KeyBindings) {
