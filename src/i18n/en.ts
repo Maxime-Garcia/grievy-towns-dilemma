@@ -115,7 +115,9 @@ export const EN: Record<string, string> = {
   'shop.bought':      'Purchased: {name}',
 
   // ── DIALOGUE SCENE ───────────────────────────────────────────
-  'dialogue.advance_hint': '[Z] advance   [Esc] close',
+  'dialogue.advance_hint': '[Z/Space] advance   [Esc] close',
+  'dialogue.shop':         'Shop',
+  'dialogue.forge':        'Forge',
 
   // ── SETTINGS ────────────────────────────────────────────────
   'settings.section.language': 'LANGUAGE',
