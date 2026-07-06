@@ -6,7 +6,8 @@ import {
 import { InventorySystem, setInventoryPlayerContext } from '../systems/InventorySystem';
 import { StatsSystem } from '../systems/StatsSystem';
 import { ALL_ITEMS } from '../data/items';
-import { UI, drawPanel, pxStyle } from '../utils/UITheme';
+import { UI, drawPanel, drawGlowPanel, pxStyle } from '../utils/UITheme';
+import { itemTextureKey } from '../utils/ItemAssets';
 import { t, localizeItem } from '../i18n';
 
 // ── Layout constants ──────────────────────────────────────────────────────────
@@ -61,6 +62,11 @@ export class InventoryScene extends Phaser.Scene {
   private longPressTimer: ReturnType<typeof setTimeout> | null = null;
   // Which paperdoll slot to flash after a successful tap-equip
   private lastFlashSlotKey: EquipSlotKey | null = null;
+
+  // Consume-confirm popup state
+  private consumePopupObjects: Phaser.GameObjects.GameObject[] = [];
+  private consumePopupTimer: Phaser.Time.TimerEvent | null = null;
+  private consumePopupDismissHit: Phaser.GameObjects.Rectangle | null = null;
 
   constructor() { super({ key: 'InventoryScene' }); }
 
@@ -446,10 +452,11 @@ export class InventoryScene extends Phaser.Scene {
     }
     if (isUse) {
       addBtn(t('inventory.use_hint'), UI.TXT_GREEN, () => {
-        setInventoryPlayerContext(this.player);
-        InventorySystem.useConsumable(this.player, itemId);
-        this.selectedItemId = null;
-        this.refresh();
+        // Route through the confirm popup — the popup centres itself in the
+        // detail panel area when no slot coords are given
+        const cx = this.stBounds.x + this.stBounds.w / 2;
+        const cy = this.stBounds.y + this.stBounds.h / 2;
+        this.showConsumeConfirmPopup(item as Consumable, cx, cy);
       });
     }
     if (isSell) {
@@ -568,7 +575,10 @@ export class InventoryScene extends Phaser.Scene {
         if (this.longPressTimer !== null) {
           clearTimeout(this.longPressTimer);
           this.longPressTimer = null;
-          this.doMainAction(slot.item.id);
+          // Pass screen coords so the popup can anchor near the tapped slot
+          const screenX = sx + INV_SLOT / 2 - 1;
+          const screenY = topY + INV_SLOT / 2 - 1;
+          this.doMainAction(slot.item.id, screenX, screenY);
         }
       });
       hit.on('pointerover', () => { bg.lineStyle(2, 0xffffff, 0.9); bg.strokeRect(sx, 0, INV_SLOT - 2, INV_SLOT - 2); });
@@ -593,11 +603,22 @@ export class InventoryScene extends Phaser.Scene {
 
   /** Returns a valid texture key for the item icon, or null (caller draws a colored square). */
   private resolveIcon(item: Item): string | null {
+    // 1. Specific per-item texture (baked in PreloaderScene.generateItemIcons)
     if (this.textures.exists(item.icon)) return item.icon;
+
+    // 2. Weapon type sprite (baked in PreloaderScene.generateWeaponIcons)
     if ('weaponType' in item && item.weaponType) {
       const key = `wpn_${String(item.weaponType).toLowerCase()}`;
       if (this.textures.exists(key)) return key;
     }
+
+    // 3. Category-level fallback texture (item_type_<ItemType>)
+    const typeKey = itemTextureKey(item.id, item.type, k => this.textures.exists(k));
+    if (typeKey !== 'item_type_generic' && this.textures.exists(typeKey)) return typeKey;
+
+    // 4. Generic fallback if any type-level texture was generated
+    if (this.textures.exists('item_type_generic')) return 'item_type_generic';
+
     return null;
   }
 
@@ -683,12 +704,12 @@ export class InventoryScene extends Phaser.Scene {
   /**
    * Executes the primary action for an item:
    *   - Equippable  → equip immediately + flash the paperdoll slot
-   *   - Consumable  → use immediately
+   *   - Consumable  → show confirmation popup (prevents accidental use)
    *   - Key / other → open the detail panel
    *
    * Called on quick tap in the grid and by the Z key shortcut in detail view.
    */
-  private doMainAction(itemId: string): void {
+  private doMainAction(itemId: string, slotScreenX?: number, slotScreenY?: number): void {
     const item = ALL_ITEMS[itemId];
     if (!item) return;
 
@@ -700,14 +721,225 @@ export class InventoryScene extends Phaser.Scene {
       this.selectedItemId = null;
       this.refresh();
     } else if (item.type === ItemType.CONSUMABLE) {
-      setInventoryPlayerContext(this.player);
-      InventorySystem.useConsumable(this.player, itemId);
-      this.selectedItemId = null;
-      this.refresh();
+      // Show confirmation popup instead of using immediately
+      this.showConsumeConfirmPopup(item as Consumable, slotScreenX ?? this.cameras.main.width / 2, slotScreenY ?? this.cameras.main.height / 2);
     } else {
       // Key items, materials, skins: open the detail panel
       this.showDetail(itemId);
     }
+  }
+
+  // ── Consume confirmation popup ────────────────────────────────────────────
+
+  /**
+   * Builds and shows a small confirmation popup near the tapped inventory slot.
+   *
+   * Layout (200×110 px):
+   *   • drawGlowPanel with green accent
+   *   • Item icon 32×32 | item name (truncated) | effect summary
+   *   • [Utiliser] button (green, ≥44 px tall) | [Annuler] button (red)
+   *   • Auto-dismiss after 3 s if no action
+   *   • Click outside → dismiss
+   */
+  private showConsumeConfirmPopup(item: Consumable, nearX: number, nearY: number): void {
+    // Only one popup at a time — dismiss any existing one first
+    this.closeConsumePopup();
+
+    const W       = this.cameras.main.width;
+    const H       = this.cameras.main.height;
+    const PW      = 210;
+    const PH      = 116;
+    const MARGIN  = 6;
+
+    // Anchor near the slot, clamp so the popup stays fully on screen
+    let px = nearX - PW / 2;
+    let py = nearY - PH - 6; // above the slot by default
+    if (py < MARGIN)         py = nearY + INV_SLOT / 2 + 6; // below if not enough room
+    if (px < MARGIN)         px = MARGIN;
+    if (px + PW > W - MARGIN) px = W - MARGIN - PW;
+    if (py + PH > H - MARGIN) py = H - MARGIN - PH;
+
+    const depth = 50; // above all inventory objects
+
+    // ── Full-screen dismiss hit zone (behind the popup) ───────────────────
+    const dismissHit = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0)
+      .setDepth(depth - 1)
+      .setInteractive({ useHandCursor: false });
+    dismissHit.on('pointerdown', () => this.closeConsumePopup());
+    this.consumePopupDismissHit = dismissHit;
+    this.consumePopupObjects.push(dismissHit);
+
+    // ── Panel background ──────────────────────────────────────────────────
+    const panelGfx = this.add.graphics().setDepth(depth);
+    drawGlowPanel(panelGfx, px, py, PW, PH, 0x44cc66 /* green accent */, UI.PANEL_BG, 4, 0.97);
+    this.consumePopupObjects.push(panelGfx);
+
+    // ── Item icon (left side) ─────────────────────────────────────────────
+    const iconKey  = this.resolveIcon(item);
+    const iconSize = 32;
+    const iconX    = px + MARGIN + iconSize / 2;
+    const iconY    = py + MARGIN + iconSize / 2;
+
+    if (iconKey) {
+      try {
+        const img = this.add.image(iconX, iconY, iconKey)
+          .setDisplaySize(iconSize, iconSize)
+          .setDepth(depth + 1);
+        this.consumePopupObjects.push(img);
+      } catch {
+        this.addColorSquareAbove(px + MARGIN, py + MARGIN, iconSize, 0x44cc66, depth + 1);
+      }
+    } else {
+      this.addColorSquareAbove(px + MARGIN, py + MARGIN, iconSize, 0x44cc66, depth + 1);
+    }
+
+    // ── Item name ─────────────────────────────────────────────────────────
+    const locItem = localizeItem(item);
+    const rawName = locItem.name;
+    const name    = rawName.length > 18 ? `${rawName.slice(0, 16)}..` : rawName;
+    this.consumePopupObjects.push(
+      this.add.text(px + MARGIN * 2 + iconSize + 2, py + MARGIN + 2, name, {
+        ...pxStyle(6, RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT, false),
+        wordWrap: { width: PW - iconSize - MARGIN * 3 - 2 },
+      }).setDepth(depth + 1),
+    );
+
+    // ── Effect summary ────────────────────────────────────────────────────
+    const effectLine = this.getConsumableEffectLine(item);
+    this.consumePopupObjects.push(
+      this.add.text(
+        px + MARGIN * 2 + iconSize + 2,
+        py + MARGIN + 16,
+        effectLine,
+        pxStyle(6, UI.TXT_GREEN),
+      ).setDepth(depth + 1),
+    );
+
+    // ── Separator ─────────────────────────────────────────────────────────
+    const sepGfx = this.add.graphics().setDepth(depth + 1);
+    sepGfx.lineStyle(1, UI.BORDER_LIT, 0.5);
+    sepGfx.beginPath();
+    sepGfx.moveTo(px + 6,      py + MARGIN * 2 + iconSize + 2);
+    sepGfx.lineTo(px + PW - 6, py + MARGIN * 2 + iconSize + 2);
+    sepGfx.strokePath();
+    this.consumePopupObjects.push(sepGfx);
+
+    // ── Action buttons ────────────────────────────────────────────────────
+    const BTN_H  = 44; // ≥44 px for touch targets (Apple HIG)
+    const BTN_W  = (PW - MARGIN * 3) / 2;
+    const BTN_Y  = py + PH - BTN_H - MARGIN;
+    const BTN_X1 = px + MARGIN;
+    const BTN_X2 = BTN_X1 + BTN_W + MARGIN;
+
+    // Confirm button (Utiliser)
+    const confirmGfx = this.add.graphics().setDepth(depth + 1);
+    confirmGfx.fillStyle(0x0d2010, 1);
+    confirmGfx.fillRoundedRect(BTN_X1, BTN_Y, BTN_W, BTN_H, 3);
+    confirmGfx.lineStyle(1, 0x44cc66, 1);
+    confirmGfx.strokeRoundedRect(BTN_X1, BTN_Y, BTN_W, BTN_H, 3);
+
+    const confirmTxt = this.add.text(
+      BTN_X1 + BTN_W / 2, BTN_Y + BTN_H / 2,
+      'Utiliser',
+      pxStyle(7, UI.TXT_GREEN, true),
+    ).setOrigin(0.5).setDepth(depth + 2);
+
+    const confirmHit = this.add.rectangle(BTN_X1 + BTN_W / 2, BTN_Y + BTN_H / 2, BTN_W, BTN_H, 0x000000, 0)
+      .setDepth(depth + 2)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerover', () => {
+        confirmGfx.lineStyle(1, 0xaaffcc, 1);
+        confirmGfx.strokeRoundedRect(BTN_X1, BTN_Y, BTN_W, BTN_H, 3);
+        confirmTxt.setColor(UI.TXT_GOLD);
+      })
+      .on('pointerout', () => {
+        confirmGfx.lineStyle(1, 0x44cc66, 1);
+        confirmGfx.strokeRoundedRect(BTN_X1, BTN_Y, BTN_W, BTN_H, 3);
+        confirmTxt.setColor(UI.TXT_GREEN);
+      })
+      .on('pointerdown', () => {
+        this.closeConsumePopup();
+        setInventoryPlayerContext(this.player);
+        InventorySystem.useConsumable(this.player, item.id);
+        this.selectedItemId = null;
+        this.refresh();
+      });
+
+    // Cancel button (Annuler)
+    const cancelGfx = this.add.graphics().setDepth(depth + 1);
+    cancelGfx.fillStyle(0x1a0808, 1);
+    cancelGfx.fillRoundedRect(BTN_X2, BTN_Y, BTN_W, BTN_H, 3);
+    cancelGfx.lineStyle(1, 0xcc3322, 1);
+    cancelGfx.strokeRoundedRect(BTN_X2, BTN_Y, BTN_W, BTN_H, 3);
+
+    const cancelTxt = this.add.text(
+      BTN_X2 + BTN_W / 2, BTN_Y + BTN_H / 2,
+      'Annuler',
+      pxStyle(7, UI.TXT_RED, false),
+    ).setOrigin(0.5).setDepth(depth + 2);
+
+    const cancelHit = this.add.rectangle(BTN_X2 + BTN_W / 2, BTN_Y + BTN_H / 2, BTN_W, BTN_H, 0x000000, 0)
+      .setDepth(depth + 2)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerover', () => {
+        cancelGfx.lineStyle(1, 0xff6655, 1);
+        cancelGfx.strokeRoundedRect(BTN_X2, BTN_Y, BTN_W, BTN_H, 3);
+        cancelTxt.setColor(UI.TXT_ORANGE);
+      })
+      .on('pointerout', () => {
+        cancelGfx.lineStyle(1, 0xcc3322, 1);
+        cancelGfx.strokeRoundedRect(BTN_X2, BTN_Y, BTN_W, BTN_H, 3);
+        cancelTxt.setColor(UI.TXT_RED);
+      })
+      .on('pointerdown', () => this.closeConsumePopup());
+
+    this.consumePopupObjects.push(
+      confirmGfx, confirmTxt, confirmHit,
+      cancelGfx, cancelTxt, cancelHit,
+    );
+
+    // ── Auto-dismiss timer (3 s) ───────────────────────────────────────────
+    this.consumePopupTimer = this.time.addEvent({
+      delay: 3000,
+      callback: () => { this.consumePopupTimer = null; this.closeConsumePopup(); },
+    });
+  }
+
+  /** Returns a short human-readable effect line for the popup. */
+  private getConsumableEffectLine(item: Consumable): string {
+    const e = item.effect;
+    if (e.hpRestore)   return `HP +${e.hpRestore}`;
+    if (e.manaRestore) return `MP +${e.manaRestore}`;
+    if (e.hpPercent === 1.0 && e.manaPercent === 1.0) return 'HP + MP 100%';
+    if (e.hpPercent)   return `HP ${Math.round(e.hpPercent * 100)}%`;
+    if (e.manaPercent) return `MP ${Math.round(e.manaPercent * 100)}%`;
+    if (e.revive)      return 'Résurrection HP 50%';
+    if (e.statusCure)  return 'Soigne les statuts';
+    return item.description.slice(0, 22);
+  }
+
+  /**
+   * Draw a colored square at absolute scene coords with an explicit depth.
+   * Used only by the consume popup (the normal addColorSquare() is depth-less).
+   */
+  private addColorSquareAbove(x: number, y: number, size: number, colorHex: number, depth: number): void {
+    const gfx = this.add.graphics().setDepth(depth);
+    gfx.fillStyle(colorHex, 0.5);
+    gfx.fillRect(x, y, size, size);
+    this.consumePopupObjects.push(gfx);
+  }
+
+  /** Destroy all popup objects and cancel the auto-dismiss timer. */
+  private closeConsumePopup(): void {
+    if (this.consumePopupTimer !== null) {
+      this.consumePopupTimer.remove(false);
+      this.consumePopupTimer = null;
+    }
+    for (const go of this.consumePopupObjects) {
+      if (go.active) go.destroy();
+    }
+    this.consumePopupObjects = [];
+    this.consumePopupDismissHit = null;
   }
 
   // ── State transitions ──────────────────────────────────────────────────────
@@ -732,6 +964,8 @@ export class InventoryScene extends Phaser.Scene {
 
   private clearDynamic(): void {
     this.input.off('wheel');
+    // Close any open consume popup before rebuilding the scene
+    this.closeConsumePopup();
     for (const go of this.dynamicObjs) {
       if (go.active) go.destroy();
     }
@@ -752,6 +986,7 @@ export class InventoryScene extends Phaser.Scene {
       this.longPressTimer = null;
     }
     this.input.off('wheel');
+    // clearDynamic() calls closeConsumePopup() internally
     this.clearDynamic();
   }
 }
