@@ -304,7 +304,7 @@ export class UIScene extends Phaser.Scene {
     // Traîne uniquement vers le bas (drain) — snap immédiat sur soin pour éviter
     // une bande orange visible au-dessus de la barre verte.
     if (this.hpBarDelayed > this.targetHp) {
-      this.hpBarDelayed = Phaser.Math.Linear(this.hpBarDelayed, this.targetHp, Math.min(1, 6 * dt));
+      this.hpBarDelayed = Phaser.Math.Linear(this.hpBarDelayed, this.targetHp, Math.min(1, 1.5 * dt));
     } else {
       this.hpBarDelayed = this.targetHp;
     }
