@@ -10,6 +10,11 @@ import { SkillSystem } from '../systems/SkillSystem';
 import { SaveSystem } from '../systems/SaveSystem';
 import { ENEMY_MAP } from '../data/enemies';
 import { ZONE_MAP } from '../data/zones';
+import {
+  PATTERNS,
+  getEnemyPatternAssignment,
+  type AttackPatternId,
+} from '../data/enemyPatterns';
 import { NPC_MAP } from '../data/npcs';
 import { getZoneLayout, ZoneLayout, LootableObject, WaterArea } from '../data/zoneMaps';
 import { ALL_ITEMS } from '../data/items';
@@ -194,6 +199,19 @@ export class GameScene extends Phaser.Scene {
   }> = [];
   private lootableLooted: Set<string> = new Set();
 
+  // ── HOMING PROJECTILE TRACKING ───────────────────────────────
+  // Each entry represents an active homing orb fired by an enemy.
+  private _homingProjectiles: Array<{
+    sprite: Phaser.GameObjects.Arc;
+    halo: Phaser.GameObjects.Arc;
+    vx: number;
+    vy: number;
+    rotateSpeedRad: number; // rad/s
+    destroyAt: number;
+    damage: number;
+    hit: boolean;
+  }> = [];
+
   // Zone-scoped objects destroyed/recreated on each transition
   private zoneGraphics: Phaser.GameObjects.Graphics | null = null;
   private zoneLabels: Phaser.GameObjects.Text[] = [];
@@ -253,10 +271,11 @@ export class GameScene extends Phaser.Scene {
     this.isInDialogue   = false;
     this.nearbyNPC      = null;
     this.nearbyLootable = null;
-    this.activeEnemies  = new Map();
-    this.enemyHpBars    = new Map();
-    this.enemyCrowns    = new Map();
-    this.lootableLooted = new Set();
+    this.activeEnemies      = new Map();
+    this.enemyHpBars        = new Map();
+    this.enemyCrowns        = new Map();
+    this.lootableLooted     = new Set();
+    this._homingProjectiles = [];
     this.cooldowns           = {};
     this.dashCooldown        = 0;
     this.wasDashReady        = true;
@@ -992,10 +1011,30 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ── ENEMY AI ─────────────────────────────────────────────────
+  //
+  // State machine per enemy instance. State is stored via sprite.getData() to avoid
+  // any modification to ActiveEnemy or the save schema.
+  //
+  // Per-instance keys stored in sprite data:
+  //   'aiState'       : EnemyAiState — current FSM state
+  //   'aiStateUntil'  : number       — time.now() when state expires
+  //   'aiPattern'     : AttackPatternId — pattern currently executing
+  //   'chargeTargetX' : number       — frozen player X at start of charge telegraph
+  //   'chargeTargetY' : number       — frozen player Y at start of charge telegraph
+  //   'summonFired'   : boolean      — summon pattern already triggered this fight
+  //   'originX'/'originY' : patrol origin
+  //
+  // AI state machine:
+  //   idle → patrol → chase → telegraph → attack → cooldown → chase/idle → ...
+  //                               ↑ only when in aggro range AND attack cooldown ready
 
   private tickEnemyAI(dt: number) {
     const px = this.player.x;
     const py = this.player.y;
+    const now = this.time.now;
+
+    // Tick homing projectiles first (independent of enemy loop)
+    this.tickHomingProjectiles(dt);
 
     this.activeEnemies.forEach((ae, instanceId) => {
       const sprite = this.enemies.getChildren().find(
@@ -1005,214 +1044,810 @@ export class GameScene extends Phaser.Scene {
 
       const body = sprite.body as Phaser.Physics.Arcade.Body;
       const dist = Phaser.Math.Distance.Between(sprite.x, sprite.y, px, py);
-      const def = ENEMY_MAP[ae.enemyId] as Enemy | undefined;
+      const def  = ENEMY_MAP[ae.enemyId] as Enemy | undefined;
       if (!def) return;
 
-      const behavior   = def.behavior ?? 'chaser';
-      const aggroRange = def.aggroRange ?? 220;
-      const attackRange = def.attackRange ?? (behavior === 'ranged' ? 300 : 50);
-      const moveSpeed  = def.moveSpeed ?? 90;
+      const aggroRange  = def.aggroRange ?? 220;
+      const moveSpeed   = def.moveSpeed  ?? 90;
 
-      switch (behavior) {
-        case 'patrol': {
-          const patrolRadius = def.patrolRadius ?? 120;
-          if (!sprite.getData('originX')) {
-            sprite.setData('originX', sprite.x);
-            sprite.setData('originY', sprite.y);
+      // ── STUN check ──────────────────────────────────────────
+      // If the enemy has an active STUN status, freeze it completely.
+      const stunEffect = ae.statusEffects.find(e => e.type === 'STUN');
+      if (stunEffect && stunEffect.duration > 0) {
+        stunEffect.duration -= dt;
+        if (stunEffect.duration <= 0) {
+          ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'STUN');
+        }
+        body.setVelocity(0, 0);
+        this.updateEnemyUiPositions(instanceId, sprite, ae);
+        return;
+      }
+
+      // ── Bleed tick ──────────────────────────────────────────
+      const bleedEffect = ae.statusEffects.find(e => e.type === 'BLEED');
+      if (bleedEffect && bleedEffect.duration > 0) {
+        bleedEffect.duration -= dt;
+        // Bleed damage applied at 1 Hz (tracked via cooldown key)
+        const bleedKey = `bleed_${instanceId}`;
+        if (!this.cooldowns[bleedKey] || this.cooldowns[bleedKey] <= 0) {
+          ae.currentHp = Math.max(0, ae.currentHp - bleedEffect.strength);
+          this.cooldowns[bleedKey] = 1.0;
+          if (ae.currentHp <= 0) {
+            this.onEnemyKilled(ae, sprite);
+            return;
           }
-          if (dist < aggroRange) {
-            // Aggro : fonce vers le joueur
-            this.moveEnemyToward(body, sprite, px, py, moveSpeed);
-          } else {
-            // Patrouille autour du point de spawn
-            const originX = sprite.getData('originX') as number;
-            const originY = sprite.getData('originY') as number;
-            const t = (this.time.now / 1000) * 0.5;
-            const seed = parseFloat(instanceId.slice(-3) || '0');
-            const targetX = originX + Math.cos(t + seed) * patrolRadius;
-            const targetY = originY + Math.sin(t + seed) * patrolRadius;
-            this.moveEnemyToward(body, sprite, targetX, targetY, moveSpeed * 0.5);
-          }
-          break;
+        }
+        if (bleedEffect.duration <= 0) {
+          ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'BLEED');
+        }
+      }
+
+      // ── Read FSM state ───────────────────────────────────────
+      const aiState     = (sprite.getData('aiState') as string | null) ?? 'idle';
+      const aiStateUntil = (sprite.getData('aiStateUntil') as number | null) ?? 0;
+
+      // Fetch pattern assignment for this enemy
+      const assignment = getEnemyPatternAssignment(ae.enemyId);
+      const patternId: AttackPatternId = assignment?.primary ?? 'melee_basic';
+
+      // Attack cooldown key
+      const atkCdKey = `atkcd_${instanceId}`;
+      if (!this.cooldowns[atkCdKey]) this.cooldowns[atkCdKey] = 0;
+
+      // ── STATE: idle → patrol ─────────────────────────────────
+      if (aiState === 'idle' || aiState === 'patrol') {
+        // Store origin for patrol
+        if (!sprite.getData('originX')) {
+          sprite.setData('originX', sprite.x);
+          sprite.setData('originY', sprite.y);
+        }
+        if (dist < aggroRange) {
+          sprite.setData('aiState', 'chase');
+          return;
+        }
+        // Patrol orbit around origin
+        const behavior = def.behavior ?? 'chaser';
+        if (behavior === 'patrol' || behavior === 'summoner') {
+          const radius = def.patrolRadius ?? 100;
+          const originX = sprite.getData('originX') as number;
+          const originY = sprite.getData('originY') as number;
+          // Use char code of last char as a numeric seed (always a number, never NaN)
+          const seedChar = instanceId.charCodeAt(instanceId.length - 1) || 0;
+          const tSeed = (now / 1000) * 0.4 + seedChar * 0.01;
+          this.moveEnemyToward(body, sprite, originX + Math.cos(tSeed) * radius, originY + Math.sin(tSeed) * radius, moveSpeed * 0.45);
+        } else {
+          body.setVelocity(0, 0);
         }
 
-        case 'ranged': {
-          const projectileCdKey = `proj_${instanceId}`;
-          if (!this.cooldowns[projectileCdKey]) this.cooldowns[projectileCdKey] = 0;
-
-          if (dist < aggroRange) {
-            if (dist < attackRange * 0.5) {
-              // Trop près — reculer dans la direction opposée au joueur
-              const awayAngle = Math.atan2(sprite.y - py, sprite.x - px);
-              body.setVelocity(
-                Math.cos(awayAngle) * moveSpeed,
-                Math.sin(awayAngle) * moveSpeed,
-              );
-            } else if (dist > attackRange * 0.9) {
-              // Trop loin — s'approcher
-              this.moveEnemyToward(body, sprite, px, py, moveSpeed * 0.4);
-            } else {
-              body.setVelocity(0, 0);
-            }
-
-            // Tir de projectile
-            if (this.cooldowns[projectileCdKey] <= 0) {
-              this.spawnProjectile(
-                sprite.x, sprite.y, px, py,
-                def.element as ElementType | undefined, ae.stats.baseAtk, false,
-              );
-              this.cooldowns[projectileCdKey] = 2.5;
-            }
-          } else {
-            body.setVelocity(0, 0);
-          }
-          break;
+      // ── STATE: chase ─────────────────────────────────────────
+      } else if (aiState === 'chase') {
+        if (dist > aggroRange * 1.4) {
+          sprite.setData('aiState', 'idle');
+          body.setVelocity(0, 0);
+          return;
         }
 
-        case 'charger': {
-          const chargeKey = `charge_${instanceId}`;
-          const chargeState = (sprite.getData(chargeKey) as string | null) ?? 'idle';
+        // Move toward player (ranged enemies keep a preferred distance)
+        const behavior = def.behavior ?? 'chaser';
+        const preferredRange = behavior === 'ranged' ? (def.attackRange ?? 220) * 0.75 : 0;
 
-          if (chargeState === 'charging') {
-            if (dist < 45) {
+        if (preferredRange > 0 && dist < preferredRange * 0.5) {
+          // Ranged: too close — back off
+          const awayAngle = Math.atan2(sprite.y - py, sprite.x - px);
+          body.setVelocity(Math.cos(awayAngle) * moveSpeed * 0.7, Math.sin(awayAngle) * moveSpeed * 0.7);
+        } else if (preferredRange > 0 && dist < preferredRange) {
+          body.setVelocity(0, 0); // in sweet spot — strafe or stand
+        } else {
+          this.moveEnemyToward(body, sprite, px, py, moveSpeed);
+        }
+
+        // Decide to telegraph if close enough AND cooldown is ready
+        const attackRange = def.attackRange ?? (behavior === 'ranged' ? 240 : 55);
+        const inRange = dist < attackRange + 30;
+        if (inRange && this.cooldowns[atkCdKey] <= 0) {
+          // Pick the best pattern given context
+          const chosenPatternId = this.pickEnemyPattern(ae, dist, assignment);
+          sprite.setData('aiState', 'telegraph');
+          sprite.setData('aiStateUntil', now + PATTERNS[chosenPatternId].telegraphMs);
+          sprite.setData('aiPattern', chosenPatternId);
+          sprite.setData('chargeTargetX', px);
+          sprite.setData('chargeTargetY', py);
+          body.setVelocity(0, 0);
+          this.startEnemyTelegraph(sprite, ae, chosenPatternId);
+        }
+
+      // ── STATE: telegraph ─────────────────────────────────────
+      } else if (aiState === 'telegraph') {
+        body.setVelocity(0, 0); // frozen during windup
+        if (now >= aiStateUntil) {
+          const currentPattern = (sprite.getData('aiPattern') as AttackPatternId | null) ?? patternId;
+          sprite.setData('aiState', 'attack');
+          sprite.setData('aiStateUntil', now + 600); // max attack execution window
+          sprite.clearTint();
+          this.executeEnemyAttackPattern(sprite, ae, def, currentPattern);
+          // BUG 1 fix: do NOT set this.cooldowns[atkCdKey] here — the FSM 'cooldown' state
+          // (aiStateUntil set in 'attack' → 'cooldown' transition) is the sole clock. A parallel
+          // this.cooldowns value caused the enemy to re-telegraph before the FSM cooldown expired.
+        }
+
+      // ── STATE: attack ─────────────────────────────────────────
+      } else if (aiState === 'attack') {
+        // Attack state is brief (execution fires via delayedCall)
+        if (now >= aiStateUntil) {
+          sprite.setData('aiState', 'cooldown');
+          const cfg = PATTERNS[(sprite.getData('aiPattern') as AttackPatternId | null) ?? 'melee_basic'];
+          sprite.setData('aiStateUntil', now + cfg.cooldownMs);
+        }
+
+      // ── STATE: cooldown ───────────────────────────────────────
+      } else if (aiState === 'cooldown') {
+        if (dist < aggroRange) {
+          // Keep chasing at half speed during recovery
+          this.moveEnemyToward(body, sprite, px, py, moveSpeed * 0.5);
+        } else {
+          body.setVelocity(0, 0);
+        }
+        if (now >= aiStateUntil) {
+          sprite.setData('aiState', dist < aggroRange ? 'chase' : 'idle');
+        }
+      }
+
+      // ── CONTACT MELEE (always applies except stunned) ────────
+      // Only for non-ranged enemies that are touching the player.
+      // This is the cheap fallback when the pattern system hasn't triggered yet.
+      const behavior = def.behavior ?? 'chaser';
+      if (behavior !== 'ranged' && dist < 50 && aiState !== 'telegraph' && aiState !== 'attack') {
+        const meleeCdKey = `melee_${instanceId}`;
+        if (!this.cooldowns[meleeCdKey] || this.cooldowns[meleeCdKey] <= 0) {
+          this.applyEnemyMeleeDamage(ae, 1.0);
+          this.cooldowns[meleeCdKey] = 1.2;
+        }
+      }
+
+      // ── Update HP bar & crown positions ──────────────────────
+      this.updateEnemyUiPositions(instanceId, sprite, ae);
+    });
+  }
+
+  /** Pick which pattern to execute based on context. */
+  private pickEnemyPattern(
+    ae: ActiveEnemy,
+    _dist: number,
+    assignment: ReturnType<typeof getEnemyPatternAssignment>,
+  ): AttackPatternId {
+    if (!assignment) return 'melee_basic';
+
+    // Summon at HP threshold (once per fight — applies whether primary or secondary is 'summon')
+    const hasSummon = assignment.primary === 'summon' || assignment.secondary === 'summon';
+    if (hasSummon) {
+      const sprite = this.enemies.getChildren().find(
+        c => (c as Phaser.Physics.Arcade.Sprite).name === ae.instanceId,
+      ) as Phaser.Physics.Arcade.Sprite | undefined;
+      const hpPct = ae.currentHp / ae.maxHp;
+      const threshold = PATTERNS.summon.summonHpThreshold ?? 0.5;
+      const alreadyFired = sprite?.getData('summonFired') as boolean | null;
+      if (!alreadyFired && hpPct <= threshold) {
+        return 'summon';
+      }
+      // Guard: if summon was already fired and primary IS summon, force secondary to avoid infinite loop
+      if (alreadyFired && assignment.primary === 'summon') {
+        return (assignment.secondary !== 'summon' ? assignment.secondary : null) ?? 'melee_basic';
+      }
+    }
+
+    // Alternate between primary and secondary for variety
+    if (assignment.secondary) {
+      // Use secondary roughly 30% of the time
+      if (Math.random() < 0.3) return assignment.secondary;
+    }
+    return assignment.primary;
+  }
+
+  /** Spawn the visual telegraph effect for the chosen pattern. */
+  private startEnemyTelegraph(
+    sprite: Phaser.Physics.Arcade.Sprite,
+    _ae: ActiveEnemy,
+    patternId: AttackPatternId,
+  ) {
+    const cfg = PATTERNS[patternId];
+    const duration = cfg.telegraphMs;
+    const tint = cfg.telegraphTint;
+
+    switch (patternId) {
+      case 'charge': {
+        // Trembling orange tint — alternating flashes
+        const flashInterval = 80;
+        const flashCount = Math.floor(duration / flashInterval);
+        let step = 0;
+        const timerEvent = this.time.addEvent({
+          delay: flashInterval,
+          repeat: flashCount - 1,
+          callback: () => {
+            if (!sprite.active) return;
+            step++;
+            sprite.setTint(step % 2 === 0 ? tint : 0xff4400);
+          },
+        });
+        // Store ref so we can cancel it if the enemy dies mid-telegraph
+        sprite.setData('telegraphTimer', timerEvent);
+
+        // Scale tremble
+        this.tweens.add({
+          targets: sprite,
+          scaleX: 1.0 + 0.04,
+          scaleY: 1.0 - 0.04,
+          duration: 80,
+          yoyo: true,
+          repeat: Math.floor(duration / 160),
+        });
+        break;
+      }
+
+      case 'burst_fan': {
+        // Scale pop (expand then contract) with orange tint
+        sprite.setTint(tint);
+        this.tweens.add({
+          targets: sprite,
+          scaleX: 1.2,
+          scaleY: 1.2,
+          duration: duration * 0.35,
+          ease: 'Cubic.easeOut',
+          yoyo: true,
+          onComplete: () => { if (sprite.active) sprite.setScale(1); },
+        });
+        // Concentric rings pulsing outward
+        for (let i = 0; i < 2; i++) {
+          const ring = this.add.graphics({ x: sprite.x, y: sprite.y }).setDepth(12);
+          ring.lineStyle(3, tint, 0.8);
+          ring.strokeCircle(0, 0, 10);
+          this.tweens.add({
+            targets: ring,
+            scaleX: 4, scaleY: 4,
+            alpha: 0,
+            delay: i * (duration / 3),
+            duration: duration * 0.55,
+            ease: 'Linear',
+            onUpdate: () => ring.setPosition(sprite.x, sprite.y),
+            onComplete: () => ring.destroy(),
+          });
+        }
+        break;
+      }
+
+      case 'circular_burst': {
+        // Large pulsing ring — danger is obvious
+        sprite.setTint(tint);
+        const bigRing = this.add.graphics({ x: sprite.x, y: sprite.y }).setDepth(12);
+        bigRing.lineStyle(5, tint, 0.9);
+        bigRing.strokeCircle(0, 0, 20);
+        this.tweens.add({
+          targets: bigRing,
+          scaleX: 3.5, scaleY: 3.5,
+          alpha: 0.2,
+          duration: duration * 0.6,
+          yoyo: true,
+          ease: 'Sine.easeInOut',
+          onUpdate: () => bigRing.setPosition(sprite.x, sprite.y),
+          onComplete: () => bigRing.destroy(),
+        });
+        // Inner glow
+        const glow = this.add.circle(sprite.x, sprite.y, sprite.displayWidth * 0.7, tint, 0.3).setDepth(11);
+        this.tweens.add({
+          targets: glow,
+          alpha: 0.6,
+          duration: duration * 0.4,
+          yoyo: true,
+          repeat: 1,
+          onUpdate: () => glow.setPosition(sprite.x, sprite.y),
+          onComplete: () => glow.destroy(),
+        });
+        break;
+      }
+
+      case 'dash_melee': {
+        // Violet flash + slight compression
+        sprite.setTint(tint);
+        this.tweens.add({
+          targets: sprite,
+          scaleX: 0.85,
+          scaleY: 1.15,
+          duration: duration * 0.5,
+          ease: 'Cubic.easeIn',
+          yoyo: true,
+        });
+        // Particle burst telegraphing intent (toward the player)
+        const intentAngle = Math.atan2(this.player.y - sprite.y, this.player.x - sprite.x);
+        for (let i = 0; i < 3; i++) {
+          const dot = this.add.circle(sprite.x, sprite.y, 4, tint, 0.8).setDepth(12);
+          const dotAngle = intentAngle + (i - 1) * 0.35;
+          const dotStartX = sprite.x;
+          const dotStartY = sprite.y;
+          this.tweens.add({
+            targets: dot,
+            x: dotStartX + Math.cos(dotAngle) * 22,
+            y: dotStartY + Math.sin(dotAngle) * 22,
+            alpha: 0,
+            delay: i * 60,
+            duration: 200,
+            onComplete: () => dot.destroy(),
+          });
+        }
+        break;
+      }
+
+      case 'homing': {
+        // Violet glow building up — orb forms
+        sprite.setTint(tint);
+        const orb = this.add.circle(sprite.x, sprite.y, 4, tint, 0.7).setDepth(13);
+        this.tweens.add({
+          targets: orb,
+          radius: 12,
+          alpha: 1,
+          duration: duration * 0.7,
+          ease: 'Cubic.easeOut',
+          onUpdate: () => orb.setPosition(sprite.x, sprite.y),
+          onComplete: () => orb.destroy(),
+        });
+        break;
+      }
+
+      case 'summon': {
+        // Gold aura builds — boss moment
+        sprite.setTint(tint);
+        const aura = this.add.circle(sprite.x, sprite.y, sprite.displayWidth, tint, 0.25).setDepth(11);
+        this.tweens.add({
+          targets: aura,
+          radius: sprite.displayWidth * 3,
+          alpha: 0.5,
+          duration: duration * 0.8,
+          ease: 'Sine.easeInOut',
+          yoyo: true,
+          onUpdate: () => aura.setPosition(sprite.x, sprite.y),
+          onComplete: () => aura.destroy(),
+        });
+        break;
+      }
+
+      default:
+        // melee_basic — quick red flash only
+        sprite.setTint(tint);
+        break;
+    }
+  }
+
+  /** Execute the actual attack for the given pattern. */
+  private executeEnemyAttackPattern(
+    sprite: Phaser.Physics.Arcade.Sprite,
+    ae: ActiveEnemy,
+    def: Enemy,
+    patternId: AttackPatternId,
+  ) {
+    const cfg = PATTERNS[patternId];
+    const px  = this.player.x;
+    const py  = this.player.y;
+    const body = sprite.body as Phaser.Physics.Arcade.Body;
+    const baseDmg = Math.round(ae.stats.baseAtk * (cfg.damageMult ?? 1.0));
+
+    switch (patternId) {
+
+      // ── PATTERN 1: Charge ──────────────────────────────────────
+      case 'charge': {
+        // Use the frozen target position set when telegraph began
+        const targetX = (sprite.getData('chargeTargetX') as number | null) ?? px;
+        const targetY = (sprite.getData('chargeTargetY') as number | null) ?? py;
+        const chargeAngle = Math.atan2(targetY - sprite.y, targetX - sprite.x);
+        const chargeSpeed = (def.moveSpeed ?? 90) * (cfg.chargeSpeedMult ?? 3.0);
+
+        // Charge force
+        body.setVelocity(Math.cos(chargeAngle) * chargeSpeed, Math.sin(chargeAngle) * chargeSpeed);
+
+        // Auto-stop after 600ms or on contact
+        const chargeStopTimer = this.time.delayedCall(600, () => {
+          if (sprite.active) body.setVelocity(0, 0);
+        });
+        sprite.setData('chargeStopTimer', chargeStopTimer);
+
+        // Contact damage check every 50ms while charging
+        let chargeHit = false;
+        const chargeTick = this.time.addEvent({
+          delay: 50,
+          repeat: 12,
+          callback: () => {
+            if (chargeHit || !sprite.active) return;
+            const d = Phaser.Math.Distance.Between(sprite.x, sprite.y, this.player.x, this.player.y);
+            if (d < 45) {
+              chargeHit = true;
+              this.applyEnemyMeleeDamage(ae, cfg.damageMult ?? 1.5);
+              // Camera shake on charge hit
+              this.cameras.main.shake(130, 0.008);
+              // Knockback
+              const kb = this.player.body as Phaser.Physics.Arcade.Body;
+              const kbAngle = Math.atan2(this.player.y - sprite.y, this.player.x - sprite.x);
+              kb.setVelocity(Math.cos(kbAngle) * 280, Math.sin(kbAngle) * 280);
               body.setVelocity(0, 0);
-              sprite.setData(chargeKey, 'cooldown');
-              const atkKey = `atk_${instanceId}`;
-              if (!this.cooldowns[atkKey] || this.cooldowns[atkKey] <= 0) {
-                if (this.inWindup && this.playerModifiers.windupArmor) {
-                  // BLOCKER-F: windup armor — immunité pendant le chargement d'une arme lourde
-                  this.cooldowns[atkKey] = 1.5;
-                } else if (this.time.now < this.iframeUntil) {
-                  // IFRAMES : le joueur est invincible — l'attaque ne passe pas
-                  this.cooldowns[atkKey] = 1.5;
-                } else {
-                  const guardActive = this.time.now < this.guardUntil;
-                  const result = CombatSystem.enemyAttack(ae, this.gameState.player);
-                  // BUG1 fix: garde active → −30% dégâts reçus
-                  if (guardActive && result.damage > 0) {
-                    const refund = Math.round(result.damage * 0.3);
-                    this.gameState.player.stats.hp = Math.min(
-                      this.gameState.player.stats.maxHp,
-                      this.gameState.player.stats.hp + refund,
-                    );
-                    result.damage = result.damage - refund;
-                    result.isKill = this.gameState.player.stats.hp <= 0;
-                  }
-                  if (result.damage > 0) {
-                    this.showDamageNumber(this.player.x, this.player.y - 20, result.damage, false, undefined, true);
-                    this.applyPlayerHitFx();
-                  }
-                  this.iframeUntil = this.time.now + 800;
-                  this.events.emit('player_update', this.gameState.player);
-                  this.cooldowns[atkKey] = 1.5;
-                  if (result.isKill) this.onPlayerDeath();
-                }
-              }
-              this.time.delayedCall(1500, () => {
-                if (sprite.active) sprite.setData(chargeKey, 'idle');
-              });
             }
-          } else if (chargeState === 'idle' && dist < aggroRange) {
-            sprite.setTint(0xffffff);
-            sprite.setData(chargeKey, 'preparing');
-            this.time.delayedCall(600, () => {
+          },
+        });
+        sprite.setData('chargeTick', chargeTick);
+        break;
+      }
+
+      // ── PATTERN 2: Burst Fan ───────────────────────────────────
+      case 'burst_fan': {
+        const count = cfg.projectileCount ?? 4;
+        const spread = cfg.spreadAngle ?? Math.PI / 3;
+        const baseAngle = Math.atan2(py - sprite.y, px - sprite.x);
+        const step = count > 1 ? spread / (count - 1) : 0;
+
+        for (let i = 0; i < count; i++) {
+          const angle = baseAngle - spread / 2 + step * i;
+          this.spawnEnemyProjectile(sprite.x, sprite.y, angle, def.element as ElementType, baseDmg, false);
+        }
+
+        // VFX: muzzle flash
+        const flash = this.add.circle(sprite.x, sprite.y, 16, cfg.telegraphTint, 0.8).setDepth(14);
+        this.tweens.add({
+          targets: flash,
+          scaleX: 2.5, scaleY: 2.5, alpha: 0,
+          duration: 200,
+          onComplete: () => flash.destroy(),
+        });
+        break;
+      }
+
+      // ── PATTERN 3: Circular Burst ──────────────────────────────
+      case 'circular_burst': {
+        const count = cfg.projectileCount ?? 8;
+        for (let i = 0; i < count; i++) {
+          const angle = (Math.PI * 2 / count) * i;
+          this.spawnEnemyProjectile(sprite.x, sprite.y, angle, def.element as ElementType, baseDmg, false);
+        }
+        // Shockwave ring VFX
+        const ring = this.add.graphics({ x: sprite.x, y: sprite.y }).setDepth(13);
+        ring.lineStyle(6, cfg.telegraphTint, 0.9);
+        ring.strokeCircle(0, 0, 12);
+        this.tweens.add({
+          targets: ring,
+          scaleX: 8, scaleY: 8,
+          alpha: 0,
+          duration: 400,
+          ease: 'Power2',
+          onComplete: () => ring.destroy(),
+        });
+        this.cameras.main.shake(80, 0.006);
+        break;
+      }
+
+      // ── PATTERN 4: Dash Melee ──────────────────────────────────
+      case 'dash_melee': {
+        const dashDist = cfg.dashDistance ?? 180;
+        const dashAngle = Math.atan2(py - sprite.y, px - sprite.x);
+        const dashSpeed = 400;
+
+        body.setVelocity(Math.cos(dashAngle) * dashSpeed, Math.sin(dashAngle) * dashSpeed);
+
+        // Trail VFX during dash
+        for (let i = 0; i < 3; i++) {
+          this.time.delayedCall(i * 60, () => {
+            if (!sprite.active) return;
+            const ghost = this.add.rectangle(sprite.x, sprite.y, sprite.displayWidth, sprite.displayHeight, cfg.telegraphTint, 0.35).setDepth(3);
+            this.tweens.add({ targets: ghost, alpha: 0, duration: 180, onComplete: () => ghost.destroy() });
+          });
+        }
+
+        // Stop after covering dashDist
+        const dashTime = (dashDist / dashSpeed) * 1000;
+        this.time.delayedCall(dashTime, () => {
+          if (!sprite.active) return;
+          body.setVelocity(0, 0);
+          // Melee hit check on arrival
+          const d = Phaser.Math.Distance.Between(sprite.x, sprite.y, this.player.x, this.player.y);
+          if (d < 55) {
+            this.applyEnemyMeleeDamage(ae, cfg.damageMult ?? 1.2);
+            // Slash VFX at impact
+            const slashColor = cfg.telegraphTint;
+            this.spawnSlashArcVfx(sprite.x, sprite.y, dashAngle, slashColor, { radius: 40, thickness: 5, halfArc: 0.9, duration: 200 });
+          }
+        });
+        break;
+      }
+
+      // ── PATTERN 5: Homing ─────────────────────────────────────
+      case 'homing': {
+        this.spawnHomingProjectile(sprite.x, sprite.y, def.element as ElementType, baseDmg, cfg);
+        break;
+      }
+
+      // ── PATTERN 6: Summon ─────────────────────────────────────
+      case 'summon': {
+        sprite.setData('summonFired', true);
+
+        // Teleport to center of map
+        const { mapWidth, mapHeight } = this.layout;
+        const cx = mapWidth / 2;
+        const cy = mapHeight / 2;
+        body.reset(cx, cy);
+        sprite.setPosition(cx, cy);
+
+        // Gold flash
+        sprite.setTintFill(0xffd700);
+        this.time.delayedCall(300, () => { if (sprite.active) sprite.clearTint(); });
+
+        // Announcement
+        const { width: W, height: H } = this.cameras.main;
+        const lbl = this.add.text(W / 2, H / 2 - 40, '— Reinforcements —', {
+          fontSize: '14px', color: '#ffd700', fontFamily: 'monospace',
+          stroke: '#000000', strokeThickness: 3,
+        }).setScrollFactor(0).setOrigin(0.5).setDepth(200).setAlpha(0);
+        this.tweens.add({
+          targets: lbl, alpha: 1, duration: 300, hold: 800, yoyo: true,
+          onComplete: () => lbl.destroy(),
+        });
+
+        // Spawn minions
+        const assignment = getEnemyPatternAssignment(ae.enemyId);
+        const minionId = assignment?.summonMinionId ?? (PATTERNS.summon.minionEnemyId ?? '');
+        const minionDef = minionId ? ENEMY_MAP[minionId] : null;
+        const count = cfg.minionCount ?? 2;
+
+        if (minionDef) {
+          for (let i = 0; i < count; i++) {
+            this.time.delayedCall(400 + i * 200, () => {
               if (!sprite.active) return;
-              sprite.clearTint();
-              sprite.setData(chargeKey, 'charging');
-              const chargeAngle = Math.atan2(py - sprite.y, px - sprite.x);
-              body.setVelocity(
-                Math.cos(chargeAngle) * moveSpeed * 3,
-                Math.sin(chargeAngle) * moveSpeed * 3,
-              );
-              this.time.delayedCall(800, () => {
-                if (sprite.active) {
-                  body.setVelocity(0, 0);
-                  sprite.setData(chargeKey, 'cooldown');
-                  this.time.delayedCall(2000, () => {
-                    if (sprite.active) sprite.setData(chargeKey, 'idle');
-                  });
-                }
-              });
+              const angle = (Math.PI * 2 / count) * i;
+              const mx = sprite.x + Math.cos(angle) * 80;
+              const my = sprite.y + Math.sin(angle) * 80;
+              this.spawnMinionEnemy(minionDef, mx, my);
             });
           }
-          break;
         }
-
-        case 'summoner': {
-          if (dist < aggroRange) {
-            this.moveEnemyToward(body, sprite, px, py, moveSpeed * 0.4);
-            const summonKey = `summon_${instanceId}`;
-            if (!this.cooldowns[summonKey] || this.cooldowns[summonKey] <= 0) {
-              // Placeholder : invocation visuelle, pas de vrai add sans refactor majeur
-              this.cooldowns[summonKey] = 8;
-            }
-          } else {
-            body.setVelocity(0, 0);
-          }
-          break;
-        }
-
-        case 'chaser':
-        default: {
-          if (dist < aggroRange) {
-            this.moveEnemyToward(body, sprite, px, py, moveSpeed);
-          } else {
-            body.setVelocity(0, 0);
-          }
-          break;
-        }
+        break;
       }
 
-      // Attaque mêlée pour tous les non-ranged
-      if (behavior !== 'ranged' && dist < 50) {
-        const atkKey = `atk_${instanceId}`;
-        if (!this.cooldowns[atkKey] || this.cooldowns[atkKey] <= 0) {
-          if (this.inWindup && this.playerModifiers.windupArmor) {
-            // BLOCKER-F: windup armor — immunité pendant le chargement d'une arme lourde
-            this.cooldowns[atkKey] = 1.2;
-          } else if (this.time.now < this.iframeUntil) {
-            // IFRAMES : le joueur est invincible — l'attaque ne passe pas
-            this.cooldowns[atkKey] = 1.2;
-          } else {
-            const guardActive = this.time.now < this.guardUntil;
-            const result = CombatSystem.enemyAttack(ae, this.gameState.player);
-            // BUG1 fix: garde active → −30% dégâts reçus
-            if (guardActive && result.damage > 0) {
-              const refund = Math.round(result.damage * 0.3);
-              this.gameState.player.stats.hp = Math.min(
-                this.gameState.player.stats.maxHp,
-                this.gameState.player.stats.hp + refund,
-              );
-              result.damage = result.damage - refund;
-              result.isKill = this.gameState.player.stats.hp <= 0;
-            }
-            if (result.damage > 0) {
-              this.showDamageNumber(this.player.x, this.player.y - 20, result.damage, false, undefined, true);
-              this.applyPlayerHitFx();
-            }
-            this.iframeUntil = this.time.now + 800;
-            this.events.emit('player_update', this.gameState.player);
-            this.cooldowns[atkKey] = 1.2;
-            if (result.isKill) this.onPlayerDeath();
-          }
-        }
+      // ── Fallback: Melee Basic ─────────────────────────────────
+      default: {
+        const d = Phaser.Math.Distance.Between(sprite.x, sprite.y, this.player.x, this.player.y);
+        if (d < 55) this.applyEnemyMeleeDamage(ae, cfg.damageMult ?? 1.0);
+        sprite.setTintFill(cfg.telegraphTint);
+        this.time.delayedCall(80, () => { if (sprite.active) sprite.clearTint(); });
+        break;
+      }
+    }
+  }
+
+  /** Tick all active homing projectiles: rotate toward player, move, check collision. */
+  private tickHomingProjectiles(dt: number) {
+    const px = this.player.x;
+    const py = this.player.y;
+    const now = this.time.now;
+
+    for (let i = this._homingProjectiles.length - 1; i >= 0; i--) {
+      const h = this._homingProjectiles[i];
+
+      if (h.hit || now >= h.destroyAt) {
+        if (h.sprite.active) h.sprite.destroy();
+        if (h.halo.active) h.halo.destroy();
+        this._homingProjectiles.splice(i, 1);
+        continue;
       }
 
-      // Update HP bar position and fill
-      const barData = this.enemyHpBars.get(instanceId);
-      if (barData) {
-        const dispH = sprite.displayHeight;
-        const barY  = sprite.y - dispH / 2 - 8;
-        const hpPct = Math.max(0, ae.currentHp / ae.maxHp);
-        barData.bg.setPosition(sprite.x, barY);
-        barData.bar.setPosition(sprite.x - barData.baseW / 2, barY);
-        barData.bar.setSize(Math.max(1, barData.baseW * hpPct), 4);
+      // Update position
+      h.sprite.x += h.vx * dt;
+      h.sprite.y += h.vy * dt;
+      h.halo.x    = h.sprite.x;
+      h.halo.y    = h.sprite.y;
+
+      // Rotate velocity toward player (bounded turn rate)
+      const currentAngle = Math.atan2(h.vy, h.vx);
+      const desiredAngle = Math.atan2(py - h.sprite.y, px - h.sprite.x);
+      let delta = desiredAngle - currentAngle;
+      // Normalize
+      while (delta >  Math.PI) delta -= 2 * Math.PI;
+      while (delta < -Math.PI) delta += 2 * Math.PI;
+      const maxTurn = h.rotateSpeedRad * dt;
+      const turn = Phaser.Math.Clamp(delta, -maxTurn, maxTurn);
+      const newAngle = currentAngle + turn;
+      const speed = Math.sqrt(h.vx * h.vx + h.vy * h.vy);
+      h.vx = Math.cos(newAngle) * speed;
+      h.vy = Math.sin(newAngle) * speed;
+
+      // Collision with player
+      const dist = Phaser.Math.Distance.Between(h.sprite.x, h.sprite.y, px, py);
+      if (dist < 20) {
+        h.hit = true;
+        // Impact VFX
+        const imp = this.add.circle(h.sprite.x, h.sprite.y, 14, 0x9933cc, 0.9).setDepth(14);
+        this.tweens.add({
+          targets: imp, scaleX: 3, scaleY: 3, alpha: 0, duration: 250,
+          onComplete: () => imp.destroy(),
+        });
+        h.sprite.destroy();
+        h.halo.destroy();
+        this._homingProjectiles.splice(i, 1);
+        // Apply damage
+        this.applyDamageToPlayer(h.damage);
       }
-      const crown = this.enemyCrowns.get(instanceId);
-      if (crown) {
-        crown.setPosition(sprite.x, sprite.y - sprite.displayHeight / 2 - 18);
-      }
+    }
+  }
+
+  /** Spawn a homing projectile from an enemy. */
+  private spawnHomingProjectile(
+    fromX: number, fromY: number,
+    element: ElementType,
+    damage: number,
+    cfg: typeof PATTERNS[AttackPatternId],
+  ) {
+    const ELEMENT_HEX: Partial<Record<ElementType, number>> = {
+      [ElementType.FIRE]:      0xff4400,
+      [ElementType.EARTH]:     0x88aa33,
+      [ElementType.WIND]:      0xaaddff,
+      [ElementType.WATER]:     0x2266ff,
+      [ElementType.LIGHTNING]: 0xffee00,
+      [ElementType.ICE]:       0x88ddff,
+      [ElementType.DARK]:      0x9933cc,
+    };
+    const color = ELEMENT_HEX[element] ?? 0x9933cc;
+    const speed = cfg.homingSpeed ?? 90;
+    const rotateDeg = cfg.homingRotateSpeedDeg ?? 55;
+    const lifetime = cfg.homingLifetimeMs ?? 3000;
+
+    const px = this.player.x;
+    const py = this.player.y;
+    const angle = Math.atan2(py - fromY, px - fromX);
+
+    const orb  = this.add.circle(fromX, fromY, 7, color, 1).setDepth(14);
+    const halo = this.add.circle(fromX, fromY, 12, color, 0.35).setDepth(13);
+
+    // Pulse the halo
+    this.tweens.add({
+      targets: halo, alpha: 0.7, duration: 350, yoyo: true, repeat: -1,
     });
+
+    this._homingProjectiles.push({
+      sprite: orb,
+      halo,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      rotateSpeedRad: (rotateDeg * Math.PI) / 180,
+      destroyAt: this.time.now + lifetime,
+      damage,
+      hit: false,
+    });
+  }
+
+  /** Fire a straight enemy projectile at a given angle (bypasses spawnProjectile's atan2). */
+  private spawnEnemyProjectile(
+    fromX: number, fromY: number,
+    angle: number,
+    element: ElementType,
+    damage: number,
+    _isPlayer: boolean,
+  ) {
+    // spawnProjectile uses atan2(toY-fromY, toX-fromX) internally — supplying a point
+    // exactly one unit along `angle` gives us the same direction at any distance.
+    const FAR = 500; // px — far enough that atan2 precision is exact
+    this.spawnProjectile(
+      fromX, fromY,
+      fromX + Math.cos(angle) * FAR,
+      fromY + Math.sin(angle) * FAR,
+      element, damage, false,
+    );
+  }
+
+  /** Spawn a minion enemy at the given position. */
+  private spawnMinionEnemy(minionDef: Enemy, x: number, y: number) {
+    const zoneId  = this.gameState.player.currentZone;
+    const ZONE_ENEMY_COLORS_LOCAL: Record<string, number> = {
+      ignis_reach:    0xdd4422,
+      terravast:      0x6a4a2a,
+      zephyr_peaks:   0x88aadd,
+      abyssmar:       0x2244aa,
+      volterra:       0xddee22,
+      glaciem:        0xaaddee,
+      malachars_spire:0x6622aa,
+    };
+    const enemyColor = ZONE_ENEMY_COLORS_LOCAL[zoneId] ?? 0xaa4444;
+    const texKey = `enemy_${minionDef.id}`;
+    this.ensureTexture(texKey, enemyColor);
+
+    const sprite = this.physics.add.sprite(x, y, texKey);
+    sprite.setDisplaySize(28, 28);
+    (sprite.body as Phaser.Physics.Arcade.Body).setSize(24, 24);
+    sprite.setDepth(4);
+
+    const active = CombatSystem.spawnEnemy(minionDef, this.gameState.player.level);
+    active.x = x;
+    active.y = y;
+    sprite.name = active.instanceId;
+    this.activeEnemies.set(active.instanceId, active);
+    this.enemies.add(sprite);
+
+    // HP bar
+    const barW = 32;
+    const barBg = this.add.rectangle(x, y - 20, barW, 6, 0x220000).setDepth(8);
+    const barFg = this.add.rectangle(x - barW / 2, y - 20, barW, 4, 0xff2222).setDepth(9).setOrigin(0, 0.5);
+    this.enemyHpBars.set(active.instanceId, { bg: barBg, bar: barFg, baseW: barW });
+
+    // Re-add wall collider for this minion — register in physicsColliders to avoid zombie collider on zone transition
+    const minionCollider = this.physics.add.collider(sprite, this.wallGroup);
+    this.physicsColliders.push(minionCollider);
+
+    // Spawn flash
+    sprite.setTintFill(0xffd700);
+    this.time.delayedCall(250, () => { if (sprite.active) sprite.clearTint(); });
+  }
+
+  /** Apply melee damage from an enemy to the player, with guard/windup checks. */
+  private applyEnemyMeleeDamage(ae: ActiveEnemy, damageMult: number) {
+    if (this.inWindup && this.playerModifiers.windupArmor) return;
+    if (damageMult <= 0) return; // summon pattern has damageMult 0
+
+    const guardActive = this.time.now < this.guardUntil;
+    const result = CombatSystem.enemyAttack(ae, this.gameState.player);
+
+    if (guardActive && result.damage > 0) {
+      const refund = Math.round(result.damage * 0.3);
+      this.gameState.player.stats.hp = Math.min(
+        this.gameState.player.stats.maxHp,
+        this.gameState.player.stats.hp + refund,
+      );
+      result.damage = result.damage - refund;
+      result.isKill = this.gameState.player.stats.hp <= 0;
+    }
+
+    // Apply extra damage from damageMult above 1.0.
+    // CombatSystem.enemyAttack already applied result.damage to player.stats.hp.
+    // We only add the delta when damageMult > 1.0.
+    const extraDmg = Math.max(0, Math.round(result.damage * (damageMult - 1.0)));
+    if (extraDmg > 0) {
+      this.gameState.player.stats.hp = Math.max(0, this.gameState.player.stats.hp - extraDmg);
+      result.isKill = this.gameState.player.stats.hp <= 0;
+    }
+    const finalDmg = result.damage + extraDmg;
+
+    if (finalDmg > 0) {
+      this.showDamageNumber(this.player.x, this.player.y - 20, finalDmg, false, undefined, true);
+      this.cameras.main.shake(100, 0.005);
+    }
+    this.events.emit('player_update', this.gameState.player);
+    if (result.isKill) this.onPlayerDeath();
+  }
+
+  /** Apply direct damage to the player (from homing projectile, AoE, etc.). */
+  private applyDamageToPlayer(damage: number) {
+    if (damage <= 0) return;
+    if (this.isDashing) return;
+    if (this.time.now < this.iframeUntil) return; // iframes post-hit
+
+    if (this.time.now < this.guardUntil) {
+      const refund = Math.round(damage * 0.3);
+      damage = Math.max(0, damage - refund);
+      if (damage <= 0) return;
+    }
+
+    this.gameState.player.stats.hp = Math.max(0, this.gameState.player.stats.hp - damage);
+    this.iframeUntil = this.time.now + 800;
+    this.showDamageNumber(this.player.x, this.player.y - 20, damage, false, undefined, true);
+    this.applyPlayerHitFx();
+    this.events.emit('player_update', this.gameState.player);
+    if (this.gameState.player.stats.hp <= 0) this.onPlayerDeath();
+  }
+
+  /** Update HP bar and crown positions for a given enemy. */
+  private updateEnemyUiPositions(instanceId: string, sprite: Phaser.Physics.Arcade.Sprite, ae: ActiveEnemy) {
+    const barData = this.enemyHpBars.get(instanceId);
+    if (barData) {
+      const dispH = sprite.displayHeight;
+      const barY  = sprite.y - dispH / 2 - 8;
+      const hpPct = Math.max(0, ae.currentHp / ae.maxHp);
+      barData.bg.setPosition(sprite.x, barY);
+      barData.bar.setPosition(sprite.x - barData.baseW / 2, barY);
+      barData.bar.setSize(Math.max(1, barData.baseW * hpPct), 4);
+    }
+    const crown = this.enemyCrowns.get(instanceId);
+    if (crown) {
+      crown.setPosition(sprite.x, sprite.y - sprite.displayHeight / 2 - 18);
+    }
   }
 
   private moveEnemyToward(
@@ -1388,6 +2023,20 @@ export class GameScene extends Phaser.Scene {
         this.gameState.player.stats.hp + heal,
       );
     }
+
+    // BLOCKER 1: cancel charge timers to prevent ghost damage after death
+    const telegraphTimer = sprite.getData('telegraphTimer') as Phaser.Time.TimerEvent | undefined;
+    const chargeTick     = sprite.getData('chargeTick')     as Phaser.Time.TimerEvent | undefined;
+    const chargeStop     = sprite.getData('chargeStopTimer') as Phaser.Time.TimerEvent | undefined;
+    telegraphTimer?.remove(false);
+    chargeTick?.remove(false);
+    chargeStop?.remove(false);
+
+    // BUG 4 fix: remove this enemy's cooldown entries immediately on death
+    const iid = activeEnemy.instanceId;
+    delete this.cooldowns[`atkcd_${iid}`];
+    delete this.cooldowns[`melee_${iid}`];
+    delete this.cooldowns[`bleed_${iid}`];
 
     this.activeEnemies.delete(activeEnemy.instanceId);
 
@@ -2931,6 +3580,12 @@ export class GameScene extends Phaser.Scene {
       if (arrow.rect.active) arrow.rect.destroy();
     }
     this._activeArrows = [];
+    // Homing projectiles — destroy orbs and halos
+    for (const h of this._homingProjectiles) {
+      if (h.sprite.active) h.sprite.destroy();
+      if (h.halo.active)   h.halo.destroy();
+    }
+    this._homingProjectiles = [];
     this.weaponProjectiles?.clear(true, true);
 
     // Zone graphics (map background, paths, walls, teleport highlights)
@@ -2954,6 +3609,13 @@ export class GameScene extends Phaser.Scene {
     this.enemyCrowns.clear();
     this.activeEnemies.clear();
     this.enemies.destroy(true);
+
+    // BUG 4 fix: purge orphaned enemy cooldown keys to prevent unbounded dict growth
+    for (const key of Object.keys(this.cooldowns)) {
+      if (key.startsWith('atkcd_') || key.startsWith('melee_') || key.startsWith('bleed_')) {
+        delete this.cooldowns[key];
+      }
+    }
 
     // NPCs
     this.npcs.destroy(true);
