@@ -177,6 +177,7 @@ export class GameScene extends Phaser.Scene {
   private attackKey!: Phaser.Input.Keyboard.Key;
   private _attackHandler: ((e: KeyboardEvent) => void) | null = null;
   private _altAttackHandler: ((e: KeyboardEvent) => void) | null = null;
+  private _interactHandler: ((e: KeyboardEvent) => void) | null = null;
   private attackCooldownUntil = 0;
   private altAttackCooldownUntil = 0;
   private dashKey!: Phaser.Input.Keyboard.Key;
@@ -928,12 +929,7 @@ export class GameScene extends Phaser.Scene {
     }
     this._attackHandler = (e: KeyboardEvent) => {
       if (e.keyCode === b.attack && !this.menuOpen && !this.isInDialogue && !this.isTraveling) {
-        // Priorité interaction NPC : si un NPC est à portée, J ouvre le dialogue au lieu d'attaquer
-        if (this.nearbyNPC) {
-          this.startNPCDialogue(this.nearbyNPC);
-        } else {
-          this.performBasicAttack();
-        }
+        this.performBasicAttack();
       }
     };
     window.addEventListener('keydown', this._attackHandler);
@@ -947,6 +943,16 @@ export class GameScene extends Phaser.Scene {
       }
     };
     window.addEventListener('keydown', this._altAttackHandler);
+    // Interact — F key, ouvre le dialogue NPC si un NPC est à portée.
+    if (this._interactHandler) {
+      window.removeEventListener('keydown', this._interactHandler);
+    }
+    this._interactHandler = (e: KeyboardEvent) => {
+      if (e.keyCode === b.interact && !this.menuOpen && !this.isInDialogue && !this.isTraveling) {
+        if (this.nearbyNPC) this.startNPCDialogue(this.nearbyNPC);
+      }
+    };
+    window.addEventListener('keydown', this._interactHandler);
     this.dashKey   = kb.addKey(b.dash);
     this.skillKeys = {
       a: kb.addKey(b.skill1),
@@ -4254,6 +4260,10 @@ export class GameScene extends Phaser.Scene {
     if (this._altAttackHandler) {
       window.removeEventListener('keydown', this._altAttackHandler);
       this._altAttackHandler = null;
+    }
+    if (this._interactHandler) {
+      window.removeEventListener('keydown', this._interactHandler);
+      this._interactHandler = null;
     }
     this.game.events.off('mobile_action', this.onMobileAction, this);
     // Do NOT call events.removeAllListeners() — it strips Phaser's internal
