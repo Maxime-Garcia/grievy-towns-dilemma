@@ -6,12 +6,12 @@ export const ENEMIES: Enemy[] = [
 
   // ── IGNIS REACH (Fire) ───────────────────────────────────────
 
-  // Creature concept: a serpentine predator that coils and launches — the charger pattern
-  // mirrors the moment just before a snake strikes. The player never quite reads it in time.
+  // Creature concept: a small winged fire-kin that circles high and dives — the charger
+  // pattern is the stoop of a bird of prey made of embers. The player never quite reads it in time.
   {
     id: 'ember_wyrm',
     name: 'Ember Wyrm',
-    description: 'A serpentine creature of living fire that slithers through lava rivers.',
+    description: 'A small winged fire-kin with a pale, searing face, circling the ash skies of Ignis Reach.',
     sprite: 'enemy_ember_wyrm',
     zone: ElementType.FIRE,
     baseLevel: 8,
@@ -34,7 +34,7 @@ export const ENEMIES: Enemy[] = [
     attackRange: 60,
     moveSpeed: 90,
     behavior: 'charger',
-    lore: 'Born from Pyrath\'s fire before the curse. They were docile then — warming the sacred springs. Now they hunt anything that moves.'
+    lore: 'The least of Pyrath\'s fire-born. They carried warmth between the sacred springs on their small wings. Now they circle where the springs used to be, and dive at anything that moves.'
   },
 
   // Creature concept: a slow colossus that marks territory — the patrol behavior
@@ -42,7 +42,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'lava_golem',
     name: 'Lava Golem',
-    description: 'A hulking mass of cooling magma animated by Pyrath\'s corrupted power.',
+    description: 'A squat hulk of cooling magma, still gripping its digger\'s pick.',
     sprite: 'enemy_lava_golem',
     zone: ElementType.FIRE,
     baseLevel: 9,
@@ -66,7 +66,7 @@ export const ENEMIES: Enemy[] = [
     moveSpeed: 50,
     behavior: 'patrol',
     patrolRadius: 180,
-    lore: 'Golems this size were used to shape the mountains. The curse turned construction tools into weapons.'
+    lore: 'Golems like this shaped the mountains — construction tools, not weapons. They still carry their picks. The curse never told them the work was over.'
   },
 
   // Creature concept: fast, fragile, ranged — a swarm intelligence that pelts the player
@@ -106,7 +106,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'ash_revenant',
     name: 'Ash Revenant',
-    description: 'The ghost of a pilgrim who died in Ignis Reach, now bound to ash.',
+    description: 'A shrouded spirit of ash with a single ember eye — the ghost of a pilgrim who died in Ignis Reach.',
     sprite: 'enemy_ash_revenant',
     zone: ElementType.FIRE,
     baseLevel: 10,
@@ -138,7 +138,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'magma_titan',
     name: 'Magma Titan',
-    description: 'An elite fire creature. Rare, enormous, and territorial.',
+    description: 'An elite colossus of muscle and magma. Rare, enormous, and territorial.',
     sprite: 'enemy_magma_titan',
     zone: ElementType.FIRE,
     baseLevel: 12,
@@ -165,13 +165,13 @@ export const ENEMIES: Enemy[] = [
     lore: 'Titans were ancient. Before Pyrath arrived, they lived in the volcanic mountains. Pyrath did not create them — only claimed them. They are now older than the curse and angrier.'
   },
 
-  // Creature concept: a summoner spider-kin that spawns cinder sprites —
+  // Creature concept: a feline fire-imp that spits its brood into being —
   // the first time the player encounters a swarm they did not expect.
   // NEW ENEMY — Ignis Reach
   {
     id: 'ember_broodmother',
     name: 'Ember Broodmother',
-    description: 'A bloated fire spider that secretes egg sacs of living cinders, endlessly spawning smaller creatures.',
+    description: 'A sharp-eared feline imp, teeth bared, that shrieks litters of living cinders into existence.',
     sprite: 'enemy_ember_broodmother',
     zone: ElementType.FIRE,
     baseLevel: 10,
@@ -193,14 +193,14 @@ export const ENEMIES: Enemy[] = [
     attackRange: 60,
     moveSpeed: 40,
     behavior: 'summoner',
-    lore: 'Pyrath\'s fire has a generative quality that the curse twisted. These spiders did not exist before the Unraveling. They are something the corruption invented on its own.'
+    lore: 'Pyrath\'s fire has a generative quality that the curse twisted. Nothing like the broodmother existed before the Unraveling. It is what corruption invents when given the power to create without the reason to.'
   },
 
   // NEW ENEMY — Ignis Reach: patrol guardian that circles lava pools
   {
     id: 'scorch_sentinel',
     name: 'Scorch Sentinel',
-    description: 'An ancient stone guardian animated by residual divine fire, walking eternal circles around Pyrath\'s shrines.',
+    description: 'A stone knight animated by residual divine fire, sword and shield in hand, walking eternal circles around Pyrath\'s shrines.',
     sprite: 'enemy_scorch_sentinel',
     zone: ElementType.FIRE,
     baseLevel: 9,
@@ -229,7 +229,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'pyrath_boss',
     name: 'Pyrath the Unbound',
-    description: 'The divine dragon of fire, his boundless power turned to frenzied destruction.',
+    description: 'What remains of the divine dragon of fire — a single horned visage of flame, all hunger and no memory.',
     sprite: 'boss_pyrath',
     zone: ElementType.FIRE,
     baseLevel: 14,
@@ -253,7 +253,7 @@ export const ENEMIES: Enemy[] = [
     attackRange: 300,
     moveSpeed: 110,
     behavior: 'charger',
-    lore: 'Pyrath was the first divinity. He will be the first to die. He does not recognize the hero. He does not recognize anyone. He only burns.'
+    lore: 'Pyrath was the first divinity. He will be the first to die. The curse burned away everything he was and left one shape: a maw. He does not recognize the hero. He does not recognize anyone. He only burns.'
   },
 
   // ── TERRAVAST (Earth) ────────────────────────────────────────
@@ -263,7 +263,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'stone_crawler',
     name: 'Stone Crawler',
-    description: 'An armored insect-like creature that blends with canyon rock.',
+    description: 'A hunched tunnel-hulk that drags a flat tail behind it, sweeping the canyon passages as it goes.',
     sprite: 'enemy_stone_crawler',
     zone: ElementType.EARTH,
     baseLevel: 10,
@@ -286,15 +286,15 @@ export const ENEMIES: Enemy[] = [
     moveSpeed: 65,
     behavior: 'patrol',
     patrolRadius: 200,
-    lore: 'Gorvun\'s smallest servants. They maintained the tunnels, kept them clear. Now they guard everything as an intruder.'
+    lore: 'Gorvun\'s beasts of burden. Their flat tails kept the tunnels clear of rubble for miners and travelers. They still keep the tunnels — but now everything that enters is an intruder.'
   },
 
-  // Creature concept: immovable wall that charges on threshold —
-  // a fight that rewards patience over aggression.
+  // Creature concept: the surviving heart-stone of a fallen golem — an immovable
+  // point of will that rams when approached; a fight that rewards patience over aggression.
   {
     id: 'crystal_golem',
     name: 'Crystal Golem',
-    description: 'A golem built from Terravast\'s crystal formations. Reflects some magic attacks.',
+    description: 'The floating heart-crystal of a golem whose body crumbled long ago. Some magic still glances off its facets.',
     sprite: 'enemy_crystal_golem',
     zone: ElementType.EARTH,
     baseLevel: 11,
@@ -316,15 +316,15 @@ export const ENEMIES: Enemy[] = [
     attackRange: 65,
     moveSpeed: 40,
     behavior: 'charger',
-    lore: 'The crystal caves grew these over centuries. Gorvun shaped each one. Under the curse, they protect nothing but themselves.'
+    lore: 'Gorvun shaped each golem by hand over centuries. The quakes brought their bodies down; the hearts refused to stop. They hover over their own rubble, protecting the only thing left to protect.'
   },
 
-  // Creature concept: ambush predator as pure chaser — appears from nothing
-  // and closes instantly; high mobility from a low-HP body.
+  // Creature concept: a mimic fungus — perfectly still among ordinary mushrooms
+  // until the player walks past; then it closes instantly.
   {
     id: 'cave_lurker',
     name: 'Cave Lurker',
-    description: 'An ambush predator that drops from cave ceilings.',
+    description: 'A wide-capped cave fungus, indistinguishable from the harmless ones. The difference only shows when it moves.',
     sprite: 'enemy_cave_lurker',
     zone: ElementType.EARTH,
     baseLevel: 10,
@@ -346,15 +346,15 @@ export const ENEMIES: Enemy[] = [
     attackRange: 55,
     moveSpeed: 110,
     behavior: 'chaser',
-    lore: 'Natural predators in the cave ecosystem. The curse made them bolder. They used to flee from light. Not anymore.'
+    lore: 'Native to the cave ecosystem, older than Gorvun himself. They used to shun light — a single torch secured a camp. The curse didn\'t change them. It just took away their fear.'
   },
 
-  // Creature concept: a serpent that holds at mid-range and then charges —
-  // behaves like a coiled spring.
+  // Creature concept: a hooded scavenger that crouches, waits, and uncoils like
+  // a spring — the canyon floor itself seems to lunge.
   {
     id: 'terravast_serpent',
-    name: 'Terravast Serpent',
-    description: 'A massive stone-scaled serpent that lives in the deep canyon floors.',
+    name: 'Terravast Skulker',
+    description: 'A squat, hooded figure that haunts the deep canyon floors, crouching motionless until something passes.',
     sprite: 'enemy_terravast_serpent',
     zone: ElementType.EARTH,
     baseLevel: 12,
@@ -376,14 +376,14 @@ export const ENEMIES: Enemy[] = [
     attackRange: 100,
     moveSpeed: 80,
     behavior: 'charger',
-    lore: 'They\'ve lived in these canyons since before Gorvun arrived. The god was amused by them. He let them stay.'
+    lore: 'They picked over these canyons long before Gorvun arrived — small hunched things looting his domain without permission. The god found them amusing. He let them stay. No one is left to find it amusing.'
   },
 
   // NEW ENEMY — Terravast: ranged earth-shaman spirit that hurls crystal shards
   {
     id: 'rune_shard_ghost',
     name: 'Rune Shard Ghost',
-    description: 'A translucent spirit that forms from broken ancient runes, flinging crystal fragments at intruders.',
+    description: 'A small hooded spirit with one slow-blinking eye, formed from broken ancient runes, flinging crystal fragments at intruders.',
     sprite: 'enemy_rune_shard_ghost',
     zone: ElementType.EARTH,
     baseLevel: 11,
@@ -409,11 +409,12 @@ export const ENEMIES: Enemy[] = [
     lore: 'The ancient runes carved into Terravast\'s walls were Gorvun\'s language. The curse gave them grief and motion. They remember only that they are broken.'
   },
 
-  // NEW ENEMY — Terravast: tunnel hound that chases relentlessly through cave systems
+  // NEW ENEMY — Terravast: a lump of living tunnel-earth with a tool-haft clenched
+  // in its jaws — it chases relentlessly through the cave systems
   {
     id: 'stone_hound',
-    name: 'Stone Hound',
-    description: 'A quadrupedal predator with granite-fused hide, bred in the deep tunnels of Terravast.',
+    name: 'Stone Brute',
+    description: 'A compact mass of animated earth with a mining haft clenched in its jaws, charging through the dark tunnels.',
     sprite: 'enemy_stone_hound',
     zone: ElementType.EARTH,
     baseLevel: 10,
@@ -435,13 +436,13 @@ export const ENEMIES: Enemy[] = [
     attackRange: 55,
     moveSpeed: 115,
     behavior: 'chaser',
-    lore: 'Gorvun kept these as working animals in the deep mines. They navigated in complete darkness. Darkness is still everywhere. They still navigate.'
+    lore: 'Gorvun kept them as working beasts in the deep mines. They hauled, they carried, and the miners gave them names. The haft in its jaws is a tool of the mines. The work ended long ago. No one told them.'
   },
 
   {
     id: 'ruin_colossus',
     name: 'Ruin Colossus',
-    description: 'An elite creature assembled from the rubble of collapsed ancient structures.',
+    description: 'An elite colossus of stone muscle, assembled from the rubble of collapsed ancient structures.',
     sprite: 'enemy_ruin_colossus',
     zone: ElementType.EARTH,
     baseLevel: 14,
@@ -471,7 +472,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'gorvun_boss',
     name: 'Gorvun the Trembling',
-    description: 'The titan god of earth, convulsing with uncontrolled seismic power.',
+    description: 'The corrupted avatar of the earth god — a horned warden bearing a shield he no longer plants, and a flail that cracks the ground with every swing.',
     sprite: 'boss_gorvun',
     zone: ElementType.EARTH,
     baseLevel: 16,
@@ -495,7 +496,7 @@ export const ENEMIES: Enemy[] = [
     attackRange: 200,
     moveSpeed: 60,
     behavior: 'charger',
-    lore: 'Gorvun has not moved intentionally in three centuries. Now he cannot stop moving. Each step cracks the earth for miles. The hero must end what Malachar started.'
+    lore: 'Gorvun has not moved intentionally in three centuries. Now he cannot stop. The curse leaves the keeper-gods two things: a shield, and a flail. The hero must end what Malachar started — and keep the last promise in Gorvun\'s place.'
   },
 
   // ── ZEPHYR PEAKS (Wind) ──────────────────────────────────────
@@ -536,7 +537,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'storm_eagle',
     name: 'Storm Eagle',
-    description: 'A massive eagle crackling with static electricity.',
+    description: 'A compact, horn-crested raptor crackling with static electricity.',
     sprite: 'enemy_storm_eagle',
     zone: ElementType.WIND,
     baseLevel: 13,
@@ -558,7 +559,7 @@ export const ENEMIES: Enemy[] = [
     attackRange: 200,
     moveSpeed: 130,
     behavior: 'charger',
-    lore: 'The eagles that nested near Zephyr Peaks\' storm peaks absorbed ambient electricity. They were beautiful from a safe distance.'
+    lore: 'The raptors that nested near Zephyr Peaks\' storm summits absorbed ambient electricity for generations. The storm bent their crests into horns. They were beautiful from a safe distance. There is no safe distance now.'
   },
 
   // Creature concept: ethereal pure ranged — no physical presence, only magic
@@ -566,7 +567,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'wind_wraith',
     name: 'Wind Wraith',
-    description: 'An ethereal being made of compressed wind that phases through obstacles.',
+    description: 'A hooded being of compressed wind with a single red eye, phasing through obstacles.',
     sprite: 'enemy_wind_wraith',
     zone: ElementType.WIND,
     baseLevel: 13,
@@ -597,7 +598,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'cyclone_sprite',
     name: 'Cyclone Sprite',
-    description: 'A miniature tornado that grows more powerful as it absorbs wind from the environment.',
+    description: 'A knot of wind condensed into a pale sphere, spinning too fast to read its course.',
     sprite: 'enemy_cyclone_sprite',
     zone: ElementType.WIND,
     baseLevel: 12,
@@ -621,12 +622,12 @@ export const ENEMIES: Enemy[] = [
     lore: 'Sylvael created sprites to carry pollen and seeds across the mountains. Direction-less now, they just spin.'
   },
 
-  // Creature concept: patrolling colossus between floating islands — slow,
+  // Creature concept: a patrolling winged elder above the floating islands — slow,
   // imposing, treats the player as a footnote until they can't be ignored.
   {
     id: 'sky_titan',
     name: 'Sky Titan',
-    description: 'An elite giant that walks between floating islands on bridges of compressed air.',
+    description: 'An elite winged giant, paler than the clouds it once carried, drifting above the shattered islands.',
     sprite: 'enemy_sky_titan',
     zone: ElementType.WIND,
     baseLevel: 15,
@@ -657,7 +658,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'storm_caller',
     name: 'Storm Caller',
-    description: 'A robed figure of compressed wind standing motionless in the tempest, its gestures weaving new cyclone sprites from thin air.',
+    description: 'A small horned figure hooded in wind, motionless in the tempest, its whispers weaving new cyclone sprites from thin air.',
     sprite: 'enemy_storm_caller',
     zone: ElementType.WIND,
     baseLevel: 13,
@@ -686,7 +687,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'cloudpiercer',
     name: 'Cloudpiercer',
-    description: 'A narrow-bodied wind creature that extends a lance of condensed air across vast distances before retreating behind cloud cover.',
+    description: 'A small hooded creature whose single horn condenses a lance of air, fired across vast distances before it slips back into cloud cover.',
     sprite: 'enemy_cloudpiercer',
     zone: ElementType.WIND,
     baseLevel: 14,
@@ -715,7 +716,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'sylvael_boss',
     name: 'Sylvael the Tempest',
-    description: 'The phoenix goddess of wind, her grace shattered into an endless hurricane.',
+    description: 'What remains of the phoenix goddess of wind — a pale horned visage riding an endless hurricane.',
     sprite: 'boss_sylvael',
     zone: ElementType.WIND,
     baseLevel: 18,
@@ -740,17 +741,17 @@ export const ENEMIES: Enemy[] = [
     moveSpeed: 220,
     behavior: 'ranged',
     projectileColor: 0xaaddff,
-    lore: 'Sylvael\'s beauty is gone. What remains is motion — pure, uncontrolled, devastating motion. The hero cannot reason with a storm.'
+    lore: 'Sylvael\'s beauty is gone. What remains is motion — pure, uncontrolled, devastating. Those who have seen more than one fallen god report the same thing: under the curse, they all wear the same face. The hero cannot reason with a storm.'
   },
 
   // ── ABYSSMAR (Water) ─────────────────────────────────────────
 
   // Creature concept: slow tank that charges when triggered —
-  // the crab metaphor: still until it isn't.
+  // still as a puddle until it isn't.
   {
     id: 'tide_crawler',
     name: 'Tide Crawler',
-    description: 'A crab-like creature empowered by Thalymor\'s corrupted tides.',
+    description: 'A gelatinous scuttler with fixed yellow eyes, swollen by Thalymor\'s corrupted tides.',
     sprite: 'enemy_tide_crawler',
     zone: ElementType.WATER,
     baseLevel: 14,
@@ -772,7 +773,7 @@ export const ENEMIES: Enemy[] = [
     attackRange: 60,
     moveSpeed: 70,
     behavior: 'charger',
-    lore: 'The coast had thousands of these before the flood. They were a nuisance at worst. Now they\'ve grown to the size of wagons and hunt actively.'
+    lore: 'The coast had thousands of these before the flood — a nuisance at worst; children caught them in buckets to watch them glow. They\'ve grown to the size of barrels now, and they hunt.'
   },
 
   // Creature concept: spectral ranged shooter that keeps water between
@@ -811,7 +812,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'coral_golem',
     name: 'Coral Golem',
-    description: 'A golem grown from Abyssmar\'s massive coral formations.',
+    description: 'A hulking golem of living coral, rose-pink in the drowned grey — the last vivid color left in Abyssmar.',
     sprite: 'enemy_coral_golem',
     zone: ElementType.WATER,
     baseLevel: 15,
@@ -833,15 +834,15 @@ export const ENEMIES: Enemy[] = [
     moveSpeed: 40,
     behavior: 'patrol',
     patrolRadius: 190,
-    lore: 'Thalymor grew these coral formations over centuries to protect the seabed. The protection instinct survived the curse. Everything is now an intruder.'
+    lore: 'Thalymor grew these coral formations over centuries to protect the seabed. The protection instinct survived the curse; the judgment did not. It is still pink. It is the only thing that didn\'t fade.'
   },
 
-  // Creature concept: a serpentine chaser from the deep — faster than it looks,
-  // closing distance from off-screen in seconds.
+  // Creature concept: a crouched trench-thing with a hooked blade — faster than
+  // it looks, closing distance from off-screen in seconds.
   {
     id: 'depth_serpent',
-    name: 'Depth Serpent',
-    description: 'A massive serpent from the deep trenches, now surfacing aggressively.',
+    name: 'Depth Lurker',
+    description: 'A crouched creature of the deep trenches, gripping a hooked blade of black coral. Faster than it looks — much faster.',
     sprite: 'enemy_depth_serpent',
     zone: ElementType.WATER,
     baseLevel: 16,
@@ -870,7 +871,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'tide_shaper',
     name: 'Tide Shaper',
-    description: 'A bloated jellyfish-like creature that pulses with bioluminescent patterns, summoning smaller sea creatures from the dark water.',
+    description: 'A drifting sphere of condensed deep water, pulsing with bioluminescent patterns that summon smaller sea creatures from the dark.',
     sprite: 'enemy_tide_shaper',
     zone: ElementType.WATER,
     baseLevel: 15,
@@ -899,7 +900,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'abyssal_shade',
     name: 'Abyssal Shade',
-    description: 'The outline of a person, rendered in deep water pressure and grief, that fixates on the living and does not stop.',
+    description: 'The outline of a person, rendered in water pressure and grief, dragging a rusted fisherman\'s hook. It fixates on the living and does not stop.',
     sprite: 'enemy_abyssal_shade',
     zone: ElementType.WATER,
     baseLevel: 16,
@@ -921,7 +922,7 @@ export const ENEMIES: Enemy[] = [
     attackRange: 60,
     moveSpeed: 105,
     behavior: 'chaser',
-    lore: 'Not every ghost in Abyssmar was a sailor. Some were just people who lived near the water and never imagined it would rise. They could not imagine a great many things.'
+    lore: 'Not every ghost in Abyssmar was a sailor. Some were just people who lived near the water and never imagined it would rise. Some still clutch a curved tool — a gaff, a kelp sickle. Lives interrupted mid-gesture.'
   },
 
   {
@@ -957,7 +958,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'thalymor_boss',
     name: 'Thalymor the Deluge',
-    description: 'The leviathan god of water, his measured tides become a consuming flood.',
+    description: 'The corrupted avatar of the leviathan god — a horned warden of the drowned city, shield in one hand, flail striking like the tide.',
     sprite: 'boss_thalymor',
     zone: ElementType.WATER,
     baseLevel: 20,
@@ -982,7 +983,7 @@ export const ENEMIES: Enemy[] = [
     moveSpeed: 70,
     behavior: 'ranged',
     projectileColor: 0x2266ff,
-    lore: 'Thalymor is larger than most buildings. In the flooded ruins of Abyssmar, fighting him means fighting in his element. The patience is gone. Only the depth remains.'
+    lore: 'The curse leaves the keeper-gods a shield and a flail; Thalymor\'s are made of the sea. In the flooded ruins of Abyssmar, fighting him means fighting in his element. The patience is gone. Only the depth remains.'
   },
 
   // ── VOLTERRA (Lightning) ─────────────────────────────────────
@@ -1023,7 +1024,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'thunder_drake',
     name: 'Thunder Drake',
-    description: 'A draconic creature that channels Volkran\'s lightning through its wings.',
+    description: 'A winged storm-elemental that channels Volkran\'s lightning through its wings.',
     sprite: 'enemy_thunder_drake',
     zone: ElementType.LIGHTNING,
     baseLevel: 17,
@@ -1054,7 +1055,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'chain_revenant',
     name: 'Chain Revenant',
-    description: 'A spirit that was electrocuted in the lightning grid and bound to its spot.',
+    description: 'The spirit of a grid worker, anchored where it died, gripping an arc of solidified lightning like a blade.',
     sprite: 'enemy_chain_revenant',
     zone: ElementType.LIGHTNING,
     baseLevel: 17,
@@ -1080,12 +1081,12 @@ export const ENEMIES: Enemy[] = [
     lore: 'When the grid destabilized, workers died in the discharge. Their spirits are anchored to the machines that killed them. They attack anything that comes close enough to remind them of it.'
   },
 
-  // Creature concept: pack-hunting chasers that coordinate —
-  // the fastest enemies in Volterra, dangerous in numbers.
+  // Creature concept: hooded scavengers in insulator-cloth that dart along the
+  // dead grid — the fastest enemies in Volterra, dangerous in numbers.
   {
     id: 'volt_hound',
-    name: 'Volt Hound',
-    description: 'A pack predator that hunts in groups, coordinating lightning strikes.',
+    name: 'Volt Skirmisher',
+    description: 'A hooded scavenger wrapped in stolen insulator-cloth, fists full of charge, hunting in coordinated packs.',
     sprite: 'enemy_volt_hound',
     zone: ElementType.LIGHTNING,
     baseLevel: 16,
@@ -1107,14 +1108,14 @@ export const ENEMIES: Enemy[] = [
     attackRange: 70,
     moveSpeed: 155,
     behavior: 'chaser',
-    lore: 'Plains predators that evolved to use Volterra\'s ambient electricity as camouflage and weapon. They\'ve always been dangerous. Volkran\'s curse made them something else.'
+    lore: 'They lived at the edge of the grid long before the fall — hunched looters who stripped the relays and wrapped themselves in insulation to walk between the arcs. The engineers\' protocols assumed they feared something. That assumption no longer holds.'
   },
 
   // NEW ENEMY — Volterra: a floating construct that patrols the grid nodes
   {
     id: 'arc_node',
     name: 'Arc Node',
-    description: 'A floating machine the size of a barrel, drifting along Volterra\'s lightning grid paths in slow programmed routes, discharging lethal arcs at anything that breaks its patrol.',
+    description: 'A drifting sphere of contained lightning, humming along the dead grid\'s programmed routes, discharging lethal arcs at anything that breaks its patrol.',
     sprite: 'enemy_arc_node',
     zone: ElementType.LIGHTNING,
     baseLevel: 16,
@@ -1140,11 +1141,12 @@ export const ENEMIES: Enemy[] = [
     lore: 'Volkran\'s engineers built these to maintain the grid. They still maintain it. Maintenance, in the current context, means destroying anything that touches the lines.'
   },
 
-  // NEW ENEMY — Volterra: a construct summoner that spawns arc nodes
+  // NEW ENEMY — Volterra: the pale imprint of the last engineer, still assembling —
+  // a summoner made of habit that spawns arc nodes
   {
     id: 'grid_architect',
     name: 'Grid Architect',
-    description: 'A tall mechanical construct with six arms, assembling new arc nodes from ambient lightning and scrap metal in real time.',
+    description: 'A gaunt, pale figure drifting through the collapsed workshops, assembling new arc nodes with slow, remembered gestures.',
     sprite: 'enemy_grid_architect',
     zone: ElementType.LIGHTNING,
     baseLevel: 18,
@@ -1166,13 +1168,13 @@ export const ENEMIES: Enemy[] = [
     attackRange: 90,
     moveSpeed: 35,
     behavior: 'summoner',
-    lore: 'The last engineer in Volterra built this machine to continue his work after he was gone. He did not account for the possibility that his work had already destroyed everything.'
+    lore: 'The last engineer of Volterra built it to continue his work after he was gone. He poured in his gestures, his plans, his precision — and without meaning to, his silhouette. It does not know that. It also does not know the work already destroyed everything.'
   },
 
   {
     id: 'storm_herald',
     name: 'Storm Herald',
-    description: 'An elite humanoid lightning construct created by Volkran\'s maddened engineers.',
+    description: 'An elite knight of pure lightning, sword and shield arcing, created by Volkran\'s last engineers.',
     sprite: 'enemy_storm_herald',
     zone: ElementType.LIGHTNING,
     baseLevel: 20,
@@ -1202,7 +1204,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'volkran_boss',
     name: 'Volkran the Stormbringer',
-    description: 'The colossus god of lightning, his directed precision become omnidirectional devastation.',
+    description: 'What remains of the colossus god of lightning — a horned visage of storm, precision collapsed into omnidirectional devastation.',
     sprite: 'boss_volkran',
     zone: ElementType.LIGHTNING,
     baseLevel: 22,
@@ -1227,17 +1229,17 @@ export const ENEMIES: Enemy[] = [
     moveSpeed: 130,
     behavior: 'ranged',
     projectileColor: 0xffee00,
-    lore: 'The engineers measured him. They knew his patterns. They built everything around those patterns. Now the patterns are gone, replaced by a walking electromagnetic catastrophe.'
+    lore: 'The engineers measured him. Their last instruments recorded the colossus losing his shape — collapsing toward something horned, the same face every fallen god wears. No one was left to read the measurements.'
   },
 
   // ── GLACIEM (Ice) ─────────────────────────────────────────────
 
-  // Creature concept: relentless chaser through blizzard conditions —
-  // fast, aggressive, hunts in silence; the player hears them before seeing them.
+  // Creature concept: a silent swooping hunter through blizzard conditions —
+  // fast, aggressive; the player never hears it coming, by design.
   {
     id: 'frost_wolf',
-    name: 'Frost Wolf',
-    description: 'A pack predator of the frozen tundra, now driven mad by Crysthea\'s blizzard.',
+    name: 'Frost Owl',
+    description: 'A horned white owl of the frozen tundra, hunting in total silence through Crysthea\'s blizzard.',
     sprite: 'enemy_frost_wolf',
     zone: ElementType.ICE,
     baseLevel: 18,
@@ -1259,7 +1261,7 @@ export const ENEMIES: Enemy[] = [
     attackRange: 70,
     moveSpeed: 130,
     behavior: 'chaser',
-    lore: 'The wolves of Glaciem ran in packs of eight. They were territorial but not aggressive to travelers who knew the proper paths. There are no proper paths anymore.'
+    lore: 'The owls of Glaciem hunted above the tundra in silence, and travelers called them a good omen — an owl in flight meant the storm had passed. The storm no longer passes. They fly anyway.'
   },
 
   // Creature concept: territorial patrol golem that moves circuit-like
@@ -1267,7 +1269,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'ice_golem',
     name: 'Ice Golem',
-    description: 'A massive guardian built from glacial ice, now blind to friend and foe.',
+    description: 'A knight carved from a single block of glacial ice, sword and shield included, now blind to friend and foe.',
     sprite: 'enemy_ice_golem',
     zone: ElementType.ICE,
     baseLevel: 19,
@@ -1355,12 +1357,12 @@ export const ENEMIES: Enemy[] = [
     lore: 'Crysthea\'s ice preserved things accidentally as well as deliberately. The titans of Glaciem\'s first age were frozen in the great storm of 400 years ago. They\'re unfrozen now.'
   },
 
-  // Creature concept: the apex predator of Glaciem — ranged breath attacks
-  // from above, swooping low to freeze terrain before closing in.
+  // Creature concept: a mote of ancient light — deceptively small, catastrophically
+  // old; the elite the player underestimates exactly once.
   {
     id: 'crystal_dragon',
-    name: 'Crystal Dragon',
-    description: 'An elite dragon formed from Glaciem\'s crystal ice formations.',
+    name: 'Crystal Wisp',
+    description: 'An elite mote of crystalline light adrift in the deep ice — small, silent, and older than the gods.',
     sprite: 'enemy_crystal_dragon',
     zone: ElementType.ICE,
     baseLevel: 23,
@@ -1385,14 +1387,14 @@ export const ENEMIES: Enemy[] = [
     moveSpeed: 80,
     behavior: 'ranged',
     projectileColor: 0x88ddff,
-    lore: 'No one made these dragons. They are old — older than Crysthea. They formed naturally from the ice in the deep mountains over millennia. They were already here when Crysthea arrived. She left them alone. Wise.'
+    lore: 'No one made the wisps. They condensed in the mountain ice over millennia, molecule by molecule, until the ice began to dream of light. They were already here when Crysthea arrived. She left them alone. Wise.'
   },
 
-  // NEW ENEMY — Glaciem: an ice summoner that raises frozen wolves from preserved corpses
+  // NEW ENEMY — Glaciem: an ice summoner that calls the preserved dead out of the deep freeze
   {
     id: 'glacial_shaper',
     name: 'Glacial Shaper',
-    description: 'A hunched figure of living ice whose hands trail blue fire, drawing frost wolves back from the preservation of the deep freeze.',
+    description: 'A hunched, hooded figure of living ice whose hands trail blue fire, calling the preserved dead back out of the deep freeze.',
     sprite: 'enemy_glacial_shaper',
     zone: ElementType.ICE,
     baseLevel: 20,
@@ -1414,14 +1416,15 @@ export const ENEMIES: Enemy[] = [
     attackRange: 80,
     moveSpeed: 40,
     behavior: 'summoner',
-    lore: 'Crysthea preserved the dead. The Glacial Shaper did not exist before the curse — it is a side effect of preservation magic applied without limit. It does not understand the difference between preserving the dead and awakening them.'
+    lore: 'Crysthea preserved the dead. The Glacial Shaper did not exist before the curse — it is preservation magic applied without limit or judgment. It does not understand the difference between keeping the dead and waking them.'
   },
 
-  // NEW ENEMY — Glaciem: a lone wolf-pack alpha that charges with devastating speed
+  // NEW ENEMY — Glaciem: a frozen tundra hunter finishing a patrol it began before
+  // the storm — slow to notice you, impossible to outlast
   {
     id: 'hoarfrost_stalker',
     name: 'Hoarfrost Stalker',
-    description: 'The alpha of a frost wolf pack — larger, slower to aggro, and twice as lethal when it finally moves.',
+    description: 'A tundra hunter taken whole by the great freeze — hatchet in hand, furs still on its back, slow to aggro and twice as lethal when it finally moves.',
     sprite: 'enemy_hoarfrost_stalker',
     zone: ElementType.ICE,
     baseLevel: 20,
@@ -1444,13 +1447,13 @@ export const ENEMIES: Enemy[] = [
     attackRange: 80,
     moveSpeed: 140,
     behavior: 'charger',
-    lore: 'The alpha did not lose its mind like the pack did. It watched the pack lose theirs, and then it followed, because the pack was all it had.'
+    lore: 'The hunters of Glaciem walked the trap lines between Frostveil and the archives. The blizzard took them mid-stride, and Crysthea\'s ice did what it always does: it preserved. The gait, the hatchet, the patience of the trade — all intact. It still checks its traps.'
   },
 
   {
     id: 'crysthea_boss',
     name: 'Crysthea the Frozen',
-    description: 'The goddess of preservation, her gentle curation become an annihilating blizzard.',
+    description: 'The corrupted avatar of the goddess of preservation — a horned warden with a shield of ice and a flail that freezes what it touches.',
     sprite: 'boss_crysthea',
     zone: ElementType.ICE,
     baseLevel: 25,
@@ -1475,7 +1478,7 @@ export const ENEMIES: Enemy[] = [
     moveSpeed: 90,
     behavior: 'ranged',
     projectileColor: 0x88ddff,
-    lore: 'Crysthea may be the oldest being in Velmara. She remembers everything. In her current state, she does not remember the hero is trying to save the world. She remembers that the world must be preserved — by freezing everything in it.'
+    lore: 'Crysthea may be the oldest being in Velmara. She remembers everything. The curse leaves the keeper-gods a shield and a flail; hers are made of ice, and she uses them to preserve the world the only way she still can — by freezing everything in it.'
   },
 
   // ── MALACHAR'S SPIRE (Dark) ──────────────────────────────────
@@ -1485,7 +1488,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'dark_revenant',
     name: 'Dark Revenant',
-    description: 'A spirit consumed entirely by Malachar\'s dark magic.',
+    description: 'A hooded spirit with a single red eye, consumed entirely by Malachar\'s dark magic.',
     sprite: 'enemy_dark_revenant',
     zone: ElementType.DARK,
     baseLevel: 25,
@@ -1511,12 +1514,12 @@ export const ENEMIES: Enemy[] = [
     lore: 'Every person Malachar ever wronged is here. Dark magic attracts grievance. The Spire is full of it.'
   },
 
-  // Creature concept: a melee-patrol construct that walks the Spire's corridors —
+  // Creature concept: a gaunt patrol-construct that walks the Spire's corridors —
   // the architecture itself as an enemy.
   {
     id: 'shadow_construct',
     name: 'Shadow Construct',
-    description: 'A mechanical guardian built by Malachar from dark energy and stolen elemental power.',
+    description: 'A gaunt, man-shaped thing of poured shadow with a single long claw, built by Malachar from dark energy and stolen elemental power.',
     sprite: 'enemy_shadow_construct',
     zone: ElementType.DARK,
     baseLevel: 26,
@@ -1543,11 +1546,12 @@ export const ENEMIES: Enemy[] = [
     lore: 'Malachar spent twenty years preparing. These constructs were part of the preparation. Not all research was about the curse.'
   },
 
-  // NEW ENEMY — Malachar's Spire: a summoner that conjures dark revenants
+  // NEW ENEMY — Malachar's Spire: something small that used to be someone —
+  // a summoner whose precision is the last trace of the scholar it was
   {
     id: 'void_weaver',
     name: 'Void Weaver',
-    description: 'A spider-limbed entity of condensed dark magic that stitches new revenants from the Spire\'s grief-saturated walls.',
+    description: 'A small pointed-eared creature that pads through the study halls, pulling threads of dark from the grief-saturated walls and knotting them into revenants.',
     sprite: 'enemy_void_weaver',
     zone: ElementType.DARK,
     baseLevel: 26,
@@ -1569,14 +1573,14 @@ export const ENEMIES: Enemy[] = [
     attackRange: 90,
     moveSpeed: 55,
     behavior: 'summoner',
-    lore: 'There was a scholar in Malachar\'s household who helped with the early research. When they understood what the research was for, they tried to leave. This is what became of them.'
+    lore: 'There was a scholar in Malachar\'s household who helped with the early research. When they understood what it was for, they tried to leave. This small thing is what became of them. It still works with a copyist\'s precision.'
   },
 
   // NEW ENEMY — Malachar's Spire: a dark charger that launches from shadows
   {
     id: 'void_stalker',
     name: 'Void Stalker',
-    description: 'A lean predator of pure shadow that vanishes into dark corners and launches devastating charges from absolute stillness.',
+    description: 'A small round absence with two horns and two yellow eyes, waiting in dark corners to launch devastating charges from absolute stillness.',
     sprite: 'enemy_void_stalker',
     zone: ElementType.DARK,
     baseLevel: 27,
@@ -1604,7 +1608,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'void_sentinel',
     name: 'Void Sentinel',
-    description: 'An elite guardian of pure dark magic at the Spire\'s inner sanctum.',
+    description: 'An elite guardian crouched at the doors of the inner sanctum, gripping a curved blade of pure void.',
     sprite: 'enemy_void_sentinel',
     zone: ElementType.DARK,
     baseLevel: 28,
@@ -1634,7 +1638,7 @@ export const ENEMIES: Enemy[] = [
   {
     id: 'malachar_boss',
     name: 'Malachar the Unbound',
-    description: 'The scholar of Grievy Town who broke the world, standing at the top of his thirty-year obsession.',
+    description: 'The scholar of Grievy Town who broke the world — wearing, at the top of his Spire, the same horned face his curse gave the gods.',
     sprite: 'boss_malachar',
     zone: ElementType.DARK,
     baseLevel: 30,
@@ -1659,7 +1663,7 @@ export const ENEMIES: Enemy[] = [
     moveSpeed: 120,
     behavior: 'ranged',
     projectileColor: 0x8833cc,
-    lore: 'Malachar is not a monster. He is a man who chose a path thirty years ago and never once doubted it. He has watched the world fall apart with something that might be satisfaction. He underestimated one thing: that the world would send someone back.'
+    lore: 'Malachar is not a monster. He is a man who chose a path thirty years ago and never once doubted it. The horned shape was never Pyrath\'s, or Sylvael\'s, or Volkran\'s — it always belonged to the curse, and the curse has come for its author. He underestimated one thing: that the world would send someone back.'
   }
 ];
 

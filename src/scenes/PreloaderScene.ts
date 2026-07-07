@@ -11,6 +11,32 @@ export class PreloaderScene extends Phaser.Scene {
     'aldric', 'brother_ovan', 'kelvar', 'theron', 'liria', 'mira', 'ysolde',
   ] as const;
 
+  // Ennemis avec sprite bitmap réel (Rogue Adventure Enemy Pack 1-4 + boss packs
+  // Molarbeast/Titan Guard, recolorés par élément — voir ASSET_SOURCES.md).
+  // Chaque strip idle/walk/attack/damage/dead a 6 frames, taille fixe par ennemi
+  // (dépend de la créature source, pas de l'élément) : 32, 48 ou 80px/frame.
+  private static readonly ENEMY_FRAME_SIZE: Record<string, number> = {
+    // 32×32
+    cinder_sprite: 32, ember_broodmother: 32, crystal_golem: 32, terravast_serpent: 32,
+    rune_shard_ghost: 32, stone_hound: 32, cloudpiercer: 32, tide_shaper: 32,
+    spark_imp: 32, volt_hound: 32, arc_node: 32, glacial_shaper: 32,
+    void_weaver: 32, void_stalker: 32,
+    // 48×48
+    ember_wyrm: 48, lava_golem: 48, ash_revenant: 48, magma_titan: 48,
+    scorch_sentinel: 48, pyrath_boss: 48, stone_crawler: 48, cave_lurker: 48,
+    ruin_colossus: 48, gale_harpy: 48, storm_eagle: 48, wind_wraith: 48,
+    cyclone_sprite: 48, sky_titan: 48, storm_caller: 48, sylvael_boss: 48,
+    tide_crawler: 48, sea_wraith: 48, coral_golem: 48, depth_serpent: 48,
+    abyssal_shade: 48, drowned_knight: 48, thunder_drake: 48, chain_revenant: 48,
+    grid_architect: 48, storm_herald: 48, volkran_boss: 48, frost_wolf: 48,
+    ice_golem: 48, blizzard_wraith: 48, permafrost_titan: 48, crystal_dragon: 48,
+    hoarfrost_stalker: 48, dark_revenant: 48, shadow_construct: 48, void_sentinel: 48,
+    malachar_boss: 48,
+    // 80×80 (Titan Guard boss)
+    gorvun_boss: 80, thalymor_boss: 80, crysthea_boss: 80,
+  };
+  private static readonly ENEMY_STATES = ['idle', 'walk', 'attack', 'damage', 'dead'] as const;
+
   constructor() { super({ key: 'PreloaderScene' }); }
 
   preload() {
@@ -67,6 +93,18 @@ export class PreloaderScene extends Phaser.Scene {
       this.load.spritesheet(`npc_${npcId}_walk`, `assets/sprites/npcs/npc_${npcId}_walk.png`, { frameWidth: 24, frameHeight: 24 });
     }
 
+    // ── Ennemis — Rogue Adventure Enemy Pack recoloré par élément (voir ASSET_SOURCES.md) ──
+    // Strip horizontal 6 frames, une seule direction (pas de flip directionnel pour les ennemis).
+    for (const [enemyId, size] of Object.entries(PreloaderScene.ENEMY_FRAME_SIZE)) {
+      for (const state of PreloaderScene.ENEMY_STATES) {
+        this.load.spritesheet(
+          `enemy_${enemyId}_${state}`,
+          `assets/sprites/enemies/enemy_${enemyId}_${state}.png`,
+          { frameWidth: size, frameHeight: size },
+        );
+      }
+    }
+
     // ── Tileset de sol Grievy Town — Fantasy Dreamland Reborn (voir ASSET_SOURCES.md) ──
     // Convention : tileset_<zoneId>_ground / _path, chargé par zone dans GameScene.drawZoneMap().
     this.load.image('tileset_grievy_town_ground', 'assets/sprites/tilesets/tileset_grievy_town_ground.png');
@@ -97,6 +135,7 @@ export class PreloaderScene extends Phaser.Scene {
     this.generateItemIcons();
     this.createPlayerAnimations();
     this.createNpcAnimations();
+    this.createEnemyAnimations();
 
     // Parse loaded TMX text files into Tiled JSON and inject into the tilemap cache
     const tmxEntries: Array<[string, string]> = [
@@ -172,6 +211,32 @@ export class PreloaderScene extends Phaser.Scene {
             repeat: -1,
           });
         }
+      }
+    }
+  }
+
+  // ── Animations des ennemis (strip 6 frames, une seule direction) ─────────
+  private createEnemyAnimations(): void {
+    const STATE_CONFIG: Record<typeof PreloaderScene.ENEMY_STATES[number], { frameRate: number; repeat: number }> = {
+      idle:   { frameRate: 5,  repeat: -1 },
+      walk:   { frameRate: 8,  repeat: -1 },
+      attack: { frameRate: 10, repeat: 0 },
+      damage: { frameRate: 10, repeat: 0 },
+      dead:   { frameRate: 8,  repeat: 0 },
+    };
+
+    for (const enemyId of Object.keys(PreloaderScene.ENEMY_FRAME_SIZE)) {
+      for (const state of PreloaderScene.ENEMY_STATES) {
+        const textureKey = `enemy_${enemyId}_${state}`;
+        if (!this.textures.exists(textureKey)) continue;
+        if (this.anims.exists(textureKey)) continue;
+        const { frameRate, repeat } = STATE_CONFIG[state];
+        this.anims.create({
+          key: textureKey,
+          frames: this.anims.generateFrameNumbers(textureKey, { start: 0, end: 5 }),
+          frameRate,
+          repeat,
+        });
       }
     }
   }

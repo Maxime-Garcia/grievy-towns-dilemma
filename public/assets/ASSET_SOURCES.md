@@ -40,9 +40,131 @@ Même pack que le héros (Characters Pack 06), idle+walk uniquement (PNJ sans co
 
 *(portraits de dialogue : pas encore intégrés)*
 
-## `enemies/`, `bosses/` — Ennemis & boss
+## `enemies/` — Ennemis & boss (54 entrées : 47 réguliers/élites + 7 boss)
 
-*(rien intégré pour l'instant — étape ultérieure : ennemis zone 1 + boss)*
+Pack principal : **Enemy Sprites Pack 1-4 [Rogue Adventure]** (24 créatures
+génériques `Enemy_01`–`Enemy_24`, 4 variantes de couleur A-D, frames
+individuelles 32×32 ou 48×48 selon la créature : `Idle/Walk/Attack/Damage/
+Dead_{1-6}.png`). Boss : **Molarbeast Boss [Rogue Adventure]** (48×48) et
+**Titan Guard Boss [Rogue Adventure]** (80×80), même convention d'états mais
+`Attack1`/`Attack2` au lieu de `Attack` (seul `Attack1` est utilisé, mappé sur
+l'état `attack`).
+
+Chaque `enemy_<id>_{idle,walk,attack,damage,dead}.png` est un strip 6 frames
+généré par recolor HSV (rotation de teinte ou colorisation absolue selon la
+saturation native de la source) — script `assemble_enemies.js` +
+`final_mapping.js` (scratchpad de session, non versionnés dans le repo).
+Deux modes de recolor :
+- **rotate** : `hueDeg` est un delta ajouté à la teinte native de la source
+  (mesurée par échantillonnage HSV pondéré saturation×valeur) ; `satMult`/
+  `valMult` multiplient saturation/valeur existantes. Utilisé sur les sources
+  déjà colorées (peau verte, bleue…).
+- **colorize** : `hue` est une teinte cible absolue, `satTarget` remplace la
+  saturation entièrement (préserve seulement la luminance pour le shading).
+  Utilisé sur les sources quasi grises (aucune teinte à faire pivoter).
+
+**Erreur de catalogue corrigée en session** : la session précédente avait
+identifié `Enemy_21` comme un "fantôme/linceul gris" — décodage pixel par
+pixel révèle en fait une créature accroupie brandissant une lame/griffe
+courbe bleu-gris. Le vrai sprite de fantôme/wraith à capuche (silhouette
+encapuchonnée, œil rouge unique) est `Enemy_20`. `Enemy_10` (cataloguée
+"humanoïde sombre") est en réalité un petit chat/imp vert. `Enemy_23`/`24`
+(cataloguées "chevalier var." et "chauve-souris var.") sont en fait une même
+famille de spectre pâle hagard à griffe, distincte du chevalier `Enemy_22`.
+Toutes les réutilisations ont été corrigées avant génération — voir tableaux
+ci-dessous pour le mapping final vérifié visuellement (contact sheets
+Idle/Walk/Attack par lot de 6, upscale ×4-6, inspection pixel par pixel).
+
+### Ignis Reach (FIRE)
+
+| Enemy id | Source | Recolor |
+|---|---|---|
+| ember_wyrm | Enemy_05_A | colorize hue=15° satTarget=0.75 valMult=2.3 |
+| lava_golem | Enemy_19_A | rotate hueDeg=14 satMult=1.3 valMult=1.1 |
+| cinder_sprite | Enemy_08_A | rotate hueDeg=0 satMult=1 valMult=1 |
+| ash_revenant | Enemy_20_A | rotate hueDeg=13 satMult=1.4 valMult=1 |
+| magma_titan (elite) | Enemy_15_A | rotate hueDeg=-135 satMult=1 valMult=1.15 |
+| ember_broodmother | Enemy_10_A | rotate hueDeg=-135 satMult=1 valMult=1.2 |
+| scorch_sentinel | Enemy_22_A | rotate hueDeg=-9 satMult=1.6 valMult=1 |
+| pyrath_boss (boss) | Molarbeast Boss [A] | rotate hueDeg=21 satMult=1.2 valMult=1.05 |
+
+### Terravast (EARTH)
+
+| Enemy id | Source | Recolor |
+|---|---|---|
+| stone_crawler | Enemy_13_A | rotate hueDeg=-115 satMult=0.65 valMult=0.95 |
+| crystal_golem | Enemy_06_A | rotate hueDeg=47 satMult=0.9 valMult=1 |
+| cave_lurker | Enemy_16_A | rotate hueDeg=274 satMult=0.9 valMult=0.75 |
+| terravast_serpent | Enemy_09_A | rotate hueDeg=-117 satMult=0.7 valMult=0.95 |
+| rune_shard_ghost | Enemy_04_A | colorize hue=110° satTarget=0.55 valMult=2.2 |
+| stone_hound | Enemy_02_A | colorize hue=32° satTarget=0.5 valMult=1.6 |
+| ruin_colossus (elite) | Enemy_15_A | rotate hueDeg=-118 satMult=0.5 valMult=0.85 |
+| gorvun_boss (boss) | Titan Guard Boss [A] | rotate hueDeg=26 satMult=1.1 valMult=0.95 |
+
+### Zephyr Peaks (WIND)
+
+| Enemy id | Source | Recolor |
+|---|---|---|
+| gale_harpy | Enemy_05_A | colorize hue=195° satTarget=0.3 valMult=2.4 |
+| storm_eagle | Enemy_17_A | rotate hueDeg=-164 satMult=1.2 valMult=1.3 |
+| wind_wraith | Enemy_20_A | rotate hueDeg=193 satMult=0.9 valMult=1.1 |
+| cyclone_sprite | Enemy_12_A | rotate hueDeg=0 satMult=0.55 valMult=1.15 |
+| sky_titan (elite) | Enemy_05_A | colorize hue=195° satTarget=0.25 valMult=2.6 |
+| storm_caller | Enemy_18_A | colorize hue=195° satTarget=0.35 valMult=2.2 |
+| cloudpiercer | Enemy_11_A | rotate hueDeg=55 satMult=0.75 valMult=1.2 |
+| sylvael_boss (boss) | Molarbeast Boss [A] | rotate hueDeg=201 satMult=0.7 valMult=1.3 |
+
+### Abyssmar (WATER)
+
+| Enemy id | Source | Recolor |
+|---|---|---|
+| tide_crawler | Enemy_14_A | rotate hueDeg=63 satMult=1 valMult=1 |
+| sea_wraith | Enemy_20_A | rotate hueDeg=210 satMult=0.9 valMult=1 |
+| coral_golem | Enemy_13_A | rotate hueDeg=203 satMult=0.55 valMult=1.2 |
+| depth_serpent | Enemy_21_A | rotate hueDeg=-52 satMult=2.2 valMult=0.85 |
+| tide_shaper | Enemy_06_A | rotate hueDeg=9 satMult=1 valMult=1 |
+| abyssal_shade | Enemy_21_A | rotate hueDeg=-4 satMult=2 valMult=0.5 |
+| drowned_knight (elite) | Enemy_22_A | rotate hueDeg=188 satMult=1 valMult=0.9 |
+| thalymor_boss (boss) | Titan Guard Boss [A] | rotate hueDeg=206 satMult=0.9 valMult=1 |
+
+### Volterra (LIGHTNING)
+
+| Enemy id | Source | Recolor |
+|---|---|---|
+| spark_imp | Enemy_03_A | colorize hue=50° satTarget=0.8 valMult=2.6 |
+| thunder_drake | Enemy_05_A | colorize hue=50° satTarget=0.7 valMult=2.5 |
+| chain_revenant | Enemy_21_A | colorize hue=50° satTarget=0.65 valMult=1.4 |
+| volt_hound | Enemy_07_A | rotate hueDeg=-88 satMult=1 valMult=1.15 |
+| arc_node | Enemy_06_A | rotate hueDeg=-153 satMult=1 valMult=1.2 |
+| grid_architect | Enemy_24_A | rotate hueDeg=48 satMult=1.3 valMult=1.1 |
+| storm_herald (elite) | Enemy_22_A | rotate hueDeg=26 satMult=1.5 valMult=1.1 |
+| volkran_boss (boss) | Molarbeast Boss [A] | rotate hueDeg=56 satMult=1 valMult=1.2 |
+
+### Glaciem (ICE)
+
+| Enemy id | Source | Recolor |
+|---|---|---|
+| frost_wolf | Enemy_17_A | rotate hueDeg=197 satMult=0.4 valMult=1.6 |
+| ice_golem | Enemy_22_A | rotate hueDeg=172 satMult=0.3 valMult=1.8 |
+| blizzard_wraith | Enemy_20_A | rotate hueDeg=194 satMult=0.35 valMult=1.5 |
+| permafrost_titan (elite) | Enemy_15_A | rotate hueDeg=46 satMult=0.4 valMult=1.5 |
+| crystal_dragon (elite) | Enemy_12_A | rotate hueDeg=0 satMult=0.5 valMult=1.4 |
+| glacial_shaper | Enemy_09_A | rotate hueDeg=47 satMult=0.45 valMult=1.4 |
+| hoarfrost_stalker | Enemy_19_A | rotate hueDeg=195 satMult=0.4 valMult=1.7 |
+| crysthea_boss (boss) | Titan Guard Boss [A] | rotate hueDeg=190 satMult=0.45 valMult=1.4 |
+
+### Malachar's Spire (DARK)
+
+| Enemy id | Source | Recolor |
+|---|---|---|
+| dark_revenant | Enemy_20_A | rotate hueDeg=276 satMult=0.9 valMult=0.6 |
+| shadow_construct | Enemy_23_A | rotate hueDeg=276 satMult=1.4 valMult=0.55 |
+| void_weaver | Enemy_10_A | rotate hueDeg=128 satMult=1 valMult=0.6 |
+| void_stalker | Enemy_01_A | colorize hue=278° satTarget=0.5 valMult=1.6 |
+| void_sentinel (elite) | Enemy_21_A | rotate hueDeg=20 satMult=2.2 valMult=0.55 |
+| malachar_boss (boss) | Molarbeast Boss [A] | rotate hueDeg=284 satMult=1 valMult=0.55 |
+
+
 
 ## `tilesets/` — Décor de zone
 

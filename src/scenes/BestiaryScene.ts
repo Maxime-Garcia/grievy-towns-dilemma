@@ -17,7 +17,7 @@ import { ENEMY_MAP } from '../data/enemies';
 import { BESTIARY_IDS, BESTIARY_RECORD, BestiaryDropData } from '../data/bestiary';
 import { BestiarySystem } from '../systems/BestiarySystem';
 import { ALL_ITEMS } from '../data/items';
-import { t, localizeEnemy, localizeItem } from '../i18n';
+import { t, localizeEnemy, localizeItem, localizeBestiaryEntry } from '../i18n';
 import { GameScene } from './GameScene';
 
 // Couleurs élémentaires — mêmes valeurs que GameScene.ELEMENT_PROJECTILE_COLORS
@@ -415,9 +415,10 @@ export class BestiaryScene extends Phaser.Scene {
     drawGlowPanel(pFrame, px, py, 96, 96, accent, 0x080810);
     this.detailObjs.push(pFrame);
 
-    if (entry.discovered && this.textures.exists(def.sprite)) {
+    const portraitTexKey = `enemy_${def.id}_idle`;
+    if (entry.discovered && this.textures.exists(portraitTexKey)) {
       this.detailObjs.push(
-        this.add.image(px + 48, py + 48, def.sprite).setDisplaySize(80, 80),
+        this.add.image(px + 48, py + 48, portraitTexKey, 0).setDisplaySize(80, 80),
       );
     } else {
       const ph = this.add.graphics();
@@ -493,7 +494,7 @@ export class BestiaryScene extends Phaser.Scene {
     if (!entry.discovered)   { loreText = t('bestiary.not_discovered'); loreColor = UI.TXT_MUTED; }
     else if (!entry.killed)  { loreText = t('bestiary.lore_locked');    loreColor = UI.TXT_MUTED; }
     else {
-      loreText  = data.lore;
+      loreText  = localizeBestiaryEntry(data).lore;
       loreColor = UI.TXT_PARCHMENT;
     }
     this.detailObjs.push(

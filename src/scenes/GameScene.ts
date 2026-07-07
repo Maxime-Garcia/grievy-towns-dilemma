@@ -1208,7 +1208,15 @@ export class GameScene extends Phaser.Scene {
           const currentPattern = (sprite.getData('aiPattern') as AttackPatternId | null) ?? patternId;
           sprite.setData('aiState', 'attack');
           sprite.setData('aiStateUntil', now + 600); // max attack execution window
-          sprite.clearTint();
+          this.resetEnemyTint(sprite);
+          // Force-restart the attack swing exactly at execution time — telegraph and
+          // attack share the same animation key, so without this the swing (which
+          // already played once at telegraph start) freezes on its last frame for the
+          // remainder of a long telegraph instead of replaying when the hit lands.
+          if (sprite.getData('hasRealSprite')) {
+            const attackKey = `enemy_${ae.enemyId}_attack`;
+            if (this.anims.exists(attackKey)) sprite.play(attackKey);
+          }
           this.executeEnemyAttackPattern(sprite, ae, def, currentPattern);
           // BUG 1 fix: do NOT set this.cooldowns[atkCdKey] here — the FSM 'cooldown' state
           // (aiStateUntil set in 'attack' → 'cooldown' transition) is the sole clock. A parallel
@@ -1249,9 +1257,43 @@ export class GameScene extends Phaser.Scene {
         }
       }
 
+      // ── Real-sprite animation state (idle/walk/attack) ───────
+      if (sprite.getData('hasRealSprite')) {
+        this.updateEnemyAnimationState(sprite, ae.enemyId, aiState, body);
+      }
+
       // ── Update HP bar & crown positions ──────────────────────
       this.updateEnemyUiPositions(instanceId, sprite, ae);
     });
+  }
+
+  /** Switches a real-sprite enemy's playing animation based on its current AI state/velocity. */
+  private updateEnemyAnimationState(
+    sprite: Phaser.Physics.Arcade.Sprite,
+    enemyId: string,
+    aiState: string,
+    body: Phaser.Physics.Arcade.Body,
+  ): void {
+    const state = (aiState === 'telegraph' || aiState === 'attack')
+      ? 'attack'
+      : (Math.abs(body.velocity.x) > 5 || Math.abs(body.velocity.y) > 5)
+        ? 'walk'
+        : 'idle';
+    const key = `enemy_${enemyId}_${state}`;
+    if (!this.anims.exists(key)) return;
+    if (sprite.anims.currentAnim?.key !== key) sprite.play(key, true);
+  }
+
+  /**
+   * Clears a hit/telegraph tint flash without erasing an elite's persistent tint.
+   * Elites carry their color via `setData('persistentTint', ...)` — a raw
+   * `clearTint()` (used everywhere for the brief white hit-flash) would otherwise
+   * strip that identity permanently on the enemy's first hit-taken or attack.
+   */
+  private resetEnemyTint(sprite: Phaser.Physics.Arcade.Sprite): void {
+    const persistentTint = sprite.getData('persistentTint') as number | undefined;
+    if (persistentTint !== undefined) sprite.setTint(persistentTint);
+    else sprite.clearTint();
   }
 
   /** Pick which pattern to execute based on context. */
@@ -1616,7 +1658,7 @@ export class GameScene extends Phaser.Scene {
 
         // Gold flash
         sprite.setTintFill(0xffd700);
-        this.time.delayedCall(300, () => { if (sprite.active) sprite.clearTint(); });
+        this.time.delayedCall(300, () => { if (sprite.active) this.resetEnemyTint(sprite); });
 
         // Announcement
         const { width: W, height: H } = this.cameras.main;
@@ -1654,7 +1696,7 @@ export class GameScene extends Phaser.Scene {
         const d = Phaser.Math.Distance.Between(sprite.x, sprite.y, this.player.x, this.player.y);
         if (d < 55) this.applyEnemyMeleeDamage(ae, cfg.damageMult ?? 1.0);
         sprite.setTintFill(cfg.telegraphTint);
-        this.time.delayedCall(80, () => { if (sprite.active) sprite.clearTint(); });
+        this.time.delayedCall(80, () => { if (sprite.active) this.resetEnemyTint(sprite); });
         break;
       }
     }
@@ -1793,12 +1835,19 @@ export class GameScene extends Phaser.Scene {
     };
     const enemyColor = ZONE_ENEMY_COLORS_LOCAL[zoneId] ?? 0xaa4444;
     const texKey = `enemy_${minionDef.id}`;
-    this.ensureTexture(texKey, enemyColor);
+    const hasRealSprite = this.textures.exists(`enemy_${minionDef.id}_idle`);
+    if (!hasRealSprite) this.ensureTexture(texKey, enemyColor);
 
-    const sprite = this.physics.add.sprite(x, y, texKey);
+    const sprite = hasRealSprite
+      ? this.physics.add.sprite(x, y, `enemy_${minionDef.id}_idle`)
+      : this.physics.add.sprite(x, y, texKey);
     sprite.setDisplaySize(28, 28);
     (sprite.body as Phaser.Physics.Arcade.Body).setSize(24, 24);
     sprite.setDepth(4);
+    if (hasRealSprite) {
+      sprite.setData('hasRealSprite', true);
+      sprite.play(`enemy_${minionDef.id}_idle`);
+    }
 
     const active = CombatSystem.spawnEnemy(minionDef, this.gameState.player.level);
     active.x = x;
@@ -1819,7 +1868,7 @@ export class GameScene extends Phaser.Scene {
 
     // Spawn flash
     sprite.setTintFill(0xffd700);
-    this.time.delayedCall(250, () => { if (sprite.active) sprite.clearTint(); });
+    this.time.delayedCall(250, () => { if (sprite.active) this.resetEnemyTint(sprite); });
   }
 
   /** Apply melee damage from an enemy to the player, with guard/windup checks. */
@@ -1917,7 +1966,7 @@ export class GameScene extends Phaser.Scene {
     ) as Phaser.Physics.Arcade.Sprite | undefined;
     if (sprite?.active) {
       sprite.setTint(0xffffff);
-      this.time.delayedCall(80, () => { if (sprite.active) sprite.clearTint(); });
+      this.time.delayedCall(80, () => { if (sprite.active) this.resetEnemyTint(sprite); });
     }
 
     if (ae.currentHp <= 0 && sprite?.active) {
@@ -2301,14 +2350,14 @@ export class GameScene extends Phaser.Scene {
 
   private applyHitFeedback(sprite: Phaser.Physics.Arcade.Sprite, _ae: ActiveEnemy, _damage: number) {
     sprite.setTintFill(0xffffff);
-    this.time.delayedCall(80, () => { if (sprite.active) sprite.clearTint(); });
+    this.time.delayedCall(80, () => { if (sprite.active) this.resetEnemyTint(sprite); });
   }
 
   private checkStagger(sprite: Phaser.Physics.Arcade.Sprite, ae: ActiveEnemy, damage: number) {
     if (damage / ae.maxHp < 0.20) return;
 
     sprite.setTintFill(0xff3333);
-    this.time.delayedCall(180, () => { if (sprite.active) sprite.clearTint(); });
+    this.time.delayedCall(180, () => { if (sprite.active) this.resetEnemyTint(sprite); });
 
     const body = sprite.body as Phaser.Physics.Arcade.Body | null;
     if (!body || !body.enable) return;
@@ -3282,8 +3331,11 @@ export class GameScene extends Phaser.Scene {
 
       const texKey      = `enemy_${enemyId}`;
       const texKeyElite = `enemy_${enemyId}_elite`;
-      this.ensureTexture(texKey, enemyColor);
-      this.ensureTexture(texKeyElite, eliteColor, 44, 44);
+      const hasRealSprite = this.textures.exists(`enemy_${enemyId}_idle`);
+      if (!hasRealSprite) {
+        this.ensureTexture(texKey, enemyColor);
+        this.ensureTexture(texKeyElite, eliteColor, 44, 44);
+      }
 
       const count = Math.floor(def.spawnWeight * 4);
       for (let i = 0; i < count; i++) {
@@ -3291,11 +3343,21 @@ export class GameScene extends Phaser.Scene {
         const ex = Phaser.Math.Between(150, mapWidth - 150);
         const ey = Phaser.Math.Between(150, mapHeight - 150);
 
-        const sprite = this.physics.add.sprite(ex, ey, isElite ? texKeyElite : texKey);
         const dispSize = isElite ? 44 : 28;
+        const sprite = hasRealSprite
+          ? this.physics.add.sprite(ex, ey, `enemy_${enemyId}_idle`)
+          : this.physics.add.sprite(ex, ey, isElite ? texKeyElite : texKey);
         sprite.setDisplaySize(dispSize, dispSize);
         (sprite.body as Phaser.Physics.Arcade.Body).setSize(dispSize - 4, dispSize - 4);
         sprite.setDepth(4);
+        if (hasRealSprite) {
+          sprite.setData('hasRealSprite', true);
+          if (isElite) {
+            sprite.setTint(eliteColor);
+            sprite.setData('persistentTint', eliteColor);
+          }
+          sprite.play(`enemy_${enemyId}_idle`);
+        }
 
         const active = CombatSystem.spawnEnemy(def, this.gameState.player.level);
         active.x       = ex;
@@ -3336,12 +3398,19 @@ export class GameScene extends Phaser.Scene {
         const bx = Math.floor(mapWidth / 2);
         const by = Math.floor(mapHeight / 2);
         const bossTexKey = `enemy_${zone.bossId}`;
-        this.ensureTexture(bossTexKey, 0xffd700, 64, 64);
+        const bossHasRealSprite = this.textures.exists(`${bossTexKey}_idle`);
+        if (!bossHasRealSprite) this.ensureTexture(bossTexKey, 0xffd700, 64, 64);
 
-        const bossSprite = this.physics.add.sprite(bx, by, bossTexKey);
+        const bossSprite = bossHasRealSprite
+          ? this.physics.add.sprite(bx, by, `${bossTexKey}_idle`)
+          : this.physics.add.sprite(bx, by, bossTexKey);
         bossSprite.setDisplaySize(64, 64);
         (bossSprite.body as Phaser.Physics.Arcade.Body).setSize(60, 60);
         bossSprite.setDepth(5);
+        if (bossHasRealSprite) {
+          bossSprite.setData('hasRealSprite', true);
+          bossSprite.play(`${bossTexKey}_idle`);
+        }
 
         const activeBoss = CombatSystem.spawnEnemy(bossDef, this.gameState.player.level);
         activeBoss.x = bx;

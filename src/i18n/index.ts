@@ -1,6 +1,7 @@
 import { FR } from './fr';
 import { EN } from './en';
 import type { Item, Skill, Enemy, Quest, NPC } from '../types';
+import type { BestiaryEnemyData } from '../data/bestiary';
 
 export type Lang = 'fr' | 'en';
 
@@ -56,5 +57,13 @@ export function localizeQuest(quest: Quest): { name: string } {
 export function localizeNPC(npc: NPC): { name: string } {
   return {
     name: t(`npc.${npc.id}.name`) || npc.name,
+  };
+}
+
+export function localizeBestiaryEntry(entry: BestiaryEnemyData): { name: string; shortDesc: string; lore: string } {
+  return {
+    name:      t(`enemy.${entry.enemyId}.name`)         || entry.name,
+    shortDesc: t(`bestiary.${entry.enemyId}.shortDesc`) || entry.shortDesc,
+    lore:      t(`bestiary.${entry.enemyId}.lore`)      || entry.lore,
   };
 }
