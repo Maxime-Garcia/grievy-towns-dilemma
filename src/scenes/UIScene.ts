@@ -68,7 +68,7 @@ export class UIScene extends Phaser.Scene {
 
     // ── DEV: build badge (top-left) — retirer avant release ─────────
     // Version discrète : petite pastille verte + texte 8px sur fond translucide.
-    const BUILD_LABEL = 'PSEUDO-2.5D y-sort + TERRA/FULGURIS/GLACIUS (0a6fdef)';
+    const BUILD_LABEL = 'Revert pseudo-2.5D y-sort (retour top-down plat)';
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '8px', color: '#7dffa8', fontFamily: 'monospace',
