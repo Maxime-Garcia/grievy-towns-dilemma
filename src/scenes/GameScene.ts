@@ -3363,17 +3363,32 @@ export class GameScene extends Phaser.Scene {
       const pos = posMap[npc.id];
       if (!pos) continue;
 
+      // Sprite bitmap réel (ELV Games) si chargé pour ce PNJ, sinon fallback
+      // procédural — même principe que createPlayer() (ASSETS_IMPORT_GUIDE.md §7.1).
+      // Nécessite un vrai Sprite (pas staticImage, qui ne supporte pas .play()) —
+      // this.npcs.create() donne un Sprite à corps statique, immobile mais animable.
+      const hasRealSprite = this.textures.exists(`npc_${npc.id}_idle`);
       const color = NPC_COLORS[npc.id] ?? 0x44aacc;
       const texKey = `npc_${npc.id}`;
-      this.ensureTexture(texKey, color);
+      if (!hasRealSprite) this.ensureTexture(texKey, color);
 
-      const sprite = this.physics.add.staticImage(pos.x, pos.y, texKey);
-      sprite.setDisplaySize(28, 28);
-      (sprite.body as Phaser.Physics.Arcade.StaticBody).setSize(24, 24);
+      const sprite = this.npcs.create(
+        pos.x, pos.y, hasRealSprite ? `npc_${npc.id}_idle` : texKey,
+      ) as Phaser.Physics.Arcade.Sprite;
+      sprite.setDisplaySize(hasRealSprite ? 48 : 28, hasRealSprite ? 48 : 28);
       sprite.setDepth(4);
       sprite.setData('npcId', npc.id);
+      // IMPORTANT : refreshBody() DOIT être appelé AVANT setSize(), pas après.
+      // Phaser.Physics.Arcade.StaticBody#refreshBody() appelle updateFromGameObject(),
+      // qui écrase width/height du corps avec displayWidth/displayHeight du sprite —
+      // tout setSize() appelé avant est donc silencieusement annulé. Avec les vrais
+      // sprites (48×48 affiché), le corps aurait fait 48×48 (demi-largeur 24) au lieu
+      // des 40×40 voulus, portant la distance de contact joueur/PNJ à ~44px — au-dessus
+      // du seuil d'interaction (dist < 42 dans update()), rendant tout dialogue PNJ
+      // impossible à déclencher (le collider bloque le joueur avant le seuil).
       sprite.refreshBody();
-      this.npcs.add(sprite);
+      (sprite.body as Phaser.Physics.Arcade.StaticBody).setSize(hasRealSprite ? 40 : 24, hasRealSprite ? 40 : 24);
+      if (hasRealSprite) sprite.play(`npc_${npc.id}_idle_down`);
 
       // Name label above NPC
       const nameLabel = this.add.text(pos.x, pos.y - 22, npc.name, {

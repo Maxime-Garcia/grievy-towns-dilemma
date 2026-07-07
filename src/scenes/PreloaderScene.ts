@@ -4,6 +4,13 @@ import { RARITY_COLORS, ItemRarity } from '../types';
 import { ALL_ITEMS } from '../data/items';
 
 export class PreloaderScene extends Phaser.Scene {
+  // PNJ de Grievy Town ayant un sprite bitmap réel (Characters Pack 06 — ELV Games).
+  // Ajouter ici tout nouvel identifiant de PNJ au fur et à mesure de l'intégration
+  // (voir public/assets/ASSET_SOURCES.md pour la correspondance vers le pack source).
+  private static readonly GRIEVY_TOWN_NPC_IDS = [
+    'aldric', 'brother_ovan', 'kelvar', 'theron', 'liria', 'mira', 'ysolde',
+  ] as const;
+
   constructor() { super({ key: 'PreloaderScene' }); }
 
   preload() {
@@ -53,6 +60,13 @@ export class PreloaderScene extends Phaser.Scene {
     this.load.spritesheet('player_attack', 'assets/sprites/player/player_attack.png', { frameWidth: 32, frameHeight: 32 });
     this.load.spritesheet('player_dead',   'assets/sprites/player/player_dead.png',   { frameWidth: 24, frameHeight: 24 });
 
+    // ── PNJ de Grievy Town — même pack/grille que le héros (Characters Pack 06) ──
+    // Idle+Walk uniquement (pas de combat) : voir public/assets/ASSET_SOURCES.md.
+    for (const npcId of PreloaderScene.GRIEVY_TOWN_NPC_IDS) {
+      this.load.spritesheet(`npc_${npcId}_idle`, `assets/sprites/npcs/npc_${npcId}_idle.png`, { frameWidth: 24, frameHeight: 24 });
+      this.load.spritesheet(`npc_${npcId}_walk`, `assets/sprites/npcs/npc_${npcId}_walk.png`, { frameWidth: 24, frameHeight: 24 });
+    }
+
     // Real Tiled TMX maps loaded as text — parsed into Tiled JSON in create()
     this.load.text('tmx_town_raw',    'assets/maps/town.tmx');
     this.load.text('tmx_volcano_raw', 'assets/maps/volcano.tmx');
@@ -77,6 +91,7 @@ export class PreloaderScene extends Phaser.Scene {
     this.generateWeaponIcons();
     this.generateItemIcons();
     this.createPlayerAnimations();
+    this.createNpcAnimations();
 
     // Parse loaded TMX text files into Tiled JSON and inject into the tilemap cache
     const tmxEntries: Array<[string, string]> = [
@@ -127,6 +142,33 @@ export class PreloaderScene extends Phaser.Scene {
     register('walk',   'player_walk',   8,  -1);
     register('attack', 'player_attack', 14,  0);
     register('dead',   'player_dead',   8,   0);
+  }
+
+  // ── Animations des PNJ (même grille 4×4 que le héros, idle+walk seulement) ──
+  private createNpcAnimations(): void {
+    const DIRS: Array<{ name: string; row: number }> = [
+      { name: 'down',  row: 0 },
+      { name: 'left',  row: 1 },
+      { name: 'right', row: 2 },
+      { name: 'up',    row: 3 },
+    ];
+
+    for (const npcId of PreloaderScene.GRIEVY_TOWN_NPC_IDS) {
+      for (const state of ['idle', 'walk'] as const) {
+        const textureKey = `npc_${npcId}_${state}`;
+        if (!this.textures.exists(textureKey)) continue;
+        for (const { name, row } of DIRS) {
+          const key = `${textureKey}_${name}`;
+          if (this.anims.exists(key)) continue;
+          this.anims.create({
+            key,
+            frames: this.anims.generateFrameNumbers(textureKey, { start: row * 4, end: row * 4 + 3 }),
+            frameRate: state === 'idle' ? 4 : 8,
+            repeat: -1,
+          });
+        }
+      }
+    }
   }
 
   private generateWeaponIcons(): void {
