@@ -3232,10 +3232,11 @@ export class GameScene extends Phaser.Scene {
     if (!hasRealSprite) this.ensureTexture('player', 0x44aaff);
 
     this.player = this.physics.add.sprite(startX, startY, hasRealSprite ? 'player_idle' : 'player');
-    // Frames idle/walk/dead natives 24×24 — garder une échelle entière (pas de 28×28)
-    // pour éviter le "shimmer" du pixel art en filtrage nearest-neighbor (pixelArt: true).
-    this.player.setDisplaySize(hasRealSprite ? 24 : 28, hasRealSprite ? 24 : 28);
-    this.player.setBodySize(hasRealSprite ? 20 : 24, hasRealSprite ? 20 : 24);
+    // Frames idle/walk/dead natives 24×24 — échelle entière ×2 (48×48) pour rester
+    // lisible à l'écran tout en évitant le "shimmer" du pixel art en filtrage
+    // nearest-neighbor (pixelArt: true) — un ×1 (24×24) était net mais trop petit.
+    this.player.setDisplaySize(hasRealSprite ? 48 : 28, hasRealSprite ? 48 : 28);
+    this.player.setBodySize(hasRealSprite ? 40 : 24, hasRealSprite ? 40 : 24);
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(5);
     if (hasRealSprite) this.player.play('player_idle_down');
