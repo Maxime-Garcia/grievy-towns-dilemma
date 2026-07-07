@@ -45,6 +45,14 @@ export class PreloaderScene extends Phaser.Scene {
     // Full Kenney RPG tileset — used by real Tiled maps
     this.load.image('rpg-full', 'assets/kenneys/rpg-full.png');
 
+    // ── Héros — premier asset bitmap réel du jeu (ELV Games, voir public/assets/ASSET_SOURCES.md) ──
+    // Grille 4×4 par feuille : ligne 0=bas, 1=gauche, 2=droite, 3=haut, 4 frames/ligne.
+    // idle/walk/dead = 24px/frame (96×96) ; attack = 32px/frame (128×128, plus grand à cause de l'arme).
+    this.load.spritesheet('player_idle',   'assets/sprites/player/player_idle.png',   { frameWidth: 24, frameHeight: 24 });
+    this.load.spritesheet('player_walk',   'assets/sprites/player/player_walk.png',   { frameWidth: 24, frameHeight: 24 });
+    this.load.spritesheet('player_attack', 'assets/sprites/player/player_attack.png', { frameWidth: 32, frameHeight: 32 });
+    this.load.spritesheet('player_dead',   'assets/sprites/player/player_dead.png',   { frameWidth: 24, frameHeight: 24 });
+
     // Real Tiled TMX maps loaded as text — parsed into Tiled JSON in create()
     this.load.text('tmx_town_raw',    'assets/maps/town.tmx');
     this.load.text('tmx_volcano_raw', 'assets/maps/volcano.tmx');
@@ -68,6 +76,7 @@ export class PreloaderScene extends Phaser.Scene {
   create() {
     this.generateWeaponIcons();
     this.generateItemIcons();
+    this.createPlayerAnimations();
 
     // Parse loaded TMX text files into Tiled JSON and inject into the tilemap cache
     const tmxEntries: Array<[string, string]> = [
@@ -86,6 +95,38 @@ export class PreloaderScene extends Phaser.Scene {
     }
 
     this.scene.start('MainMenuScene');
+  }
+
+  // ── Animations du héros (asset bitmap réel) ──────────────────────────────
+  // Chaque feuille (idle/walk/attack/dead) est une grille 4×4 : ligne 0=bas,
+  // 1=gauche, 2=droite, 3=haut — 4 frames par ligne. Voir preload() pour les
+  // dimensions par feuille. Clés d'animation : player_<etat>_<direction>.
+  private createPlayerAnimations(): void {
+    const DIRS: Array<{ name: string; row: number }> = [
+      { name: 'down',  row: 0 },
+      { name: 'left',  row: 1 },
+      { name: 'right', row: 2 },
+      { name: 'up',    row: 3 },
+    ];
+
+    const register = (state: string, textureKey: string, frameRate: number, repeat: number) => {
+      if (!this.textures.exists(textureKey)) return;
+      for (const { name, row } of DIRS) {
+        const key = `player_${state}_${name}`;
+        if (this.anims.exists(key)) continue;
+        this.anims.create({
+          key,
+          frames: this.anims.generateFrameNumbers(textureKey, { start: row * 4, end: row * 4 + 3 }),
+          frameRate,
+          repeat,
+        });
+      }
+    };
+
+    register('idle',   'player_idle',   4,  -1);
+    register('walk',   'player_walk',   8,  -1);
+    register('attack', 'player_attack', 14,  0);
+    register('dead',   'player_dead',   8,   0);
   }
 
   private generateWeaponIcons(): void {

@@ -6,3 +6,9 @@ npm-debug.log*
 .env
 .env.local
 .vite/
+
+# Bibliotheque source brute du bundle ELV Games (1 Go+, zips + extraction) —
+# jamais commitee. Seuls les fichiers curates/renommes dans public/assets/
+# sont versionnes. Voir public/assets/ASSET_SOURCES.md pour la tracabilite.
+/assets/Bundle/
+/assets/Bundle_extracted/

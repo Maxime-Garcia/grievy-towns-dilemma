@@ -484,13 +484,23 @@ export class GameScene extends Phaser.Scene {
 
     body.setVelocity(this.playerVx + this.dashMomentumX, this.playerVy + this.dashMomentumY);
 
-    // Flip on input direction immediately (not lerped velocity) for crisp visual response
-    if (targetVx !== 0) this.player.setFlipX(targetVx < 0);
+    const isMoving = targetVx !== 0 || targetVy !== 0;
 
-    if (targetVx !== 0 || targetVy !== 0) {
+    if (isMoving) {
       this.lastDirX = targetVx;
       this.lastDirY = targetVy;
       this.facingAngle = Math.atan2(Math.sign(targetVy), Math.sign(targetVx));
+    }
+
+    // Animation directionnelle (sprite bitmap réel uniquement — no-op si fallback
+    // procédural, cf. createPlayer()). Direction résolue sur l'axe dominant de
+    // lastDirX/lastDirY (diagonales : on affiche la facette la plus proche),
+    // pas sur facingAngle qui sert au combat et ne doit pas être touché ici.
+    if (this.anims.exists('player_idle_down')) {
+      const dir = Math.abs(this.lastDirY) > Math.abs(this.lastDirX)
+        ? (this.lastDirY < 0 ? 'up' : 'down')
+        : (this.lastDirX < 0 ? 'left' : 'right');
+      this.player.play(`player_${isMoving ? 'walk' : 'idle'}_${dir}`, true);
     }
   }
 
@@ -3211,17 +3221,24 @@ export class GameScene extends Phaser.Scene {
   // ── SETUP ────────────────────────────────────────────────────
 
   private createPlayer() {
-    this.ensureTexture('player', 0x44aaff);
-
     const pos = this.gameState.player.position;
     const startX = (pos.x > 0) ? pos.x : this.layout.spawnX;
     const startY = (pos.y > 0) ? pos.y : this.layout.spawnY;
 
-    this.player = this.physics.add.sprite(startX, startY, 'player');
-    this.player.setDisplaySize(28, 28);
-    this.player.setBodySize(24, 24);
+    // Sprite bitmap réel (ELV Games, cf. public/assets/ASSET_SOURCES.md) si chargé,
+    // sinon fallback procédural — le jeu doit rester jouable sans les assets
+    // (règle ASSETS_IMPORT_GUIDE.md §7.1).
+    const hasRealSprite = this.textures.exists('player_idle');
+    if (!hasRealSprite) this.ensureTexture('player', 0x44aaff);
+
+    this.player = this.physics.add.sprite(startX, startY, hasRealSprite ? 'player_idle' : 'player');
+    // Frames idle/walk/dead natives 24×24 — garder une échelle entière (pas de 28×28)
+    // pour éviter le "shimmer" du pixel art en filtrage nearest-neighbor (pixelArt: true).
+    this.player.setDisplaySize(hasRealSprite ? 24 : 28, hasRealSprite ? 24 : 28);
+    this.player.setBodySize(hasRealSprite ? 20 : 24, hasRealSprite ? 20 : 24);
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(5);
+    if (hasRealSprite) this.player.play('player_idle_down');
   }
 
   private createEnemiesForZone(zoneId: string) {
