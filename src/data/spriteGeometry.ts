@@ -1,0 +1,75 @@
+// AUTO-GENERATED reference data — tight opaque-pixel bounding boxes measured
+// from each real sprite frame (idle, first frame/pose), in NATIVE frame pixels.
+// Source frames have significant transparent padding around the character —
+// GameScene uses this to size display/hitbox off the VISIBLE creature instead
+// of the full padded frame. Regenerate if any enemy/npc/player sprite changes.
+export interface SpriteBBox { frameSize: number; x: number; y: number; w: number; h: number; }
+
+export const ENEMY_SPRITE_BBOX: Record<string, SpriteBBox> = {
+  ember_wyrm: { frameSize: 48, x: 15, y: 25, w: 18, h: 23 },
+  lava_golem: { frameSize: 48, x: 16, y: 29, w: 21, h: 19 },
+  cinder_sprite: { frameSize: 32, x: 10, y: 1, w: 12, h: 25 },
+  ash_revenant: { frameSize: 48, x: 18, y: 24, w: 13, h: 24 },
+  magma_titan: { frameSize: 48, x: 12, y: 28, w: 22, h: 20 },
+  ember_broodmother: { frameSize: 32, x: 8, y: 18, w: 16, h: 14 },
+  scorch_sentinel: { frameSize: 48, x: 14, y: 24, w: 21, h: 24 },
+  pyrath_boss: { frameSize: 48, x: 11, y: 6, w: 27, h: 34 },
+  stone_crawler: { frameSize: 48, x: 12, y: 18, w: 30, h: 30 },
+  crystal_golem: { frameSize: 32, x: 9, y: 21, w: 14, h: 11 },
+  cave_lurker: { frameSize: 48, x: 16, y: 29, w: 15, h: 19 },
+  terravast_serpent: { frameSize: 32, x: 11, y: 14, w: 10, h: 18 },
+  rune_shard_ghost: { frameSize: 32, x: 10, y: 17, w: 12, h: 15 },
+  stone_hound: { frameSize: 32, x: 7, y: 19, w: 18, h: 13 },
+  ruin_colossus: { frameSize: 48, x: 12, y: 28, w: 22, h: 20 },
+  gorvun_boss: { frameSize: 80, x: 16, y: 30, w: 44, h: 50 },
+  gale_harpy: { frameSize: 48, x: 15, y: 25, w: 18, h: 23 },
+  storm_eagle: { frameSize: 48, x: 13, y: 22, w: 21, h: 26 },
+  wind_wraith: { frameSize: 48, x: 18, y: 24, w: 13, h: 24 },
+  cyclone_sprite: { frameSize: 48, x: 9, y: 26, w: 30, h: 22 },
+  sky_titan: { frameSize: 48, x: 15, y: 25, w: 18, h: 23 },
+  storm_caller: { frameSize: 48, x: 15, y: 31, w: 18, h: 17 },
+  cloudpiercer: { frameSize: 32, x: 12, y: 16, w: 10, h: 16 },
+  sylvael_boss: { frameSize: 48, x: 11, y: 6, w: 27, h: 34 },
+  tide_crawler: { frameSize: 48, x: 17, y: 32, w: 14, h: 16 },
+  sea_wraith: { frameSize: 48, x: 18, y: 24, w: 13, h: 24 },
+  coral_golem: { frameSize: 48, x: 12, y: 18, w: 30, h: 30 },
+  depth_serpent: { frameSize: 48, x: 18, y: 20, w: 10, h: 28 },
+  tide_shaper: { frameSize: 32, x: 9, y: 21, w: 14, h: 11 },
+  abyssal_shade: { frameSize: 48, x: 18, y: 20, w: 10, h: 28 },
+  drowned_knight: { frameSize: 48, x: 14, y: 24, w: 21, h: 24 },
+  thalymor_boss: { frameSize: 80, x: 16, y: 30, w: 44, h: 50 },
+  spark_imp: { frameSize: 32, x: 9, y: 20, w: 13, h: 12 },
+  thunder_drake: { frameSize: 48, x: 15, y: 25, w: 18, h: 23 },
+  chain_revenant: { frameSize: 48, x: 18, y: 20, w: 10, h: 28 },
+  volt_hound: { frameSize: 32, x: 9, y: 15, w: 13, h: 17 },
+  arc_node: { frameSize: 32, x: 9, y: 21, w: 14, h: 11 },
+  grid_architect: { frameSize: 48, x: 15, y: 28, w: 21, h: 20 },
+  storm_herald: { frameSize: 48, x: 14, y: 24, w: 21, h: 24 },
+  volkran_boss: { frameSize: 48, x: 11, y: 6, w: 27, h: 34 },
+  frost_wolf: { frameSize: 48, x: 13, y: 22, w: 21, h: 26 },
+  ice_golem: { frameSize: 48, x: 14, y: 24, w: 21, h: 24 },
+  blizzard_wraith: { frameSize: 48, x: 18, y: 24, w: 13, h: 24 },
+  permafrost_titan: { frameSize: 48, x: 12, y: 28, w: 22, h: 20 },
+  crystal_dragon: { frameSize: 48, x: 9, y: 26, w: 30, h: 22 },
+  glacial_shaper: { frameSize: 32, x: 11, y: 14, w: 10, h: 18 },
+  hoarfrost_stalker: { frameSize: 48, x: 16, y: 29, w: 21, h: 19 },
+  crysthea_boss: { frameSize: 80, x: 16, y: 30, w: 44, h: 50 },
+  dark_revenant: { frameSize: 48, x: 18, y: 24, w: 13, h: 24 },
+  shadow_construct: { frameSize: 48, x: 15, y: 27, w: 24, h: 21 },
+  void_weaver: { frameSize: 32, x: 8, y: 18, w: 16, h: 14 },
+  void_stalker: { frameSize: 32, x: 9, y: 19, w: 15, h: 13 },
+  void_sentinel: { frameSize: 48, x: 18, y: 20, w: 10, h: 28 },
+  malachar_boss: { frameSize: 48, x: 11, y: 6, w: 27, h: 34 },
+};
+
+export const NPC_SPRITE_BBOX: Record<string, SpriteBBox> = {
+  aldric: { frameSize: 24, x: 6, y: 5, w: 12, h: 19 },
+  brother_ovan: { frameSize: 24, x: 6, y: 5, w: 13, h: 19 },
+  kelvar: { frameSize: 24, x: 6, y: 8, w: 12, h: 16 },
+  theron: { frameSize: 24, x: 6, y: 8, w: 12, h: 16 },
+  liria: { frameSize: 24, x: 6, y: 6, w: 12, h: 18 },
+  mira: { frameSize: 24, x: 6, y: 7, w: 12, h: 17 },
+  ysolde: { frameSize: 24, x: 6, y: 5, w: 12, h: 19 },
+};
+
+export const PLAYER_SPRITE_BBOX: SpriteBBox = { frameSize: 24, x: 6, y: 6, w: 12, h: 18 };

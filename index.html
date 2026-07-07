@@ -37,10 +37,79 @@
       image-rendering: crisp-edges;
       -ms-interpolation-mode: nearest-neighbor;
     }
+
+    /* ── Boot loading overlay ────────────────────────────────────────────
+       Visible from first paint (before the JS bundle / Phaser even boots) so
+       there is never a plain black screen with zero feedback. BootScene and
+       PreloaderScene report real Loader progress into this via the small
+       bridge attached to window.__bootLoading below; the overlay is hidden
+       once PreloaderScene finishes and MainMenuScene is about to start. */
+    #boot-loading {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      background: #000;
+      color: #ffffff;
+      transition: opacity 0.4s ease;
+    }
+    #boot-loading.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    #boot-loading .boot-title {
+      font-size: 16px;
+      text-align: center;
+      padding: 0 20px;
+    }
+    #boot-loading .boot-bar-track {
+      width: min(320px, 80vw);
+      height: 20px;
+      background: #222222;
+      border: 2px solid #444444;
+    }
+    #boot-loading .boot-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: #ffffff;
+      transition: width 0.15s linear;
+    }
+    #boot-loading .boot-pct {
+      font-size: 10px;
+      color: #aaaaaa;
+    }
   </style>
 </head>
 <body>
   <div id="game-container"></div>
+  <div id="boot-loading">
+    <div class="boot-title">Grievy Town's Dilemma</div>
+    <div class="boot-bar-track"><div class="boot-bar-fill" id="boot-bar-fill"></div></div>
+    <div class="boot-pct" id="boot-pct">0%</div>
+  </div>
+  <script>
+    // Tiny bridge so Phaser scenes (loaded later as a module) can report real
+    // Loader progress into this static HTML overlay without any bundler wiring.
+    window.__bootLoading = {
+      setProgress(pct, label) {
+        const fill = document.getElementById('boot-bar-fill');
+        const pctEl = document.getElementById('boot-pct');
+        if (fill) fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+        if (pctEl) pctEl.textContent = (label ? label + ' — ' : '') + Math.round(pct) + '%';
+      },
+      hide() {
+        const overlay = document.getElementById('boot-loading');
+        if (overlay) {
+          overlay.classList.add('hidden');
+          setTimeout(() => overlay.remove(), 500);
+        }
+      },
+    };
+  </script>
   <script type="module" src="/src/main.ts"></script>
   <script>
     if ('serviceWorker' in navigator) {

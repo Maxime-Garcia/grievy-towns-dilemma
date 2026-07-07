@@ -40,39 +40,13 @@ export class PreloaderScene extends Phaser.Scene {
   constructor() { super({ key: 'PreloaderScene' }); }
 
   preload() {
-    const w = this.cameras.main.width;
-    const h = this.cameras.main.height;
-
-    // Progress bar background
-    const barBg = this.add.graphics();
-    barBg.fillStyle(0x222222);
-    barBg.fillRect(w / 2 - 200, h / 2 - 16, 400, 32);
-
-    const bar = this.add.graphics();
-    const title = this.add.text(w / 2, h / 2 - 60, "Grievy Town's Dilemma", {
-      fontSize: '20px',
-      color: '#ffffff',
-      fontFamily: 'monospace',
-    }).setOrigin(0.5);
-
-    const pct = this.add.text(w / 2, h / 2 + 30, '0%', {
-      fontSize: '12px',
-      color: '#aaaaaa',
-      fontFamily: 'monospace',
-    }).setOrigin(0.5);
-
+    // Continues the boot-loading overlay's bar (see index.html) from where
+    // BootScene left off (PROGRESS_SHARE%) up to 100% — this scene loads the
+    // vast majority of assets (270 enemy sprite files + player/npc/tilesets/
+    // maps), so it owns the bulk of the bar's range.
+    const BOOT_SHARE = 15;
     this.load.on('progress', (value: number) => {
-      bar.clear();
-      bar.fillStyle(0xffffff);
-      bar.fillRect(w / 2 - 198, h / 2 - 14, 396 * value, 28);
-      pct.setText(`${Math.floor(value * 100)}%`);
-    });
-
-    this.load.on('complete', () => {
-      title.destroy();
-      bar.destroy();
-      barBg.destroy();
-      pct.destroy();
+      window.__bootLoading?.setProgress(BOOT_SHARE + value * (100 - BOOT_SHARE), 'Chargement des sprites');
     });
 
     // Full Kenney RPG tileset — used by real Tiled maps
@@ -153,6 +127,7 @@ export class PreloaderScene extends Phaser.Scene {
       this.cache.tilemap.add(cacheKey, { format: Phaser.Tilemaps.Formats.TILED_JSON, data: json });
     }
 
+    window.__bootLoading?.hide();
     this.scene.start('MainMenuScene');
   }
 

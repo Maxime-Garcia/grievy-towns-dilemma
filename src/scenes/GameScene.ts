@@ -22,6 +22,8 @@ import { loadBindings, KeyBindings } from '../data/keyBindings';
 import { t, localizeItem } from '../i18n';
 import { BestiarySystem } from '../systems/BestiarySystem';
 import { getBestiaryEntry } from '../data/bestiary';
+import { ENEMY_SPRITE_BBOX, NPC_SPRITE_BBOX, PLAYER_SPRITE_BBOX } from '../data/spriteGeometry';
+import { fitSpriteToContent } from '../utils/SpriteFit';
 
 const ELEMENT_PROJECTILE_COLORS: Partial<Record<ElementType, number>> = {
   [ElementType.FIRE]:      0xff4400,
@@ -1838,11 +1840,21 @@ export class GameScene extends Phaser.Scene {
     const hasRealSprite = this.textures.exists(`enemy_${minionDef.id}_idle`);
     if (!hasRealSprite) this.ensureTexture(texKey, enemyColor);
 
+    const minionBbox = ENEMY_SPRITE_BBOX[minionDef.id];
+    const minionFit = hasRealSprite && minionBbox ? fitSpriteToContent(minionBbox, 32) : null;
+    const dispSize = minionFit ? minionFit.dispSize : 28;
     const sprite = hasRealSprite
       ? this.physics.add.sprite(x, y, `enemy_${minionDef.id}_idle`)
       : this.physics.add.sprite(x, y, texKey);
-    sprite.setDisplaySize(28, 28);
-    (sprite.body as Phaser.Physics.Arcade.Body).setSize(24, 24);
+    sprite.setDisplaySize(dispSize, dispSize);
+    const minionBody = sprite.body as Phaser.Physics.Arcade.Body;
+    if (minionFit && minionBbox) {
+      // DYNAMIC body — raw source-pixel bbox, not the scaled fit values (see createPlayer()).
+      minionBody.setSize(minionBbox.w, minionBbox.h);
+      minionBody.setOffset(minionBbox.x, minionBbox.y);
+    } else {
+      minionBody.setSize(dispSize - 8, dispSize - 8);
+    }
     sprite.setDepth(4);
     if (hasRealSprite) {
       sprite.setData('hasRealSprite', true);
@@ -1857,9 +1869,11 @@ export class GameScene extends Phaser.Scene {
     this.enemies.add(sprite);
 
     // HP bar
-    const barW = 32;
-    const barBg = this.add.rectangle(x, y - 20, barW, 6, 0x220000).setDepth(8);
-    const barFg = this.add.rectangle(x - barW / 2, y - 20, barW, 4, 0xff2222).setDepth(9).setOrigin(0, 0.5);
+    const minionContentTopGap = minionFit ? dispSize / 2 - minionFit.offsetY : dispSize / 2;
+    const barW = (minionFit ? minionFit.bodyW : dispSize) + 4;
+    const barY = y - minionContentTopGap - 8;
+    const barBg = this.add.rectangle(x, barY, barW, 6, 0x220000).setDepth(8);
+    const barFg = this.add.rectangle(x - barW / 2, barY, barW, 4, 0xff2222).setDepth(9).setOrigin(0, 0.5);
     this.enemyHpBars.set(active.instanceId, { bg: barBg, bar: barFg, baseW: barW });
 
     // Re-add wall collider for this minion — register in physicsColliders to avoid zombie collider on zone transition
@@ -1929,10 +1943,15 @@ export class GameScene extends Phaser.Scene {
 
   /** Update HP bar and crown positions for a given enemy. */
   private updateEnemyUiPositions(instanceId: string, sprite: Phaser.Physics.Arcade.Sprite, ae: ActiveEnemy) {
+    // Anchor on the top of the body's hitbox (which hugs the visible content — see
+    // fitSpriteToContent) rather than the padded display frame, so bars/crowns sit
+    // right above the creature instead of floating above its transparent padding.
+    const body = sprite.body as Phaser.Physics.Arcade.Body | null;
+    const contentTopGap = body ? sprite.displayHeight / 2 - body.offset.y : sprite.displayHeight / 2;
+
     const barData = this.enemyHpBars.get(instanceId);
     if (barData) {
-      const dispH = sprite.displayHeight;
-      const barY  = sprite.y - dispH / 2 - 8;
+      const barY  = sprite.y - contentTopGap - 8;
       const hpPct = Math.max(0, ae.currentHp / ae.maxHp);
       barData.bg.setPosition(sprite.x, barY);
       barData.bar.setPosition(sprite.x - barData.baseW / 2, barY);
@@ -1940,7 +1959,7 @@ export class GameScene extends Phaser.Scene {
     }
     const crown = this.enemyCrowns.get(instanceId);
     if (crown) {
-      crown.setPosition(sprite.x, sprite.y - sprite.displayHeight / 2 - 18);
+      crown.setPosition(sprite.x, sprite.y - contentTopGap - 18);
     }
   }
 
@@ -3309,8 +3328,24 @@ export class GameScene extends Phaser.Scene {
     // Frames idle/walk/dead natives 24×24 — échelle entière ×2 (48×48) pour rester
     // lisible à l'écran tout en évitant le "shimmer" du pixel art en filtrage
     // nearest-neighbor (pixelArt: true) — un ×1 (24×24) était net mais trop petit.
-    this.player.setDisplaySize(hasRealSprite ? 48 : 28, hasRealSprite ? 48 : 28);
-    this.player.setBodySize(hasRealSprite ? 40 : 24, hasRealSprite ? 40 : 24);
+    // Hitbox dimensionnée sur le contenu opaque réel (le perso ne remplit qu'~38%
+    // de son cadre natif) plutôt que sur le cadre entier, sinon la boîte de
+    // collision déborde largement de la silhouette visible.
+    if (hasRealSprite) {
+      const fit = fitSpriteToContent(PLAYER_SPRITE_BBOX, 36);
+      this.player.setDisplaySize(fit.dispSize, fit.dispSize);
+      const body = this.player.body as Phaser.Physics.Arcade.Body;
+      // Body.setSize()/setOffset() on a DYNAMIC body take SOURCE (pre-scale) pixels —
+      // Phaser re-multiplies by the sprite's current scale every physics tick, so the
+      // already-scaled fit.bodyW/H/offsetX/Y would get scaled a second time. Pass the
+      // raw bbox instead (StaticBody, used for NPCs below, is display-space and does
+      // want fit.bodyW/H directly — different API despite the similar name).
+      body.setSize(PLAYER_SPRITE_BBOX.w, PLAYER_SPRITE_BBOX.h);
+      body.setOffset(PLAYER_SPRITE_BBOX.x, PLAYER_SPRITE_BBOX.y);
+    } else {
+      this.player.setDisplaySize(28, 28);
+      this.player.setBodySize(24, 24);
+    }
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(5);
     if (hasRealSprite) this.player.play('player_idle_down');
@@ -3343,12 +3378,26 @@ export class GameScene extends Phaser.Scene {
         const ex = Phaser.Math.Between(150, mapWidth - 150);
         const ey = Phaser.Math.Between(150, mapHeight - 150);
 
-        const dispSize = isElite ? 44 : 28;
+        // Sprites bitmap réels ont un cadre natif très rembourré de transparence (10-40%
+        // de remplissage) — dimensionner l'affichage ET la hitbox sur le contenu opaque
+        // réel (mesuré dans spriteGeometry.ts), pas sur le cadre entier, sinon le monstre
+        // paraît minuscule et sa boîte de collision déborde largement de sa silhouette.
+        const enemyBbox = ENEMY_SPRITE_BBOX[enemyId];
+        const enemyFit = hasRealSprite && enemyBbox ? fitSpriteToContent(enemyBbox, isElite ? 46 : 36) : null;
+        const dispSize = enemyFit ? enemyFit.dispSize : (isElite ? 44 : 28);
         const sprite = hasRealSprite
           ? this.physics.add.sprite(ex, ey, `enemy_${enemyId}_idle`)
           : this.physics.add.sprite(ex, ey, isElite ? texKeyElite : texKey);
         sprite.setDisplaySize(dispSize, dispSize);
-        (sprite.body as Phaser.Physics.Arcade.Body).setSize(dispSize - 4, dispSize - 4);
+        const body = sprite.body as Phaser.Physics.Arcade.Body;
+        if (enemyFit && enemyBbox) {
+          // DYNAMIC body: setSize()/setOffset() take SOURCE (pre-scale) pixels, re-scaled
+          // by Phaser every tick — use the raw bbox, not the already-scaled fit values.
+          body.setSize(enemyBbox.w, enemyBbox.h);
+          body.setOffset(enemyBbox.x, enemyBbox.y);
+        } else {
+          body.setSize(dispSize - 8, dispSize - 8);
+        }
         sprite.setDepth(4);
         if (hasRealSprite) {
           sprite.setData('hasRealSprite', true);
@@ -3372,17 +3421,21 @@ export class GameScene extends Phaser.Scene {
         this.activeEnemies.set(active.instanceId, active);
         this.enemies.add(sprite);
 
-        // HP bar (bg + foreground)
-        const barW = dispSize + 4;
-        const barBg  = this.add.rectangle(ex, ey - dispSize / 2 - 8, barW, 6, 0x220000).setDepth(8);
+        // HP bar (bg + foreground) — ancrée sur le sommet du contenu VISIBLE, pas sur le
+        // cadre padded entier (pour les sprites très clairsemés, dispSize/2 seul ferait
+        // flotter la barre bien au-dessus de la silhouette réelle).
+        const contentTopGap = enemyFit ? dispSize / 2 - enemyFit.offsetY : dispSize / 2;
+        const barY = ey - contentTopGap - 8;
+        const barW = (enemyFit ? enemyFit.bodyW : dispSize) + 4;
+        const barBg  = this.add.rectangle(ex, barY, barW, 6, 0x220000).setDepth(8);
         const barFg  = this.add.rectangle(
-          ex - barW / 2, ey - dispSize / 2 - 8, barW, 4, isElite ? 0xff8800 : 0xff2222,
+          ex - barW / 2, barY, barW, 4, isElite ? 0xff8800 : 0xff2222,
         ).setDepth(9).setOrigin(0, 0.5);
         this.enemyHpBars.set(active.instanceId, { bg: barBg, bar: barFg, baseW: barW });
 
         // Crown for elites
         if (isElite) {
-          const crown = this.add.text(ex, ey - dispSize / 2 - 18, '♛', {
+          const crown = this.add.text(ex, ey - contentTopGap - 18, '♛', {
             fontSize: '12px', color: '#ffdd00',
             stroke: '#000000', strokeThickness: 2,
           }).setOrigin(0.5, 1).setDepth(10);
@@ -3401,11 +3454,23 @@ export class GameScene extends Phaser.Scene {
         const bossHasRealSprite = this.textures.exists(`${bossTexKey}_idle`);
         if (!bossHasRealSprite) this.ensureTexture(bossTexKey, 0xffd700, 64, 64);
 
+        // Contenu opaque réel mesuré (même raison que les ennemis réguliers ci-dessus) —
+        // sinon le boss paraît petit et sa hitbox déborde largement de sa silhouette.
+        const bossBbox = ENEMY_SPRITE_BBOX[zone.bossId];
+        const bossFit = bossHasRealSprite && bossBbox ? fitSpriteToContent(bossBbox, 68) : null;
+        const bossDispSize = bossFit ? bossFit.dispSize : 64;
         const bossSprite = bossHasRealSprite
           ? this.physics.add.sprite(bx, by, `${bossTexKey}_idle`)
           : this.physics.add.sprite(bx, by, bossTexKey);
-        bossSprite.setDisplaySize(64, 64);
-        (bossSprite.body as Phaser.Physics.Arcade.Body).setSize(60, 60);
+        bossSprite.setDisplaySize(bossDispSize, bossDispSize);
+        const bossBody = bossSprite.body as Phaser.Physics.Arcade.Body;
+        if (bossFit && bossBbox) {
+          // DYNAMIC body — raw source-pixel bbox, not the scaled fit values (see createPlayer()).
+          bossBody.setSize(bossBbox.w, bossBbox.h);
+          bossBody.setOffset(bossBbox.x, bossBbox.y);
+        } else {
+          bossBody.setSize(bossDispSize - 4, bossDispSize - 4);
+        }
         bossSprite.setDepth(5);
         if (bossHasRealSprite) {
           bossSprite.setData('hasRealSprite', true);
@@ -3419,13 +3484,15 @@ export class GameScene extends Phaser.Scene {
         this.activeEnemies.set(activeBoss.instanceId, activeBoss);
         this.enemies.add(bossSprite);
 
+        const bossContentTopGap = bossFit ? bossDispSize / 2 - bossFit.offsetY : bossDispSize / 2;
         const bossBarW = 72;
-        const bossBg = this.add.rectangle(bx, by - 44, bossBarW, 8, 0x220000).setDepth(8);
-        const bossFg = this.add.rectangle(bx - bossBarW / 2, by - 44, bossBarW, 6, 0xffd700)
+        const bossBarY = by - bossContentTopGap - 12;
+        const bossBg = this.add.rectangle(bx, bossBarY, bossBarW, 8, 0x220000).setDepth(8);
+        const bossFg = this.add.rectangle(bx - bossBarW / 2, bossBarY, bossBarW, 6, 0xffd700)
           .setDepth(9).setOrigin(0, 0.5);
         this.enemyHpBars.set(activeBoss.instanceId, { bg: bossBg, bar: bossFg, baseW: bossBarW });
 
-        const crown = this.add.text(bx, by - 52, '* BOSS *', {
+        const crown = this.add.text(bx, by - bossContentTopGap - 20, '* BOSS *', {
           fontSize: '10px', color: '#ffd700', stroke: '#000000', strokeThickness: 2,
         }).setOrigin(0.5, 1).setDepth(10);
         this.enemyCrowns.set(activeBoss.instanceId, crown);
@@ -3466,22 +3533,31 @@ export class GameScene extends Phaser.Scene {
       const texKey = `npc_${npc.id}`;
       if (!hasRealSprite) this.ensureTexture(texKey, color);
 
+      // Contenu opaque réel mesuré (le perso ne remplit qu'~35-43% de son cadre natif) —
+      // même raison que createPlayer()/createEnemiesForZone() : sinon le PNJ paraît petit
+      // et sa hitbox déborde largement de sa silhouette visible.
+      const npcBbox = NPC_SPRITE_BBOX[npc.id];
+      const npcFit = hasRealSprite && npcBbox ? fitSpriteToContent(npcBbox, 36) : null;
+      const npcDispSize = npcFit ? npcFit.dispSize : 28;
+
       const sprite = this.npcs.create(
         pos.x, pos.y, hasRealSprite ? `npc_${npc.id}_idle` : texKey,
       ) as Phaser.Physics.Arcade.Sprite;
-      sprite.setDisplaySize(hasRealSprite ? 48 : 28, hasRealSprite ? 48 : 28);
+      sprite.setDisplaySize(npcDispSize, npcDispSize);
       sprite.setDepth(4);
       sprite.setData('npcId', npc.id);
-      // IMPORTANT : refreshBody() DOIT être appelé AVANT setSize(), pas après.
+      // IMPORTANT : refreshBody() DOIT être appelé AVANT setSize()/setOffset(), pas après.
       // Phaser.Physics.Arcade.StaticBody#refreshBody() appelle updateFromGameObject(),
-      // qui écrase width/height du corps avec displayWidth/displayHeight du sprite —
-      // tout setSize() appelé avant est donc silencieusement annulé. Avec les vrais
-      // sprites (48×48 affiché), le corps aurait fait 48×48 (demi-largeur 24) au lieu
-      // des 40×40 voulus, portant la distance de contact joueur/PNJ à ~44px — au-dessus
-      // du seuil d'interaction (dist < 42 dans update()), rendant tout dialogue PNJ
-      // impossible à déclencher (le collider bloque le joueur avant le seuil).
+      // qui écrase width/height/offset du corps avec displayWidth/displayHeight du sprite —
+      // tout setSize()/setOffset() appelé avant est donc silencieusement annulé.
       sprite.refreshBody();
-      (sprite.body as Phaser.Physics.Arcade.StaticBody).setSize(hasRealSprite ? 40 : 24, hasRealSprite ? 40 : 24);
+      const npcBody = sprite.body as Phaser.Physics.Arcade.StaticBody;
+      if (npcFit) {
+        npcBody.setSize(npcFit.bodyW, npcFit.bodyH);
+        npcBody.setOffset(npcFit.offsetX, npcFit.offsetY);
+      } else {
+        npcBody.setSize(24, 24);
+      }
       if (hasRealSprite) sprite.play(`npc_${npc.id}_idle_down`);
 
       // Name label above NPC
