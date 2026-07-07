@@ -217,6 +217,9 @@ export class GameScene extends Phaser.Scene {
 
   // Zone-scoped objects destroyed/recreated on each transition
   private zoneGraphics: Phaser.GameObjects.Graphics | null = null;
+  // TileSprites de sol/chemin en asset bitmap réel (ELV Games) — zones opt-in
+  // uniquement (cf. drawZoneMap()), fallback fillRect procédural sinon.
+  private zoneTileSprites: Phaser.GameObjects.TileSprite[] = [];
   private zoneLabels: Phaser.GameObjects.Text[] = [];
   private bossDeathObjects: Phaser.GameObjects.GameObject[] = [];
   private teleportZoneImages: Phaser.Physics.Arcade.Image[] = [];
@@ -306,6 +309,7 @@ export class GameScene extends Phaser.Scene {
     this.playerModifiers = TalentSystem.getModifiers(this.gameState.player);
     // Reset zone-scoped refs on each scene start (full Phaser restart)
     this.zoneGraphics       = null;
+    this.zoneTileSprites    = [];
     this.zoneLabels         = [];
     this.teleportZoneImages = [];
     this.physicsColliders   = [];
@@ -3070,14 +3074,35 @@ export class GameScene extends Phaser.Scene {
     const gfx = this.add.graphics().setDepth(0);
     this.zoneGraphics = gfx;
 
-    // Background
-    gfx.fillStyle(bgColor);
-    gfx.fillRect(0, 0, mapWidth, mapHeight);
+    // Background — texture bitmap réelle si dispo pour cette zone (voir ASSET_SOURCES.md),
+    // sinon fillRect procédural. Les TileSprites sont sous gfx (depth 0) donc les murs/
+    // accents/highlights de téléport (dessinés dans gfx plus bas) restent bien par-dessus.
+    const groundKey = `tileset_${zoneId}_ground`;
+    if (this.textures.exists(groundKey)) {
+      const ground = this.add.tileSprite(0, 0, mapWidth, mapHeight, groundKey).setOrigin(0, 0).setDepth(-1);
+      this.zoneTileSprites.push(ground);
+    } else {
+      // ATTENTION : ce fillRect est dans gfx (depth 0), donc au-dessus d'un éventuel
+      // TileSprite de path (depth -0.5). Ne fonctionne que tant qu'une zone a soit
+      // les deux textures, soit aucune — si un jour une zone n'a qu'une texture de
+      // path sans texture de sol, ce fallback masquerait le path. Revoir l'ordonnancement
+      // des depths si ce cas se présente.
+      gfx.fillStyle(bgColor);
+      gfx.fillRect(0, 0, mapWidth, mapHeight);
+    }
 
     // Paths (drawn over background, below walls)
     if (paths.length > 0) {
-      gfx.fillStyle(pathColor);
-      for (const p of paths) gfx.fillRect(p.x, p.y, p.w, p.h);
+      const pathKey = `tileset_${zoneId}_path`;
+      if (this.textures.exists(pathKey)) {
+        for (const p of paths) {
+          const pathTile = this.add.tileSprite(p.x, p.y, p.w, p.h, pathKey).setOrigin(0, 0).setDepth(-0.5);
+          this.zoneTileSprites.push(pathTile);
+        }
+      } else {
+        gfx.fillStyle(pathColor);
+        for (const p of paths) gfx.fillRect(p.x, p.y, p.w, p.h);
+      }
     }
 
     // Accent details (lava, water, crystals, etc.)
@@ -3662,6 +3687,8 @@ export class GameScene extends Phaser.Scene {
       this.zoneGraphics.destroy();
       this.zoneGraphics = null;
     }
+    for (const ts of this.zoneTileSprites) ts.destroy();
+    this.zoneTileSprites = [];
 
     // Text labels (teleport labels, NPC names, lootable type labels)
     for (const label of this.zoneLabels) label.destroy();

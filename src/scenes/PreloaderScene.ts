@@ -67,6 +67,11 @@ export class PreloaderScene extends Phaser.Scene {
       this.load.spritesheet(`npc_${npcId}_walk`, `assets/sprites/npcs/npc_${npcId}_walk.png`, { frameWidth: 24, frameHeight: 24 });
     }
 
+    // ── Tileset de sol Grievy Town — Fantasy Dreamland Reborn (voir ASSET_SOURCES.md) ──
+    // Convention : tileset_<zoneId>_ground / _path, chargé par zone dans GameScene.drawZoneMap().
+    this.load.image('tileset_grievy_town_ground', 'assets/sprites/tilesets/tileset_grievy_town_ground.png');
+    this.load.image('tileset_grievy_town_path', 'assets/sprites/tilesets/tileset_grievy_town_path.png');
+
     // Real Tiled TMX maps loaded as text — parsed into Tiled JSON in create()
     this.load.text('tmx_town_raw',    'assets/maps/town.tmx');
     this.load.text('tmx_volcano_raw', 'assets/maps/volcano.tmx');

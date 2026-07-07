@@ -159,8 +159,8 @@ Un tile = 16×16 px. Les tilesets sont des images avec plusieurs tiles alignés.
 
 | Fichier | Contenu |
 |---------|---------|
-| `tileset_grievy_ground.png` | Sol d'herbe courte — tile de base (bgColor `#3a4a2a`). Variantes : herbe haute, patch de terre nue |
-| `tileset_grievy_path.png` | Route de terre battue (pathColor `#8a7a50`). Variantes : bords arrondis de route, coins |
+| `tileset_grievy_town_ground.png` | Sol d'herbe courte — tile de base (bgColor `#3a4a2a`). Variantes : herbe haute, patch de terre nue — **intégré** (voir `public/assets/ASSET_SOURCES.md`) |
+| `tileset_grievy_town_path.png` | Route de terre battue (pathColor `#8a7a50`). Variantes : bords arrondis de route, coins — **intégré** (voir `public/assets/ASSET_SOURCES.md`) |
 | `tileset_grievy_wall.png` | Mur de pierre médiéval (wallColor `#5a4a30`). Variantes : mur plein, mur avec fenêtre, porte de bâtiment |
 | `tileset_grievy_accent.png` | Végétation douce (accentColor `#6a8a4a`) : buissons, haies basses, herbes décoratives |
 | `tileset_grievy_water.png` | Ruisseau de Grievy Town : eau peu profonde, reflets animés si possible (4 frames) |

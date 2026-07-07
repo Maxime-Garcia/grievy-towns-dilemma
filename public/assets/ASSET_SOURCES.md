@@ -46,10 +46,36 @@ Même pack que le héros (Characters Pack 06), idle+walk uniquement (PNJ sans co
 
 ## `tilesets/` — Décor de zone
 
-*(en attente — tuile de sol Grievy Town à fournir par l'utilisateur, recadrée
-manuellement depuis `Village Tileset 16x16 Pixelart [Rogue Adventure]`, le
-fichier source `RA_Ground_Tiles_Godot.png` étant une planche d'auto-tuiles
-trop complexe à découper à l'aveugle sans vérification visuelle)
+| Fichier destination | Pack source | Fichier source | Notes |
+|---|---|---|---|
+| `tileset_grievy_town_ground.png` | Fantasy Dreamland World (Fantasy Dreamland Reborn) | `Tilesets/FDR_Overworld_Ground.png`, recadré à (x:8,y:72,16×16) | Herbe avec fleck subtil (2 teintes), texture réelle vérifiée par pavage 4×4, aucune couture — remplace `bgColor` de `grievy_town` |
+| `tileset_grievy_town_path.png` | Fantasy Dreamland World (Fantasy Dreamland Reborn) | `Tilesets/FDR_Overworld_Ground.png`, recadré à (x:200,y:60,16×16) | Sable à vagues diagonales, vraie texture (3 teintes), même feuille source — remplace `pathColor` de `grievy_town` |
+
+Convention de nommage : `tileset_<zoneId>_ground.png` / `tileset_<zoneId>_path.png`,
+chargés dynamiquement par zone dans `GameScene.drawZoneMap()` (fallback `fillRect`
+procédural si les textures n'existent pas pour une zone donnée).
+
+Découpage effectué avec un décodeur/encodeur PNG maison (Node + zlib, aucune
+lib externe), avec vérification pixel par pixel (comptage de couleurs uniques)
+avant tout crop final — pas seulement un pavage visuel, qui peut donner un faux
+positif sur une couleur plate. Historique des candidats écartés :
+- `RA_Ground_Tiles_Godot.png` (Village Rogue Adventure) : planche d'auto-tuiles
+  avec bords de raccordement, pas une texture plate.
+- `FDR_Grasslands.png` (Green Plains Tileset) : le premier crop choisi ici
+  provenait en fait d'un bandeau de 4 couleurs de référence dans le coin de la
+  feuille (couleur unie à 100%, confirmé par décodage), pas d'une vraie tuile
+  de jeu — détecté par le `code-reviewer` et corrigé. `FDR_Ground_Tiles.png`
+  (même pack) a aussi été scanné : tuiles "pleines" toutes à ≤4 couleurs
+  uniques sur 16×16 opaque — même limite dans tout ce pack.
+- Recherche élargie sur plusieurs lignes du bundle (Fantasy Dreamland,
+  Fantasy Dreamland Reborn, Rogue Adventure, Farming Game World) : la plupart
+  des tuiles de sol "pleines" sont en aplat quasi total, le détail visuel de
+  ce style venant des bordures et des props (fleurs, touffes) — c'est le style
+  du bundle, pas une erreur de recadrage.
+- `FDR_Overworld_Ground.png` (même pack Fantasy Dreamland Reborn, fichier
+  distinct de `FDR_Grasslands.png`) est la seule feuille scannée qui contient
+  de vraies zones texturées en 16×16 opaque (jusqu'à 18 couleurs uniques,
+  contre ≤4 ailleurs) — c'est la source retenue ci-dessus.
 
 ## `items/`, `skills/`, `ui/`, `vfx/`, `props/`, `skins/`
 
