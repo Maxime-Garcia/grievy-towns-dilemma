@@ -1881,7 +1881,6 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-
   private moveEnemyToward(
     body: Phaser.Physics.Arcade.Body,
     sprite: Phaser.Physics.Arcade.Sprite,
