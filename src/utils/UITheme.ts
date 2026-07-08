@@ -54,6 +54,12 @@ export const UI = {
   BG_DEEP:       0x060810,   // fond très sombre (menus overlay)
   BG_MID:        0x0e1520,   // fond panneau mid
   SEPARATOR:     0x1a2535,   // séparateurs discrets
+
+  // Direction « arcane fresh » (refonte inventaire 07/2026) — structure UI
+  // en cyan arcane froid, l'or restant réservé à l'identité et à la valeur
+  // (titre, monnaie, nom du joueur, raretés). Réf. Dead Cells / HLD.
+  ACCENT_ARCANE: 0x59e0c8,   // liserés, accents de panneaux modernes
+  TXT_CYAN:      '#7fe8d8',  // titres de sections / panneaux (contraste ≥ 9:1 sur BG_MID)
 } as const;
 
 export const FONT = "'Press Start 2P', monospace";
@@ -244,6 +250,61 @@ export function drawCard(
     g.fillStyle(accent, 0.9);
     g.fillRoundedRect(x, y, 3, h, { tl: radius, bl: radius, tr: 0, br: 0 });
   }
+}
+
+/**
+ * Slot d'item moderne (paperdoll + grille d'inventaire) : fond sombre arrondi,
+ * bordure à la couleur de rareté et, quand le slot est occupé, une teinte
+ * interne subtile de la même couleur (lueur douce, réf. Dead Cells / Hades).
+ * Remplace les strokeRect carrés de l'ancien langage anguleux.
+ *
+ * (x, y) = coin haut-gauche. `borderColor` = RARITY_COLORS de l'item, ou
+ * UI.SLOT_BORDER pour un slot vide.
+ */
+export function drawSlot(
+  g: Phaser.GameObjects.Graphics,
+  x: number, y: number, size: number,
+  borderColor: number,
+  opts: {
+    occupied?:    boolean;
+    borderAlpha?: number;   // défaut : 1 si occupé, 0.45 si vide
+    radius?:      number;   // défaut : 5
+    bg?:          number;   // défaut : UI.SLOT_BG
+  } = {},
+): void {
+  const {
+    occupied    = false,
+    borderAlpha = occupied ? 1 : 0.45,
+    radius      = 5,
+    bg          = UI.SLOT_BG,
+  } = opts;
+
+  g.fillStyle(bg, 0.94);
+  g.fillRoundedRect(x, y, size, size, radius);
+
+  if (occupied) {
+    // Halo interne de rareté — lisible sans crier
+    g.fillStyle(borderColor, 0.10);
+    g.fillRoundedRect(x + 2, y + 2, size - 4, size - 4, Math.max(2, radius - 2));
+  }
+
+  g.lineStyle(occupied ? 2 : 1, borderColor, borderAlpha);
+  g.strokeRoundedRect(x, y, size, size, radius);
+}
+
+/**
+ * Surbrillance de survol/sélection d'un slot dessiné via drawSlot —
+ * même géométrie arrondie, contour blanc doux.
+ */
+export function strokeSlotHighlight(
+  g: Phaser.GameObjects.Graphics,
+  x: number, y: number, size: number,
+  color = 0xffffff,
+  alpha = 0.85,
+  radius = 5,
+): void {
+  g.lineStyle(2, color, alpha);
+  g.strokeRoundedRect(x, y, size, size, radius);
 }
 
 /** Séparateur horizontal discret — remplace les lineStyle/moveTo/lineTo répétés. */
