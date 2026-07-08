@@ -25,6 +25,8 @@ import { uiStyle } from '../utils/UITheme';
 import { t, localizeItem } from '../i18n';
 import { BestiarySystem } from '../systems/BestiarySystem';
 import { getBestiaryEntry } from '../data/bestiary';
+import type { BestiaryScene } from './BestiaryScene';
+import type { ArsenalScene } from './ArsenalScene';
 import { ENEMY_SPRITE_BBOX, NPC_SPRITE_BBOX, PLAYER_SPRITE_BBOX } from '../data/spriteGeometry';
 import { fitSpriteToContent } from '../utils/SpriteFit';
 
@@ -231,7 +233,6 @@ export class GameScene extends Phaser.Scene {
   private bossDeathObjects: Phaser.GameObjects.GameObject[] = [];
   private teleportZoneImages: Phaser.Physics.Arcade.Image[] = [];
   private xpOrbOverlap: Phaser.Physics.Arcade.Collider | null = null;
-  private lootableOverlap: Phaser.Physics.Arcade.Collider | null = null;
   private physicsColliders: Phaser.Physics.Arcade.Collider[] = [];
   private teleportOverlaps: Phaser.Physics.Arcade.Collider[] = [];
 
@@ -323,7 +324,6 @@ export class GameScene extends Phaser.Scene {
     this.physicsColliders   = [];
     this.teleportOverlaps   = [];
     this.xpOrbOverlap       = null;
-    this.lootableOverlap    = null;
     this.projectileCollider = null;
   }
 
@@ -401,6 +401,16 @@ export class GameScene extends Phaser.Scene {
       if (dist < 42) this.nearbyNPC = npcId;
     });
 
+    // Lootables : même logique distance-based que les PNJ — l'ancien
+    // physics.add.overlap() (voir createLootables) ratait des frames par
+    // intermittence (clignotement de l'indice + F parfois ignoré, bug reporté).
+    this.nearbyLootable = null;
+    this.lootableGroup.getChildren().forEach((go: Phaser.GameObjects.GameObject) => {
+      const sprite = go as Phaser.Physics.Arcade.Image;
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, sprite.x, sprite.y);
+      if (dist < 32) this.nearbyLootable = sprite.name;
+    });
+
     this.handleMovement(dt);
     this.handleAttackInput();
     this.handleSkillInput();
@@ -466,9 +476,6 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.events.emit('player_update', this.gameState.player);
-
-    // nearbyNPC est recalculé en début d'update — seulement nearbyLootable à vider ici
-    this.nearbyLootable = null;
   }
 
   /** Debug aid (press G): adds one of every weapon in the game to the inventory,
@@ -843,7 +850,6 @@ export class GameScene extends Phaser.Scene {
 
   private updateArrowProjectiles(dt: number) {
     if (this._activeArrows.length === 0) return;
-    const HIT_RADIUS = 22; // px
     // Calculé une fois par frame plutôt que par flèche touchée — cf. executeHitInCone.
     const cs = StatsSystem.computeAll(this.gameState.player);
 
@@ -860,12 +866,19 @@ export class GameScene extends Phaser.Scene {
       arrow.rect.x += arrow.vx * dt;
       arrow.rect.y += arrow.vy * dt;
 
-      // Vérifier chaque ennemi vivant
+      // Vérifier chaque ennemi vivant — test de recouvrement rectangle contre le VRAI
+      // corps physique (déjà ajusté au contenu visible du sprite, cf. fitSpriteToContent),
+      // pas un rayon fixe depuis le centre : un rayon unique ratait les silhouettes
+      // larges/allongées et acceptait des touches trop généreuses sur les petites
+      // (bug reporté : une flèche ne touchait pas certaines parties du corps).
       for (const go of this.enemies.getChildren()) {
         const sprite = go as Phaser.Physics.Arcade.Sprite;
         if (!sprite.active) continue;
-        const dist = Phaser.Math.Distance.Between(arrow.rect.x, arrow.rect.y, sprite.x, sprite.y);
-        if (dist > HIT_RADIUS) continue;
+        const body = sprite.body as Phaser.Physics.Arcade.Body | null;
+        if (!body) continue;
+        const enemyRect = new Phaser.Geom.Rectangle(body.left, body.top, body.width, body.height);
+        const arrowRect  = new Phaser.Geom.Rectangle(arrow.rect.x - 8, arrow.rect.y - 4, 16, 8);
+        if (!Phaser.Geom.Rectangle.Overlaps(enemyRect, arrowRect)) continue;
 
         // Impact — un seul ennemi touché
         arrow.hit = true;
@@ -3665,6 +3678,11 @@ export class GameScene extends Phaser.Scene {
       if (this.isInDialogue) return;
       if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); return; }
       if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene');     return; }
+      // Bestiaire/Arsenal sont toujours ouverts depuis PauseScene (mise en pause
+      // dessous) — leur propre close() sait la reprendre correctement, contrairement
+      // à un setPaused(false) qui la laisserait bloquée en pause indéfiniment.
+      if (this.scene.isActive('BestiaryScene')) { (this.scene.get('BestiaryScene') as BestiaryScene).close(); return; }
+      if (this.scene.isActive('ArsenalScene'))  { (this.scene.get('ArsenalScene')  as ArsenalScene).close(); return; }
       if (!this.scene.isActive('PauseScene')) {
         this.setPaused(true);
         this.scene.launch('PauseScene', { gameScene: this });
@@ -3784,16 +3802,14 @@ export class GameScene extends Phaser.Scene {
         stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5, 1).setDepth(4);
       this.zoneLabels.push(lootLabel);
+      // Référencé sur le sprite pour être détruit avec lui dans interactWithLootable
+      // (bug reporté : le texte au sol restait affiché après ramassage).
+      sprite.setData('label', lootLabel);
     }
 
-    // Single group overlap — sprite.name holds the lootable ID
-    this.lootableOverlap = this.physics.add.overlap(
-      this.player,
-      this.lootableGroup,
-      (_player, obj) => {
-        this.nearbyLootable = (obj as Phaser.Physics.Arcade.Image).name;
-      },
-    );
+    // Proximité par distance (voir update()) — pas de physics.add.overlap ici :
+    // ratait des frames par intermittence avec les colliders (clignotement de
+    // l'indice + F parfois ignoré, même défaut déjà corrigé pour les PNJ).
   }
 
   private interactWithLootable(lootableId: string) {
@@ -3802,11 +3818,20 @@ export class GameScene extends Phaser.Scene {
 
     this.lootableLooted.add(lootableId);
 
-    // Find and destroy the sprite
+    // Find and destroy the sprite + son label au sol (bug reporté : le texte
+    // restait affiché après ramassage car seul le sprite était détruit ici).
     const sprite = this.lootableGroup.getChildren().find(
       (c) => (c as Phaser.Physics.Arcade.Image).name === lootableId,
     ) as Phaser.Physics.Arcade.Image | undefined;
-    if (sprite) sprite.destroy();
+    if (sprite) {
+      const label = sprite.getData('label') as Phaser.GameObjects.Text | undefined;
+      if (label) {
+        label.destroy();
+        this.zoneLabels = this.zoneLabels.filter(l => l !== label);
+      }
+      sprite.destroy();
+    }
+    this.nearbyLootable = null;
 
     // Gold reward
     const gold = lo.goldMin !== undefined
@@ -3886,7 +3911,6 @@ export class GameScene extends Phaser.Scene {
     for (const o of this.teleportOverlaps) o.destroy();
     this.teleportOverlaps = [];
     if (this.xpOrbOverlap) { this.xpOrbOverlap.destroy(); this.xpOrbOverlap = null; }
-    if (this.lootableOverlap) { this.lootableOverlap.destroy(); this.lootableOverlap = null; }
     if (this.projectileCollider) { this.projectileCollider.destroy(); this.projectileCollider = null; }
 
     // Projectiles group (skill/enemy projectiles)

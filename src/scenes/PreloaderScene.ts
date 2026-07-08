@@ -126,6 +126,10 @@ export class PreloaderScene extends Phaser.Scene {
     // mapping touche -> frame et ASSET_SOURCES.md pour la source.
     this.load.spritesheet('keyboard_ui', 'assets/sprites/ui/keyboard_ui.png', { frameWidth: 32, frameHeight: 32 });
 
+    // ── Icônes de navigation HUD (remplace le texte "INV"/"SKL") ──
+    this.load.image('nav_inventory', 'assets/sprites/ui/nav_inventory.png');
+    this.load.image('nav_skills',    'assets/sprites/ui/nav_skills.png');
+
     // ── Tileset de sol Grievy Town — Fantasy Dreamland Reborn (voir ASSET_SOURCES.md) ──
     // Convention : tileset_<zoneId>_ground / _path, chargé par zone dans GameScene.drawZoneMap().
     this.load.image('tileset_grievy_town_ground', 'assets/sprites/tilesets/tileset_grievy_town_ground.png');

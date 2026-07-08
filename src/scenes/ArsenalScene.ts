@@ -141,7 +141,9 @@ export class ArsenalScene extends Phaser.Scene {
     const listBg = this.add.graphics();
     drawGlowPanel(listBg, this.LIST_X, this.LIST_Y, this.LIST_W, this.LIST_H, UI.ACCENT_ARCANE, UI.BG_MID, 8, 0.55);
 
-    this.scrollbarGfx = this.add.graphics();
+    // Depth explicite : sans ça, les lignes recréées à chaque renderList() finissent
+    // plus tard dans la display list et passent PAR-DESSUS la scrollbar (bug reporté).
+    this.scrollbarGfx = this.add.graphics().setDepth(5);
 
     this.add.text(W / 2, H - 16, t('arsenal.hint'), uiStyle(8, UI.TXT_HINT)).setOrigin(0.5);
 
@@ -234,7 +236,7 @@ export class ArsenalScene extends Phaser.Scene {
     this.listObjs = [];
 
     const x = this.LIST_X + 4;
-    const w = this.LIST_W - 8;
+    const w = this.LIST_W - 16; // marge à droite pour la scrollbar (ne pas chevaucher)
 
     let y = this.rowsTop;
     let i = this.scrollOffset;
@@ -541,7 +543,10 @@ export class ArsenalScene extends Phaser.Scene {
   // LIFECYCLE
   // ════════════════════════════════════════════════════════════
 
-  private close() {
+  // Public : GameScene.escKey l'appelle directement pour fermer proprement
+  // (resume PauseScene sous-jacente au lieu d'un setPaused(false) qui la
+  // laisserait bloquée en pause pour toujours — cf. bug ESC reporté).
+  close() {
     this.scene.stop();
     if (this.scene.isPaused('PauseScene')) {
       this.scene.resume('PauseScene');

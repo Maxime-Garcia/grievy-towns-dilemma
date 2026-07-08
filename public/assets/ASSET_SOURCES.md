@@ -254,6 +254,11 @@ BACKSPACE, qui gardent un fallback texte `[NOM]`). Utilisé pour l'indice
 d'interaction contextuel de `GameScene` (PNJ/objet à portée) — reflète la
 touche réellement liée (rebindable via le menu pause), jamais un `[F]` figé.
 
+`nav_inventory.png` / `nav_skills.png` — icônes des boutons de navigation HUD
+(bas-droite), remplacent le texte brut "INV"/"SKL". Pochette en cuir et
+grimoire, recadrés depuis `Item Icons [Rogue Adventure]/RA_Item_Icons_New.png`
+(même pack que les icônes d'objets déjà utilisées).
+
 ## `skills/`, `vfx/`, `props/`, `skins/`
 
 *(rien intégré pour l'instant)*

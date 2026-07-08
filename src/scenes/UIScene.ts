@@ -199,12 +199,16 @@ export class UIScene extends Phaser.Scene {
     const sklX  = W - 8 - NAV_W;
     const invX  = sklX - 6 - NAV_W;
 
-    const buildNavBtn = (bx: number, label: string, action: string) => {
+    // Icônes réelles (pochette en cuir / grimoire — Rogue Adventure Item Icons) au
+    // lieu du texte "INV"/"SKL" brut.
+    const buildNavBtn = (bx: number, iconKey: string, action: string) => {
       const gfx = this.add.graphics();
       // Bouton nav arrondi, liseré arcane discret (structure)
       drawGlowPanel(gfx, bx, NAV_Y, NAV_W, NAV_H, UI.ACCENT_ARCANE, UI.BTN_BG, 6, 0.92);
-      this.add.text(bx + NAV_W / 2, NAV_Y + NAV_H / 2, label, uiStyle(11, UI.TXT_GOLD, { bold: true }))
-        .setOrigin(0.5).setDepth(6);
+      // Icônes non carrées (pochette/grimoire) — scale uniforme pour ne pas les
+      // écraser (setDisplaySize forcerait un ratio 1:1 et les déformerait).
+      const icon = this.add.image(bx + NAV_W / 2, NAV_Y + NAV_H / 2, iconKey).setDepth(6);
+      icon.setScale(Math.min(26 / icon.width, 26 / icon.height));
       const flash = this.add.rectangle(
         bx + NAV_W / 2, NAV_Y + NAV_H / 2, NAV_W - 2, NAV_H - 2, 0xffffff, 0,
       ).setDepth(6);
@@ -219,8 +223,8 @@ export class UIScene extends Phaser.Scene {
       });
     };
 
-    buildNavBtn(invX, 'INV', 'inventory');
-    buildNavBtn(sklX, 'SKL', 'skills');
+    buildNavBtn(invX, 'nav_inventory', 'inventory');
+    buildNavBtn(sklX, 'nav_skills',    'skills');
 
     // ── Notification (above skill slots) ─────────
     // Fond semi-opaque derrière la notif : lisible même sur zone claire.
