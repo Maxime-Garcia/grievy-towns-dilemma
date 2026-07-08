@@ -366,7 +366,7 @@ export class GameScene extends Phaser.Scene {
 
     const zone = ZONE_MAP[zoneId];
     if (zone) {
-      const completed = QuestSystem.onZoneEntered(this.gameState.player, zoneId);
+      const completed = QuestSystem.onZoneEntered(this.gameState.player, zoneId, this.gameState.world);
       if (completed.length > 0) this.handleQuestCompletions(completed);
       this.applyWorldDegradation();
       // Defer by one frame: in Phaser 3.90 scene.launch() may run UIScene.create()
@@ -453,7 +453,7 @@ export class GameScene extends Phaser.Scene {
     const weapons = Object.values(ALL_ITEMS).filter(item => 'weaponType' in item && item.weaponType);
     let added = 0;
     for (const weapon of weapons) {
-      if (LootSystem.addToInventory(this.gameState.player, weapon, 1)) added++;
+      if (LootSystem.addToInventory(this.gameState.player, weapon, 1, this.gameState.world)) added++;
     }
     this.events.emit('show_notification', `[DEBUG] ${added}/${weapons.length} armes ajoutées à l'inventaire`);
   }
@@ -941,7 +941,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.pause();
 
     // Stop overlay scenes immediately
-    for (const key of ['PauseScene', 'InventoryScene', 'SkillScene', 'DialogueScene', 'ShopScene', 'BestiaryScene']) {
+    for (const key of ['PauseScene', 'InventoryScene', 'SkillScene', 'DialogueScene', 'ShopScene', 'BestiaryScene', 'ArsenalScene']) {
       if (this.scene.isActive(key) || this.scene.isPaused(key)) this.scene.stop(key);
     }
 
@@ -1031,6 +1031,7 @@ export class GameScene extends Phaser.Scene {
     this.scene.launch('DialogueScene', {
       npc,
       player: this.gameState.player,
+      world: this.gameState.world,
       onClose: () => {
         this.isInDialogue = false;
         const flags = this.gameState.player.flags;
@@ -2210,7 +2211,7 @@ export class GameScene extends Phaser.Scene {
 
     this.gameState.player.gold += loot.gold;
     for (const { item, quantity } of loot.items) {
-      LootSystem.addToInventory(this.gameState.player, item, quantity);
+      LootSystem.addToInventory(this.gameState.player, item, quantity, this.gameState.world);
       this.events.emit('item_looted', { item, quantity });
       // Bestiaire — révéler les drops hidden au premier loot
       BestiarySystem.revealDrop(this.gameState.world, activeEnemy.enemyId, item.id);
@@ -2218,16 +2219,16 @@ export class GameScene extends Phaser.Scene {
 
     this.spawnXpOrbs(deathX, deathY, Math.floor(loot.xp * xpMult));
 
-    const questCompleted = QuestSystem.onEnemyKilled(this.gameState.player, activeEnemy.enemyId);
+    const questCompleted = QuestSystem.onEnemyKilled(this.gameState.player, activeEnemy.enemyId, this.gameState.world);
     for (const itemLoot of loot.items) {
-      QuestSystem.onItemCollected(this.gameState.player, itemLoot.item.id, itemLoot.quantity);
+      QuestSystem.onItemCollected(this.gameState.player, itemLoot.item.id, itemLoot.quantity, this.gameState.world);
     }
     if (questCompleted.length > 0) this.handleQuestCompletions(questCompleted);
 
     if (isBoss) {
       const zone = Object.values(ZONE_MAP).find(z => z.bossId === enemyDef.id);
       if (zone) {
-        const zoneCompleted = QuestSystem.onBossKilled(this.gameState.player, enemyDef.id, zone.element as ElementType);
+        const zoneCompleted = QuestSystem.onBossKilled(this.gameState.player, enemyDef.id, zone.element as ElementType, this.gameState.world);
         this.gameState.world.clearedZones = this.gameState.player.clearedZones;
 
         const newSkills = SkillSystem.unlockZoneSkills(this.gameState.player, zone.element);
@@ -3793,7 +3794,7 @@ export class GameScene extends Phaser.Scene {
       const itemId = lo.itemPool[Math.floor(Math.random() * lo.itemPool.length)];
       const item   = ALL_ITEMS[itemId];
       if (item) {
-        LootSystem.addToInventory(this.gameState.player, item, 1);
+        LootSystem.addToInventory(this.gameState.player, item, 1, this.gameState.world);
         this.events.emit('item_looted', { item, quantity: 1 });
         const typeKey = `notif.loot_${lo.type}` as const;
         this.events.emit('show_notification', `${t(typeKey)} ${localizeItem(item).name}${gold > 0 ? ` +${gold}G` : ''}`);
@@ -3812,7 +3813,7 @@ export class GameScene extends Phaser.Scene {
 
     this.events.emit('player_update', this.gameState.player);
 
-    const completions = QuestSystem.onItemCollected(this.gameState.player, lo.id, 1);
+    const completions = QuestSystem.onItemCollected(this.gameState.player, lo.id, 1, this.gameState.world);
     if (completions.length > 0) this.handleQuestCompletions(completions);
   }
 
@@ -3962,7 +3963,7 @@ export class GameScene extends Phaser.Scene {
 
     const zone = ZONE_MAP[zoneId];
     if (zone) {
-      const completed = QuestSystem.onZoneEntered(this.gameState.player, zoneId);
+      const completed = QuestSystem.onZoneEntered(this.gameState.player, zoneId, this.gameState.world);
       if (completed.length > 0) this.handleQuestCompletions(completed);
       this.applyWorldDegradation();
       this.events.emit('zone_entered', zone);

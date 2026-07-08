@@ -35,10 +35,11 @@ export function t(key: string): string {
 
 // ── Localization helpers ─────────────────────────────────────
 
-export function localizeItem(item: Item): { name: string; description: string } {
+export function localizeItem(item: Item): { name: string; description: string; lore?: string } {
   return {
     name:        lookup(`item.${item.id}.name`)        ?? item.name,
     description: lookup(`item.${item.id}.description`) ?? item.description,
+    lore:        lookup(`item.${item.id}.lore`)        ?? item.lore,
   };
 }
 

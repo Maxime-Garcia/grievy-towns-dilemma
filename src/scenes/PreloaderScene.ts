@@ -58,6 +58,17 @@ export class PreloaderScene extends Phaser.Scene {
     'item_wind_greatsword', 'item_world_eater',
   ] as const;
 
+  // Icônes d'armure réelles (Armory Item Icons — voir ASSET_SOURCES.md). Contrairement
+  // aux armes, ici recolorées par élément (colorize HSV) quand le pack ne fournit pas
+  // nativement la couleur voulue — même logique que les ennemis. Lot 1/8 : casques.
+  // Prochains lots (plastrons/jambières/bottes/gants/capes/anneaux/amulettes) à
+  // compléter dans cette même liste au fil des sessions suivantes.
+  private static readonly ARMOR_ICON_KEYS = [
+    'item_leather_helm', 'item_iron_helm', 'item_titan_helm', 'item_fire_helm',
+    'item_earth_helm', 'item_wind_helm', 'item_water_helm', 'item_lightning_helm',
+    'item_dark_helm', 'item_mirror_helm',
+  ] as const;
+
   constructor() { super({ key: 'PreloaderScene' }); }
 
   preload() {
@@ -102,6 +113,11 @@ export class PreloaderScene extends Phaser.Scene {
 
     // ── Icônes d'armes réelles (voir ASSET_SOURCES.md) ──
     for (const key of PreloaderScene.WEAPON_ICON_KEYS) {
+      this.load.image(key, `assets/sprites/items/${key}.png`);
+    }
+
+    // ── Icônes d'armure réelles (voir ASSET_SOURCES.md) ──
+    for (const key of PreloaderScene.ARMOR_ICON_KEYS) {
       this.load.image(key, `assets/sprites/items/${key}.png`);
     }
 

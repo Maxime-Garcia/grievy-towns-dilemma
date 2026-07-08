@@ -1,4 +1,4 @@
-import { Quest, QuestStatus, QuestObjective, PlayerState, ElementType } from '../types';
+import { Quest, QuestStatus, QuestObjective, PlayerState, ElementType, WorldState } from '../types';
 import { QUEST_MAP } from '../data/quests';
 import { ALL_ITEMS } from '../data/items';
 import { LootSystem } from './LootSystem';
@@ -52,7 +52,8 @@ export class QuestSystem {
     player: PlayerState,
     type: QuestObjective['type'],
     targetId: string,
-    amount = 1
+    amount = 1,
+    world?: WorldState
   ): string[] {
     const completedQuests: string[] = [];
 
@@ -81,14 +82,14 @@ export class QuestSystem {
 
       if (updated && objectives.every(o => o.completed)) {
         completedQuests.push(questId);
-        this.completeQuest(player, questId);
+        this.completeQuest(player, questId, world);
       }
     }
 
     return completedQuests;
   }
 
-  static completeQuest(player: PlayerState, questId: string): boolean {
+  static completeQuest(player: PlayerState, questId: string, world?: WorldState): boolean {
     const quest = QUEST_MAP[questId];
     if (!quest) return false;
 
@@ -102,7 +103,7 @@ export class QuestSystem {
     if (r.items) {
       for (const entry of r.items) {
         const item = ALL_ITEMS[entry.itemId];
-        if (item) LootSystem.addToInventory(player, item, entry.quantity);
+        if (item) LootSystem.addToInventory(player, item, entry.quantity, world);
       }
     }
     if (r.skillUnlock) SkillSystem.unlockSkill(player, r.skillUnlock);
@@ -117,29 +118,29 @@ export class QuestSystem {
     return true;
   }
 
-  static onBossKilled(player: PlayerState, bossId: string, zone: ElementType): string[] {
+  static onBossKilled(player: PlayerState, bossId: string, zone: ElementType, world?: WorldState): string[] {
     const completed: string[] = [];
 
-    completed.push(...this.updateObjective(player, 'BOSS', bossId, 1));
+    completed.push(...this.updateObjective(player, 'BOSS', bossId, 1, world));
     player.clearedZones = [...new Set([...player.clearedZones, zone])];
 
     return completed;
   }
 
-  static onEnemyKilled(player: PlayerState, enemyId: string): string[] {
-    return this.updateObjective(player, 'KILL', enemyId, 1);
+  static onEnemyKilled(player: PlayerState, enemyId: string, world?: WorldState): string[] {
+    return this.updateObjective(player, 'KILL', enemyId, 1, world);
   }
 
-  static onItemCollected(player: PlayerState, itemId: string, qty = 1): string[] {
-    return this.updateObjective(player, 'COLLECT', itemId, qty);
+  static onItemCollected(player: PlayerState, itemId: string, qty = 1, world?: WorldState): string[] {
+    return this.updateObjective(player, 'COLLECT', itemId, qty, world);
   }
 
-  static onZoneEntered(player: PlayerState, zoneId: string): string[] {
-    return this.updateObjective(player, 'EXPLORE', zoneId, 1);
+  static onZoneEntered(player: PlayerState, zoneId: string, world?: WorldState): string[] {
+    return this.updateObjective(player, 'EXPLORE', zoneId, 1, world);
   }
 
-  static onNpcTalked(player: PlayerState, npcId: string): string[] {
-    return this.updateObjective(player, 'TALK', npcId, 1);
+  static onNpcTalked(player: PlayerState, npcId: string, world?: WorldState): string[] {
+    return this.updateObjective(player, 'TALK', npcId, 1, world);
   }
 
   static getAvailableQuests(player: PlayerState): Quest[] {

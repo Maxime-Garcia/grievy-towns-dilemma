@@ -83,6 +83,7 @@ export class PauseScene extends Phaser.Scene {
       { label: t('pause.inventory'), action: () => { this.resume(); this.gameScene.openInventory(); } },
       { label: t('pause.skills'),    action: () => { this.resume(); this.gameScene.openSkills();    } },
       { label: t('pause.bestiary'),  action: () => this.openBestiary()                               },
+      { label: t('pause.arsenal'),   action: () => this.openArsenal()                                },
       { label: t('pause.save'),      action: () => this.saveGame()                                    },
       { label: t('pause.mainmenu'),  action: () => this.goMainMenu(), color: UI.TXT_ORANGE            },
     ];
@@ -283,6 +284,15 @@ export class PauseScene extends Phaser.Scene {
   private openBestiary() {
     if (this.scene.isActive('BestiaryScene')) return;
     this.scene.launch('BestiaryScene', {
+      gameScene: this.gameScene,
+      world: this.gameScene.gameState.world,
+    });
+    this.scene.pause('PauseScene');
+  }
+
+  private openArsenal() {
+    if (this.scene.isActive('ArsenalScene')) return;
+    this.scene.launch('ArsenalScene', {
       gameScene: this.gameScene,
       world: this.gameScene.gameState.world,
     });

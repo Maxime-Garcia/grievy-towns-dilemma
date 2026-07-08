@@ -123,7 +123,7 @@ export class ShopScene extends Phaser.Scene {
     if (!item) return;
 
     player.gold -= entry.price;
-    LootSystem.addToInventory(player, item, 1);
+    LootSystem.addToInventory(player, item, 1, this.gameScene.gameState.world);
     this.gameScene.events.emit('item_looted',       { item, quantity: 1 });
     this.gameScene.events.emit('player_update',     player);
     this.gameScene.events.emit('show_notification', t('shop.bought').replace('{name}', item.name));

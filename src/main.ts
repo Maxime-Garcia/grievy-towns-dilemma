@@ -13,6 +13,7 @@ import { EndingScene }    from './scenes/EndingScene';
 import { ShopScene }      from './scenes/ShopScene';
 import { PauseScene }     from './scenes/PauseScene';
 import { BestiaryScene }  from './scenes/BestiaryScene';
+import { ArsenalScene }   from './scenes/ArsenalScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -54,6 +55,7 @@ const config: Phaser.Types.Core.GameConfig = {
     ShopScene,
     PauseScene,
     BestiaryScene,
+    ArsenalScene,
   ],
 };
 

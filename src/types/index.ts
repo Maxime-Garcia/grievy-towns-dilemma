@@ -629,6 +629,12 @@ export interface BestiaryEntryState {
   revealedDrops: string[]; // itemIds des drops hidden révélés après premier loot
 }
 
+/** Pendant "Arsenal" du BestiaryEntryState — pas d'équivalent kill, l'équipement
+ *  n'a qu'un état discovered/non-discovered (débloqué dès la première obtention). */
+export interface ArsenalEntryState {
+  discovered: boolean;
+}
+
 // ============================================================
 // WORLD STATE
 // ============================================================
@@ -639,6 +645,7 @@ export interface WorldState {
   malacharDefeated: boolean;
   endingChosen?: EndingChoice;
   bestiary: Record<string, BestiaryEntryState>;
+  arsenal: Record<string, ArsenalEntryState>;
 }
 
 // ============================================================

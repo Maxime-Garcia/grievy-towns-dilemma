@@ -1,13 +1,13 @@
 import { GameState, SaveData, PlayerState, WorldState, EndingChoice } from '../types';
 import { ProgressionSystem } from './ProgressionSystem';
 
-const SAVE_VERSION = '1.4.1';
+const SAVE_VERSION = '1.5.0';
 const SAVE_KEY_PREFIX = 'gtd_save_';
 const MAX_SLOTS = 3;
 
 // Each entry migrates a save from its key version to the next.
 // Add a new entry here whenever PlayerState, WorldState, or GameState changes.
-const FRESH_WORLD: WorldState = { clearedZones: [], degradationLevel: 0, malacharDefeated: false, bestiary: {} };
+const FRESH_WORLD: WorldState = { clearedZones: [], degradationLevel: 0, malacharDefeated: false, bestiary: {}, arsenal: {} };
 
 const MIGRATION_MAP: Record<string, (state: GameState) => GameState> = {
   '1.0.0': (state) => ({
@@ -65,6 +65,15 @@ const MIGRATION_MAP: Record<string, (state: GameState) => GameState> = {
           id, { ...e, kills: e.kills ?? 0 },
         ])
       ),
+    },
+  }),
+  // Ajout du champ arsenal dans WorldState (glossaire armes/armures)
+  '1.4.1': (state) => ({
+    ...state,
+    version: '1.5.0',
+    world: {
+      ...state.world,
+      arsenal: (state.world as any).arsenal ?? {},
     },
   }),
 };
@@ -135,6 +144,7 @@ export class SaveSystem {
       degradationLevel: 0,
       malacharDefeated: false,
       bestiary: {},
+      arsenal: {},
     };
     return {
       player,

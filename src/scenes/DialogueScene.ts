@@ -1,4 +1,4 @@
-import { NPC, PlayerState, DialogueLine } from '../types';
+import { NPC, PlayerState, DialogueLine, WorldState } from '../types';
 import { DialogueSystem, DialogueSession } from '../systems/DialogueSystem';
 import { SHOP_INVENTORY } from '../data/shops';
 import { UI, drawGlowPanel, uiStyle } from '../utils/UITheme';
@@ -41,6 +41,7 @@ export class DialogueScene extends Phaser.Scene {
   private npc!:     NPC;
   private session!: DialogueSession;
   private player!:  PlayerState;
+  private world?:   WorldState;
   private onClose!: () => void;
 
   private role: NpcRole = 'default';
@@ -89,11 +90,12 @@ export class DialogueScene extends Phaser.Scene {
 
   constructor() { super({ key: 'DialogueScene' }); }
 
-  init(data: { npc: NPC; player: PlayerState; onClose: () => void }) {
+  init(data: { npc: NPC; player: PlayerState; world?: WorldState; onClose: () => void }) {
     this.npc     = data.npc;
     this.player  = data.player;
+    this.world   = data.world;
     this.onClose = data.onClose;
-    this.session = DialogueSystem.start(data.npc.id, data.npc.dialogue, this.player);
+    this.session = DialogueSystem.start(data.npc.id, data.npc.dialogue, this.player, this.world);
     this.closing = false;
     this.choiceObjs = [];
     this.choiceKeys = [];
@@ -474,7 +476,7 @@ export class DialogueScene extends Phaser.Scene {
 
   private pickChoice(i: number) {
     if (this.closing) return;
-    DialogueSystem.advance(this.session, this.player, i);
+    DialogueSystem.advance(this.session, this.player, i, this.world);
     this.renderCurrentLine();
   }
 
@@ -495,7 +497,7 @@ export class DialogueScene extends Phaser.Scene {
       const filtered = DialogueSystem.getFilteredChoices(line, this.player) ?? [];
       if (filtered.length > 0) return;   // il faut choisir — tap hors bouton ignoré
     }
-    DialogueSystem.advance(this.session, this.player);
+    DialogueSystem.advance(this.session, this.player, undefined, this.world);
     this.renderCurrentLine();
   }
 

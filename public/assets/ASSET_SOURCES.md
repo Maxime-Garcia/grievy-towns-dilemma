@@ -213,10 +213,36 @@ Icônes 32×32 statiques `item_<id>.png`, une par arme de `src/data/items.ts`
 | AXE, HAMMER (test) | Axe Item Icons | HAMMER en réemploi du pack haches, faute de pack dédié |
 
 **Contrairement aux ennemis, les icônes d'armes ne sont PAS recolorées par
-élément** (choix utilisateur explicite). L'élément d'une arme est signalé par
-la couleur de survol de son emplacement dans l'inventaire (voir
-`src/scenes/InventoryScene.ts`, fonction `hoverColorFor`), pas par l'icône
-elle-même.
+élément** (choix utilisateur explicite). L'élément d'une arme looté est signalé
+par un glyphe dédié dans la popup de détail de l'inventaire, pas par l'icône
+elle-même (voir `src/scenes/InventoryScene.ts`, `ELEMENT_GLYPHS`).
+
+## `items/` — Armures (en cours, lot par lot)
+
+Contrairement aux armes, les icônes d'armure **sont recolorées par élément**
+(même logique que les ennemis, `colorize()` HSV) quand le pack source ne
+fournit pas nativement la couleur voulue. Sprites choisis puis vérifiés
+pixel par pixel avant intégration (`assets/Bundle_extracted/Armory Item
+Icons/`) — jamais à l'aveugle sur un nom de fichier.
+
+### Lot 1/8 — Casques (`HELM`, 10/10)
+
+| Item id | Source | Recolor |
+|---|---|---|
+| `leather_helm` | Armory Item Icons — Leather Helm (fichier dédié) | Aucun |
+| `iron_helm` | Armory Item Icons — Steel Helm (fichier dédié) | Aucun |
+| `titan_helm` | Armory Item Icons — Armor_Icons_2.png (23,12), casque-crâne | Aucun (déjà rouge/magma) |
+| `fire_helm` | Armor_Icons_2.png (22,6), casque cornu + gemme | Aucun (déjà rouge) |
+| `earth_helm` | Armor_Icons_2.png (18,6), casque rond + gemme | Aucun (déjà brun) |
+| `wind_helm` | Armor_Icons_2.png (16,6), base grise | `colorize` hue 190 (cyan pâle) |
+| `water_helm` | Armor_Icons_2.png (16,10), casque cornu grillagé, base grise | `colorize` hue 212 (bleu) |
+| `lightning_helm` | Armor_Icons_2.png (16,13), base grise | `colorize` hue 48 (or) |
+| `dark_helm` | Armor_Icons_2.png (21,12), casque-crâne | Aucun (déjà violet) |
+| `hidden_mirror_helm` | Armor_Icons_2.png (16,1), casque fermé, base grise | `colorize` désaturé + éclairci (effet miroir/poli) |
+
+Lots restants à traiter en sessions ultérieures, même méthodologie :
+Plastrons (`CHEST`), Jambières (`LEGS`), Bottes (`BOOTS`), Gants (`GLOVES`),
+Capes (`CAPE`), Anneaux (`RING`), Amulettes (`AMULET`).
 
 ## `skills/`, `ui/`, `vfx/`, `props/`, `skins/`
 

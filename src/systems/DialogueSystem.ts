@@ -1,4 +1,4 @@
-import { DialogueTree, DialogueLine, PlayerState, QuestStatus } from '../types';
+import { DialogueTree, DialogueLine, PlayerState, QuestStatus, WorldState } from '../types';
 import { QuestSystem } from './QuestSystem';
 import { LootSystem } from './LootSystem';
 import { ALL_ITEMS } from '../data/items';
@@ -12,7 +12,7 @@ export interface DialogueSession {
 
 export class DialogueSystem {
 
-  static start(npcId: string, tree: DialogueTree, player: PlayerState): DialogueSession {
+  static start(npcId: string, tree: DialogueTree, player: PlayerState, world?: WorldState): DialogueSession {
     const session: DialogueSession = {
       npcId,
       tree,
@@ -20,7 +20,7 @@ export class DialogueSystem {
       finished: false,
     };
 
-    QuestSystem.onNpcTalked(player, npcId);
+    QuestSystem.onNpcTalked(player, npcId, world);
     return session;
   }
 
@@ -35,11 +35,11 @@ export class DialogueSystem {
     return line ?? null;
   }
 
-  static advance(session: DialogueSession, player: PlayerState, choiceIndex?: number): DialogueLine | null {
+  static advance(session: DialogueSession, player: PlayerState, choiceIndex?: number, world?: WorldState): DialogueLine | null {
     const current = this.getCurrentLine(session, player);
     if (!current) { session.finished = true; return null; }
 
-    this.processTrigger(current.trigger, player);
+    this.processTrigger(current.trigger, player, world);
 
     if (current.choices && choiceIndex !== undefined) {
       const validChoices = current.choices.filter(c =>
@@ -78,16 +78,17 @@ export class DialogueSystem {
 
   private static processTrigger(
     trigger: DialogueLine['trigger'] | undefined,
-    player: PlayerState
+    player: PlayerState,
+    world?: WorldState
   ): void {
     if (!trigger) return;
 
     if (trigger.startQuest)    QuestSystem.startQuest(player, trigger.startQuest);
-    if (trigger.completeQuest) QuestSystem.completeQuest(player, trigger.completeQuest);
+    if (trigger.completeQuest) QuestSystem.completeQuest(player, trigger.completeQuest, world);
     if (trigger.setFlag)       player.flags[trigger.setFlag] = true;
     if (trigger.giveItem) {
       const item = ALL_ITEMS[trigger.giveItem.itemId];
-      if (item) LootSystem.addToInventory(player, item, trigger.giveItem.quantity);
+      if (item) LootSystem.addToInventory(player, item, trigger.giveItem.quantity, world);
     }
   }
 }

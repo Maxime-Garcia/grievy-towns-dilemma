@@ -1,6 +1,7 @@
-import { LootEntry, Item, ItemRarity, ItemType, ElementType, PlayerState, Weapon, Armor } from '../types';
+import { LootEntry, Item, ItemRarity, ItemType, ElementType, PlayerState, Weapon, Armor, WorldState } from '../types';
 import { ALL_ITEMS } from '../data/items';
 import { RARITY_DROP_RATES } from '../types';
+import { ArsenalSystem } from './ArsenalSystem';
 
 // Elements that can be assigned randomly at drop (excludes NEUTRAL which is the baseline)
 const RANDOM_ELEMENTS: ElementType[] = [
@@ -108,7 +109,8 @@ export class LootSystem {
   static addToInventory(
     player: PlayerState,
     item: Item,
-    quantity: number
+    quantity: number,
+    world?: WorldState
   ): boolean {
     if (player.inventory.length >= 60 && !('stackable' in item && (item as any).stackable)) {
       return false;
@@ -117,11 +119,13 @@ export class LootSystem {
     const existing = player.inventory.find(s => s.item.id === item.id);
     if (existing && 'stackable' in item && (item as any).stackable) {
       existing.quantity = Math.min(existing.quantity + quantity, (item as any).maxStack ?? 99);
+      if (world) ArsenalSystem.discover(world, item.id);
       return true;
     }
 
     if (player.inventory.length >= 60) return false;
     player.inventory.push({ item, quantity });
+    if (world) ArsenalSystem.discover(world, item.id);
     return true;
   }
 
