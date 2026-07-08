@@ -8,7 +8,6 @@ export const EN: Record<string, string> = {
   'ui.mp': 'MP',
   'ui.level': 'Lv.',
   'ui.gold': 'Gold',
-  'ui.hint': '[I] Inv  [K] Skills  [J] Attack  [Space] Dash',
 
   // ── NAME INPUT SCENE ────────────────────────────────────────
   'name_input.wake':        'You wake up.',
@@ -212,8 +211,8 @@ export const EN: Record<string, string> = {
   'notif.loot_chest': '[Chest]',
   'notif.loot_plant': '[Plant]',
   'notif.loot_mineral': '[Mineral]',
-  'hint.talk': '[F] Talk',
-  'hint.loot': '[F] Loot',
+  'hint.talk_action': 'Talk',
+  'hint.loot_action': 'Loot',
   'notif.loot_shrine': '[Shrine]',
   'notif.level_up': '✦ Level {level}! ✦',
   'notif.quest_done': 'Quest complete!',

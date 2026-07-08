@@ -12,6 +12,12 @@ export class InventorySystem {
     const slot = this.getEquipSlot(item, player);
     if (!slot) return false;
 
+    // Le nouvel item doit quitter le sac avant d'occuper le slot — sans ça, il
+    // restait dupliqué dans l'inventaire à chaque équipement (bug reporté :
+    // rééquiper une arme la faisait réapparaître en plus dans le sac).
+    const removed = LootSystem.removeFromInventory(player, itemId, 1);
+    if (!removed) return false;
+
     const current = (player.equipment as any)[slot];
     if (current) this.unequip(player, slot);
 

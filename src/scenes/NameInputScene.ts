@@ -1,5 +1,5 @@
 import { SaveSystem } from '../systems/SaveSystem';
-import { UI, drawPanel, pxStyle } from '../utils/UITheme';
+import { UI, FONT, FONT_UI, drawGlowPanel, drawCard, drawDivider, uiStyle } from '../utils/UITheme';
 import { t } from '../i18n';
 
 export class NameInputScene extends Phaser.Scene {
@@ -20,50 +20,52 @@ export class NameInputScene extends Phaser.Scene {
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
 
-    // ── Background frame ──────────────────────────
+    // ── Background frame (arcane fresh) ───────────
     const bg = this.add.graphics();
-    drawPanel(bg, 6, 6, W - 12, H - 12);
+    drawGlowPanel(bg, 6, 6, W - 12, H - 12, UI.ACCENT_ARCANE, UI.BG_DEEP, 10, 1);
 
-    // Decorative separator lines (same as MainMenuScene)
+    // Decorative separator lines (structure = cyan arcane)
     const deco = this.add.graphics();
-    deco.lineStyle(1, UI.BORDER_LIT, 0.4);
-    deco.beginPath(); deco.moveTo(18, 70);     deco.lineTo(W - 18, 70);     deco.strokePath();
-    deco.beginPath(); deco.moveTo(18, H - 70); deco.lineTo(W - 18, H - 70); deco.strokePath();
+    drawDivider(deco, 18, 70,     W - 36, UI.ACCENT_ARCANE, 0.25);
+    drawDivider(deco, 18, H - 70, W - 36, UI.ACCENT_ARCANE, 0.25);
 
-    // ── Title (identique au MainMenuScene) ────────
+    // ── Title — SEUL usage de la police pixel : identité du jeu
+    //    (guidelines §2.2 — mirror du titre de MainMenuScene) ────
     this.add.text(W / 2, 26, "GRIEVY TOWN'S DILEMMA", {
-      ...pxStyle(16, UI.TXT_GOLD, true),
-      stroke: '#000000',
+      fontFamily: FONT,
+      fontSize:   '16px',
+      color:      UI.TXT_GOLD,
+      stroke:     '#000000',
       strokeThickness: 4,
     }).setOrigin(0.5);
 
-    this.add.text(W / 2, 52, t('menu.subtitle'), pxStyle(7, UI.TXT_MUTED)).setOrigin(0.5);
+    this.add.text(W / 2, 52, t('menu.subtitle'), uiStyle(10, UI.TXT_MUTED)).setOrigin(0.5);
 
-    // ── Slot indicator ────────────────────────────
+    // ── Slot indicator (pilule arrondie — or = valeur) ─────────
     const slotGfx = this.add.graphics();
-    drawPanel(slotGfx, W / 2 - 80, 82, 160, 22, UI.SLOT_BG);
-    this.add.text(W / 2, 93, `${t('menu.slot')} ${this.slot + 1}`, pxStyle(7, UI.TXT_GOLD)).setOrigin(0.5);
+    drawCard(slotGfx, W / 2 - 80, 82, 160, 24, { bg: UI.BG_MID, radius: 12, shadow: false });
+    this.add.text(W / 2, 94, `${t('menu.slot')} ${this.slot + 1}`, uiStyle(10, UI.TXT_GOLD, { bold: true })).setOrigin(0.5);
 
     // ── Narrative ─────────────────────────────────
     const MID = H / 2 - 30;
-    this.add.text(W / 2, MID - 80, t('name_input.wake'),    pxStyle(12, UI.TXT_PARCHMENT, true)).setOrigin(0.5);
-    this.add.text(W / 2, MID - 52, t('name_input.no_name'), pxStyle(8,  UI.TXT_MUTED)).setOrigin(0.5);
-    this.add.text(W / 2, MID - 28, t('name_input.choose'),  pxStyle(7,  UI.TXT_HINT)).setOrigin(0.5);
+    this.add.text(W / 2, MID - 80, t('name_input.wake'),    uiStyle(14, UI.TXT_PARCHMENT, { bold: true, stroke: true })).setOrigin(0.5);
+    this.add.text(W / 2, MID - 52, t('name_input.no_name'), uiStyle(11, UI.TXT_MUTED)).setOrigin(0.5);
+    this.add.text(W / 2, MID - 28, t('name_input.choose'),  uiStyle(9,  UI.TXT_HINT)).setOrigin(0.5);
 
-    // ── HTML input (pixel-styled) ─────────────────
+    // ── HTML input (style moderne, coins arrondis, focus arcane) ──
     const canvas = this.game.canvas;
     const rect   = canvas.getBoundingClientRect();
     const scaleX = rect.width  / W;
     const scaleY = rect.height / H;
 
     const INP_W = 280;
-    const INP_H = 34;
+    const INP_H = 36;
     const INP_X = W / 2 - INP_W / 2;
     const INP_Y = MID - INP_H / 2;
 
     // Inject placeholder color once
     this.placeholderStyle = document.createElement('style');
-    this.placeholderStyle.textContent = `#gtd-name-input::placeholder { color: ${UI.TXT_HINT}; opacity: 1; }`;
+    this.placeholderStyle.textContent = `#gtd-name-input::placeholder { color: ${UI.TXT_MUTED}; opacity: 0.7; }`;
     document.head.appendChild(this.placeholderStyle);
 
     this.nameInput = document.createElement('input');
@@ -74,14 +76,15 @@ export class NameInputScene extends Phaser.Scene {
       top:           `${rect.top  + INP_Y * scaleY}px`,
       width:         `${INP_W * scaleX}px`,
       height:        `${INP_H * scaleY}px`,
-      fontSize:      `${10 * scaleX}px`,
+      fontSize:      `${13 * scaleX}px`,
       textAlign:     'center',
-      background:    '#0c0c18',
+      background:    '#0e1520',            // UI.BG_MID
       color:         UI.TXT_PARCHMENT,
-      border:        `1px solid #6a4a22`,
-      fontFamily:    "'Press Start 2P', monospace",
+      border:        '1px solid #1a2535',  // UI.SEPARATOR
+      borderRadius:  `${6 * scaleX}px`,
+      fontFamily:    FONT_UI,
       outline:       'none',
-      letterSpacing: '2px',
+      letterSpacing: '1px',
       padding:       '0 8px',
       boxSizing:     'border-box',
     });
@@ -91,40 +94,43 @@ export class NameInputScene extends Phaser.Scene {
     this.nameInput.focus();
 
     this.nameInput.addEventListener('focus', () => {
-      this.nameInput.style.border = `1px solid ${UI.TXT_GOLD}`;
+      this.nameInput.style.border = '1px solid #59e0c8'; // UI.ACCENT_ARCANE
     });
     this.nameInput.addEventListener('blur', () => {
-      this.nameInput.style.border = '1px solid #6a4a22';
+      this.nameInput.style.border = '1px solid #1a2535';
     });
     this.nameInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') this.startGame();
     });
 
-    // ── BEGIN button (same makeBtn pattern as MainMenuScene) ──
-    const BW = 220;
-    const BH = 34;
+    // ── BEGIN button (240×44 — norme tactile MainMenuScene) ──
+    const BW = 240;
+    const BH = 44;
     const BX = W / 2;
     const BY = MID + 70;
 
     const btnGfx = this.add.graphics();
     const drawBtn = (hover: boolean) => {
       btnGfx.clear();
-      drawPanel(btnGfx, BX - BW / 2, BY - BH / 2, BW, BH, hover ? UI.BTN_BG_HOVER : UI.BTN_BG);
-      if (hover) {
-        btnGfx.lineStyle(1, UI.CORNER, 1);
-        btnGfx.strokeRect(BX - BW / 2 + 1, BY - BH / 2 + 1, BW - 2, BH - 2);
-      }
+      btnGfx.fillStyle(hover ? UI.BTN_BG_HOVER : UI.BTN_BG, 1);
+      btnGfx.fillRoundedRect(BX - BW / 2, BY - BH / 2, BW, BH, 6);
+      btnGfx.lineStyle(1, hover ? UI.ACCENT_ARCANE : UI.SEPARATOR, hover ? 0.9 : 1);
+      btnGfx.strokeRoundedRect(BX - BW / 2, BY - BH / 2, BW, BH, 6);
     };
     drawBtn(false);
 
-    const btnTxt = this.add.text(BX, BY, t('name_input.begin'), pxStyle(9, UI.TXT_PARCHMENT)).setOrigin(0.5);
-    const hit = this.add.rectangle(BX, BY, BW, BH, 0, 0).setInteractive({ useHandCursor: true });
+    const btnTxt = this.add.text(BX, BY, t('name_input.begin'), uiStyle(13, UI.TXT_PARCHMENT, { bold: true })).setOrigin(0.5);
+    const hit = this.add.rectangle(BX, BY, BW + 6, BH + 4, 0, 0).setInteractive({ useHandCursor: true });
     hit.on('pointerover',  () => { drawBtn(true);  btnTxt.setStyle({ color: UI.TXT_GOLD }); });
     hit.on('pointerout',   () => { drawBtn(false); btnTxt.setStyle({ color: UI.TXT_PARCHMENT }); });
-    hit.on('pointerdown',  () => this.startGame());
+    hit.on('pointerdown',  () => {
+      // Feedback tap < 100 ms avant la transition
+      this.tweens.add({ targets: btnTxt, scaleX: 0.96, scaleY: 0.96, duration: 50, yoyo: true });
+      this.startGame();
+    });
 
     // ── Footer hint ───────────────────────────────
-    this.add.text(W / 2, H - 14, t('name_input.hint'), pxStyle(6, UI.TXT_HINT)).setOrigin(0.5, 1);
+    this.add.text(W / 2, H - 14, t('name_input.hint'), uiStyle(9, UI.TXT_HINT)).setOrigin(0.5, 1);
 
     this.events.on('shutdown', () => this.cleanupInput());
     this.events.on('destroy',  () => this.cleanupInput());

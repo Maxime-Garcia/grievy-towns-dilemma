@@ -45,9 +45,11 @@ export interface ComputedStats {
 type GearPiece = Weapon | Armor | Accessory;
 
 // GDD §Combat : crit chance = 5% + AGI * 0.3%, crit multiplier = 2.0x (un crit double les dégâts)
-const BASE_CRIT_PCT = 5;
-const CRIT_PER_AGI_PCT = 0.3;
-const BASE_CRIT_MULT = 2.0;
+// Exportées : InventoryScene s'en sert pour calculer la baseline "sans équipement"
+// et savoir quelles stats affichées sont réellement boostées par le gear.
+export const BASE_CRIT_PCT = 5;
+export const CRIT_PER_AGI_PCT = 0.3;
+export const BASE_CRIT_MULT = 2.0;
 
 /** Clés dont la valeur s'affiche en % (fallback si isPercentage absent). */
 const PERCENT_KEYS: ReadonlySet<SubstatKey> = new Set<SubstatKey>([

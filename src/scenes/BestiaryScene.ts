@@ -9,10 +9,17 @@
 //  - scroll = molette + drag vertical + flèches + touches ↑↓
 //  - bouton × rouge haut-droite (hit 48×48) + ESC (géré par GameScene)
 //  - shutdown() complet (touches, wheel, drag, timers)
+//
+// Style "arcane fresh" (07/2026) : mirror direct d'ArsenalScene —
+// drawGlowPanel/drawCard/drawSlot/uiStyle, structure cyan arcane,
+// or réservé à l'identité/valeur (titre, boss, niveaux).
 // ============================================================
 
 import { WorldState, ElementType, ItemRarity, RARITY_COLORS } from '../types';
-import { UI, drawPanel, drawGlowPanel, drawBadge, pxStyle } from '../utils/UITheme';
+import {
+  UI, drawGlowPanel, drawCard, drawSlot, drawBadge, uiStyle,
+  addCloseButton, drawScrollbar,
+} from '../utils/UITheme';
 import { ENEMY_MAP } from '../data/enemies';
 import { BESTIARY_IDS, BESTIARY_RECORD, BestiaryDropData } from '../data/bestiary';
 import { BestiarySystem } from '../systems/BestiarySystem';
@@ -72,6 +79,7 @@ export class BestiaryScene extends Phaser.Scene {
 
   private listObjs:   Phaser.GameObjects.GameObject[] = [];
   private detailObjs: Phaser.GameObjects.GameObject[] = [];
+  private scrollbarGfx!: Phaser.GameObjects.Graphics;
   private tooltip: Phaser.GameObjects.Container | null = null;
   private tooltipTimer: Phaser.Time.TimerEvent | null = null;
   private tooltipJustOpened = false;
@@ -115,28 +123,23 @@ export class BestiaryScene extends Phaser.Scene {
     // ── Overlay + cadre ──────────────────────────────────────
     this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88);
     const frame = this.add.graphics();
-    drawPanel(frame, 6, 6, W - 12, H - 12);
+    drawGlowPanel(frame, 6, 6, W - 12, H - 12, UI.ACCENT_ARCANE, UI.BG_DEEP, 10, 0.92);
 
     // ── Header ───────────────────────────────────────────────
-    this.add.text(W / 2, 24, t('bestiary.title'), pxStyle(12, UI.TXT_GOLD, true)).setOrigin(0.5);
+    this.add.text(W / 2, 24, t('bestiary.title'), uiStyle(13, UI.TXT_GOLD, { bold: true, stroke: true })).setOrigin(0.5);
 
     const counts = BestiarySystem.counts(this.world);
     const progressLabel = t('bestiary.progress')
       .replace('{seen}',  String(counts.seen))
       .replace('{slain}', String(counts.slain))
       .replace('{total}', String(counts.total));
-    this.add.text(20, 24, progressLabel, pxStyle(7, UI.TXT_MUTED)).setOrigin(0, 0.5);
+    this.add.text(20, 24, progressLabel, uiStyle(8, UI.TXT_MUTED)).setOrigin(0, 0.5);
 
     // Bouton × (règle inter-écrans §7.1 : rouge, haut-droite, hit ≥ 44 px)
-    const closeTxt = this.add.text(W - 28, 24, '×', pxStyle(16, UI.TXT_RED)).setOrigin(0.5).setDepth(10);
-    const closeHit = this.add.rectangle(W - 28, 24, 48, 48, 0, 0)
-      .setInteractive({ useHandCursor: true }).setDepth(10);
-    closeHit.on('pointerover', () => closeTxt.setStyle({ color: UI.TXT_ORANGE }));
-    closeHit.on('pointerout',  () => closeTxt.setStyle({ color: UI.TXT_RED }));
-    closeHit.on('pointerdown', () => { this.flashAt(W - 28, 24, 48, 48); this.close(); });
+    addCloseButton(this, W - 28, 24, () => this.close());
 
     const sep = this.add.graphics();
-    sep.lineStyle(1, UI.BORDER_LIT, 0.6);
+    sep.lineStyle(1, UI.ACCENT_ARCANE, 0.35);
     sep.beginPath(); sep.moveTo(16, 42); sep.lineTo(W - 16, 42); sep.strokePath();
 
     // ── Layout des panneaux ──────────────────────────────────
@@ -150,10 +153,12 @@ export class BestiaryScene extends Phaser.Scene {
     this.rowsBottom = this.LIST_Y + this.LIST_H - 24;
 
     const listBg = this.add.graphics();
-    drawGlowPanel(listBg, this.LIST_X, this.LIST_Y, this.LIST_W, this.LIST_H, UI.BORDER_LIT, UI.BG_DEEP);
+    drawGlowPanel(listBg, this.LIST_X, this.LIST_Y, this.LIST_W, this.LIST_H, UI.ACCENT_ARCANE, UI.BG_MID, 8, 0.55);
+
+    this.scrollbarGfx = this.add.graphics();
 
     // Hint navigation (bas d'écran, hors des panneaux)
-    this.add.text(W / 2, H - 16, t('bestiary.hint'), pxStyle(6, UI.TXT_HINT)).setOrigin(0.5);
+    this.add.text(W / 2, H - 16, t('bestiary.hint'), uiStyle(8, UI.TXT_HINT)).setOrigin(0.5);
 
     // ── Construction des lignes (groupées par zone) ──────────
     this.buildRows();
@@ -275,11 +280,19 @@ export class BestiaryScene extends Phaser.Scene {
     if (this.lastVisibleIndex < this.rows.length - 1) {
       this.renderScrollArrow(this.LIST_Y + this.LIST_H - 11, '▼', () => this.scroll(1));
     }
+
+    this.scrollbarGfx.clear();
+    const visibleCount = this.lastVisibleIndex - this.scrollOffset + 1;
+    drawScrollbar(
+      this.scrollbarGfx,
+      this.LIST_X + this.LIST_W - 10, this.rowsTop, 4, this.rowsBottom - this.rowsTop,
+      this.scrollOffset, this.maxScrollOffset, visibleCount / Math.max(1, this.rows.length),
+    );
   }
 
   private renderScrollArrow(cy: number, glyph: string, onTap: () => void) {
     const cx = this.LIST_X + this.LIST_W / 2;
-    const txt = this.add.text(cx, cy, glyph, pxStyle(8, UI.TXT_GOLD)).setOrigin(0.5).setAlpha(0.8);
+    const txt = this.add.text(cx, cy, glyph, uiStyle(9, UI.TXT_GOLD)).setOrigin(0.5).setAlpha(0.8);
     const hit = this.add.rectangle(cx, cy, this.LIST_W - 8, 26, 0, 0)
       .setInteractive({ useHandCursor: true });
     hit.on('pointerover', () => txt.setAlpha(1));
@@ -294,10 +307,11 @@ export class BestiaryScene extends Phaser.Scene {
   private renderHeaderRow(row: { label: string; color: number }, x: number, y: number, w: number) {
     const cy = y + HEADER_ROW_H / 2;
     const g = this.add.graphics();
-    g.fillStyle(row.color, 1);
-    g.fillRect(x + 6, cy - 3, 6, 6);
-    const txt = this.add.text(x + 18, cy, row.label, pxStyle(6, UI.TXT_GOLD)).setOrigin(0, 0.5);
-    g.lineStyle(1, UI.BORDER_LIT, 0.3);
+    // Pastille = couleur élémentaire de la zone (info), filet = structure arcane
+    g.fillStyle(row.color, 0.9);
+    g.fillRoundedRect(x + 6, cy - 3, 6, 6, 1.5);
+    const txt = this.add.text(x + 18, cy, row.label, uiStyle(8, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0.5);
+    g.lineStyle(1, UI.ACCENT_ARCANE, 0.25);
     g.beginPath();
     g.moveTo(x + 22 + txt.width, cy);
     g.lineTo(x + w - 4, cy);
@@ -319,13 +333,11 @@ export class BestiaryScene extends Phaser.Scene {
 
     const deco = this.add.graphics();
     if (isSelected) {
-      deco.fillStyle(UI.CORNER, 1);
+      deco.fillStyle(UI.ACCENT_ARCANE, 1);
       deco.fillRect(x, y, 3, ENEMY_ROW_H);
-      deco.lineStyle(1, UI.BTN_BORDER_HOV, 0.7);
-    } else {
-      deco.lineStyle(1, UI.SLOT_BORDER, 0.6);
     }
-    deco.strokeRect(x, y, w, ENEMY_ROW_H);
+    deco.lineStyle(1, entry.discovered ? elemColor : UI.SLOT_BORDER, entry.discovered ? 0.7 : 0.5);
+    deco.strokeRoundedRect(x + 2, y + 2, w - 4, ENEMY_ROW_H - 4, 4);
 
     // Pastille d'élément
     deco.fillStyle(entry.discovered ? elemColor : 0x3a3a44, 1);
@@ -333,6 +345,7 @@ export class BestiaryScene extends Phaser.Scene {
     deco.lineStyle(1, 0x000000, 0.6);
     deco.strokeCircle(x + 19, cy, 9);
     if (def.isBoss && entry.discovered) {
+      // Anneau doré = valeur/prestige (boss)
       deco.lineStyle(1, UI.CORNER, 0.9);
       deco.strokeCircle(x + 19, cy, 12);
     }
@@ -340,33 +353,33 @@ export class BestiaryScene extends Phaser.Scene {
 
     if (!entry.discovered) {
       this.listObjs.push(
-        this.add.text(x + 19, cy, '?', pxStyle(8, UI.TXT_WHITE, true)).setOrigin(0.5),
+        this.add.text(x + 19, cy, '?', uiStyle(9, UI.TXT_WHITE, { bold: true })).setOrigin(0.5),
       );
     }
 
     const rawName = entry.discovered ? localizeEnemy(def).name : t('bestiary.unknown');
-    const name = rawName.length > 14 ? rawName.slice(0, 13) + '..' : rawName;
+    const name = rawName.length > 16 ? rawName.slice(0, 15) + '..' : rawName;
     const nameColor = !entry.discovered ? UI.TXT_MUTED
       : def.isBoss  ? UI.TXT_GOLD
       : def.isElite ? UI.TXT_ORANGE
       : UI.TXT_PARCHMENT;
     this.listObjs.push(
-      this.add.text(x + 34, y + 10, name, pxStyle(7, nameColor)),
+      this.add.text(x + 36, y + 10, name, uiStyle(9, nameColor, { bold: entry.discovered })),
     );
 
     const lvlLabel = entry.discovered
       ? t('bestiary.level').replace('{lvl}', String(def.baseLevel))
       : t('bestiary.level_unknown');
     this.listObjs.push(
-      this.add.text(x + 34, y + 30, lvlLabel, pxStyle(6, UI.TXT_MUTED)),
+      this.add.text(x + 36, y + 28, lvlLabel, uiStyle(7, UI.TXT_MUTED)),
     );
     if (entry.killed) {
       this.listObjs.push(
-        this.add.text(x + w - 8, y + 30, t('bestiary.slain'), pxStyle(6, UI.TXT_RED)).setOrigin(1, 0),
+        this.add.text(x + w - 8, y + 28, t('bestiary.slain'), uiStyle(7, UI.TXT_RED, { bold: true })).setOrigin(1, 0),
       );
     } else if (entry.discovered) {
       this.listObjs.push(
-        this.add.text(x + w - 8, y + 30, t('bestiary.seen'), pxStyle(6, UI.TXT_GREEN)).setOrigin(1, 0),
+        this.add.text(x + w - 8, y + 28, t('bestiary.seen'), uiStyle(7, UI.TXT_GREEN)).setOrigin(1, 0),
       );
     }
 
@@ -405,14 +418,14 @@ export class BestiaryScene extends Phaser.Scene {
     const pad = 14;
 
     const bg = this.add.graphics();
-    drawGlowPanel(bg, this.DET_X, this.DET_Y, this.DET_W, this.DET_H, accent, UI.BG_MID);
+    drawGlowPanel(bg, this.DET_X, this.DET_Y, this.DET_W, this.DET_H, accent, UI.BG_MID, 8, 0.55);
     this.detailObjs.push(bg);
 
     // ── Portrait (96×96) ─────────────────────────────────────
     const px = this.DET_X + pad;
     const py = this.DET_Y + pad;
     const pFrame = this.add.graphics();
-    drawGlowPanel(pFrame, px, py, 96, 96, accent, 0x080810);
+    drawCard(pFrame, px, py, 96, 96, { bg: 0x080810, radius: 8, shadow: false });
     this.detailObjs.push(pFrame);
 
     const portraitTexKey = `enemy_${def.id}_idle`;
@@ -431,7 +444,8 @@ export class BestiaryScene extends Phaser.Scene {
         ? def.name.split(' ').map(wd => wd[0] ?? '').join('').slice(0, 2).toUpperCase()
         : '?';
       this.detailObjs.push(
-        this.add.text(px + 48, py + 48, glyph, pxStyle(entry.discovered ? 12 : 18, UI.TXT_WHITE, true)).setOrigin(0.5),
+        this.add.text(px + 48, py + 48, glyph,
+          uiStyle(entry.discovered ? 14 : 18, UI.TXT_WHITE, { bold: true, stroke: true })).setOrigin(0.5),
       );
     }
 
@@ -442,10 +456,8 @@ export class BestiaryScene extends Phaser.Scene {
 
     const displayName = entry.discovered ? localizeEnemy(def).name : t('bestiary.unknown');
     const nameHex = entry.discovered ? '#' + elemColor.toString(16).padStart(6, '0') : UI.TXT_MUTED;
-    const nameTxt = this.add.text(ix, iy, displayName, {
-      ...pxStyle(12, nameHex, true),
-      wordWrap: { width: iw },
-    });
+    const nameTxt = this.add.text(ix, iy, displayName,
+      uiStyle(13, nameHex, { bold: true, stroke: true, wordWrapWidth: iw }));
     this.detailObjs.push(nameTxt);
     iy += nameTxt.height + 8;
 
@@ -453,9 +465,9 @@ export class BestiaryScene extends Phaser.Scene {
     const zoneKey = ZONE_HABITAT_KEYS[def.element];
     const habitatStr = zoneKey ? t(zoneKey) : data.habitat;
     this.detailObjs.push(
-      this.add.text(ix, iy, `${t('bestiary.habitat')} ${habitatStr}`, pxStyle(7, UI.TXT_MUTED)),
+      this.add.text(ix, iy, `${t('bestiary.habitat')} ${habitatStr}`, uiStyle(9, UI.TXT_MUTED)),
     );
-    iy += 16;
+    iy += 17;
 
     // Badges : niveau, élément, boss/élite
     let bx = ix;
@@ -468,20 +480,20 @@ export class BestiaryScene extends Phaser.Scene {
       if (def.isBoss)       bx += this.addInfoBadge(bx, iy + 7, t('bestiary.boss'),  0x551111, '#ffdddd');
       else if (def.isElite) bx += this.addInfoBadge(bx, iy + 7, t('bestiary.elite'), 0x553311, '#ffe6cc');
     }
-    iy += 24;
+    iy += 26;
 
     // Faiblesse + compteur de victoires
     if (entry.discovered && def.weakness) {
       const wkColor = ELEMENT_COLORS[def.weakness] ?? ELEMENT_COLORS[ElementType.NEUTRAL];
-      const wkLabel = this.add.text(ix, iy, t('bestiary.weakness'), pxStyle(7, UI.TXT_MUTED));
+      const wkLabel = this.add.text(ix, iy, t('bestiary.weakness'), uiStyle(9, UI.TXT_MUTED));
       const wkValue = this.add.text(ix + wkLabel.width + 6, iy, t(`element.${def.weakness}`),
-        pxStyle(7, '#' + wkColor.toString(16).padStart(6, '0')));
+        uiStyle(9, '#' + wkColor.toString(16).padStart(6, '0'), { bold: true }));
       this.detailObjs.push(wkLabel, wkValue);
-      iy += 14;
+      iy += 15;
     }
     if (entry.kills > 0) {
       this.detailObjs.push(
-        this.add.text(ix, iy, t('bestiary.kills').replace('{n}', String(entry.kills)), pxStyle(7, UI.TXT_MUTED)),
+        this.add.text(ix, iy, t('bestiary.kills').replace('{n}', String(entry.kills)), uiStyle(9, UI.TXT_MUTED)),
       );
     }
 
@@ -498,11 +510,8 @@ export class BestiaryScene extends Phaser.Scene {
       loreColor = UI.TXT_PARCHMENT;
     }
     this.detailObjs.push(
-      this.add.text(this.DET_X + pad, loreY + 18, loreText, {
-        ...pxStyle(7, loreColor),
-        wordWrap: { width: this.DET_W - pad * 2 },
-        lineSpacing: 5,
-      }),
+      this.add.text(this.DET_X + pad, loreY + 18, loreText,
+        uiStyle(9, loreColor, { wordWrapWidth: this.DET_W - pad * 2, lineSpacing: 5 })),
     );
 
     // ── Section Butin (zone basse = zone de pouce) ───────────
@@ -511,7 +520,7 @@ export class BestiaryScene extends Phaser.Scene {
 
     if (!entry.discovered) {
       this.detailObjs.push(
-        this.add.text(this.DET_X + pad, dropsY + 22, t('bestiary.loot_unknown'), pxStyle(7, UI.TXT_MUTED)),
+        this.add.text(this.DET_X + pad, dropsY + 22, t('bestiary.loot_unknown'), uiStyle(9, UI.TXT_MUTED)),
       );
       return;
     }
@@ -534,9 +543,9 @@ export class BestiaryScene extends Phaser.Scene {
   }
 
   private addSectionTitle(label: string, y: number) {
-    const txt = this.add.text(this.DET_X + 14, y, label, pxStyle(7, UI.TXT_GOLD)).setOrigin(0, 0.5);
+    const txt = this.add.text(this.DET_X + 14, y, label, uiStyle(9, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0.5);
     const g = this.add.graphics();
-    g.lineStyle(1, UI.BORDER_LIT, 0.5);
+    g.lineStyle(1, UI.ACCENT_ARCANE, 0.25);
     g.beginPath();
     g.moveTo(this.DET_X + 14 + txt.width + 8, y);
     g.lineTo(this.DET_X + this.DET_W - 14, y);
@@ -550,17 +559,12 @@ export class BestiaryScene extends Phaser.Scene {
     const rarityHexStr = item ? RARITY_COLORS[item.rarity] : RARITY_COLORS[ItemRarity.COMMON];
     const rarityHex = parseInt(rarityHexStr.slice(1), 16);
 
+    // Slot arrondi moderne : bordure = rareté (révélé) ou fantôme (caché)
     const g = this.add.graphics();
     if (revealed) {
-      g.fillStyle(UI.SLOT_BG, 1);
-      g.fillRect(sx, sy, size, size);
-      g.lineStyle(2, rarityHex, 1);
-      g.strokeRect(sx, sy, size, size);
+      drawSlot(g, sx, sy, size, rarityHex, { occupied: true });
     } else {
-      g.fillStyle(0x111111, 1);
-      g.fillRect(sx, sy, size, size);
-      g.lineStyle(1, UI.SLOT_BORDER, 1);
-      g.strokeRect(sx, sy, size, size);
+      drawSlot(g, sx, sy, size, UI.SLOT_BORDER, { occupied: false, bg: 0x111111 });
     }
     this.detailObjs.push(g);
 
@@ -572,12 +576,12 @@ export class BestiaryScene extends Phaser.Scene {
       } else {
         const sq = this.add.graphics();
         sq.fillStyle(rarityHex, 0.5);
-        sq.fillRect(sx + 10, sy + 10, size - 20, size - 20);
+        sq.fillRoundedRect(sx + 10, sy + 10, size - 20, size - 20, 3);
         this.detailObjs.push(sq);
       }
     } else {
       this.detailObjs.push(
-        this.add.text(sx + size / 2, sy + size / 2, '???', pxStyle(7, UI.TXT_WHITE, true)).setOrigin(0.5),
+        this.add.text(sx + size / 2, sy + size / 2, '???', uiStyle(9, UI.TXT_WHITE, { bold: true, stroke: true })).setOrigin(0.5),
       );
     }
 
@@ -585,7 +589,7 @@ export class BestiaryScene extends Phaser.Scene {
     const rate = drop.dropRatePct / 100;
     this.detailObjs.push(
       this.add.text(sx + size / 2, sy + size + 10, this.formatRate(rate),
-        pxStyle(6, revealed ? UI.TXT_MUTED : UI.TXT_HINT)).setOrigin(0.5),
+        uiStyle(8, revealed ? UI.TXT_MUTED : UI.TXT_HINT)).setOrigin(0.5),
     );
 
     // Hit zone élargie : tap = tooltip détaillé
@@ -620,32 +624,27 @@ export class BestiaryScene extends Phaser.Scene {
 
     const nameLabel = item ? localizeItem(item).name : t('bestiary.hidden_drop_name');
     const nameColor = item ? RARITY_COLORS[item.rarity] : UI.TXT_WHITE;
-    const nameTxt = this.add.text(padT, ty, nameLabel, {
-      ...pxStyle(8, nameColor),
-      wordWrap: { width: TW - padT * 2 },
-    });
+    const nameTxt = this.add.text(padT, ty, nameLabel,
+      uiStyle(10, nameColor, { bold: true, wordWrapWidth: TW - padT * 2 }));
     parts.push(nameTxt);
     ty += nameTxt.height + 6;
 
     const rate = drop.dropRatePct / 100;
     const rateTxt = this.add.text(padT, ty,
       t('bestiary.drop_rate').replace('{rate}', this.formatRate(rate)),
-      pxStyle(7, UI.TXT_GOLD));
+      uiStyle(9, UI.TXT_GOLD, { bold: true }));
     parts.push(rateTxt);
     ty += rateTxt.height + 6;
 
     const descRaw = item ? localizeItem(item).description : t('bestiary.hidden_drop_desc');
     const desc = descRaw.length > 110 ? descRaw.slice(0, 108) + '..' : descRaw;
-    const descTxt = this.add.text(padT, ty, desc, {
-      ...pxStyle(6, UI.TXT_MUTED),
-      wordWrap: { width: TW - padT * 2 },
-      lineSpacing: 3,
-    });
+    const descTxt = this.add.text(padT, ty, desc,
+      uiStyle(8, UI.TXT_MUTED, { wordWrapWidth: TW - padT * 2, lineSpacing: 3 }));
     parts.push(descTxt);
     ty += descTxt.height + padT;
 
     const g = this.add.graphics();
-    drawPanel(g, 0, 0, TW, ty, UI.PANEL_BG);
+    drawGlowPanel(g, 0, 0, TW, ty, UI.ACCENT_ARCANE, UI.PANEL_BG, 4, 0.97);
 
     const tx = Phaser.Math.Clamp(slotX + 24 - TW / 2, this.DET_X + 6, this.DET_X + this.DET_W - TW - 6);
     const tyPos = Math.max(this.DET_Y + 6, slotY - ty - 8);

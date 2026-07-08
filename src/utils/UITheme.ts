@@ -118,6 +118,11 @@ export function uiStyle(
     fontSize:   `${size}px`,
     color,
     fontFamily: FONT_UI,
+    // Le jeu tourne en pixelArt:true (filtrage NEAREST global, cf. main.ts) — sans ça,
+    // ce texte "moderne" (Verdana) hérite du même rendu blocky que les sprites au lieu
+    // d'un rendu net. `resolution` fait générer le canvas de texte en interne à une
+    // densité plus élevée avant le zoom du jeu, ce qui le garde net même sous NEAREST.
+    resolution: 3,
   };
   const styleParts: string[] = [];
   if (opts.bold)   styleParts.push('bold');
@@ -316,6 +321,34 @@ export function drawDivider(
 ): void {
   g.lineStyle(1, color, alpha);
   g.lineBetween(x, y, x + w, y);
+}
+
+/**
+ * Scrollbar verticale discrète (piste + curseur) pour les panneaux de liste
+ * scrollables (Bestiaire, Arsenal...). À redessiner (g.clear() + rappel) à
+ * chaque changement de scrollOffset — pas de listener interne, purement visuel
+ * (le drag/molette/flèches restent gérés par la scène elle-même).
+ *
+ * @param visibleFraction ratio 0-1 de contenu visible (lignes visibles / total)
+ *   — détermine la hauteur du curseur. `scrollOffset`/`maxScrollOffset` en
+ *   unités de ligne (pas en pixels) déterminent sa position.
+ */
+export function drawScrollbar(
+  g: Phaser.GameObjects.Graphics,
+  x: number, y: number, w: number, h: number,
+  scrollOffset: number, maxScrollOffset: number, visibleFraction: number,
+): void {
+  g.fillStyle(UI.BG_DEEP, 0.7);
+  g.fillRoundedRect(x, y, w, h, w / 2);
+
+  if (maxScrollOffset <= 0) return; // tout tient à l'écran — pas de curseur nécessaire
+
+  const thumbH = Math.max(24, h * Math.max(0, Math.min(1, visibleFraction)));
+  const trackRange = h - thumbH;
+  const thumbY = y + trackRange * Math.max(0, Math.min(1, scrollOffset / maxScrollOffset));
+
+  g.fillStyle(UI.ACCENT_ARCANE, 0.85);
+  g.fillRoundedRect(x, thumbY, w, thumbH, w / 2);
 }
 
 /**

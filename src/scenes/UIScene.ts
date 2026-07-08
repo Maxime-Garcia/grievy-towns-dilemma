@@ -1,13 +1,17 @@
 import { PlayerState, Item, ItemRarity, RARITY_COLORS } from '../types';
 import { GameScene } from './GameScene';
 import { SKILL_MAP } from '../data/skills';
-import { UI, drawPanel, drawGlowPanel, drawBar, uiStyle } from '../utils/UITheme';
+import { UI, drawGlowPanel, drawSlot, drawBar, uiStyle } from '../utils/UITheme';
 import { t, localizeItem, localizeSkill } from '../i18n';
 
 const BAR_W = 178;
 const HP_H  = 16;
 const MP_H  = 11;
 const BAR_X = 42;
+
+// Barre de sorts retirée temporairement du HUD (demande utilisateur 2026-07-08) —
+// on verra plus tard comment on organise ça. Repasser à true pour la réafficher.
+const SHOW_SKILL_BAR = false;
 
 export class UIScene extends Phaser.Scene {
   private gameScene!: GameScene;
@@ -123,7 +127,8 @@ export class UIScene extends Phaser.Scene {
     // ── XP bar (bottom strip) ────────────────────
     this.xpBar = this.add.graphics();
 
-    // ── Skill slots (centered bottom) ────────────
+    // ── Skill slots (centered bottom) — retirée temporairement (retour prévu
+    // une fois qu'on aura décidé de l'organisation finale de la barre de sorts) ──
     // SLOT_SZ ≥ 52 so the touch hit zone meets the 44px accessibility minimum.
     const SLOT_SZ  = 52;
     const SLOT_GAP = 5;
@@ -132,11 +137,12 @@ export class UIScene extends Phaser.Scene {
     const SY       = H - SLOT_SZ - 7;
     const keys     = ['A', 'E', 'R', 'F'];
 
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; SHOW_SKILL_BAR && i < 4; i++) {
       const sx = SX_START + i * (SLOT_SZ + SLOT_GAP);
 
       const slotGfx = this.add.graphics();
-      drawPanel(slotGfx, sx, SY, SLOT_SZ, SLOT_SZ, UI.SLOT_BG);
+      // Slot arrondi moderne (arcane fresh) — même primitive que l'inventaire
+      drawSlot(slotGfx, sx, SY, SLOT_SZ, UI.SLOT_BORDER, { occupied: true, radius: 6 });
 
       const icon = this.add.image(sx + SLOT_SZ / 2, SY + SLOT_SZ / 2, 'skill_dash')
         .setDisplaySize(34, 34);
@@ -195,7 +201,8 @@ export class UIScene extends Phaser.Scene {
 
     const buildNavBtn = (bx: number, label: string, action: string) => {
       const gfx = this.add.graphics();
-      drawPanel(gfx, bx, NAV_Y, NAV_W, NAV_H, UI.BTN_BG);
+      // Bouton nav arrondi, liseré arcane discret (structure)
+      drawGlowPanel(gfx, bx, NAV_Y, NAV_W, NAV_H, UI.ACCENT_ARCANE, UI.BTN_BG, 6, 0.92);
       this.add.text(bx + NAV_W / 2, NAV_Y + NAV_H / 2, label, uiStyle(11, UI.TXT_GOLD, { bold: true }))
         .setOrigin(0.5).setDepth(6);
       const flash = this.add.rectangle(
@@ -227,9 +234,8 @@ export class UIScene extends Phaser.Scene {
     this.zoneText = this.add.text(W - 18, 15, '', uiStyle(12, UI.TXT_GOLD, { bold: true }))
       .setOrigin(1, 0).setAlpha(0).setDepth(5);
 
-    // ── Hint (bottom-right) ───────────────────────
-    this.add.text(W - 8, H - 20, t('ui.hint'), uiStyle(8, UI.TXT_HINT))
-      .setOrigin(1, 0);
+    // Hint HUD permanent retiré (demande utilisateur 2026-07-08) — les indices de
+    // touches sont maintenant contextuels uniquement (voir GameScene.interactHint).
 
     // ── Combo HUD (pips qui suivent le joueur) ────
     // Reset explicite : scene.restart() réutilise l'instance, les
@@ -541,11 +547,15 @@ export class UIScene extends Phaser.Scene {
       player.equippedSkills.slot1, player.equippedSkills.slot2,
       player.equippedSkills.slot3, player.equippedSkills.slot4,
     ];
-    for (let i = 0; i < 4; i++) {
-      const skillId = slots[i];
-      if (skillId) {
-        const skill = SKILL_MAP[skillId];
-        if (skill) try { this.skillSlots[i].setTexture(skill.icon); } catch {}
+    // SHOW_SKILL_BAR=false laisse skillSlots vide — guard explicite plutôt que
+    // compter sur le try/catch pour avaler silencieusement l'accès hors-limites.
+    if (SHOW_SKILL_BAR) {
+      for (let i = 0; i < 4; i++) {
+        const skillId = slots[i];
+        if (skillId) {
+          const skill = SKILL_MAP[skillId];
+          if (skill) try { this.skillSlots[i].setTexture(skill.icon); } catch {}
+        }
       }
     }
   }

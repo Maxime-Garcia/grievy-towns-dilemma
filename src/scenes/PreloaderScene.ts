@@ -121,6 +121,11 @@ export class PreloaderScene extends Phaser.Scene {
       this.load.image(key, `assets/sprites/items/${key}.png`);
     }
 
+    // ── Touches clavier réelles (Keyboard UI asset pack, thème sombre) ──
+    // Grille 32×32, 23 colonnes × 15 lignes — voir src/utils/KeyIcons.ts pour le
+    // mapping touche -> frame et ASSET_SOURCES.md pour la source.
+    this.load.spritesheet('keyboard_ui', 'assets/sprites/ui/keyboard_ui.png', { frameWidth: 32, frameHeight: 32 });
+
     // ── Tileset de sol Grievy Town — Fantasy Dreamland Reborn (voir ASSET_SOURCES.md) ──
     // Convention : tileset_<zoneId>_ground / _path, chargé par zone dans GameScene.drawZoneMap().
     this.load.image('tileset_grievy_town_ground', 'assets/sprites/tilesets/tileset_grievy_town_ground.png');

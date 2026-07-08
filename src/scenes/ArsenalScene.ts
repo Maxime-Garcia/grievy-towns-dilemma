@@ -10,7 +10,7 @@
 // ============================================================
 
 import { WorldState, ElementType, ItemType, ItemRarity, RARITY_COLORS, Item, Weapon, Armor } from '../types';
-import { UI, drawGlowPanel, drawCard, drawBadge, uiStyle, addCloseButton } from '../utils/UITheme';
+import { UI, drawGlowPanel, drawCard, drawBadge, uiStyle, addCloseButton, drawScrollbar } from '../utils/UITheme';
 import { ALL_ITEMS } from '../data/items';
 import { ArsenalSystem } from '../systems/ArsenalSystem';
 import { itemTextureKey } from '../utils/ItemAssets';
@@ -76,6 +76,7 @@ export class ArsenalScene extends Phaser.Scene {
 
   private listObjs:   Phaser.GameObjects.GameObject[] = [];
   private detailObjs: Phaser.GameObjects.GameObject[] = [];
+  private scrollbarGfx!: Phaser.GameObjects.Graphics;
 
   private keyUp:   Phaser.Input.Keyboard.Key | null = null;
   private keyDown: Phaser.Input.Keyboard.Key | null = null;
@@ -139,6 +140,8 @@ export class ArsenalScene extends Phaser.Scene {
 
     const listBg = this.add.graphics();
     drawGlowPanel(listBg, this.LIST_X, this.LIST_Y, this.LIST_W, this.LIST_H, UI.ACCENT_ARCANE, UI.BG_MID, 8, 0.55);
+
+    this.scrollbarGfx = this.add.graphics();
 
     this.add.text(W / 2, H - 16, t('arsenal.hint'), uiStyle(8, UI.TXT_HINT)).setOrigin(0.5);
 
@@ -252,6 +255,14 @@ export class ArsenalScene extends Phaser.Scene {
     if (this.lastVisibleIndex < this.rows.length - 1) {
       this.renderScrollArrow(this.LIST_Y + this.LIST_H - 11, '▼', () => this.scroll(1));
     }
+
+    this.scrollbarGfx.clear();
+    const visibleCount = this.lastVisibleIndex - this.scrollOffset + 1;
+    drawScrollbar(
+      this.scrollbarGfx,
+      this.LIST_X + this.LIST_W - 10, this.rowsTop, 4, this.rowsBottom - this.rowsTop,
+      this.scrollOffset, this.maxScrollOffset, visibleCount / Math.max(1, this.rows.length),
+    );
   }
 
   private renderScrollArrow(cy: number, glyph: string, onTap: () => void) {

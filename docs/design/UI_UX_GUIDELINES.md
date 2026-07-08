@@ -181,8 +181,10 @@ Règles :
 - Texte long → `{ wordWrapWidth: ... }`, jamais de débordement.
 - Chiffres/valeurs à droite : `.setOrigin(1, 0)` ; titres centrés : `.setOrigin(0.5, 0)`.
 - Chiffres de quantité sur les slots : 10 px bold + stroke.
-- `pxStyle()` reste dans le code pour les scènes non migrées (Pause, Shop, Bestiary, NameInput,
-  Intro, Ending) — **ne pas l'utiliser dans du nouveau code fonctionnel** (dette D11).
+- `pxStyle()` reste défini dans UITheme.ts mais n'est plus référencé que par le **titre du jeu
+  de MainMenuScene** (seul usage identitaire autorisé). Toutes les autres scènes sont migrées
+  vers `uiStyle` (passe « arcane fresh » 07/2026) — **ne jamais l'utiliser dans du nouveau code
+  fonctionnel** (dette D11 résorbée).
 
 ### 2.3 Espacements et dimensions standard
 
@@ -477,10 +479,14 @@ Layout 3 panneaux fixes : **paperdoll 180 px | stats/détail 220 px | grille** (
 - Bouton `×` 20 px bold + hit zone ≥ 44 haut-droite ; ESC ferme.
 - Sélection = re-render de branche (dette D4 : pas de micro-feedback).
 
-### 6.5 PauseScene *(non migrée typo — pxStyle encore présent, dette D11)*
-- Overlay 0.72 (plus léger : le jeu reste visible), panneau central 400 px de large.
-- **3 tabs** (Jeu / Touches / Réglages) 120×24, boutons de menu 260×34 (dette D6).
-- Toggles ON/OFF : fond teinté vert `0x081a08` / rouge `0x1a0808`, texte `TXT_GREEN`/`TXT_RED`.
+### 6.5 PauseScene *(migrée « arcane fresh » 07/2026 — drawGlowPanel + uiStyle)*
+- Overlay 0.72 (plus léger : le jeu reste visible), panneau central `drawGlowPanel` 400 px de large,
+  accent `ACCENT_ARCANE`, titre 15 px doré + `addCloseButton` haut-droite.
+- **3 tabs** (Jeu / Touches / Réglages) visuel 104×24 arrondi, tab actif = fond `BG_MID` + liseré et
+  bande basse `ACCENT_ARCANE` + label `TXT_CYAN` bold ; **hit zones 44 px de haut** (dette D6 résorbée).
+- Boutons de menu 260×34 arrondis (hit 44), hover = liseré arcane + label doré.
+- Toggles ON/OFF : pilule arrondie teintée vert `0x081a08` / rouge `0x1a0808`, texte `TXT_GREEN`/`TXT_RED`,
+  hit 44 px.
 - Rebind clavier : slot en attente = fond `0x1a2030` + liseré doré + `...` bleu, ESC annule.
 - Confirmation de sauvegarde : texte centré vert/rouge, fade-in 150 ms, hold 1600 ms, fade 300 ms.
 
@@ -529,12 +535,12 @@ Identiques sur **tous** les écrans, actuels et futurs :
 | D3 | Tooltip skill hover-only, inaccessible au tap | SkillScene (ancien tooltip) | ouverte |
 | D4 | Sélection de node = re-render complet, pas de micro-feedback | SkillScene | ouverte |
 | ~~D5~~ | ~~Textes 5 px sous le minimum~~ | InventoryScene | **Résorbée** — plus aucun texte < 9 px dans les scènes migrées |
-| D6 | Boutons < 44 px de haut (20–34 px) | PauseScene (menu, tabs, toggles) | ouverte (InventoryScene et MainMenu corrigés) |
+| ~~D6~~ | ~~Boutons < 44 px de haut (20–34 px)~~ | PauseScene | **Résorbée** — hit zones ≥ 44 px sur menu/tabs/toggles (visuels 24–34 px conservés) |
 | ~~D7~~ | ~~Choix de dialogue = hit zone du texte seul~~ | DialogueScene | **Résorbée** — hit ≥ 44 px |
 | D8 | Swipe horizontal non implémenté (nav panneaux) | InventoryScene, PauseScene | ouverte (fait dans SkillScene) |
 | ~~D9~~ | — | — | **Résorbée** (fade-in/out 300 ms unifiés) |
 | D10 | `RARITY_COLORS` (code) diverge du tableau INSPIRATIONS.md §4 (Hidden, Mythic) | `src/types/index.ts` | ouverte |
-| D11 | Scènes non migrées vers `uiStyle`/`FONT_UI` (encore en `pxStyle` pixel) | PauseScene, ShopScene, BestiaryScene, NameInputScene, IntroScene, EndingScene | **ouverte — prochaine passe prioritaire** |
+| ~~D11~~ | ~~Scènes non migrées vers `uiStyle`/`FONT_UI` (encore en `pxStyle` pixel)~~ | Pause, Shop, Bestiary, NameInput, Intro, Ending, UIScene, SkillScene | **Résorbée** — passe « arcane fresh » généralisée (07/2026) ; seul le titre du jeu (MainMenu, NameInput) reste en police pixel (identité) |
 | D12 | Pas de drag-and-drop grille → paperdoll (le tap-equip couvre le besoin, D&D = confort desktop) | InventoryScene | ouverte, basse priorité |
 | D13 | Pas d'onglets de filtrage du sac (Tous / Équipement / Conso / Ressources / Quête) | InventoryScene | ouverte |
 | D14 | Pas de comparaison item survolé vs équipé (flèches vertes/rouges — INSPIRATIONS.md §4) | InventoryScene détail | ouverte |

@@ -3,7 +3,7 @@ import { GameScene } from './GameScene';
 import { PlayerState, TalentNode, TalentEffectKey } from '../types';
 import { TALENT_MAP } from '../data/talents';
 import { TalentSystem } from '../systems/TalentSystem';
-import { UI, drawPanel, uiStyle } from '../utils/UITheme';
+import { UI, drawGlowPanel, uiStyle } from '../utils/UITheme';
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 const TAB_H    = 36;   // height of one tab row (px)
@@ -230,9 +230,9 @@ export class SkillScene extends Phaser.Scene {
     // Full-screen dark overlay (0.88 standard — le jeu reste visible derrière)
     this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88);
 
-    // Outer frame (fond translucide 0.85)
+    // Outer frame (fond translucide 0.85) — panneau arrondi arcane fresh
     const frame = this.add.graphics();
-    drawPanel(frame, 4, 4, W - 8, H - 8, UI.PANEL_BG, 0.85);
+    drawGlowPanel(frame, 4, 4, W - 8, H - 8, UI.ACCENT_ARCANE, UI.BG_DEEP, 10, 0.85);
 
     this.buildTabs(W);
     this.buildBranchHeader(W);
@@ -715,9 +715,9 @@ export class SkillScene extends Phaser.Scene {
     const sw = W - 8;
     const sh = BOTTOM_H;
 
-    // Panel
+    // Panel — bottom sheet arrondi, liseré à la couleur de branche
     const bg = this.add.graphics().setDepth(20);
-    drawPanel(bg, sx, sy, sw, sh, 0x080812);
+    drawGlowPanel(bg, sx, sy, sw, sh, branchColor, 0x080812, 8, 0.97);
     // Coloured top accent
     bg.lineStyle(2, branchColor, 0.55);
     bg.lineBetween(sx + 10, sy + 1, sx + sw - 10, sy + 1);

@@ -134,12 +134,15 @@ export class LootSystem {
     itemId: string,
     quantity: number
   ): boolean {
-    const slot = player.inventory.find(s => s.item.id === itemId);
-    if (!slot || slot.quantity < quantity) return false;
+    const idx = player.inventory.findIndex(s => s.item.id === itemId);
+    if (idx === -1 || player.inventory[idx].quantity < quantity) return false;
 
-    slot.quantity -= quantity;
-    if (slot.quantity <= 0) {
-      player.inventory = player.inventory.filter(s => s.item.id !== itemId);
+    player.inventory[idx].quantity -= quantity;
+    // splice CE slot précis — un filter par itemId supprimerait AUSSI les autres
+    // stacks du même id (ex: deux armes non-stackables identiques, chacune sa
+    // propre entrée qty:1 — équiper la première effacerait la seconde en silence).
+    if (player.inventory[idx].quantity <= 0) {
+      player.inventory.splice(idx, 1);
     }
     return true;
   }

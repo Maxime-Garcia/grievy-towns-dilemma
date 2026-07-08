@@ -244,6 +244,16 @@ Lots restants à traiter en sessions ultérieures, même méthodologie :
 Plastrons (`CHEST`), Jambières (`LEGS`), Bottes (`BOOTS`), Gants (`GLOVES`),
 Capes (`CAPE`), Anneaux (`RING`), Amulettes (`AMULET`).
 
-## `skills/`, `ui/`, `vfx/`, `props/`, `skins/`
+## `ui/` — Touches clavier (Keyboard UI asset pack)
+
+`keyboard_ui.png` (copie brute de `Keyboard_UI.png`, thème sombre + thème rose non
+utilisé) chargée comme spritesheet 32×32 (23 colonnes × 15 lignes). Mapping
+touche → frame index dans `src/utils/KeyIcons.ts` (lettres, chiffres, flèches
+uniquement — pas de frame dédiée pour SPACE/ESC/ENTER/TAB/SHIFT/CTRL/ALT/
+BACKSPACE, qui gardent un fallback texte `[NOM]`). Utilisé pour l'indice
+d'interaction contextuel de `GameScene` (PNJ/objet à portée) — reflète la
+touche réellement liée (rebindable via le menu pause), jamais un `[F]` figé.
+
+## `skills/`, `vfx/`, `props/`, `skins/`
 
 *(rien intégré pour l'instant)*

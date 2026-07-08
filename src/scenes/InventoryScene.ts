@@ -4,7 +4,8 @@ import {
   StatBonus, RARITY_COLORS, EquipStats, ElementType,
 } from '../types';
 import { InventorySystem } from '../systems/InventorySystem';
-import { StatsSystem } from '../systems/StatsSystem';
+import { StatsSystem, BASE_CRIT_PCT, CRIT_PER_AGI_PCT, BASE_CRIT_MULT } from '../systems/StatsSystem';
+import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { ALL_ITEMS } from '../data/items';
 import {
   UI, drawGlowPanel, drawCard, drawSlot,
@@ -354,41 +355,46 @@ export class InventoryScene extends Phaser.Scene {
     // Les dérivées critDmg / aspd / elemBonus / lifesteal influencent réellement
     // CombatSystem + GameScene et sont désormais affichées (refonte 07/2026).
     const cs = StatsSystem.computeAll(this.player);
+    // Baseline "sans aucun équipement" (mêmes formules que StatsSystem.computeAll,
+    // juste sans la contribution du gear) — sert uniquement à savoir quelles
+    // stats afficher en gras/doré parce qu'un équipement les booste réellement.
+    const base = ProgressionSystem.computeBaseStats(this.player.level, this.player.attributes);
+    const baseCrit    = BASE_CRIT_PCT + this.player.attributes.agi * CRIT_PER_AGI_PCT;
+    const baseCritDmg = BASE_CRIT_MULT;
+    const baseAspd    = 1;
     const hexOf = (c: string) => parseInt(c.replace('#', ''), 16);
 
-    type Row = { label: string; value: string; color?: string };
+    type Row = { label: string; value: string; boosted: boolean };
     interface Section { title: string; titleColor: string; accent: number; rows: Row[] }
     const sections: Section[] = [
       {
         title: t('stats.section_offense'),
         titleColor: UI.TXT_ORANGE, accent: hexOf(UI.TXT_ORANGE),
         rows: [
-          { label: t('stats.atk'),        value: String(cs.atk) },
-          { label: t('stats.matk'),       value: String(cs.matk) },
-          { label: t('stats.crit_rate'),  value: `${cs.crit.toFixed(1)}%` },
-          { label: t('stats.crit_dmg'),   value: `×${cs.critDmg.toFixed(2)}` },
-          { label: t('stats.aspd'),       value: `×${cs.aspd.toFixed(2)}` },
-          { label: t('stats.elem_bonus'), value: `+${cs.elemBonus.toFixed(0)}%`,
-            color: cs.elemBonus > 0 ? UI.TXT_GOLD : UI.TXT_MUTED },
+          { label: t('stats.atk'),        value: String(cs.atk),                     boosted: cs.atk > base.atk },
+          { label: t('stats.matk'),       value: String(cs.matk),                    boosted: cs.matk > base.magicAtk },
+          { label: t('stats.crit_rate'),  value: `${cs.crit.toFixed(1)}%`,           boosted: cs.crit > baseCrit },
+          { label: t('stats.crit_dmg'),   value: `×${cs.critDmg.toFixed(2)}`,        boosted: cs.critDmg > baseCritDmg },
+          { label: t('stats.aspd'),       value: `×${cs.aspd.toFixed(2)}`,           boosted: cs.aspd > baseAspd },
+          { label: t('stats.elem_bonus'), value: `+${cs.elemBonus.toFixed(0)}%`,     boosted: cs.elemBonus > 0 },
         ],
       },
       {
         title: t('stats.section_defense'),
         titleColor: UI.TXT_BLUE, accent: hexOf(UI.TXT_BLUE),
         rows: [
-          { label: t('stats.def'),    value: String(cs.def) },
-          { label: t('stats.mdef'),   value: String(cs.magicDef) },
-          { label: t('stats.hp_max'), value: String(cs.hp) },
-          { label: t('stats.mp_max'), value: String(cs.mana) },
+          { label: t('stats.def'),    value: String(cs.def),    boosted: cs.def > base.def },
+          { label: t('stats.mdef'),   value: String(cs.magicDef), boosted: cs.magicDef > base.magicDef },
+          { label: t('stats.hp_max'), value: String(cs.hp),     boosted: cs.hp > base.maxHp },
+          { label: t('stats.mp_max'), value: String(cs.mana),   boosted: cs.mana > base.maxMana },
         ],
       },
       {
         title: t('stats.section_utility'),
         titleColor: UI.TXT_CYAN, accent: UI.ACCENT_ARCANE,
         rows: [
-          { label: t('stats.speed'),     value: String(cs.spd) },
-          { label: t('stats.lifesteal'), value: `${cs.lifesteal.toFixed(0)}%`,
-            color: cs.lifesteal > 0 ? UI.TXT_GOLD : UI.TXT_MUTED },
+          { label: t('stats.speed'),     value: String(cs.spd), boosted: cs.spd > base.spd },
+          { label: t('stats.lifesteal'), value: `${cs.lifesteal.toFixed(0)}%`, boosted: cs.lifesteal > 0 },
         ],
       },
     ];
@@ -419,9 +425,11 @@ export class InventoryScene extends Phaser.Scene {
           zebra.fillRoundedRect(PX + 8, y - 3, PW - 16, ROW_H - 2, 3);
           this.dynamicObjs.push(zebra);
         }
+        // Une stat réellement boostée par l'équipement (vs. la baseline sans
+        // gear) ressort en gras doré — sinon poids normal, couleur parchemin.
         this.dynamicObjs.push(
           this.add.text(COL1, y, row.label, uiStyle(10, UI.TXT_MUTED)),
-          this.add.text(COL2, y, row.value, uiStyle(11, row.color ?? UI.TXT_PARCHMENT, { bold: true }))
+          this.add.text(COL2, y, row.value, uiStyle(11, row.boosted ? UI.TXT_GOLD : UI.TXT_PARCHMENT, { bold: row.boosted }))
             .setOrigin(1, 0),
         );
         y += ROW_H;

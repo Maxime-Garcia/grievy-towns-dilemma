@@ -2,7 +2,8 @@ import { GameScene } from './GameScene';
 import { ALL_ITEMS } from '../data/items';
 import { LootSystem } from '../systems/LootSystem';
 import { SHOP_INVENTORY, ShopEntry } from '../data/shops';
-import { UI, drawPanel, pxStyle } from '../utils/UITheme';
+import { RARITY_COLORS } from '../types';
+import { UI, drawGlowPanel, drawCard, drawDivider, uiStyle, addCloseButton } from '../utils/UITheme';
 import { t } from '../i18n';
 
 export class ShopScene extends Phaser.Scene {
@@ -30,34 +31,34 @@ export class ShopScene extends Phaser.Scene {
     // ── Dark overlay + main panel (translucide : le jeu reste visible) ──
     this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88).setDepth(0);
     const frame = this.add.graphics().setDepth(0);
-    drawPanel(frame, 20, 20, W - 40, H - 40, UI.PANEL_BG, 0.85);
+    drawGlowPanel(frame, 20, 20, W - 40, H - 40, UI.ACCENT_ARCANE, UI.BG_DEEP, 10, 0.92);
 
-    // ── Title ────────────────────────────────────────────────────
+    // ── Title (or = identité) ────────────────────────────────────
     const npcName = this.npcId.charAt(0).toUpperCase() + this.npcId.slice(1);
-    this.add.text(W / 2, 36, t('shop.title').replace('{name}', npcName), {
-      ...pxStyle(13, UI.TXT_GOLD, true),
-      stroke: '#000000',
-      strokeThickness: 4,
-    }).setOrigin(0.5).setDepth(1);
+    this.add.text(W / 2, 36, t('shop.title').replace('{name}', npcName),
+      uiStyle(15, UI.TXT_GOLD, { bold: true, stroke: true }),
+    ).setOrigin(0.5).setDepth(1);
 
-    // ── Gold display ─────────────────────────────────────────────
+    // ── Close button × (règle inter-écrans §7.1) ─────────────────
+    addCloseButton(this, W - 44, 38, () => this.closeShop());
+
+    // ── Gold display (pilule arrondie — or = valeur) ─────────────
     const gldGfx = this.add.graphics().setDepth(1);
-    drawPanel(gldGfx, W - 162, 24, 136, 22, UI.SLOT_BG);
-    this.goldText = this.add.text(W - 94, 35,
+    drawCard(gldGfx, W - 200, 26, 130, 24, { bg: UI.BG_MID, radius: 12, shadow: false });
+    this.goldText = this.add.text(W - 135, 38,
       t('shop.gold').replace('{gold}', String(this.gameScene.gameState.player.gold)),
-      pxStyle(8, UI.TXT_GOLD),
+      uiStyle(11, UI.TXT_GOLD, { bold: true }),
     ).setOrigin(0.5).setDepth(2);
 
-    // ── Column headers ───────────────────────────────────────────
-    const headerY = 62;
-    this.add.text(46,      headerY, t('shop.col.item'),  pxStyle(7, UI.TXT_MUTED)).setDepth(1);
-    this.add.text(W - 158, headerY, t('shop.col.price'), pxStyle(7, UI.TXT_MUTED)).setOrigin(0, 0).setDepth(1);
-    this.add.text(W - 58,  headerY, t('shop.col.stock'), pxStyle(7, UI.TXT_MUTED)).setOrigin(0, 0).setDepth(1);
+    // ── Column headers (cyan = structure) ────────────────────────
+    const headerY = 60;
+    this.add.text(46,      headerY, t('shop.col.item'),  uiStyle(9, UI.TXT_CYAN, { bold: true })).setDepth(1);
+    this.add.text(W - 158, headerY, t('shop.col.price'), uiStyle(9, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0).setDepth(1);
+    this.add.text(W - 58,  headerY, t('shop.col.stock'), uiStyle(9, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0).setDepth(1);
 
     // Separator line
     const sep = this.add.graphics().setDepth(1);
-    sep.lineStyle(1, UI.BORDER_LIT, 0.4);
-    sep.beginPath(); sep.moveTo(30, 74); sep.lineTo(W - 30, 74); sep.strokePath();
+    drawDivider(sep, 30, 76, W - 60, UI.ACCENT_ARCANE, 0.35);
 
     // ── Item rows ────────────────────────────────────────────────
     const entries: ShopEntry[] = SHOP_INVENTORY[this.npcId] ?? [];
@@ -73,26 +74,34 @@ export class ShopScene extends Phaser.Scene {
       if (!item) return;
       const rowY   = startY + i * rowH;
       const canBuy = this.gameScene.gameState.player.gold >= entry.price;
+      const rarColor = RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT;
+      const rarHex   = parseInt(rarColor.replace('#', ''), 16);
 
       const bg = this.add.rectangle(W / 2, rowY + rowH / 2, W - 60, rowH - 4,
         canBuy ? UI.BTN_BG : UI.PANEL_BG,
       ).setDepth(1).setInteractive({ useHandCursor: true });
       this.rowBgs.push(bg);
 
-      const nameText = this.add.text(46, rowY + 8, item.name, pxStyle(11, canBuy ? UI.TXT_PARCHMENT : UI.TXT_MUTED))
+      // Liseré arrondi à la couleur de rareté (règle §7.5 : la rareté colore tout)
+      const deco = this.add.graphics().setDepth(1);
+      deco.lineStyle(1, rarHex, 0.5);
+      deco.strokeRoundedRect(32, rowY + 2, W - 64, rowH - 8, 4);
+
+      const nameText = this.add.text(46, rowY + 6, item.name,
+        uiStyle(11, canBuy ? rarColor : UI.TXT_MUTED, { bold: true }))
         .setDepth(2);
       this.rowNames.push(nameText);
 
-      this.add.text(46, rowY + 26, item.description.slice(0, 55), pxStyle(7, UI.TXT_HINT))
+      this.add.text(46, rowY + 23, item.description.slice(0, 55), uiStyle(9, UI.TXT_MUTED, { italic: true }))
         .setDepth(2);
 
       const priceText = this.add.text(W - 153, rowY + rowH / 2, `${entry.price} G`,
-        pxStyle(11, canBuy ? UI.TXT_GOLD : UI.TXT_HINT),
+        uiStyle(11, canBuy ? UI.TXT_GOLD : UI.TXT_HINT, { bold: true }),
       ).setOrigin(0, 0.5).setDepth(2);
       this.rowPrices.push(priceText);
 
       const stockLabel = entry.stock !== undefined ? `${entry.stock}` : '∞';
-      this.add.text(W - 53, rowY + rowH / 2, stockLabel, pxStyle(11, UI.TXT_MUTED))
+      this.add.text(W - 53, rowY + rowH / 2, stockLabel, uiStyle(11, UI.TXT_MUTED))
         .setOrigin(0, 0.5).setDepth(2);
 
       bg.on('pointerover', () => {
@@ -101,15 +110,19 @@ export class ShopScene extends Phaser.Scene {
       bg.on('pointerout', () => {
         bg.setFillStyle(this.gameScene.gameState.player.gold >= entry.price ? UI.BTN_BG : UI.PANEL_BG);
       });
-      bg.on('pointerdown', () => this.buyItem(entry));
+      bg.on('pointerdown', () => {
+        // Feedback tap < 100 ms (flash blanc bref sur la ligne)
+        const flash = this.add.rectangle(W / 2, rowY + rowH / 2, W - 60, rowH - 4, 0xffffff, 0.2).setDepth(3);
+        this.tweens.add({ targets: flash, alpha: 0, duration: 150, onComplete: () => flash.destroy() });
+        this.buyItem(entry);
+      });
     });
 
     // ── Bottom bar ───────────────────────────────────────────────
     const sepBot = this.add.graphics().setDepth(1);
-    sepBot.lineStyle(1, UI.BORDER_LIT, 0.4);
-    sepBot.beginPath(); sepBot.moveTo(30, H - 42); sepBot.lineTo(W - 30, H - 42); sepBot.strokePath();
+    drawDivider(sepBot, 30, H - 42, W - 60, UI.ACCENT_ARCANE, 0.25);
 
-    this.add.text(W / 2, H - 28, t('shop.close_hint'), pxStyle(8, UI.TXT_HINT))
+    this.add.text(W / 2, H - 28, t('shop.close_hint'), uiStyle(9, UI.TXT_HINT))
       .setOrigin(0.5).setDepth(1);
 
     this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC).once('down', () => this.closeShop());
@@ -138,10 +151,12 @@ export class ShopScene extends Phaser.Scene {
       const name  = this.rowNames[i];
       const price = this.rowPrices[i];
       if (!bg || !name || !price) return;
+      const rowItem   = ALL_ITEMS[e.itemId];
+      const rarColor  = rowItem ? (RARITY_COLORS[rowItem.rarity] ?? UI.TXT_PARCHMENT) : UI.TXT_PARCHMENT;
       const canAfford = player.gold >= e.price;
       bg.setFillStyle(canAfford ? UI.BTN_BG : UI.PANEL_BG);
       if (bg.input) bg.input.cursor = canAfford ? 'pointer' : 'default';
-      name.setStyle({ color: canAfford ? UI.TXT_PARCHMENT : UI.TXT_MUTED });
+      name.setStyle({ color: canAfford ? rarColor : UI.TXT_MUTED });
       price.setStyle({ color: canAfford ? UI.TXT_GOLD : UI.TXT_HINT });
     });
 

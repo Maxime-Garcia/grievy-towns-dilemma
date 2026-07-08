@@ -1,5 +1,5 @@
 import { GameState } from '../types';
-import { UI, drawPanel, pxStyle } from '../utils/UITheme';
+import { UI, drawGlowPanel, drawDivider, uiStyle } from '../utils/UITheme';
 import { t } from '../i18n';
 
 export class IntroScene extends Phaser.Scene {
@@ -37,7 +37,7 @@ export class IntroScene extends Phaser.Scene {
 
     this.panel = this.add.graphics().setDepth(1);
 
-    this.hintText = this.add.text(W - 24, H - 16, t('intro.hint_continue'), pxStyle(8, UI.TXT_HINT))
+    this.hintText = this.add.text(W - 24, H - 16, t('intro.hint_continue'), uiStyle(9, UI.TXT_HINT))
       .setOrigin(1, 1).setDepth(3);
 
     this.advanceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
@@ -67,25 +67,20 @@ export class IntroScene extends Phaser.Scene {
     const boxH   = boxPad * 2 + page.length * lineH;
     const boxY   = H / 2 - boxH / 2;
 
-    drawPanel(this.panel, 60, boxY, W - 120, boxH);
+    // Panneau arrondi arcane fresh (structure cyan discrète sur fond noir)
+    drawGlowPanel(this.panel, 60, boxY, W - 120, boxH, UI.ACCENT_ARCANE, UI.PANEL_BG, 10, 1);
 
-    // Decorative separator inside panel
-    this.panel.lineStyle(1, UI.BORDER_LIT, 0.4);
-    this.panel.beginPath();
-    this.panel.moveTo(72, boxY + boxPad - 8);
-    this.panel.lineTo(W - 72, boxY + boxPad - 8);
-    this.panel.strokePath();
-    this.panel.beginPath();
-    this.panel.moveTo(72, boxY + boxH - boxPad + 4);
-    this.panel.lineTo(W - 72, boxY + boxH - boxPad + 4);
-    this.panel.strokePath();
+    // Decorative separators inside panel
+    drawDivider(this.panel, 72, boxY + boxPad - 8,        W - 144, UI.ACCENT_ARCANE, 0.25);
+    drawDivider(this.panel, 72, boxY + boxH - boxPad + 4, W - 144, UI.ACCENT_ARCANE, 0.25);
 
     page.forEach((line, i) => {
-      const txt = this.add.text(W / 2, boxY + boxPad + i * lineH, line, {
-        ...pxStyle(10, line.startsWith('—') ? UI.TXT_GOLD : UI.TXT_PARCHMENT),
-        align: 'center',
-        wordWrap: { width: W - 180 },
-      }).setOrigin(0.5, 0).setDepth(2);
+      const isName = line.startsWith('—');   // « — {name} — » = identité → or gras
+      const txt = this.add.text(W / 2, boxY + boxPad + i * lineH, line,
+        uiStyle(12, isName ? UI.TXT_GOLD : UI.TXT_PARCHMENT, {
+          bold: isName, align: 'center', wordWrapWidth: W - 180,
+        }),
+      ).setOrigin(0.5, 0).setDepth(2);
       this.textObjs.push(txt);
     });
 

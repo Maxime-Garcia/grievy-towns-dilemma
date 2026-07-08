@@ -1,6 +1,6 @@
 import { GameState, EndingChoice } from '../types';
 import { SaveSystem } from '../systems/SaveSystem';
-import { UI, drawPanel, pxStyle } from '../utils/UITheme';
+import { UI, uiStyle } from '../utils/UITheme';
 import { t } from '../i18n';
 
 const RESTORE_TEXT = [
@@ -100,10 +100,10 @@ export class EndingScene extends Phaser.Scene {
     const W = this.cameras.main.width;
 
     const isEmpty = this.lines[this.lineIndex] === '';
-    const txt = this.add.text(W / 2, 60 + this.lineIndex * 22, this.lines[this.lineIndex], {
-      ...pxStyle(isEmpty ? 4 : 9, UI.TXT_PARCHMENT),
-      align: 'center',
-    }).setOrigin(0.5, 0).setAlpha(0);
+    const txt = this.add.text(W / 2, 60 + this.lineIndex * 22,
+      this.lines[this.lineIndex],
+      uiStyle(isEmpty ? 5 : 12, UI.TXT_PARCHMENT, { align: 'center' }),
+    ).setOrigin(0.5, 0).setAlpha(0);
 
     this.tweens.add({ targets: txt, alpha: 1, duration: 600 });
     this.displayedLines.push(txt);
@@ -121,9 +121,9 @@ export class EndingScene extends Phaser.Scene {
       ? t('ending.thanks')
       : t('ending.ng_plus_unlocked');
 
-    this.add.text(W / 2, H - 92, subtext, pxStyle(9, UI.TXT_MUTED)).setOrigin(0.5);
+    this.add.text(W / 2, H - 92, subtext, uiStyle(11, UI.TXT_MUTED)).setOrigin(0.5);
 
-    // ── New Game+ button ──────────────────────────
+    // ── New Game+ button (arrondi, hit zone 44 px) ─
     if (this.choice === EndingChoice.ERASE) {
       const BW = 220;
       const BH = 36;
@@ -131,20 +131,20 @@ export class EndingScene extends Phaser.Scene {
       const nbg = this.add.graphics();
       const ndraw = (hover: boolean) => {
         nbg.clear();
-        drawPanel(nbg, W / 2 - BW / 2, BY - BH / 2, BW, BH, hover ? UI.BTN_BG_HOVER : UI.BTN_BG);
-        if (hover) {
-          nbg.lineStyle(1, UI.CORNER, 1);
-          nbg.strokeRect(W / 2 - BW / 2 + 1, BY - BH / 2 + 1, BW - 2, BH - 2);
-        }
+        nbg.fillStyle(hover ? UI.BTN_BG_HOVER : UI.BTN_BG, 1);
+        nbg.fillRoundedRect(W / 2 - BW / 2, BY - BH / 2, BW, BH, 6);
+        nbg.lineStyle(1, hover ? UI.ACCENT_ARCANE : UI.SEPARATOR, hover ? 0.9 : 1);
+        nbg.strokeRoundedRect(W / 2 - BW / 2, BY - BH / 2, BW, BH, 6);
       };
       ndraw(false);
 
-      const ngTxt = this.add.text(W / 2, BY, t('ending.begin_again'), pxStyle(10, UI.TXT_PARCHMENT))
+      const ngTxt = this.add.text(W / 2, BY, t('ending.begin_again'), uiStyle(13, UI.TXT_PARCHMENT, { bold: true }))
         .setOrigin(0.5);
-      const nhit = this.add.rectangle(W / 2, BY, BW, BH, 0, 0).setInteractive({ useHandCursor: true });
+      const nhit = this.add.rectangle(W / 2, BY, BW + 6, 44, 0, 0).setInteractive({ useHandCursor: true });
       nhit.on('pointerover', () => { ndraw(true);  ngTxt.setStyle({ color: UI.TXT_GOLD }); });
       nhit.on('pointerout',  () => { ndraw(false); ngTxt.setStyle({ color: UI.TXT_PARCHMENT }); });
       nhit.on('pointerdown', () => {
+        this.tweens.add({ targets: ngTxt, scaleX: 0.96, scaleY: 0.96, duration: 50, yoyo: true });
         const ngState = SaveSystem.createNewGamePlus(this.gameState, EndingChoice.ERASE);
         this.cameras.main.fadeOut(800);
         this.time.delayedCall(900, () => {
@@ -160,12 +160,16 @@ export class EndingScene extends Phaser.Scene {
     const mbg = this.add.graphics();
     const mdraw = (hover: boolean) => {
       mbg.clear();
-      drawPanel(mbg, W / 2 - MW / 2, MY - MH / 2, MW, MH, hover ? UI.BTN_BG_HOVER : UI.BTN_BG);
+      mbg.fillStyle(hover ? UI.BTN_BG_HOVER : UI.BTN_BG, 1);
+      mbg.fillRoundedRect(W / 2 - MW / 2, MY - MH / 2, MW, MH, 5);
+      mbg.lineStyle(1, hover ? UI.ACCENT_ARCANE : UI.SEPARATOR, hover ? 0.9 : 1);
+      mbg.strokeRoundedRect(W / 2 - MW / 2, MY - MH / 2, MW, MH, 5);
     };
     mdraw(false);
 
-    const mTxt = this.add.text(W / 2, MY, t('ending.return_menu'), pxStyle(8, UI.TXT_MUTED)).setOrigin(0.5);
-    const mhit = this.add.rectangle(W / 2, MY, MW, MH, 0, 0).setInteractive({ useHandCursor: true });
+    const mTxt = this.add.text(W / 2, MY, t('ending.return_menu'), uiStyle(10, UI.TXT_MUTED)).setOrigin(0.5);
+    // Hit zone plafonnée par le bord bas de l'écran (36 px, centrée à H-22)
+    const mhit = this.add.rectangle(W / 2, MY, MW + 6, 36, 0, 0).setInteractive({ useHandCursor: true });
     mhit.on('pointerover', () => { mdraw(true);  mTxt.setStyle({ color: UI.TXT_PARCHMENT }); });
     mhit.on('pointerout',  () => { mdraw(false); mTxt.setStyle({ color: UI.TXT_MUTED }); });
     mhit.on('pointerdown', () => {
@@ -174,8 +178,8 @@ export class EndingScene extends Phaser.Scene {
     });
 
     // ── Credits ───────────────────────────────────
-    this.add.text(W / 2, H / 2 + 60, "Grievy Town's Dilemma", pxStyle(14, UI.TXT_MUTED)).setOrigin(0.5);
-    this.add.text(W / 2, H / 2 + 82, 'Original story, design & code', pxStyle(8, UI.TXT_HINT)).setOrigin(0.5);
-    this.add.text(W / 2, H / 2 + 102, 'Music by [your friend]', pxStyle(8, UI.TXT_HINT)).setOrigin(0.5);
+    this.add.text(W / 2, H / 2 + 60, "Grievy Town's Dilemma", uiStyle(15, UI.TXT_MUTED, { bold: true })).setOrigin(0.5);
+    this.add.text(W / 2, H / 2 + 82, 'Original story, design & code', uiStyle(9, UI.TXT_HINT)).setOrigin(0.5);
+    this.add.text(W / 2, H / 2 + 102, 'Music by [your friend]', uiStyle(9, UI.TXT_HINT)).setOrigin(0.5);
   }
 }

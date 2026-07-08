@@ -20,6 +20,8 @@ import { NPC_MAP } from '../data/npcs';
 import { getZoneLayout, ZoneLayout, LootableObject, WaterArea } from '../data/zoneMaps';
 import { ALL_ITEMS } from '../data/items';
 import { loadBindings, KeyBindings } from '../data/keyBindings';
+import { keyIconFrame, keyCodeLabel } from '../utils/KeyIcons';
+import { uiStyle } from '../utils/UITheme';
 import { t, localizeItem } from '../i18n';
 import { BestiarySystem } from '../systems/BestiarySystem';
 import { getBestiaryEntry } from '../data/bestiary';
@@ -184,6 +186,7 @@ export class GameScene extends Phaser.Scene {
   private altAttackCooldownUntil = 0;
   private dashKey!: Phaser.Input.Keyboard.Key;
   private interactKey!: Phaser.Input.Keyboard.Key;
+  private interactKeyCode = 0;
   private inventoryKey!: Phaser.Input.Keyboard.Key;
   private skillMenuKey!: Phaser.Input.Keyboard.Key;
   private escKey!: Phaser.Input.Keyboard.Key;
@@ -269,6 +272,7 @@ export class GameScene extends Phaser.Scene {
   private nearbyNPC: string | null = null;
   private nearbyLootable: string | null = null;
   private interactHint!: Phaser.GameObjects.Text;
+  private interactHintIcon!: Phaser.GameObjects.Image;
 
   constructor() { super({ key: 'GameScene' }); }
 
@@ -343,11 +347,14 @@ export class GameScene extends Phaser.Scene {
     this.createProjectileGroup();
     this.weaponProjectiles = this.physics.add.group();
 
-    this.interactHint = this.add.text(0, 0, t('hint.talk'), {
-      fontSize: '11px', color: '#ffee88',
-      fontFamily: 'monospace',
-      stroke: '#000000', strokeThickness: 3,
-    }).setOrigin(0.5, 1).setDepth(20).setVisible(false);
+    // Indice d'interaction contextuel — icône de la touche réellement liée (rebindable,
+    // cf. KeyIcons.ts) + libellé, positionné au-dessus du joueur uniquement quand un
+    // PNJ/objet est à portée (voir update()). Fallback texte `[NOM]` si la touche
+    // n'a pas de frame dédiée dans le spritesheet.
+    this.interactHint = this.add.text(0, 0, '', uiStyle(11, '#ffee88', { bold: true, stroke: true }))
+      .setOrigin(0, 0.5).setDepth(20).setVisible(false);
+    this.interactHintIcon = this.add.image(0, 0, 'keyboard_ui', 0)
+      .setOrigin(0.5).setDepth(20).setVisible(false).setDisplaySize(22, 22);
 
     // UIScene reste vivante entre les transitions — ne la lancer qu'une seule fois
     if (!this.scene.isActive('UIScene') && !this.scene.isPaused('UIScene')) {
@@ -413,14 +420,31 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Interaction hint
+    // Interaction hint — icône de touche réelle (rebindable) + libellé, affiché
+    // uniquement à proximité d'un PNJ/objet (jamais dans le HUD permanent).
     const showHint = !!this.nearbyNPC || !!this.nearbyLootable;
-    this.interactHint.setVisible(showHint);
     if (showHint) {
-      const hintText = this.nearbyNPC ? t('hint.talk') : t('hint.loot');
-      if (this.interactHint.text !== hintText) this.interactHint.setText(hintText);
-      this.interactHint.setPosition(Math.round(this.player.x), Math.round(this.player.y) - 28);
+      const actionLabel = this.nearbyNPC ? t('hint.talk_action') : t('hint.loot_action');
+      const frame = keyIconFrame(this.interactKeyCode);
+      const label = frame !== undefined ? actionLabel : `[${keyCodeLabel(this.interactKeyCode)}] ${actionLabel}`;
+      if (this.interactHint.text !== label) this.interactHint.setText(label);
+
+      const ICON_SZ = 22, GAP = 5;
+      const hasIcon = frame !== undefined;
+      const totalW = (hasIcon ? ICON_SZ + GAP : 0) + this.interactHint.width;
+      const px = Math.round(this.player.x);
+      const py = Math.round(this.player.y) - 28;
+      const leftX = px - totalW / 2;
+
+      this.interactHintIcon.setVisible(hasIcon);
+      if (hasIcon) {
+        this.interactHintIcon.setFrame(frame);
+        this.interactHintIcon.setPosition(leftX + ICON_SZ / 2, py);
+      }
+      this.interactHint.setPosition(leftX + (hasIcon ? ICON_SZ + GAP : 0), py);
     }
+    this.interactHint.setVisible(showHint);
+    if (!showHint) this.interactHintIcon.setVisible(false);
 
     SkillSystem.tickCooldowns(this.cooldowns, dt);
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
@@ -996,6 +1020,7 @@ export class GameScene extends Phaser.Scene {
     // N'utilise PAS window.addEventListener : nearbyLootable est reset en fin d'update,
     // un handler DOM asynchrone le verrait toujours null.
     this.interactKey = kb.addKey(b.interact);
+    this.interactKeyCode = b.interact;
     this.dashKey   = kb.addKey(b.dash);
     this.skillKeys = {
       a: kb.addKey(b.skill1),
