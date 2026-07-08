@@ -807,9 +807,9 @@ export const RARITY_COLORS: Record<ItemRarity, string> = {
   [ItemRarity.UNCOMMON]: '#4fc04f',
   [ItemRarity.RARE]: '#4f9fff',
   [ItemRarity.EPIC]: '#a04fff',
-  [ItemRarity.LEGENDARY]: '#ffa04f',
-  [ItemRarity.MYTHIC]: '#ff4f4f',
-  [ItemRarity.HIDDEN]: '#ffd700',
+  [ItemRarity.LEGENDARY]: '#ffd700',
+  [ItemRarity.MYTHIC]: '#ff4fc0',
+  [ItemRarity.HIDDEN]: '#ff4f4f',
 };
 
 export const RARITY_DROP_RATES: Record<ItemRarity, number> = {

@@ -155,8 +155,11 @@ export const EN: Record<string, string> = {
   'inventory.slot.ring2': 'Ring 2',
   'inventory.slot.amulet': 'Amulet',
   'inventory.use_item':    'Use',
+  'inventory.equip_item':  'Equip',
   'inventory.cancel':      'Cancel',
   'inventory.confirm_use': 'Use this item?',
+  'inventory.effect_revive': 'Revive HP 50%',
+  'inventory.effect_cure':   'Cures status effects',
 
   // ── NOTIFICATIONS ────────────────────────────────────────────
   'notif.saved': 'Game saved.',

@@ -156,8 +156,11 @@ export const FR: Record<string, string> = {
   'inventory.slot.ring2': 'Bague 2',
   'inventory.slot.amulet': 'Amulette',
   'inventory.use_item':    'Utiliser',
+  'inventory.equip_item':  'Équiper',
   'inventory.cancel':      'Annuler',
   'inventory.confirm_use': 'Utiliser cet objet ?',
+  'inventory.effect_revive': 'Résurrection HP 50%',
+  'inventory.effect_cure':   'Soigne les statuts',
 
   // ── NOTIFICATIONS ────────────────────────────────────────────
   'notif.saved': 'Partie sauvegardée.',

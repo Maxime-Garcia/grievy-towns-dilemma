@@ -29,6 +29,21 @@ function hoverColorFor(item: Item): number {
   return (item.element && ELEMENT_COLORS[item.element]) ?? 0xffffff;
 }
 
+// Visual marker for an item's striking element, shown next to its name in the
+// action popup (item.element is rolled per-instance at loot time — see
+// LootSystem.applyRandomElement — so this reflects THIS specific item, not a
+// fixed per-weapon theme).
+const ELEMENT_GLYPHS: Partial<Record<ElementType, string>> = {
+  [ElementType.FIRE]:      '🔥',
+  [ElementType.EARTH]:     '⛰',
+  [ElementType.WIND]:      '💨',
+  [ElementType.WATER]:     '💧',
+  [ElementType.LIGHTNING]: '⚡',
+  [ElementType.ICE]:       '❄',
+  [ElementType.DARK]:      '🌙',
+  [ElementType.DIVINE]:    '✨',
+};
+
 // ── Layout constants ──────────────────────────────────────────────────────────
 const MARGIN     = 8;
 const HEADER_H   = 36;
@@ -502,7 +517,7 @@ export class InventoryScene extends Phaser.Scene {
         // detail panel area when no slot coords are given
         const cx = this.stBounds.x + this.stBounds.w / 2;
         const cy = this.stBounds.y + this.stBounds.h / 2;
-        this.showConsumeConfirmPopup(item as Consumable, cx, cy);
+        this.showActionConfirmPopup(item, cx, cy);
       });
     }
     if (isSell) {
@@ -772,8 +787,9 @@ export class InventoryScene extends Phaser.Scene {
 
   /**
    * Executes the primary action for an item:
-   *   - Equippable  → equip immediately + flash the paperdoll slot
-   *   - Consumable  → show confirmation popup (prevents accidental use)
+   *   - Equippable/Consumable → show confirmation popup (prevents an accidental
+   *     tap from instantly swapping gear or draining a potion; also doubles as
+   *     a compact detail view for gear — stats, element, description)
    *   - Key / other → open the detail panel
    *
    * Called on quick tap in the grid and by the Z key shortcut in detail view.
@@ -782,42 +798,45 @@ export class InventoryScene extends Phaser.Scene {
     const item = ALL_ITEMS[itemId];
     if (!item) return;
 
-    if (EQUIP_TYPES.includes(item.type)) {
-      setInventoryPlayerContext(this.player);
-      // Compute target slot before equip() mutates player.equipment
-      this.lastFlashSlotKey = this.getSlotKeyForItem(item);
-      InventorySystem.equip(this.player, itemId);
-      this.selectedItemId = null;
-      this.refresh();
-    } else if (item.type === ItemType.CONSUMABLE) {
-      // Show confirmation popup instead of using immediately
-      this.showConsumeConfirmPopup(item as Consumable, slotScreenX ?? this.cameras.main.width / 2, slotScreenY ?? this.cameras.main.height / 2);
+    if (EQUIP_TYPES.includes(item.type) || item.type === ItemType.CONSUMABLE) {
+      // Show confirmation popup instead of equipping/using immediately —
+      // also shows stats/lore for gear, since a stray tap shouldn't swap weapons.
+      this.showActionConfirmPopup(item, slotScreenX ?? this.cameras.main.width / 2, slotScreenY ?? this.cameras.main.height / 2);
     } else {
       // Key items, materials, skins: open the detail panel
       this.showDetail(itemId);
     }
   }
 
-  // ── Consume confirmation popup ────────────────────────────────────────────
+  // ── Action confirmation popup (consommables ET équipement) ────────────────
 
   /**
-   * Builds and shows a small confirmation popup near the tapped inventory slot.
+   * Builds and shows a confirmation popup near the tapped inventory slot.
+   * Generalized across both consumables ("Utiliser") and equippable items
+   * ("Équiper") so a stray tap never instantly consumes/equips something —
+   * the popup also doubles as a compact detail view for gear (main stat,
+   * substats, description) since a weapon/armor deserves more than the
+   * one-line effect summary a potion gets.
    *
-   * Layout (200×110 px):
-   *   • drawGlowPanel with green accent
-   *   • Item icon 32×32 | item name (truncated) | effect summary
-   *   • [Utiliser] button (green, ≥44 px tall) | [Annuler] button (red)
-   *   • Auto-dismiss after 3 s if no action
-   *   • Click outside → dismiss
+   * Layout: drawGlowPanel accent | icon (rarity-colored frame, always) +
+   * element glyph + name | consumable: effect line — equip: main stat +
+   * substats + description | [Utiliser/Équiper] (green) | [Annuler] (red).
+   * Auto-dismiss after 4 s if no action; click outside also dismisses.
    */
-  private showConsumeConfirmPopup(item: Consumable, nearX: number, nearY: number): void {
+  private showActionConfirmPopup(item: Item, nearX: number, nearY: number): void {
     // Only one popup at a time — dismiss any existing one first
     this.closeConsumePopup();
 
+    const isConsumable = item.type === ItemType.CONSUMABLE;
+    const isEquip       = EQUIP_TYPES.includes(item.type);
+
     const W       = this.cameras.main.width;
     const H       = this.cameras.main.height;
-    const PW      = 210;
-    const PH      = 116;
+    const PW      = isEquip ? 240 : 210;
+    // 210 (not the tighter-computed ~190) leaves headroom for the worst case:
+    // 3 rendered substats + a near-90-char description wrapping to 3 lines —
+    // no current item combines both maxima, but future rich gear could.
+    const PH      = isEquip ? 210 : 116;
     const MARGIN  = 6;
 
     // Anchor near the slot, clamp so the popup stays fully on screen
@@ -843,11 +862,18 @@ export class InventoryScene extends Phaser.Scene {
     drawGlowPanel(panelGfx, px, py, PW, PH, 0x44cc66 /* green accent */, UI.PANEL_BG, 4, 0.97);
     this.consumePopupObjects.push(panelGfx);
 
-    // ── Item icon (left side) ─────────────────────────────────────────────
-    const iconKey  = this.resolveIcon(item);
-    const iconSize = 32;
-    const iconX    = px + MARGIN + iconSize / 2;
-    const iconY    = py + MARGIN + iconSize / 2;
+    // ── Item icon (left side), always framed in its rarity color ──────────
+    const rarHexStr = RARITY_COLORS[item.rarity] ?? '#ffffff';
+    const rarHex    = parseInt(rarHexStr.replace('#', ''), 16);
+    const iconKey   = this.resolveIcon(item);
+    const iconSize  = 32;
+    const iconX     = px + MARGIN + iconSize / 2;
+    const iconY     = py + MARGIN + iconSize / 2;
+
+    const frameGfx = this.add.graphics().setDepth(depth + 1);
+    frameGfx.lineStyle(2, rarHex, 1);
+    frameGfx.strokeRect(px + MARGIN - 2, py + MARGIN - 2, iconSize + 4, iconSize + 4);
+    this.consumePopupObjects.push(frameGfx);
 
     if (iconKey) {
       try {
@@ -862,37 +888,71 @@ export class InventoryScene extends Phaser.Scene {
       this.addColorSquareAbove(px + MARGIN, py + MARGIN, iconSize, 0x44cc66, depth + 1);
     }
 
-    // ── Item name ─────────────────────────────────────────────────────────
-    const locItem = localizeItem(item);
+    // ── Item name + element glyph (marks THIS instance's rolled element —
+    // LootSystem.applyRandomElement rolls it per drop, not per weapon def) ──
+    const locItem  = localizeItem(item);
+    const textX    = px + MARGIN * 2 + iconSize + 2;
+    let   nameX    = textX;
+    const glyph    = item.element ? ELEMENT_GLYPHS[item.element] : undefined;
+    if (glyph) {
+      this.consumePopupObjects.push(
+        this.add.text(nameX, py + MARGIN + 1, glyph, uiStyle(12, '#ffffff')).setDepth(depth + 1),
+      );
+      nameX += 17;
+    }
     const rawName = locItem.name;
-    const name    = rawName.length > 18 ? `${rawName.slice(0, 16)}..` : rawName;
+    const name    = rawName.length > 22 ? `${rawName.slice(0, 20)}..` : rawName;
     this.consumePopupObjects.push(
-      this.add.text(px + MARGIN * 2 + iconSize + 2, py + MARGIN + 2, name,
-        uiStyle(11, RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT, {
-          bold: true, wordWrapWidth: PW - iconSize - MARGIN * 3 - 2,
+      this.add.text(nameX, py + MARGIN + 2, name,
+        uiStyle(11, rarHexStr, {
+          bold: true, wordWrapWidth: px + PW - MARGIN - nameX,
         }),
       ).setDepth(depth + 1),
     );
 
-    // ── Effect summary ────────────────────────────────────────────────────
-    const effectLine = this.getConsumableEffectLine(item);
-    this.consumePopupObjects.push(
-      this.add.text(
-        px + MARGIN * 2 + iconSize + 2,
-        py + MARGIN + 18,
-        effectLine,
-        uiStyle(10, UI.TXT_GREEN),
-      ).setDepth(depth + 1),
-    );
+    // ── Body: effect line (consumable) or stats + description (equip) ─────
+    const headerH = MARGIN + iconSize + MARGIN; // icon row height, same for both
+    if (isConsumable) {
+      const effectLine = this.getConsumableEffectLine(item as Consumable);
+      this.consumePopupObjects.push(
+        this.add.text(textX, py + MARGIN + 18, effectLine, uiStyle(10, UI.TXT_GREEN)).setDepth(depth + 1),
+      );
+    } else {
+      const mainLine = this.getItemMainStat(item);
+      if (mainLine) {
+        this.consumePopupObjects.push(
+          this.add.text(textX, py + MARGIN + 18, mainLine, uiStyle(10, UI.TXT_GOLD, { bold: true })).setDepth(depth + 1),
+        );
+      }
+    }
 
     // ── Separator ─────────────────────────────────────────────────────────
     const sepGfx = this.add.graphics().setDepth(depth + 1);
     sepGfx.lineStyle(1, UI.BORDER_LIT, 0.5);
     sepGfx.beginPath();
-    sepGfx.moveTo(px + 6,      py + MARGIN * 2 + iconSize + 2);
-    sepGfx.lineTo(px + PW - 6, py + MARGIN * 2 + iconSize + 2);
+    sepGfx.moveTo(px + 6,      py + headerH);
+    sepGfx.lineTo(px + PW - 6, py + headerH);
     sepGfx.strokePath();
     this.consumePopupObjects.push(sepGfx);
+
+    // ── Equip-only: substats + description (the "lore etc." the popup lacked) ──
+    if (isEquip) {
+      let bodyY = py + headerH + 6;
+      for (const line of this.getItemSubstats(item).slice(0, 3)) {
+        this.consumePopupObjects.push(
+          this.add.text(px + MARGIN, bodyY, `• ${line}`, uiStyle(9, UI.TXT_PARCHMENT)).setDepth(depth + 1),
+        );
+        bodyY += 14;
+      }
+      bodyY += 4;
+      const rawDesc = locItem.description;
+      const desc    = rawDesc.length > 90 ? `${rawDesc.slice(0, 88)}…` : rawDesc;
+      this.consumePopupObjects.push(
+        this.add.text(px + MARGIN, bodyY, desc, uiStyle(9, UI.TXT_MUTED, {
+          italic: true, wordWrapWidth: PW - MARGIN * 2, lineSpacing: 2,
+        })).setDepth(depth + 1),
+      );
+    }
 
     // ── Action buttons ────────────────────────────────────────────────────
     const BTN_H  = 44; // ≥44 px for touch targets (Apple HIG)
@@ -901,7 +961,7 @@ export class InventoryScene extends Phaser.Scene {
     const BTN_X1 = px + MARGIN;
     const BTN_X2 = BTN_X1 + BTN_W + MARGIN;
 
-    // Confirm button (Utiliser)
+    // Confirm button (Utiliser / Équiper)
     const confirmGfx = this.add.graphics().setDepth(depth + 1);
     confirmGfx.fillStyle(0x0d2010, 1);
     confirmGfx.fillRoundedRect(BTN_X1, BTN_Y, BTN_W, BTN_H, 3);
@@ -910,7 +970,7 @@ export class InventoryScene extends Phaser.Scene {
 
     const confirmTxt = this.add.text(
       BTN_X1 + BTN_W / 2, BTN_Y + BTN_H / 2,
-      t('inventory.use_item'),
+      isConsumable ? t('inventory.use_item') : t('inventory.equip_item'),
       uiStyle(11, UI.TXT_GREEN, { bold: true, stroke: true }),
     ).setOrigin(0.5).setDepth(depth + 2);
 
@@ -930,7 +990,12 @@ export class InventoryScene extends Phaser.Scene {
       .on('pointerdown', () => {
         this.closeConsumePopup();
         setInventoryPlayerContext(this.player);
-        InventorySystem.useConsumable(this.player, item.id);
+        if (isConsumable) {
+          InventorySystem.useConsumable(this.player, item.id);
+        } else {
+          this.lastFlashSlotKey = this.getSlotKeyForItem(item);
+          InventorySystem.equip(this.player, item.id);
+        }
         this.selectedItemId = null;
         this.refresh();
       });
@@ -1009,8 +1074,8 @@ export class InventoryScene extends Phaser.Scene {
     if (e.hpPercent === 1.0 && e.manaPercent === 1.0) return 'HP + MP 100%';
     if (e.hpPercent)   return `HP ${Math.round(e.hpPercent * 100)}%`;
     if (e.manaPercent) return `MP ${Math.round(e.manaPercent * 100)}%`;
-    if (e.revive)      return 'Résurrection HP 50%';
-    if (e.statusCure)  return 'Soigne les statuts';
+    if (e.revive)      return t('inventory.effect_revive');
+    if (e.statusCure)  return t('inventory.effect_cure');
     return item.description.slice(0, 22);
   }
 
