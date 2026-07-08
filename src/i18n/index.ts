@@ -1,6 +1,6 @@
 import { FR } from './fr';
 import { EN } from './en';
-import type { Item, Skill, Enemy, Quest, NPC } from '../types';
+import type { Item, Skill, Enemy, Quest, NPC, DialogueLine } from '../types';
 import type { BestiaryEnemyData } from '../data/bestiary';
 
 export type Lang = 'fr' | 'en';
@@ -18,52 +18,73 @@ export function setLang(lang: Lang): void {
   localStorage.setItem(STORAGE_KEY, lang);
 }
 
-export function t(key: string): string {
+// Internal lookup that returns `undefined` (not the raw key) on a full miss, so
+// callers can chain `?? someFallback` and actually reach that fallback. `t()` below
+// deliberately returns the key itself as a last resort for raw UI strings (where
+// showing the key is an acceptable/visible "missing translation" signal) — but every
+// localize* helper below wants to fall through to the underlying data's own field
+// instead, and `t(key) || fallback` can never do that since `t()` never returns falsy.
+function lookup(key: string): string | undefined {
   const dict = currentLang === 'en' ? EN : FR;
-  return dict[key] ?? FR[key] ?? key;
+  return dict[key] ?? FR[key];
+}
+
+export function t(key: string): string {
+  return lookup(key) ?? key;
 }
 
 // ── Localization helpers ─────────────────────────────────────
 
 export function localizeItem(item: Item): { name: string; description: string } {
-  const dict   = currentLang === 'en' ? EN : FR;
-  const nameK  = `item.${item.id}.name`;
-  const descK  = `item.${item.id}.description`;
   return {
-    name:        dict[nameK]  ?? FR[nameK]  ?? item.name,
-    description: dict[descK]  ?? FR[descK]  ?? item.description,
+    name:        lookup(`item.${item.id}.name`)        ?? item.name,
+    description: lookup(`item.${item.id}.description`) ?? item.description,
   };
 }
 
 export function localizeSkill(skill: Skill): { name: string; description: string } {
   return {
-    name:        t(`skill.${skill.id}.name`)        || skill.name,
-    description: t(`skill.${skill.id}.description`) || skill.description,
+    name:        lookup(`skill.${skill.id}.name`)        ?? skill.name,
+    description: lookup(`skill.${skill.id}.description`) ?? skill.description,
   };
 }
 
 export function localizeEnemy(enemy: Enemy): { name: string } {
   return {
-    name: t(`enemy.${enemy.id}.name`) || enemy.name,
+    name: lookup(`enemy.${enemy.id}.name`) ?? enemy.name,
   };
 }
 
 export function localizeQuest(quest: Quest): { name: string } {
   return {
-    name: t(`quest.${quest.id}.name`) || quest.name,
+    name: lookup(`quest.${quest.id}.name`) ?? quest.name,
   };
 }
 
 export function localizeNPC(npc: NPC): { name: string } {
   return {
-    name: t(`npc.${npc.id}.name`) || npc.name,
+    name: lookup(`npc.${npc.id}.name`) ?? npc.name,
   };
 }
 
 export function localizeBestiaryEntry(entry: BestiaryEnemyData): { name: string; shortDesc: string; lore: string } {
   return {
-    name:      t(`enemy.${entry.enemyId}.name`)         || entry.name,
-    shortDesc: t(`bestiary.${entry.enemyId}.shortDesc`) || entry.shortDesc,
-    lore:      t(`bestiary.${entry.enemyId}.lore`)      || entry.lore,
+    name:      lookup(`enemy.${entry.enemyId}.name`)         ?? entry.name,
+    shortDesc: lookup(`bestiary.${entry.enemyId}.shortDesc`) ?? entry.shortDesc,
+    lore:      lookup(`bestiary.${entry.enemyId}.lore`)      ?? entry.lore,
+  };
+}
+
+/** Dialogue line text was previously hardcoded English in npcs.ts with no i18n keys
+ * at all — this looks up `dialogue.<npcId>.<lineId>` / `.choice.<index>`, falling back
+ * to the raw (English) text so unconfigured lines still render instead of breaking. */
+export function localizeDialogueLine(npcId: string, line: DialogueLine): DialogueLine {
+  return {
+    ...line,
+    text: lookup(`dialogue.${npcId}.${line.id}`) ?? line.text,
+    choices: line.choices?.map((choice, i) => ({
+      ...choice,
+      text: lookup(`dialogue.${npcId}.${line.id}.choice.${i}`) ?? choice.text,
+    })),
   };
 }

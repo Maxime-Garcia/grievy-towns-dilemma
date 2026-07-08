@@ -717,17 +717,21 @@ export class GameScene extends Phaser.Scene {
     for (const sprite of hits) {
       const activeEnemy = this.activeEnemies.get(sprite.name);
       if (!activeEnemy) continue;
+      // Snapshot BEFORE CombatSystem applies its own (unmultiplied) damage — it clamps
+      // to 0 internally, so any hit whose unmultiplied damage would overkill loses the
+      // "how much was it over" information. Recomputing the multiplied final damage
+      // from this pre-hit snapshot (instead of patching a delta onto the already-clamped
+      // currentHp) is what actually fixes the "enemy survives normal hits" bug: low
+      // damageMultiplier hits (most non-finisher weapon hits are <1.0) used to have their
+      // base damage clamp currentHp to 0, then get "corrected" back up past where the
+      // real (smaller, multiplied) damage should have left it — sometimes back above 0
+      // entirely, making the enemy unkillable by anything but a >=1.0 finisher hit.
+      const hpBeforeHit = activeEnemy.currentHp;
       const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
 
       // Combiné : multiplicateur du pattern + talents mêlée + bonus de chaîne.
-      // CombatSystem a déjà soustrait result.damage de currentHp — on applique le delta ici.
       const finalDamage = Math.round(result.damage * damageMultiplier * appliedMeleeMult * stackBonus);
-      const bonus = finalDamage - result.damage;
-      if (bonus > 0) {
-        activeEnemy.currentHp = Math.max(0, activeEnemy.currentHp - bonus);
-      } else if (bonus < 0) {
-        activeEnemy.currentHp = Math.min(activeEnemy.maxHp, activeEnemy.currentHp - bonus);
-      }
+      activeEnemy.currentHp = Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - finalDamage));
       const isKill = activeEnemy.currentHp <= 0;
 
       this.showDamageNumber(sprite.x, sprite.y - 20, finalDamage, result.isCrit);
@@ -823,12 +827,13 @@ export class GameScene extends Phaser.Scene {
         const activeEnemy = this.activeEnemies.get(sprite.name);
         if (!activeEnemy) break;
 
+        // See executeHitInCone() for why we snapshot HP before CombatSystem's own
+        // (unmultiplied) clamped subtraction rather than patch a delta onto it.
+        const hpBeforeHit = activeEnemy.currentHp;
         const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
         // BUG4 fix: apply the dmgMult from the finisher (or 1.0 for normal shots)
         const arrowFinalDmg = Math.round(result.damage * arrow.dmgMult);
-        const arrowBonus = arrowFinalDmg - result.damage;
-        if (arrowBonus > 0)  activeEnemy.currentHp = Math.max(0, activeEnemy.currentHp - arrowBonus);
-        else if (arrowBonus < 0) activeEnemy.currentHp = Math.min(activeEnemy.maxHp, activeEnemy.currentHp - arrowBonus);
+        activeEnemy.currentHp = Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - arrowFinalDmg));
         const arrowIsKill = activeEnemy.currentHp <= 0;
         this.showDamageNumber(sprite.x, sprite.y - 20, arrowFinalDmg, result.isCrit);
         this.spawnHitParticles(sprite.x, sprite.y, result.element);
@@ -1341,6 +1346,10 @@ export class GameScene extends Phaser.Scene {
     const cfg = PATTERNS[patternId];
     const duration = cfg.telegraphMs;
     const tint = cfg.telegraphTint;
+    // Real sprites rest at a scale far from 1.0 (upscaled so their padded native frame
+    // reads at a legible size — see fitSpriteToContent). These telegraph "juice" tweens
+    // must animate relative to that resting scale, not jump to an absolute literal.
+    const baseScale = (sprite.getData('baseScale') as number | undefined) ?? sprite.scale;
 
     switch (patternId) {
       case 'charge': {
@@ -1363,8 +1372,8 @@ export class GameScene extends Phaser.Scene {
         // Scale tremble
         this.tweens.add({
           targets: sprite,
-          scaleX: 1.0 + 0.04,
-          scaleY: 1.0 - 0.04,
+          scaleX: baseScale * 1.04,
+          scaleY: baseScale * 0.96,
           duration: 80,
           yoyo: true,
           repeat: Math.floor(duration / 160),
@@ -1377,12 +1386,12 @@ export class GameScene extends Phaser.Scene {
         sprite.setTint(tint);
         this.tweens.add({
           targets: sprite,
-          scaleX: 1.2,
-          scaleY: 1.2,
+          scaleX: baseScale * 1.2,
+          scaleY: baseScale * 1.2,
           duration: duration * 0.35,
           ease: 'Cubic.easeOut',
           yoyo: true,
-          onComplete: () => { if (sprite.active) sprite.setScale(1); },
+          onComplete: () => { if (sprite.active) sprite.setScale(baseScale); },
         });
         // Concentric rings pulsing outward
         for (let i = 0; i < 2; i++) {
@@ -1438,8 +1447,8 @@ export class GameScene extends Phaser.Scene {
         sprite.setTint(tint);
         this.tweens.add({
           targets: sprite,
-          scaleX: 0.85,
-          scaleY: 1.15,
+          scaleX: baseScale * 0.85,
+          scaleY: baseScale * 1.15,
           duration: duration * 0.5,
           ease: 'Cubic.easeIn',
           yoyo: true,
@@ -1856,6 +1865,7 @@ export class GameScene extends Phaser.Scene {
       minionBody.setSize(dispSize - 8, dispSize - 8);
     }
     sprite.setDepth(4);
+    sprite.setData('baseScale', sprite.scale);
     if (hasRealSprite) {
       sprite.setData('hasRealSprite', true);
       sprite.play(`enemy_${minionDef.id}_idle`);
@@ -1890,35 +1900,29 @@ export class GameScene extends Phaser.Scene {
     if (this.inWindup && this.playerModifiers.windupArmor) return;
     if (damageMult <= 0) return; // summon pattern has damageMult 0
 
+    // Snapshot BEFORE CombatSystem applies its own (unmultiplied) clamped damage — same
+    // reason as executeHitInCone()/updateArrowProjectiles(): patching a delta onto HP
+    // already clamped to 0 loses the overkill amount, which could let a guard-block
+    // "revive" the player from a hit that should have killed them.
     const guardActive = this.time.now < this.guardUntil;
+    const hpBeforeHit = this.gameState.player.stats.hp;
     const result = CombatSystem.enemyAttack(ae, this.gameState.player);
+    if (result.damage <= 0) return; // stunned enemy — no hit landed
 
-    if (guardActive && result.damage > 0) {
-      const refund = Math.round(result.damage * 0.3);
-      this.gameState.player.stats.hp = Math.min(
-        this.gameState.player.stats.maxHp,
-        this.gameState.player.stats.hp + refund,
-      );
-      result.damage = result.damage - refund;
-      result.isKill = this.gameState.player.stats.hp <= 0;
-    }
+    let finalDmg = Math.round(result.damage * damageMult);
+    if (guardActive) finalDmg -= Math.round(finalDmg * 0.3);
 
-    // Apply extra damage from damageMult above 1.0.
-    // CombatSystem.enemyAttack already applied result.damage to player.stats.hp.
-    // We only add the delta when damageMult > 1.0.
-    const extraDmg = Math.max(0, Math.round(result.damage * (damageMult - 1.0)));
-    if (extraDmg > 0) {
-      this.gameState.player.stats.hp = Math.max(0, this.gameState.player.stats.hp - extraDmg);
-      result.isKill = this.gameState.player.stats.hp <= 0;
-    }
-    const finalDmg = result.damage + extraDmg;
+    this.gameState.player.stats.hp = Math.max(0, Math.min(
+      this.gameState.player.stats.maxHp, hpBeforeHit - finalDmg,
+    ));
+    const isKill = this.gameState.player.stats.hp <= 0;
 
     if (finalDmg > 0) {
       this.showDamageNumber(this.player.x, this.player.y - 20, finalDmg, false, undefined, true);
       this.cameras.main.shake(100, 0.005);
     }
     this.events.emit('player_update', this.gameState.player);
-    if (result.isKill) this.onPlayerDeath();
+    if (isKill) this.onPlayerDeath();
   }
 
   /** Apply direct damage to the player (from homing projectile, AoE, etc.). */
@@ -2218,12 +2222,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private playEnemyDeathSequence(sprite: Phaser.Physics.Arcade.Sprite) {
+    const baseScale = (sprite.getData('baseScale') as number | undefined) ?? sprite.scale;
     sprite.setTintFill(0xffffff);
     this.tweens.add({
       targets: sprite,
       alpha: 0,
-      scaleX: 0.2,
-      scaleY: 0.2,
+      scaleX: baseScale * 0.2,
+      scaleY: baseScale * 0.2,
       duration: 350,
       ease: 'Power3',
       onComplete: () => { if (sprite.active) sprite.destroy(); },
@@ -2236,6 +2241,7 @@ export class GameScene extends Phaser.Scene {
     enemyDef: Enemy,
   ) {
     const { width: W, height: H } = this.cameras.main;
+    const baseScale = (sprite.getData('baseScale') as number | undefined) ?? sprite.scale;
 
     sprite.setTint(0xffffff);
     this.cameras.main.shake(200, 0.012);
@@ -2257,8 +2263,8 @@ export class GameScene extends Phaser.Scene {
         this.tweens.add({
           targets: sprite,
           alpha: 0,
-          scaleX: 0.2,
-          scaleY: 0.2,
+          scaleX: baseScale * 0.2,
+          scaleY: baseScale * 0.2,
           duration: 800,
           ease: 'Power2',
           onComplete: () => { if (sprite.active) sprite.destroy(); },
@@ -3399,6 +3405,11 @@ export class GameScene extends Phaser.Scene {
           body.setSize(dispSize - 8, dispSize - 8);
         }
         sprite.setDepth(4);
+        // Resting scale, read back by attack-telegraph tweens (charge/burst_fan/dash_melee)
+        // so their "scale pop" juice is relative to this sprite's actual size instead of
+        // assuming a resting scale of 1.0 (true for the old procedural squares, not for
+        // real sprites which are scaled up to make their padded frame content readable).
+        sprite.setData('baseScale', sprite.scale);
         if (hasRealSprite) {
           sprite.setData('hasRealSprite', true);
           if (isElite) {
@@ -3472,6 +3483,7 @@ export class GameScene extends Phaser.Scene {
           bossBody.setSize(bossDispSize - 4, bossDispSize - 4);
         }
         bossSprite.setDepth(5);
+        bossSprite.setData('baseScale', bossSprite.scale);
         if (bossHasRealSprite) {
           bossSprite.setData('hasRealSprite', true);
           bossSprite.play(`${bossTexKey}_idle`);

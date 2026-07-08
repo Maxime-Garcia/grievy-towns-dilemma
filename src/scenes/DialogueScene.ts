@@ -2,7 +2,7 @@ import { NPC, PlayerState, DialogueLine } from '../types';
 import { DialogueSystem, DialogueSession } from '../systems/DialogueSystem';
 import { SHOP_INVENTORY } from '../data/shops';
 import { UI, drawGlowPanel, uiStyle } from '../utils/UITheme';
-import { t } from '../i18n';
+import { t, localizeDialogueLine } from '../i18n';
 
 // ─────────────────────────────────────────────────────────────────
 // Couleurs d'accent par rôle de NPC — exception documentée aux
@@ -289,8 +289,9 @@ export class DialogueScene extends Phaser.Scene {
   // ── Rendu d'une ligne ─────────────────────────────────────────
 
   private renderCurrentLine() {
-    const line = DialogueSystem.getCurrentLine(this.session, this.player);
-    if (!line) { this.closeDialogue(); return; }
+    const rawLine = DialogueSystem.getCurrentLine(this.session, this.player);
+    if (!rawLine) { this.closeDialogue(); return; }
+    const line = localizeDialogueLine(this.npc.id, rawLine);
     this.currentLine = line;
 
     this.clearLineObjects();

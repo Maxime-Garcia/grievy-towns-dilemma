@@ -819,7 +819,11 @@ export class MainMenuScene extends Phaser.Scene {
     const H = this.cameras.main.height;
     const elems: Phaser.GameObjects.GameObject[] = [];
 
-    const ov = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.75).setDepth(95);
+    // .setInteractive() sur l'overlay est indispensable : sans ça, un rectangle Phaser
+    // sans interactivité est invisible pour le système d'input et laisse passer le clic
+    // au bouton "Nouvelle Partie"/"Charger" derrière (depth inférieur), qui rouvrait ce
+    // même menu par-dessus lui-même à chaque clic sur le fond assombri.
+    const ov = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.75).setDepth(95).setInteractive();
     elems.push(ov);
     const frame = this.add.graphics().setDepth(96);
     drawGlowPanel(frame, W / 2 - 240, H / 2 - 150, 480, 300, UI.ACCENT_VIOLET, UI.BG_DEEP, 6);
@@ -869,7 +873,11 @@ export class MainMenuScene extends Phaser.Scene {
     const H = this.cameras.main.height;
     const elems: Phaser.GameObjects.GameObject[] = [];
 
-    const ov = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.75).setDepth(95);
+    // .setInteractive() sur l'overlay est indispensable : sans ça, un rectangle Phaser
+    // sans interactivité est invisible pour le système d'input et laisse passer le clic
+    // au bouton "Nouvelle Partie"/"Charger" derrière (depth inférieur), qui rouvrait ce
+    // même menu par-dessus lui-même à chaque clic sur le fond assombri.
+    const ov = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.75).setDepth(95).setInteractive();
     elems.push(ov);
     const frame = this.add.graphics().setDepth(96);
     drawGlowPanel(frame, W / 2 - 240, H / 2 - 150, 480, 300, UI.GLOW_GOLD, UI.BG_DEEP, 6);
