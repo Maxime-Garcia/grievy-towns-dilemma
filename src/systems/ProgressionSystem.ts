@@ -1,4 +1,4 @@
-import { PlayerState, Attributes, Stats } from '../types';
+import { PlayerState, Attributes, Stats, Weapon } from '../types';
 import { ALL_ITEMS } from '../data/items';
 import { StatsSystem } from './StatsSystem';
 
@@ -108,75 +108,14 @@ export class ProgressionSystem {
       attributes: attrs,
       attributePoints: 0,
       equipment: {},
-      // DEV: toutes les armes pour tester chaque WeaponType + pattern de combat
-      inventory: [
-        // ── SWORD ──────────────────────────────────────────────
-        { item: ALL_ITEMS['iron_sword'],                  quantity: 1 },
-        { item: ALL_ITEMS['steel_sword'],                 quantity: 1 },
-        { item: ALL_ITEMS['storm_sword'],                 quantity: 1 },
-        { item: ALL_ITEMS['dragonfang_sword'],            quantity: 1 },
-        { item: ALL_ITEMS['coral_sword'],                 quantity: 1 },
-        { item: ALL_ITEMS['arc_sword'],                   quantity: 1 },
-        { item: ALL_ITEMS['sentinel_sword'],              quantity: 1 },
-        { item: ALL_ITEMS['drowned_knight_sword'],        quantity: 1 },
-        { item: ALL_ITEMS['divine_sword'],                quantity: 1 },
-        // ── GREATSWORD ─────────────────────────────────────────
-        { item: ALL_ITEMS['magma_greatsword'],            quantity: 1 },
-        { item: ALL_ITEMS['colossus_greatsword'],         quantity: 1 },
-        { item: ALL_ITEMS['wind_greatsword'],             quantity: 1 },
-        { item: ALL_ITEMS['blizzard_greatsword'],         quantity: 1 },
-        // ── DAGGER ─────────────────────────────────────────────
-        { item: ALL_ITEMS['dagger_of_shadow'],            quantity: 1 },
-        { item: ALL_ITEMS['depth_serpent_fang_dagger'],   quantity: 1 },
-        { item: ALL_ITEMS['cinder_dagger'],               quantity: 1 },
-        { item: ALL_ITEMS['stone_dagger'],                quantity: 1 },
-        { item: ALL_ITEMS['gale_dagger'],                 quantity: 1 },
-        { item: ALL_ITEMS['frost_dagger'],                quantity: 1 },
-        // ── DUAL_DAGGER ────────────────────────────────────────
-        { item: ALL_ITEMS['test_dual_dagger'],            quantity: 1 },
-        // ── DUAL_SWORD ─────────────────────────────────────────
-        { item: ALL_ITEMS['test_dual_sword'],             quantity: 1 },
-        // ── AXE ────────────────────────────────────────────────
-        { item: ALL_ITEMS['test_axe'],                    quantity: 1 },
-        // ── HAMMER ─────────────────────────────────────────────
-        { item: ALL_ITEMS['test_hammer'],                 quantity: 1 },
-        // ── STAFF ──────────────────────────────────────────────
-        { item: ALL_ITEMS['fire_staff'],                  quantity: 1 },
-        { item: ALL_ITEMS['tide_staff'],                  quantity: 1 },
-        { item: ALL_ITEMS['seismic_staff'],               quantity: 1 },
-        { item: ALL_ITEMS['shadow_staff'],                quantity: 1 },
-        { item: ALL_ITEMS['water_staff'],                 quantity: 1 },
-        { item: ALL_ITEMS['thunder_staff'],               quantity: 1 },
-        { item: ALL_ITEMS['frost_staff'],                 quantity: 1 },
-        { item: ALL_ITEMS['earth_tome'],                  quantity: 1 },
-        // ── BOW ────────────────────────────────────────────────
-        { item: ALL_ITEMS['harpy_bow'],                   quantity: 1 },
-        { item: ALL_ITEMS['pyroclast_bow'],               quantity: 1 },
-        { item: ALL_ITEMS['thunder_bow'],                 quantity: 1 },
-        { item: ALL_ITEMS['void_bow'],                    quantity: 1 },
-        { item: ALL_ITEMS['wind_bow'],                    quantity: 1 },
-        { item: ALL_ITEMS['leather_helm'],                quantity: 1 },
-        { item: ALL_ITEMS['iron_helm'],                   quantity: 1 },
-        { item: ALL_ITEMS['leather_chest'],               quantity: 1 },
-        { item: ALL_ITEMS['iron_chest'],                  quantity: 1 },
-        { item: ALL_ITEMS['leather_legs'],                quantity: 1 },
-        { item: ALL_ITEMS['leather_boots'],               quantity: 1 },
-        { item: ALL_ITEMS['air_walker_boots'],            quantity: 1 },
-        { item: ALL_ITEMS['leather_gloves'],              quantity: 1 },
-        { item: ALL_ITEMS['obsidian_gauntlets'],          quantity: 1 },
-        { item: ALL_ITEMS['storm_eagle_feather_cloak'],   quantity: 1 },
-        { item: ALL_ITEMS['flame_ring'],                  quantity: 1 },
-        { item: ALL_ITEMS['shadow_ring'],                 quantity: 1 },
-        { item: ALL_ITEMS['sailor_ghost_ring'],           quantity: 1 },
-        { item: ALL_ITEMS['thunder_drake_fang'],          quantity: 1 },
-        { item: ALL_ITEMS['wraith_ice_amulet'],           quantity: 1 },
-        { item: ALL_ITEMS['minor_health_potion'],         quantity: 10 },
-        { item: ALL_ITEMS['health_potion'],               quantity: 5 },
-        { item: ALL_ITEMS['minor_mana_potion'],           quantity: 10 },
-        { item: ALL_ITEMS['mana_potion'],                 quantity: 5 },
-        { item: ALL_ITEMS['full_elixir'],                 quantity: 3 },
-        { item: ALL_ITEMS['revive_crystal'],              quantity: 2 },
-      ],
+      // DEV: uniquement des armes — TOUTES celles du jeu, générées dynamiquement
+      // depuis ALL_ITEMS (mirror de GameScene.debugGiveAllWeapons()) plutôt qu'une
+      // liste maintenue à la main, pour rester à jour avec toute arme ajoutée plus
+      // tard sans oubli (l'ancienne liste ratait déjà les légendaires/mythiques/
+      // hidden). Plus d'armure/anneaux/potions ici, à la demande du joueur.
+      inventory: Object.values(ALL_ITEMS)
+        .filter((item): item is Weapon => 'weaponType' in item && !!(item as Weapon).weaponType)
+        .map(item => ({ item, quantity: 1 })),
       gold: 50,
       unlockedSkills: ['dash', 'echo_strike'],
       equippedSkills: { slot1: 'echo_strike', slot2: null, slot3: null, slot4: null },

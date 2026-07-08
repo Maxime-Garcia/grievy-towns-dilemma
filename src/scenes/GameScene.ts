@@ -481,12 +481,16 @@ export class GameScene extends Phaser.Scene {
   /** Debug aid (press G): adds one of every weapon in the game to the inventory,
    * so newly-integrated weapon icons/stats can be reviewed in-game without grinding. */
   private debugGiveAllWeapons(): void {
+    // Vide le sac avant de le remplir uniquement d'armes (demande joueur) —
+    // ne touche pas à l'équipement déjà porté, seulement au contenu du sac.
+    this.gameState.player.inventory = [];
     const weapons = Object.values(ALL_ITEMS).filter(item => 'weaponType' in item && item.weaponType);
     let added = 0;
     for (const weapon of weapons) {
       if (LootSystem.addToInventory(this.gameState.player, weapon, 1, this.gameState.world)) added++;
     }
-    this.events.emit('show_notification', `[DEBUG] ${added}/${weapons.length} armes ajoutées à l'inventaire`);
+    this.events.emit('player_update', this.gameState.player);
+    this.events.emit('show_notification', `[DEBUG] Sac vidé — ${added}/${weapons.length} armes ajoutées`);
   }
 
   // ── MOVEMENT ─────────────────────────────────────────────────
