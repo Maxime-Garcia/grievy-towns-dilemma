@@ -3,7 +3,7 @@ import {
   PlayerState, Item, ItemType, Weapon, Armor, Accessory, Consumable,
   StatBonus, RARITY_COLORS, EquipStats, ElementType,
 } from '../types';
-import { InventorySystem, setInventoryPlayerContext } from '../systems/InventorySystem';
+import { InventorySystem } from '../systems/InventorySystem';
 import { StatsSystem } from '../systems/StatsSystem';
 import { ALL_ITEMS } from '../data/items';
 import {
@@ -11,23 +11,6 @@ import {
 } from '../utils/UITheme';
 import { itemTextureKey } from '../utils/ItemAssets';
 import { t, localizeItem } from '../i18n';
-
-// Hover highlight color for an item slot: element color for elemental weapons
-// (utilisateur : pas de recolor des icônes par élément, mais l'encadré au survol
-// doit signaler l'élément), blanc neutre sinon. Mêmes teintes que BestiaryScene.
-const ELEMENT_COLORS: Partial<Record<ElementType, number>> = {
-  [ElementType.FIRE]:      0xff4400,
-  [ElementType.EARTH]:     0x88aa33,
-  [ElementType.WIND]:      0xaaddff,
-  [ElementType.WATER]:     0x2266ff,
-  [ElementType.LIGHTNING]: 0xffee00,
-  [ElementType.ICE]:       0x88ddff,
-  [ElementType.DARK]:      0x8833cc,
-  [ElementType.DIVINE]:    0xffffff,
-};
-function hoverColorFor(item: Item): number {
-  return (item.element && ELEMENT_COLORS[item.element]) ?? 0xffffff;
-}
 
 // Visual marker for an item's striking element, shown next to its name in the
 // action popup (item.element is rolled per-instance at loot time — see
@@ -295,8 +278,8 @@ export class InventoryScene extends Phaser.Scene {
           sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, EQ_SLOT + 8, EQ_SLOT + 8, 0x000000, 0,
         ).setInteractive({ useHandCursor: true });
         this.dynamicObjs.push(hit);
-        hit.on('pointerover', () => { bg.lineStyle(2, hoverColorFor(item), 0.9); bg.strokeRect(sx, sy, EQ_SLOT, EQ_SLOT); });
-        hit.on('pointerout',  () => { bg.lineStyle(2, rarHex, 1);                bg.strokeRect(sx, sy, EQ_SLOT, EQ_SLOT); });
+        hit.on('pointerover', () => { bg.lineStyle(2, 0xffffff, 0.8); bg.strokeRect(sx, sy, EQ_SLOT, EQ_SLOT); });
+        hit.on('pointerout',  () => { bg.lineStyle(2, rarHex, 1);     bg.strokeRect(sx, sy, EQ_SLOT, EQ_SLOT); });
         hit.on('pointerdown', () => this.showDetail(item.id));
 
         // White flash overlay — confirmation visuelle après un tap-equip.
@@ -357,15 +340,20 @@ export class InventoryScene extends Phaser.Scene {
     this.dynamicObjs.push(sepTop);
 
     const s = this.player.stats;
-    const a = this.player.attributes;
+    // s.atk inclut DÉJÀ la main stat de l'arme (InventorySystem.recalcStats via
+    // StatsSystem.computeAll) — ne pas réadditionner weapon.damage ici, sous
+    // peine d'afficher un ATK gonflé qui ne correspond plus aux dégâts réels.
+    // CRIT % recalculé via StatsSystem pour inclure le CRIT_RATE des substats
+    // d'équipement (l'ancienne formule 5 + agi*0.3 ignorait totalement le gear).
+    const cs = StatsSystem.computeAll(this.player);
     const rows: [string, string][] = [
-      ['ATK',     String(s.atk + (this.player.equipment.weapon?.damage ?? 0))],
+      ['ATK',     String(s.atk)],
       ['MATK',    String(s.magicAtk)],
       ['DEF',     String(s.def)],
       ['MDEF',    String(s.magicDef)],
       ['HP max',  String(s.maxHp)],
       ['MP max',  String(s.maxMana)],
-      ['CRIT %',  `${(5 + a.agi * 0.3).toFixed(1)}%`],
+      ['CRIT %',  `${cs.crit.toFixed(1)}%`],
       ['Vitesse', String(s.spd)],
     ];
 
@@ -505,7 +493,6 @@ export class InventoryScene extends Phaser.Scene {
 
     if (isEquip) {
       addBtn(t('inventory.equip_hint'), UI.TXT_GREEN, () => {
-        setInventoryPlayerContext(this.player);
         InventorySystem.equip(this.player, itemId);
         this.selectedItemId = null;
         this.refresh();
@@ -648,7 +635,7 @@ export class InventoryScene extends Phaser.Scene {
           this.doMainAction(slot.item.id, screenX, screenY);
         }
       });
-      hit.on('pointerover', () => { bg.lineStyle(2, hoverColorFor(slot.item), 0.9); bg.strokeRect(sx, 0, INV_SLOT - 2, INV_SLOT - 2); });
+      hit.on('pointerover', () => { bg.lineStyle(2, 0xffffff, 0.9); bg.strokeRect(sx, 0, INV_SLOT - 2, INV_SLOT - 2); });
       hit.on('pointerout',  () => {
         // Cancel long-press if the pointer leaves before 500 ms
         if (this.longPressTimer !== null) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
@@ -989,7 +976,6 @@ export class InventoryScene extends Phaser.Scene {
       })
       .on('pointerdown', () => {
         this.closeConsumePopup();
-        setInventoryPlayerContext(this.player);
         if (isConsumable) {
           InventorySystem.useConsumable(this.player, item.id);
         } else {

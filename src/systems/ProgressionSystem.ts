@@ -1,5 +1,6 @@
-import { PlayerState, Attributes, Stats, Equipment, StatBonus } from '../types';
+import { PlayerState, Attributes, Stats } from '../types';
 import { ALL_ITEMS } from '../data/items';
+import { StatsSystem } from './StatsSystem';
 
 export const XP_PER_LEVEL = (level: number): number =>
   Math.floor(100 * Math.pow(level, 1.6));
@@ -30,47 +31,6 @@ export class ProgressionSystem {
     };
   }
 
-  static applyEquipmentBonuses(base: Stats, equipment: Equipment): Stats {
-    const stats = { ...base };
-    const slots = [
-      equipment.weapon,
-      equipment.helm,
-      equipment.chest,
-      equipment.legs,
-      equipment.boots,
-      equipment.gloves,
-      equipment.cape,
-      equipment.ring1,
-      equipment.ring2,
-      equipment.amulet,
-    ];
-
-    for (const item of slots) {
-      if (!item) continue;
-
-      let bonusStats: StatBonus = {};
-      if ('bonusStats' in item) bonusStats = (item as any).bonusStats;
-
-      if (bonusStats.hp)       stats.maxHp    += bonusStats.hp;
-      if (bonusStats.mana)     stats.maxMana  += bonusStats.mana;
-      if (bonusStats.atk)      stats.atk      += bonusStats.atk;
-      if (bonusStats.def)      stats.def      += bonusStats.def;
-      if (bonusStats.spd)      stats.spd      += bonusStats.spd;
-      if (bonusStats.magicAtk) stats.magicAtk += bonusStats.magicAtk;
-      if (bonusStats.magicDef) stats.magicDef += bonusStats.magicDef;
-      if (bonusStats.str)      stats.atk      += bonusStats.str * 3;
-      if (bonusStats.int)      { stats.magicAtk += bonusStats.int * 3; stats.maxMana += bonusStats.int * 5; }
-      if (bonusStats.agi)      stats.spd      += bonusStats.agi * 2;
-      if (bonusStats.vit)      stats.maxHp    += bonusStats.vit * 8;
-      if (bonusStats.end)      { stats.def += bonusStats.end * 2; stats.magicDef += bonusStats.end; }
-
-      if ('defense' in item)      stats.def      += (item as any).defense ?? 0;
-      if ('magicDefense' in item) stats.magicDef += (item as any).magicDefense ?? 0;
-    }
-
-    return stats;
-  }
-
   static addXp(player: PlayerState, xp: number): { leveled: boolean; newLevel: number } {
     player.xp += xp;
     let leveled = false;
@@ -83,18 +43,25 @@ export class ProgressionSystem {
       if (player.talentPoints < 20) player.talentPoints++;
       player.xpToNext = XP_PER_LEVEL(player.level);
       leveled = true;
+    }
 
-      const newBase = this.computeBaseStats(player.level, player.attributes);
-      const hpDiff = newBase.maxHp - player.stats.maxHp;
-      const manaDiff = newBase.maxMana - player.stats.maxMana;
+    if (leveled) {
+      // Recalcule via StatsSystem.computeAll (base + équipement) plutôt que
+      // computeBaseStats seul — sinon chaque level-up écrasait les bonus
+      // d'équipement (equipStats) jusqu'au prochain equip/unequip.
+      const prevMaxHp = player.stats.maxHp;
+      const prevMaxMana = player.stats.maxMana;
+      const cs = StatsSystem.computeAll(player);
+      const hpDiff = cs.hp - prevMaxHp;
+      const manaDiff = cs.mana - prevMaxMana;
 
-      player.stats.maxHp   = newBase.maxHp;
-      player.stats.maxMana = newBase.maxMana;
-      player.stats.atk     = newBase.atk;
-      player.stats.def     = newBase.def;
-      player.stats.spd     = newBase.spd;
-      player.stats.magicAtk = newBase.magicAtk;
-      player.stats.magicDef = newBase.magicDef;
+      player.stats.maxHp    = cs.hp;
+      player.stats.maxMana  = cs.mana;
+      player.stats.atk      = cs.atk;
+      player.stats.def      = cs.def;
+      player.stats.spd      = cs.spd;
+      player.stats.magicAtk = cs.matk;
+      player.stats.magicDef = cs.magicDef;
 
       player.stats.hp   = Math.min(player.stats.hp + hpDiff,   player.stats.maxHp);
       player.stats.mana = Math.min(player.stats.mana + manaDiff, player.stats.maxMana);

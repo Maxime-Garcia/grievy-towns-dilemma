@@ -29,8 +29,8 @@ Texture keys : catégorie_id                    (ex: enemy_ember_wyrm, npc_aldri
 
 ## Points critiques (issus de l'audit)
 
-- `InventorySystem.equip()` : toujours appeler `setInventoryPlayerContext(player)` avant
 - `LootSystem` : comparer les raretés avec `.includes([...])`, jamais avec `>=` sur une string enum
+- Toute nouvelle arme dans `src/data/items.ts` **doit** avoir un `equipStats.mainStat` (ATK_FLAT/MATK_FLAT miroir de `damage`/`magicDamage`) — `CombatSystem` lit exclusivement `StatsSystem.computeAll().atk/matk`, jamais `weapon.damage` directement ; sans `equipStats`, l'arme ne contribue quasiment aucun dégât (filet de sécurité dans `StatsSystem.collectEquipTotals` en attendant que la data soit complète)
 - `GameScene` : regen hors-combat doit utiliser un timestamp (`lastRegenTime`), pas `% 2 === 0`
 - `UIScene` : toujours définir `shutdown()` pour retirer les event listeners de GameScene
 - Keyboard listeners dans `GameScene.setupInput()` : stocker les refs et retirer dans `shutdown()`

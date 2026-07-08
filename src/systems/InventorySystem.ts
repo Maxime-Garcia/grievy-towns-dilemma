@@ -1,12 +1,7 @@
 import { PlayerState, Item, ItemType, Weapon, Armor, Accessory, Consumable, Equipment } from '../types';
 import { LootSystem } from './LootSystem';
-import { ProgressionSystem } from './ProgressionSystem';
+import { StatsSystem } from './StatsSystem';
 import { ALL_ITEMS } from '../data/items';
-
-let _playerContext: PlayerState | null = null;
-export function setInventoryPlayerContext(player: PlayerState): void {
-  _playerContext = player;
-}
 
 export class InventorySystem {
 
@@ -100,16 +95,26 @@ export class InventorySystem {
     }
   }
 
-  private static recalcStats(player: PlayerState): void {
-    const base = ProgressionSystem.computeBaseStats(player.level, player.attributes);
-    const withGear = ProgressionSystem.applyEquipmentBonuses(base, player.equipment);
-    player.stats.maxHp    = withGear.maxHp;
-    player.stats.maxMana  = withGear.maxMana;
-    player.stats.atk      = withGear.atk;
-    player.stats.def      = withGear.def;
-    player.stats.spd      = withGear.spd;
-    player.stats.magicAtk = withGear.magicAtk;
-    player.stats.magicDef = withGear.magicDef;
+  /**
+   * Recomputes derived stats (atk/def/spd/magicAtk/magicDef/maxHp/maxMana) from
+   * scratch via StatsSystem.computeAll() — the ONLY complete aggregator (base
+   * stats + legacy bonusStats + the newer equipStats mainStat/substats). This
+   * used to call ProgressionSystem.applyEquipmentBonuses(), which only knew
+   * about legacy bonusStats and silently ignored equipStats entirely — meaning
+   * an item's mainStat/substats (ATK_FLAT, CRIT_RATE, etc.) never actually
+   * reached player.stats, no matter what the item's tooltip promised.
+   * Public so ProgressionSystem can re-apply gear bonuses after a level-up
+   * recomputes base stats (see ProgressionSystem.addXp).
+   */
+  static recalcStats(player: PlayerState): void {
+    const cs = StatsSystem.computeAll(player);
+    player.stats.maxHp    = cs.hp;
+    player.stats.maxMana  = cs.mana;
+    player.stats.atk      = cs.atk;
+    player.stats.def      = cs.def;
+    player.stats.spd      = cs.spd;
+    player.stats.magicAtk = cs.matk;
+    player.stats.magicDef = cs.magicDef;
     player.stats.hp   = Math.min(player.stats.hp,   player.stats.maxHp);
     player.stats.mana = Math.min(player.stats.mana, player.stats.maxMana);
   }

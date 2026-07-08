@@ -4,7 +4,7 @@ import {
 } from '../types';
 import { SCALED_ENEMY_LEVEL } from './ProgressionSystem';
 import { TalentModifiers } from './TalentSystem';
-import { StatsSystem } from './StatsSystem';
+import { StatsSystem, ComputedStats } from './StatsSystem';
 import { SKILL_MAP } from '../data/skills';
 
 const ELEMENTAL_ADVANTAGE = WEAKNESS_MULTIPLIER;
@@ -43,10 +43,15 @@ export class CombatSystem {
   }
 
   // Player basic attack on enemy
-  static playerAttack(player: PlayerState, target: ActiveEnemy): DamageResult {
+  // `precomputed` lets a caller resolving multiple hits from one swing (e.g. a
+  // cone hitting several enemies) compute ComputedStats once instead of once
+  // per target — StatsSystem.computeAll() iterates all equipped gear/substats.
+  static playerAttack(player: PlayerState, target: ActiveEnemy, precomputed?: ComputedStats): DamageResult {
     const weapon = player.equipment.weapon;
-    const cs = StatsSystem.computeAll(player);
-    const rawDamage = player.stats.atk + (weapon?.damage ?? 0);
+    const cs = precomputed ?? StatsSystem.computeAll(player);
+    // cs.atk includes DÉJÀ la main stat de l'arme (StatsSystem.computeAll) — ne
+    // jamais réadditionner weapon.damage ici, sous peine de compter l'arme deux fois.
+    const rawDamage = cs.atk;
     const critRoll = Math.random() < cs.crit / 100;
     const mult = critRoll ? cs.critDmg : 1.0;
     // BUG2 fix: EXPOSE status reduces effective DEF before damage calculation
@@ -55,14 +60,19 @@ export class CombatSystem {
       ? Math.max(0, target.stats.baseDef * (1 - expose.strength / 100))
       : target.stats.baseDef;
     const reduced = rawDamage * (100 / (100 + effectiveDef));
+    const weaponElement = weapon?.element;
+    const elemMult = CombatSystem.elementalMultiplier(weaponElement, target);
+    const elemBonusMult = weaponElement && weaponElement !== ElementType.NEUTRAL
+      ? 1 + cs.elemBonus / 100
+      : 1;
     const soulBonus = CombatSystem.getSoulEchoBonus(player);
-    const damage = Math.max(1, Math.floor(reduced * mult * (0.9 + Math.random() * 0.2) * soulBonus));
+    const damage = Math.max(1, Math.floor(reduced * mult * elemMult * elemBonusMult * (0.9 + Math.random() * 0.2) * soulBonus));
 
     target.currentHp = Math.max(0, target.currentHp - damage);
     if (cs.lifesteal > 0) {
       player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + Math.floor(damage * cs.lifesteal / 100));
     }
-    return { damage, isCrit: critRoll, isKill: target.currentHp <= 0 };
+    return { damage, isCrit: critRoll, element: weaponElement, isKill: target.currentHp <= 0 };
   }
 
   // Player uses a skill on enemy (or self for heals)
@@ -86,15 +96,20 @@ export class CombatSystem {
     if (!target) return null;
 
     const cs = StatsSystem.computeAll(player);
-    const rawMagic = player.stats.magicAtk + (skill.magicDamage ?? 0);
-    const rawPhys  = player.stats.atk      + (skill.damage      ?? 0);
+    // cs.atk/cs.matk incluent DÉJÀ la main stat de l'arme — seul le bonus propre
+    // au sort (skill.damage/magicDamage) s'additionne par-dessus.
+    const rawMagic = cs.matk + (skill.magicDamage ?? 0);
+    const rawPhys  = cs.atk  + (skill.damage      ?? 0);
     const critRoll = Math.random() < cs.crit / 100;
     const mult = critRoll ? cs.critDmg : 1.0;
 
     const elemMult = CombatSystem.elementalMultiplier(skill.element, target);
+    const elemBonusMult = skill.element && skill.element !== ElementType.NEUTRAL
+      ? 1 + cs.elemBonus / 100
+      : 1;
 
     const soulBonus = CombatSystem.getSoulEchoBonus(player);
-    const magicDmg = Math.floor(rawMagic * (100 / (100 + target.stats.baseMagicDef)) * mult * elemMult * soulBonus);
+    const magicDmg = Math.floor(rawMagic * (100 / (100 + target.stats.baseMagicDef)) * mult * elemMult * elemBonusMult * soulBonus);
     const physDmg  = Math.floor(rawPhys  * (100 / (100 + target.stats.baseDef))      * mult * soulBonus);
     const total    = Math.max(1, magicDmg + physDmg);
 

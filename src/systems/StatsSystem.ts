@@ -44,10 +44,10 @@ export interface ComputedStats {
 
 type GearPiece = Weapon | Armor | Accessory;
 
-// GDD §Combat : crit chance = 5% + AGI * 0.3%, crit multiplier = 1.5x
+// GDD §Combat : crit chance = 5% + AGI * 0.3%, crit multiplier = 2.0x (un crit double les dégâts)
 const BASE_CRIT_PCT = 5;
 const CRIT_PER_AGI_PCT = 0.3;
-const BASE_CRIT_MULT = 1.5;
+const BASE_CRIT_MULT = 2.0;
 
 /** Clés dont la valeur s'affiche en % (fallback si isPercentage absent). */
 const PERCENT_KEYS: ReadonlySet<SubstatKey> = new Set<SubstatKey>([
@@ -146,7 +146,7 @@ export class StatsSystem {
       mana,
       crit: BASE_CRIT_PCT + player.attributes.agi * CRIT_PER_AGI_PCT + t.CRIT_RATE,
       critDmg: BASE_CRIT_MULT + t.CRIT_DMG / 100,
-      aspd: 1 + t.ASPD_PCT / 100,
+      aspd: Math.max(0.1, 1 + t.ASPD_PCT / 100),
       spd,
       elemBonus: t.ELEM_BONUS_PCT,
       lifesteal: t.LIFESTEAL_PCT,
@@ -202,10 +202,18 @@ export class StatsSystem {
     const totals = ZERO_TOTALS();
     for (const item of gear) {
       const es = item.equipStats;
-      if (!es) continue;
-      totals[es.mainStat.key] += es.mainStat.value;
-      for (const sub of es.substats) {
-        totals[sub.key] += sub.value;
+      if (es) {
+        totals[es.mainStat.key] += es.mainStat.value;
+        for (const sub of es.substats) {
+          totals[sub.key] += sub.value;
+        }
+      } else if ('weaponType' in item) {
+        // Filet de sécurité : certaines armes n'ont pas (encore) d'equipStats —
+        // sans ce fallback leur damage/magicDamage ne contribuerait à AUCUNE
+        // formule de combat (CombatSystem lit cs.atk/cs.matk, jamais weapon.damage
+        // directement). Mirror direct tant que la data n'est pas complétée.
+        if (item.damage)      totals.ATK_FLAT  += item.damage;
+        if (item.magicDamage) totals.MATK_FLAT += item.magicDamage;
       }
     }
     return totals;

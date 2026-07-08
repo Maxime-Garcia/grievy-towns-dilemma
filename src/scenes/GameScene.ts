@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType } from '../types';
 import { CombatSystem } from '../systems/CombatSystem';
+import { StatsSystem } from '../systems/StatsSystem';
 import { COMBO_CONFIGS, ComboConfig } from '../data/combos';
 import { TalentSystem, TalentModifiers } from '../systems/TalentSystem';
 import { LootSystem } from '../systems/LootSystem';
@@ -658,7 +659,9 @@ export class GameScene extends Phaser.Scene {
     this.comboWeaponType = weaponType;
     this.comboCount++;
 
-    const cooldown = pattern.cooldown;
+    // ASPD_PCT (equipStats) accélère le cooldown d'attaque de base — cf. StatsSystem.
+    const aspd = StatsSystem.computeAll(this.gameState.player).aspd;
+    const cooldown = pattern.cooldown / aspd;
 
     // ── FINISHER ─────────────────────────────────────────────────
     let finisherFired = false;
@@ -728,6 +731,10 @@ export class GameScene extends Phaser.Scene {
     // BLOCKER-B: comboStackDmg — bonus cumulatif par coup dans la chaîne
     const stackBonus = 1 + this.comboCount * this.playerModifiers.comboStackDmg / 100;
 
+    // Calculé une seule fois par cône (et non par cible touchée) — StatsSystem.computeAll
+    // itère tout l'équipement/substats, coûteux à répéter pour une arme qui touche une foule.
+    const cs = StatsSystem.computeAll(this.gameState.player);
+
     let anyCrit = false;
     for (const sprite of hits) {
       const activeEnemy = this.activeEnemies.get(sprite.name);
@@ -742,14 +749,14 @@ export class GameScene extends Phaser.Scene {
       // real (smaller, multiplied) damage should have left it — sometimes back above 0
       // entirely, making the enemy unkillable by anything but a >=1.0 finisher hit.
       const hpBeforeHit = activeEnemy.currentHp;
-      const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
+      const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy, cs);
 
       // Combiné : multiplicateur du pattern + talents mêlée + bonus de chaîne.
       const finalDamage = Math.round(result.damage * damageMultiplier * appliedMeleeMult * stackBonus);
       activeEnemy.currentHp = Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - finalDamage));
       const isKill = activeEnemy.currentHp <= 0;
 
-      this.showDamageNumber(sprite.x, sprite.y - 20, finalDamage, result.isCrit);
+      this.showDamageNumber(sprite.x, sprite.y - 20, finalDamage, result.isCrit, result.element);
       this.spawnHitParticles(sprite.x, sprite.y, result.element);
       this.applyHitFeedback(sprite, activeEnemy, finalDamage);
       if (result.isCrit) anyCrit = true;
@@ -813,6 +820,8 @@ export class GameScene extends Phaser.Scene {
   private updateArrowProjectiles(dt: number) {
     if (this._activeArrows.length === 0) return;
     const HIT_RADIUS = 22; // px
+    // Calculé une fois par frame plutôt que par flèche touchée — cf. executeHitInCone.
+    const cs = StatsSystem.computeAll(this.gameState.player);
 
     for (let i = this._activeArrows.length - 1; i >= 0; i--) {
       const arrow = this._activeArrows[i];
@@ -845,12 +854,12 @@ export class GameScene extends Phaser.Scene {
         // See executeHitInCone() for why we snapshot HP before CombatSystem's own
         // (unmultiplied) clamped subtraction rather than patch a delta onto it.
         const hpBeforeHit = activeEnemy.currentHp;
-        const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy);
+        const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy, cs);
         // BUG4 fix: apply the dmgMult from the finisher (or 1.0 for normal shots)
         const arrowFinalDmg = Math.round(result.damage * arrow.dmgMult);
         activeEnemy.currentHp = Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - arrowFinalDmg));
         const arrowIsKill = activeEnemy.currentHp <= 0;
-        this.showDamageNumber(sprite.x, sprite.y - 20, arrowFinalDmg, result.isCrit);
+        this.showDamageNumber(sprite.x, sprite.y - 20, arrowFinalDmg, result.isCrit, result.element);
         this.spawnHitParticles(sprite.x, sprite.y, result.element);
         this.applyHitFeedback(sprite, activeEnemy, arrowFinalDmg);
         if (result.isCrit) this.cameras.main.shake(120, 0.007);
@@ -3101,17 +3110,19 @@ export class GameScene extends Phaser.Scene {
       [ElementType.DARK]:      '#aa44ff',
       [ElementType.DIVINE]:    '#ffd700',
     };
+    // Un crit sur un coup élémentaire garde la teinte de l'élément (au lieu du
+    // jaune plat) — seul un crit neutre retombe sur le jaune classique.
     const color = isEnemy
       ? '#ff4444'
-      : isCrit
-        ? '#ffff00'
-        : (element ? ELEMENT_COLORS[element] ?? '#ffffff' : '#ffffff');
-    const size = isCrit ? '20px' : '14px';
+      : element
+        ? ELEMENT_COLORS[element] ?? (isCrit ? '#ffff00' : '#ffffff')
+        : (isCrit ? '#ffff00' : '#ffffff');
+    const size = isCrit ? '22px' : '14px';
     const label = isCrit ? `${amount}!` : `${amount}`;
 
     const txt = this.add.text(x + Phaser.Math.Between(-6, 6), y, label, {
       fontSize: size, color, fontFamily: 'monospace',
-      stroke: '#000000', strokeThickness: 2,
+      stroke: isCrit ? '#ffffff' : '#000000', strokeThickness: isCrit ? 3 : 2,
     }).setDepth(100).setOrigin(0.5, 1);
 
     const floatY = isCrit ? y - 56 : y - 40;
@@ -3123,6 +3134,17 @@ export class GameScene extends Phaser.Scene {
       ease: 'Quad.easeOut',
       onComplete: () => txt.destroy(),
     });
+
+    // Punch d'échelle pour distinguer visuellement un critique d'un coup normal
+    if (isCrit) {
+      txt.setScale(1.5);
+      this.tweens.add({
+        targets: txt,
+        scale: 1,
+        duration: 220,
+        ease: 'Back.easeOut',
+      });
+    }
   }
 
   private showHealNumber(x: number, y: number, amount: number) {
