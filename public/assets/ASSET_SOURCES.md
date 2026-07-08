@@ -199,6 +199,25 @@ positif sur une couleur plate. Historique des candidats écartés :
   de vraies zones texturées en 16×16 opaque (jusqu'à 18 couleurs uniques,
   contre ≤4 ailleurs) — c'est la source retenue ci-dessus.
 
-## `items/`, `skills/`, `ui/`, `vfx/`, `props/`, `skins/`
+## `items/` — Armes (54 icônes statiques)
+
+Icônes 32×32 statiques `item_<id>.png`, une par arme de `src/data/items.ts`
+(54 armes). Packs sources par famille d'arme (`weaponType`) :
+
+| Famille(s) | Pack source | Notes |
+|---|---|---|
+| SWORD, GREATSWORD, DUAL_SWORD (test) | Sword Item Icons | GREATSWORD et DUAL_SWORD en réemploi du pack épées, faute de pack dédié |
+| DAGGER, DUAL_DAGGER (test) | Dagger Item Icons | DUAL_DAGGER en réemploi du pack dagues |
+| STAFF | Staff Item Icons | Couvre aussi sceptres et tomes (`earth_tome`) |
+| BOW | Bow Item Icons | |
+| AXE, HAMMER (test) | Axe Item Icons | HAMMER en réemploi du pack haches, faute de pack dédié |
+
+**Contrairement aux ennemis, les icônes d'armes ne sont PAS recolorées par
+élément** (choix utilisateur explicite). L'élément d'une arme est signalé par
+la couleur de survol de son emplacement dans l'inventaire (voir
+`src/scenes/InventoryScene.ts`, fonction `hoverColorFor`), pas par l'icône
+elle-même.
+
+## `skills/`, `ui/`, `vfx/`, `props/`, `skins/`
 
 *(rien intégré pour l'instant)*

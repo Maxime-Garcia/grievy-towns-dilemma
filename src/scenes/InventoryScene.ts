@@ -1,7 +1,7 @@
 import { GameScene } from './GameScene';
 import {
   PlayerState, Item, ItemType, Weapon, Armor, Accessory, Consumable,
-  StatBonus, RARITY_COLORS, EquipStats,
+  StatBonus, RARITY_COLORS, EquipStats, ElementType,
 } from '../types';
 import { InventorySystem, setInventoryPlayerContext } from '../systems/InventorySystem';
 import { StatsSystem } from '../systems/StatsSystem';
@@ -11,6 +11,23 @@ import {
 } from '../utils/UITheme';
 import { itemTextureKey } from '../utils/ItemAssets';
 import { t, localizeItem } from '../i18n';
+
+// Hover highlight color for an item slot: element color for elemental weapons
+// (utilisateur : pas de recolor des icônes par élément, mais l'encadré au survol
+// doit signaler l'élément), blanc neutre sinon. Mêmes teintes que BestiaryScene.
+const ELEMENT_COLORS: Partial<Record<ElementType, number>> = {
+  [ElementType.FIRE]:      0xff4400,
+  [ElementType.EARTH]:     0x88aa33,
+  [ElementType.WIND]:      0xaaddff,
+  [ElementType.WATER]:     0x2266ff,
+  [ElementType.LIGHTNING]: 0xffee00,
+  [ElementType.ICE]:       0x88ddff,
+  [ElementType.DARK]:      0x8833cc,
+  [ElementType.DIVINE]:    0xffffff,
+};
+function hoverColorFor(item: Item): number {
+  return (item.element && ELEMENT_COLORS[item.element]) ?? 0xffffff;
+}
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 const MARGIN     = 8;
@@ -263,8 +280,8 @@ export class InventoryScene extends Phaser.Scene {
           sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, EQ_SLOT + 8, EQ_SLOT + 8, 0x000000, 0,
         ).setInteractive({ useHandCursor: true });
         this.dynamicObjs.push(hit);
-        hit.on('pointerover', () => { bg.lineStyle(2, 0xffffff, 0.8); bg.strokeRect(sx, sy, EQ_SLOT, EQ_SLOT); });
-        hit.on('pointerout',  () => { bg.lineStyle(2, rarHex, 1);     bg.strokeRect(sx, sy, EQ_SLOT, EQ_SLOT); });
+        hit.on('pointerover', () => { bg.lineStyle(2, hoverColorFor(item), 0.9); bg.strokeRect(sx, sy, EQ_SLOT, EQ_SLOT); });
+        hit.on('pointerout',  () => { bg.lineStyle(2, rarHex, 1);                bg.strokeRect(sx, sy, EQ_SLOT, EQ_SLOT); });
         hit.on('pointerdown', () => this.showDetail(item.id));
 
         // White flash overlay — confirmation visuelle après un tap-equip.
@@ -616,7 +633,7 @@ export class InventoryScene extends Phaser.Scene {
           this.doMainAction(slot.item.id, screenX, screenY);
         }
       });
-      hit.on('pointerover', () => { bg.lineStyle(2, 0xffffff, 0.9); bg.strokeRect(sx, 0, INV_SLOT - 2, INV_SLOT - 2); });
+      hit.on('pointerover', () => { bg.lineStyle(2, hoverColorFor(slot.item), 0.9); bg.strokeRect(sx, 0, INV_SLOT - 2, INV_SLOT - 2); });
       hit.on('pointerout',  () => {
         // Cancel long-press if the pointer leaves before 500 ms
         if (this.longPressTimer !== null) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }

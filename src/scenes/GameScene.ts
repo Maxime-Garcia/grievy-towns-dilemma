@@ -188,6 +188,7 @@ export class GameScene extends Phaser.Scene {
   private escKey!: Phaser.Input.Keyboard.Key;
   private speedBoostKey!: Phaser.Input.Keyboard.Key;
   private debugSpeedMult = 1;
+  private giveAllWeaponsKey!: Phaser.Input.Keyboard.Key;
 
   private xpOrbs!: Phaser.Physics.Arcade.Group;
   private readonly XP_ATTRACT_RANGE = 96;
@@ -397,6 +398,9 @@ export class GameScene extends Phaser.Scene {
     this.handleSkillInput();
     this.updateArrowProjectiles(dt);
 
+    // Debug: press G to add one of every weapon to the inventory (asset-review aid)
+    if (Phaser.Input.Keyboard.JustDown(this.giveAllWeaponsKey)) this.debugGiveAllWeapons();
+
     // ── IFRAMES : clignotement du joueur pendant l'invincibilité post-hit ──
     // Alterne alpha 0.25 / 1 toutes les 80ms ; alpha restauré à la fin de la fenêtre.
     if (this.iframeUntil > 0) {
@@ -440,6 +444,17 @@ export class GameScene extends Phaser.Scene {
 
     // nearbyNPC est recalculé en début d'update — seulement nearbyLootable à vider ici
     this.nearbyLootable = null;
+  }
+
+  /** Debug aid (press G): adds one of every weapon in the game to the inventory,
+   * so newly-integrated weapon icons/stats can be reviewed in-game without grinding. */
+  private debugGiveAllWeapons(): void {
+    const weapons = Object.values(ALL_ITEMS).filter(item => 'weaponType' in item && item.weaponType);
+    let added = 0;
+    for (const weapon of weapons) {
+      if (LootSystem.addToInventory(this.gameState.player, weapon, 1)) added++;
+    }
+    this.events.emit('show_notification', `[DEBUG] ${added}/${weapons.length} armes ajoutées à l'inventaire`);
   }
 
   // ── MOVEMENT ─────────────────────────────────────────────────
@@ -3615,6 +3630,8 @@ export class GameScene extends Phaser.Scene {
     });
     // Debug: hold B to move at 5× speed
     this.speedBoostKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.B);
+    // Debug: press G to add one of every weapon to the inventory (asset-review aid)
+    this.giveAllWeaponsKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.G);
     // Remaining keys (attack, dash, inventory, skill menu, skill slots)
     // are all wired by applyKeyBindings() called right after setupInput().
   }

@@ -37,6 +37,27 @@ export class PreloaderScene extends Phaser.Scene {
   };
   private static readonly ENEMY_STATES = ['idle', 'walk', 'attack', 'damage', 'dead'] as const;
 
+  // Icônes d'armes réelles (packs Sword/Staff/Bow/Dagger/Axe Item Icons — voir
+  // ASSET_SOURCES.md) — un fichier statique 32×32 par arme, pas de recolor par
+  // élément (contrairement aux ennemis) : l'élément d'une arme looté est signalé
+  // par la couleur de survol de son emplacement dans l'inventaire, pas l'icône.
+  private static readonly WEAPON_ICON_KEYS = [
+    'item_arc_sword', 'item_blizzard_gs', 'item_cinder_dagger', 'item_colossus_greatsword',
+    'item_coral_sword', 'item_crystal_staff', 'item_depth_fang', 'item_divine_sword',
+    'item_dragonfang_sword', 'item_drowned_sword', 'item_earth_tome', 'item_echo_blade',
+    'item_fire_staff', 'item_first_blade', 'item_frost_dagger', 'item_frost_staff',
+    'item_gale_dagger', 'item_gorvun_hammer', 'item_harpy_bow', 'item_herald_staff',
+    'item_iron_sword', 'item_leviathan_staff', 'item_magma_greatsword', 'item_malachar_blade',
+    'item_malachars_staff', 'item_memory_staff', 'item_phoenix_bow', 'item_pyroclast_bow',
+    'item_seismic_staff', 'item_sentinel_sword', 'item_shadow_dagger', 'item_shadow_staff',
+    'item_sky_bow', 'item_soul_bow', 'item_steel_sword', 'item_stone_dagger',
+    'item_storm_sword', 'item_temporal_blade', 'item_test_axe', 'item_test_dual_dagger',
+    'item_test_dual_sword', 'item_test_hammer', 'item_thunder_bow', 'item_thunder_staff',
+    'item_tide_staff', 'item_titan_greatsword', 'item_velmara_blade', 'item_void_bow',
+    'item_void_reaper', 'item_volkran_hammer', 'item_water_staff', 'item_wind_bow',
+    'item_wind_greatsword', 'item_world_eater',
+  ] as const;
+
   constructor() { super({ key: 'PreloaderScene' }); }
 
   preload() {
@@ -77,6 +98,11 @@ export class PreloaderScene extends Phaser.Scene {
           { frameWidth: size, frameHeight: size },
         );
       }
+    }
+
+    // ── Icônes d'armes réelles (voir ASSET_SOURCES.md) ──
+    for (const key of PreloaderScene.WEAPON_ICON_KEYS) {
+      this.load.image(key, `assets/sprites/items/${key}.png`);
     }
 
     // ── Tileset de sol Grievy Town — Fantasy Dreamland Reborn (voir ASSET_SOURCES.md) ──
