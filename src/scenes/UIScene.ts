@@ -68,7 +68,7 @@ export class UIScene extends Phaser.Scene {
 
     // ── DEV: build badge (top-left) — retirer avant release ─────────
     // Version discrète : petite pastille verte + texte 8px sur fond translucide.
-    const BUILD_LABEL = 'FIX: morts ennemis, menu, scale, i18n dialogues (b2db6c4)';
+    const BUILD_LABEL = 'ARMES: 54 icones reelles + hover element (3352b03)';
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '8px', color: '#7dffa8', fontFamily: 'monospace',
