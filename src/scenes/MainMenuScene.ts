@@ -26,6 +26,7 @@ const WATER_LIGHT  = 0x48a8a0;
 const WATER_DARK   = 0x1a5858;
 const WATER_HORIZ  = 0x60b0b0;
 const WATER_REFLECT = 0x78c0b8;
+const WATER_FOAM   = 0xa0d4d0; // écume claire à la jonction rive/lac
 // Végétation
 const GRASS_BRIGHT = 0x5ab82a;
 const GRASS_MID    = 0x3a8818;
@@ -53,6 +54,11 @@ export class MainMenuScene extends Phaser.Scene {
   private cloudsMid!:  Phaser.GameObjects.TileSprite;
   private cloudsNear!: Phaser.GameObjects.TileSprite;
   private waterSprite!: Phaser.GameObjects.TileSprite;
+
+  // Bornes horizontales du lac (posées par drawWater, lues par drawTerrain
+  // pour poser l'écume de rive exactement à la jonction eau/falaise)
+  private waterX0 = 0;
+  private waterX1 = 0;
 
   // Silhouette héros
   private hero!:     Phaser.GameObjects.Graphics;
@@ -85,9 +91,12 @@ export class MainMenuScene extends Phaser.Scene {
     this.drawForeground(W, H);    // depth 50
     this.drawHero(W, H);          // depth 60
 
-    // Voile de lisibilité (très léger pour un style jour)
-    this.add.rectangle(W / 2, H / 2, W, H, 0x000822, 0.12)
-      .setDepth(80).setScrollFactor(0);
+    // Voile de lisibilité — corridor central assombri (colonne UI) + bande
+    // pied de page, plutôt qu'un voile plat uniforme : les flancs gauche/droit
+    // (où vivent le pont et le héros) restent lumineux et saturés, tandis que
+    // la colonne centrale (titre, boutons, cartes de sauvegarde) gagne le
+    // contraste nécessaire à la lecture des textes discrets (TXT_MUTED/HINT).
+    this.drawReadabilityScrim(W, H); // depth 79
 
     // ── Cadre décoratif ──
     const frame = this.add.graphics().setDepth(85).setScrollFactor(0);
@@ -266,6 +275,43 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // drawReadabilityScrim — assombrissement ciblé plutôt qu'un voile plat :
+  // un "corridor" vertical centré sur la colonne UI (titre/boutons/cartes),
+  // qui s'estompe avant d'atteindre les flancs où vivent le pont et le héros,
+  // plus une bande pied de page pour les libellés footer (souvent hors-carte).
+  // ─────────────────────────────────────────────────────────────────────────────
+  private drawReadabilityScrim(W: number, H: number): void {
+    const g = this.add.graphics().setDepth(79).setScrollFactor(0);
+
+    // Wash global très léger — garde une base de contraste partout
+    g.fillStyle(0x000818, 0.08);
+    g.fillRect(0, 0, W, H);
+
+    // Corridor central : la zone occupée par le titre/boutons/cartes de
+    // sauvegarde va de x≈190 à x≈610 (colonne 400±200 + marge). Au-delà,
+    // l'assombrissement retombe à ~0 pour préserver la vivacité des flancs.
+    const cx      = W / 2;
+    const halfHot = W * 0.26;   // bords du corridor ≈ 190 / 610 sur 800px
+    const step    = 10;
+    for (let x = 0; x < W; x += step) {
+      const dist  = Math.abs((x + step / 2) - cx);
+      const t     = Math.max(0, 1 - dist / halfHot);
+      const extra = 0.22 * Math.pow(t, 1.3);
+      if (extra > 0.004) {
+        g.fillStyle(0x000818, extra);
+        g.fillRect(x, 0, step, H);
+      }
+    }
+
+    // Bande pied de page — les libellés footer (contrôles + version) sont
+    // en TXT_HINT (très sombre) sur l'herbe déjà sombre : renforcer là aussi,
+    // y compris sur les flancs (le texte version est collé au coin droit).
+    const footerH = 34;
+    g.fillStyle(0x000000, 0.28);
+    g.fillRect(0, H - footerH, W, footerH);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // drawClouds — 3 couches TileSprite
   // ─────────────────────────────────────────────────────────────────────────────
   private drawClouds(W: number, H: number): void {
@@ -273,7 +319,7 @@ export class MainMenuScene extends Phaser.Scene {
     const gFar    = this.add.graphics();
     const farTexW = W * 2;
     const farTexH = 50;
-    const farPositions = [0.05, 0.16, 0.28, 0.40, 0.52, 0.64, 0.76, 0.90];
+    const farPositions = [0.06, 0.22, 0.38, 0.58, 0.74, 0.90];
     farPositions.forEach((fx, idx) => {
       const cx = Math.round(fx * farTexW);
       const cy = Math.round(farTexH * 0.45 + (idx % 3) * 6);
@@ -290,8 +336,7 @@ export class MainMenuScene extends Phaser.Scene {
     const midTexW = W * 2;
     const midTexH = 70;
     const midPositions: Array<[number, number, number]> = [
-      [0.08, 0.5, 65], [0.23, 0.4, 55], [0.44, 0.55, 70],
-      [0.62, 0.45, 60], [0.80, 0.5, 68],
+      [0.10, 0.5, 65], [0.30, 0.42, 60], [0.62, 0.48, 70], [0.84, 0.5, 62],
     ];
     midPositions.forEach(([fx, fy, cw]) => {
       this.drawCloudBlob(gMid,
@@ -358,11 +403,15 @@ export class MainMenuScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
   private drawFarMountains(W: number, H: number): void {
     // Plan 1 — très loin, brumeux gris
+    // baseY relevé (0.40 au lieu de 0.50) : la base du plan lointain doit
+    // rester au-dessus du lac (voir drawWater, waterY≈0.46H) pour ne pas
+    // disparaître entièrement derrière l'eau, et ses pics doivent garder
+    // une marge nette sous le titre/sous-titre/citation (y max ≈ 96).
     this.buildMountainImage('mtn_far1_v2', W, H, {
       color:    MTN1,
-      baseYR:   0.50,
-      minH:     70,
-      maxH:     100,
+      baseYR:   0.40,
+      minH:     60,
+      maxH:     90,
       snow:     true,
       snowR:    0.18,
       conifer:  false,
@@ -372,9 +421,9 @@ export class MainMenuScene extends Phaser.Scene {
     // Plan 2 — vert-gris
     this.buildMountainImage('mtn_far2_v2', W, H, {
       color:    MTN2,
-      baseYR:   0.56,
-      minH:     110,
-      maxH:     148,
+      baseYR:   0.45,
+      minH:     90,
+      maxH:     125,
       snow:     true,
       snowR:    0.15,
       conifer:  false,
@@ -387,11 +436,14 @@ export class MainMenuScene extends Phaser.Scene {
   // drawMidMountains — plans 3 et 4 verts avec pins
   // ─────────────────────────────────────────────────────────────────────────────
   private drawMidMountains(W: number, H: number): void {
+    // baseY relevé (0.52) : la base plonge dans le lac (comportement voulu,
+    // "montagne qui se noie derrière l'eau"), mais les pics restent bien
+    // au-dessus de la ligne d'eau et loin sous le bloc titre/citation.
     this.buildMountainImage('mtn_mid_v2', W, H, {
       color:    MTN3,
-      baseYR:   0.62,
-      minH:     155,
-      maxH:     210,
+      baseYR:   0.52,
+      minH:     140,
+      maxH:     190,
       snow:     false,
       snowR:    0,
       conifer:  true,
@@ -492,10 +544,18 @@ export class MainMenuScene extends Phaser.Scene {
   // drawWater — lac central avec TileSprite animé
   // ─────────────────────────────────────────────────────────────────────────────
   private drawWater(W: number, H: number): void {
-    const waterY = Math.round(H * 0.57);
-    const waterH = Math.round(H * 0.26);
+    // waterY/waterH resserrés (0.46/0.22 au lieu de 0.57/0.26) : dans la
+    // version précédente, la falaise avant-plan (cliffY≈0.64H) recouvrait
+    // près des 3/4 de la hauteur du lac, qui se réduisait à un mince filet
+    // turquoise. Ici le lac se termine à 0.68H et la falaise ne commence
+    // qu'à 0.66H : ~90% du lac reste visible, seule la rive proche (dernier
+    // 10%) se fond sous l'herbe, comme une vraie perspective de bord d'eau.
+    const waterY = Math.round(H * 0.46);
+    const waterH = Math.round(H * 0.22);
     const waterX = Math.round(W * 0.12);
     const waterW = Math.round(W * 0.76);
+    this.waterX0 = waterX;
+    this.waterX1 = waterX + waterW;
 
     // Bande herbeuse sur la rive supérieure (berge opposée)
     const bankG = this.add.graphics().setDepth(21).setScrollFactor(0);
@@ -541,7 +601,7 @@ export class MainMenuScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
   private drawRiverForest(W: number, H: number): void {
     const g   = this.add.graphics().setDepth(28).setScrollFactor(0);
-    const ry  = Math.round(H * 0.52);
+    const ry  = Math.round(H * 0.44); // rive opposée, juste au-dessus de la nouvelle ligne d'eau
     const rng = this.makeLcg(55);
 
     // Sol de la rive
@@ -594,7 +654,7 @@ export class MainMenuScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
   private drawTerrain(W: number, H: number): void {
     const g      = this.add.graphics().setDepth(35).setScrollFactor(0);
-    const cliffY = Math.round(H * 0.64);
+    const cliffY = Math.round(H * 0.66);
     const rng    = this.makeLcg(7);
 
     // Masse principale falaise
@@ -610,9 +670,21 @@ export class MainMenuScene extends Phaser.Scene {
       g.fillRect(bx, cliffY - bump, 8, 2);
     }
 
-    // Quelques rochers épars sur la falaise
+    // Écume claire à la jonction rive/lac — uniquement sous la largeur du
+    // lac (this.waterX0..waterX1, posée par drawWater), pour lier visuellement
+    // la falaise avant-plan et le lac au lieu d'un simple aplat qui les recouvre.
+    if (this.waterX1 > this.waterX0) {
+      const foamW = this.waterX1 - this.waterX0;
+      g.fillStyle(WATER_FOAM, 0.5);
+      g.fillRect(this.waterX0, cliffY - 3, foamW, 2);
+      g.fillStyle(WATER_FOAM, 0.22);
+      g.fillRect(this.waterX0, cliffY - 1, foamW, 1);
+    }
+
+    // Quelques rochers épars sur la falaise (moins nombreux qu'avant pour
+    // laisser respirer l'herbe/fleurs plutôt que d'encombrer le premier plan)
     const rngR = this.makeLcg(43);
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 4; i++) {
       const rx = Math.round(rngR() * W);
       const ry = cliffY + Math.round(rngR() * (H - cliffY - 10));
       const rw = 12 + Math.round(rngR() * 14);
@@ -630,9 +702,13 @@ export class MainMenuScene extends Phaser.Scene {
   private drawBridge(W: number, H: number): void {
     const g = this.add.graphics().setDepth(40).setScrollFactor(0);
 
-    // Position du pont : lac gauche-centre
-    const bridgeCX = Math.round(W * 0.32);
-    const bridgeY  = Math.round(H * 0.60);
+    // Position du pont : flanc gauche du lac, délibérément HORS de la
+    // colonne centrale (x≈190-610) occupée par le titre/boutons/cartes de
+    // sauvegarde (panneaux quasi-opaques, depth 90+) — dans la version
+    // précédente le pont était centré (0.32W ≈ x256, en plein dans cette
+    // colonne) et se retrouvait presque entièrement masqué derrière elles.
+    const bridgeCX = Math.round(W * 0.15);
+    const bridgeY  = Math.round(H * 0.56);
     const archW    = 90;
     const archH    = 28;
     const deckH    = 8;
@@ -670,7 +746,7 @@ export class MainMenuScene extends Phaser.Scene {
   // drawForeground — herbe haute, fleurs
   // ─────────────────────────────────────────────────────────────────────────────
   private drawForeground(W: number, H: number): void {
-    const cliffY = Math.round(H * 0.64);
+    const cliffY = Math.round(H * 0.66);
 
     // Herbe sur la falaise (partie supérieure)
     const grassG = this.add.graphics().setDepth(50).setScrollFactor(0);
@@ -720,11 +796,24 @@ export class MainMenuScene extends Phaser.Scene {
   // drawHero — silhouette + breathing tween
   // ─────────────────────────────────────────────────────────────────────────────
   private drawHero(W: number, H: number): void {
-    const cliffY    = Math.round(H * 0.64);
+    const cliffY    = Math.round(H * 0.66);
     this.heroBaseY  = cliffY - 14;
 
+    // Flanc droit, délibérément HORS de la colonne centrale (x≈190-610)
+    // occupée par le titre/boutons/cartes de sauvegarde — dans la version
+    // précédente le héros était centré (0.55W ≈ x440) et se retrouvait
+    // presque entièrement masqué derrière la 2e carte de sauvegarde
+    // (panneau quasi-opaque, depth 90 > depth 60 du héros). Ici il se
+    // détache pleinement sur le ciel/lac, silhouette au bord de la falaise.
+    const heroX = Math.round(W * 0.855);
+
+    // Ombre de contact au sol — ancre visuellement le héros sur la falaise
+    const shadow = this.add.graphics().setDepth(59).setScrollFactor(0);
+    shadow.fillStyle(0x000000, 0.28);
+    shadow.fillEllipse(heroX, this.heroBaseY + 1, 20, 6);
+
     this.hero = this.add.graphics().setDepth(60).setScrollFactor(0);
-    this.hero.setPosition(Math.round(W * 0.55), this.heroBaseY);
+    this.hero.setPosition(heroX, this.heroBaseY);
     this.hero.fillStyle(HERO_COL, 1);
 
     // Jambes légèrement écartées, posture debout regardant l'horizon
