@@ -5,6 +5,9 @@ import { SpawnRegion } from '../types';
 // zone maps aren't finalized yet. Backs the Bestiary "roughly where it spawns" heatmap
 // and the quadrant-biased spawn logic in GameScene.createEnemiesForZone(). Revisit once
 // zone maps are final and real per-enemy placement can be authored.
+// Les entrées `*_boss` sont ignorées par le spawn de GameScene.createEnemiesForZone()
+// (les boss ont une position fixe, pas de tirage aléatoire) — elles existent uniquement
+// pour que la future heatmap Bestiaire ait une région à afficher pour chaque boss.
 export const ENEMY_SPAWN_REGIONS: Record<string, SpawnRegion[]> = {
   // ── Ignis Reach (Fire) ───────────────────────────────────────
   ember_wyrm:        ['n', 'ne'],
