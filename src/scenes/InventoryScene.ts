@@ -874,15 +874,17 @@ export class InventoryScene extends Phaser.Scene {
     const H       = this.cameras.main.height;
     const PW      = isEquip ? 240 : 210;
     const MARGIN  = 6;
+    const ICON_SIZE = 32; // seule source de vérité — réutilisé pour la mesure ET le rendu
+    const BTN_H     = 44; // idem — ≥44px touch target (Apple HIG)
 
     // Hauteur du panneau calculée depuis le contenu réel (plus de troncature à 90
     // caractères ni de taille fixe trop courte pour un lore long) : on mesure le
     // texte de description avec un Text jetable au wordWrapWidth final, AVANT de
     // décider PH, puis on le détruit — le vrai texte est recréé plus bas une fois
     // la position finale connue.
-    const locItem0   = localizeItem(item);
+    const locItem    = localizeItem(item);
     const substatCount = isEquip ? this.getItemSubstats(item).slice(0, 3).length : 0;
-    const descRaw0   = isEquip ? (locItem0.lore ?? locItem0.description) : '';
+    const descRaw0   = isEquip ? (locItem.lore ?? locItem.description) : '';
     let   descHeight = 0;
     if (isEquip && descRaw0) {
       const probe = this.add.text(0, 0, descRaw0, uiStyle(9, UI.TXT_MUTED, {
@@ -891,10 +893,9 @@ export class InventoryScene extends Phaser.Scene {
       descHeight = probe.height;
       probe.destroy();
     }
-    const headerHEstimate = MARGIN + 32 + MARGIN; // icône + marges (== headerH plus bas)
-    const BTN_H_ESTIMATE  = 44;
+    const headerH = MARGIN + ICON_SIZE + MARGIN; // icône + marges
     const contentH = isEquip
-      ? headerHEstimate + substatCount * 14 + 4 + descHeight + 10 + BTN_H_ESTIMATE + MARGIN * 2
+      ? headerH + substatCount * 14 + 4 + descHeight + 10 + BTN_H + MARGIN * 2
       : 116;
     // Bornes : jamais plus petit que l'ancien minimum (évite une régression visuelle
     // sur les items courts), jamais plus grand que l'écran moins une marge de sécurité.
@@ -927,32 +928,30 @@ export class InventoryScene extends Phaser.Scene {
     const rarHexStr = RARITY_COLORS[item.rarity] ?? '#ffffff';
     const rarHex    = parseInt(rarHexStr.replace('#', ''), 16);
     const iconKey   = this.resolveIcon(item);
-    const iconSize  = 32;
-    const iconX     = px + MARGIN + iconSize / 2;
-    const iconY     = py + MARGIN + iconSize / 2;
+    const iconX     = px + MARGIN + ICON_SIZE / 2;
+    const iconY     = py + MARGIN + ICON_SIZE / 2;
 
     const frameGfx = this.add.graphics().setDepth(depth + 1);
     frameGfx.lineStyle(2, rarHex, 1);
-    frameGfx.strokeRoundedRect(px + MARGIN - 2, py + MARGIN - 2, iconSize + 4, iconSize + 4, 4);
+    frameGfx.strokeRoundedRect(px + MARGIN - 2, py + MARGIN - 2, ICON_SIZE + 4, ICON_SIZE + 4, 4);
     this.consumePopupObjects.push(frameGfx);
 
     if (iconKey) {
       try {
         const img = this.add.image(iconX, iconY, iconKey)
-          .setDisplaySize(iconSize, iconSize)
+          .setDisplaySize(ICON_SIZE, ICON_SIZE)
           .setDepth(depth + 1);
         this.consumePopupObjects.push(img);
       } catch {
-        this.addColorSquareAbove(px + MARGIN, py + MARGIN, iconSize, 0x44cc66, depth + 1);
+        this.addColorSquareAbove(px + MARGIN, py + MARGIN, ICON_SIZE, 0x44cc66, depth + 1);
       }
     } else {
-      this.addColorSquareAbove(px + MARGIN, py + MARGIN, iconSize, 0x44cc66, depth + 1);
+      this.addColorSquareAbove(px + MARGIN, py + MARGIN, ICON_SIZE, 0x44cc66, depth + 1);
     }
 
     // ── Item name + element glyph (marks THIS instance's rolled element —
     // LootSystem.applyRandomElement rolls it per drop, not per weapon def) ──
-    const locItem  = localizeItem(item);
-    const textX    = px + MARGIN * 2 + iconSize + 2;
+    const textX    = px + MARGIN * 2 + ICON_SIZE + 2;
     let   nameX    = textX;
     const glyph    = item.element ? ELEMENT_GLYPHS[item.element] : undefined;
     if (glyph) {
@@ -972,7 +971,6 @@ export class InventoryScene extends Phaser.Scene {
     );
 
     // ── Body: effect line (consumable) or stats + description (equip) ─────
-    const headerH = MARGIN + iconSize + MARGIN; // icon row height, same for both
     if (isConsumable) {
       const effectLine = this.getConsumableEffectLine(item as Consumable);
       this.consumePopupObjects.push(
@@ -1014,7 +1012,6 @@ export class InventoryScene extends Phaser.Scene {
     }
 
     // ── Action buttons ────────────────────────────────────────────────────
-    const BTN_H  = 44; // ≥44 px for touch targets (Apple HIG)
     const BTN_W  = (PW - MARGIN * 3) / 2;
     const BTN_Y  = py + PH - BTN_H - MARGIN;
     const BTN_X1 = px + MARGIN;
