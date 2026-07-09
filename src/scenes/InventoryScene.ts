@@ -7,6 +7,7 @@ import { InventorySystem } from '../systems/InventorySystem';
 import { StatsSystem, BASE_CRIT_PCT, CRIT_PER_AGI_PCT, BASE_CRIT_MULT } from '../systems/StatsSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { ALL_ITEMS } from '../data/items';
+import { PASSIVE_EFFECT_LABELS } from '../data/passiveEffects';
 import {
   UI, drawGlowPanel, drawCard, drawSlot,
   drawDivider, addCloseButton, uiStyle,
@@ -884,7 +885,11 @@ export class InventoryScene extends Phaser.Scene {
     // la position finale connue.
     const locItem    = localizeItem(item);
     const substatCount = isEquip ? this.getItemSubstats(item).slice(0, 3).length : 0;
-    const descRaw0   = isEquip ? (locItem.lore ?? locItem.description) : '';
+    const passiveLabel = ('passiveEffect' in item && item.passiveEffect)
+      ? PASSIVE_EFFECT_LABELS[item.passiveEffect]
+      : undefined;
+    const baseDesc0  = isEquip ? (locItem.lore ?? locItem.description) : '';
+    const descRaw0   = passiveLabel ? `${baseDesc0}\n\nPassif : ${passiveLabel}` : baseDesc0;
     let   descHeight = 0;
     if (isEquip && descRaw0) {
       const probe = this.add.text(0, 0, descRaw0, uiStyle(9, UI.TXT_MUTED, {
@@ -1000,12 +1005,11 @@ export class InventoryScene extends Phaser.Scene {
         bodyY += 14;
       }
       bodyY += 4;
-      // Texte complet (plus de troncature à 90 caractères) — le panneau est
-      // désormais dimensionné sur la hauteur réelle de ce texte (cf. descHeight
-      // mesuré plus haut, avant que PH ne soit fixé).
-      const desc = locItem.lore ?? locItem.description;
+      // Texte complet (plus de troncature à 90 caractères), lore/description +
+      // passif éventuel sur la même chaîne (cf. descRaw0/descHeight mesurés plus
+      // haut, avant que PH ne soit fixé — doit rester identique à ce texte-ci).
       this.consumePopupObjects.push(
-        this.add.text(px + MARGIN, bodyY, desc, uiStyle(9, UI.TXT_MUTED, {
+        this.add.text(px + MARGIN, bodyY, descRaw0, uiStyle(9, UI.TXT_MUTED, {
           italic: true, wordWrapWidth: PW - MARGIN * 2, lineSpacing: 2,
         })).setDepth(depth + 1),
       );

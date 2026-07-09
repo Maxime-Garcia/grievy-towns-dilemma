@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType } from '../types';
 import { CombatSystem } from '../systems/CombatSystem';
 import { StatsSystem } from '../systems/StatsSystem';
+import { PassiveSystem } from '../systems/PassiveSystem';
 import { COMBO_CONFIGS, ComboConfig } from '../data/combos';
 import { TalentSystem, TalentModifiers } from '../systems/TalentSystem';
 import { LootSystem } from '../systems/LootSystem';
@@ -260,6 +261,16 @@ export class GameScene extends Phaser.Scene {
   private lastAutoSave = 0;
   private playtimeAccumulator = 0;
   private lastRegenTime = 0;
+  private lastPermanentRegenTime = 0;
+  // LOW_HP_SHIELD_30_PCT (ring_of_preservation) — buffer de PV séparé de stats.hp,
+  // absorbe les dégâts avant qu'ils n'atteignent les vrais PV. Transitoire (comme
+  // dashCooldown/iframeUntil) : pas persisté en save, se reconstitue en jeu.
+  private playerShieldHp = 0;
+  private lowHpShieldCooldownUntil = 0;
+  // "En combat" = this.activeEnemies.size > 0 (même définition que le hors-combat
+  // de outOfCombatRegen ci-dessus) — sert de point de transition pour les passifs
+  // FIRST_STRIKE_500_PCT/COMBAT_START_ZERO_CD (cf. PassiveSystem).
+  private wasInCombat = false;
 
   // ── COMBO STATE MACHINE ──────────────────────────────────────
   private comboCount = 0;
@@ -472,6 +483,29 @@ export class GameScene extends Phaser.Scene {
       CombatSystem.outOfCombatRegen(this.gameState.player);
     }
 
+    // PERMANENT_REGEN_1_PCT_PER_SEC (hidden_eternity_ring) — même cadence que la
+    // regen hors-combat ci-dessus, mais SANS la condition activeEnemies.size===0
+    // (le point même de ce passif est de régénérer MÊME en combat).
+    const permanentRegenPct = PassiveSystem.getPermanentRegenPctPerSec(this.gameState.player.equipment);
+    if (permanentRegenPct > 0 && time - this.lastPermanentRegenTime > 2000) {
+      this.lastPermanentRegenTime = time;
+      const p = this.gameState.player;
+      const regenFrac = permanentRegenPct / 100 * 2; // 1%/s × 2s d'intervalle
+      p.stats.hp   = Math.min(p.stats.maxHp,   p.stats.hp   + Math.floor(p.stats.maxHp   * regenFrac));
+      p.stats.mana = Math.min(p.stats.maxMana, p.stats.mana + Math.floor(p.stats.maxMana * regenFrac));
+    }
+
+    // Transition hors-combat → en-combat : reset des passifs "premier coup"/"cooldowns
+    // à zéro au début du combat" (FIRST_STRIKE_500_PCT, COMBAT_START_ZERO_CD).
+    const inCombatNow = this.activeEnemies.size > 0;
+    if (inCombatNow && !this.wasInCombat) {
+      this.gameState.player.firstStrikeReady = true;
+      if (PassiveSystem.hasCombatStartZeroCd(this.gameState.player.equipment)) {
+        for (const id of Object.keys(this.cooldowns)) this.cooldowns[id] = 0;
+      }
+    }
+    this.wasInCombat = inCombatNow;
+
     if (this.playtimeAccumulator - this.lastAutoSave > 180) {
       this.lastAutoSave = this.playtimeAccumulator;
       SaveSystem.save(this.gameState, this.gameState.saveSlot);
@@ -503,7 +537,9 @@ export class GameScene extends Phaser.Scene {
     this.debugSpeedMult = this.speedBoostKey?.isDown ? 5 : 1;
 
     const player = this.gameState.player;
-    const speed  = (90 + player.stats.spd * 4) * this.playerModifiers.moveSpeedMult * this.debugSpeedMult;
+    // WATER_DMG_15_SPEED_10_PCT (sailor_ghost_ring) — bonus de vitesse permanent.
+    const passiveSpeedMult = 1 + PassiveSystem.getMoveSpeedBonusPct(player.equipment) / 100;
+    const speed  = (90 + player.stats.spd * 4) * this.playerModifiers.moveSpeedMult * passiveSpeedMult * this.debugSpeedMult;
     const body   = this.player.body as Phaser.Physics.Arcade.Body;
 
     let targetVx = 0, targetVy = 0;
@@ -595,8 +631,11 @@ export class GameScene extends Phaser.Scene {
     const len = Math.sqrt(dx * dx + dy * dy);
     if (len === 0) return;
 
-    const nx = (dx / len) * 300;
-    const ny = (dy / len) * 300;
+    // DASH_DISTANCE_20_PCT (ring_of_the_wind) — durée du dash inchangée (300ms,
+    // cf. tween plus bas), la distance parcourue augmente avec la vitesse.
+    const dashSpeedMult = 1 + PassiveSystem.getDashDistanceBonusPct(this.gameState.player.equipment) / 100;
+    const nx = (dx / len) * 300 * dashSpeedMult;
+    const ny = (dy / len) * 300 * dashSpeedMult;
 
     this.dashCooldown = 1.5;
     this.isDashing = true;
@@ -698,7 +737,10 @@ export class GameScene extends Phaser.Scene {
 
     // ASPD_PCT (equipStats) accélère le cooldown d'attaque de base — cf. StatsSystem.
     const aspd = StatsSystem.computeAll(this.gameState.player).aspd;
-    const cooldown = pattern.cooldown / aspd;
+    // NO_ATTACK_COOLDOWN (hidden_temporal_blade) : les attaques basiques n'ont
+    // plus aucun temps de recharge — lastAttackEnd reste utile pour la grâce combo.
+    const noAttackCooldown = PassiveSystem.hasNoAttackCooldown(this.gameState.player.equipment);
+    const cooldown = noAttackCooldown ? 0 : pattern.cooldown / aspd;
 
     // ── FINISHER ─────────────────────────────────────────────────
     let finisherFired = false;
@@ -706,7 +748,7 @@ export class GameScene extends Phaser.Scene {
       finisherFired = true;
       this.executeFinisherAttack(weaponType, pattern, comboConfig, now);
       this.comboCount = 0;
-      const finisherCd = cooldown * comboConfig.finisher.cooldownMult;
+      const finisherCd = noAttackCooldown ? 0 : cooldown * comboConfig.finisher.cooldownMult;
       this.lastAttackEnd      = now + finisherCd;
       this.attackCooldownUntil = this.lastAttackEnd;
     } else {
@@ -948,7 +990,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    SkillSystem.startCooldown(this.cooldowns, skillId);
+    SkillSystem.startCooldown(this.cooldowns, skillId, this.gameState.player);
   }
 
   // ── PUBLIC API FOR SUBSCENES ─────────────────────────────────
@@ -1964,6 +2006,48 @@ export class GameScene extends Phaser.Scene {
     this.time.delayedCall(250, () => { if (sprite.active) this.resetEnemyTint(sprite); });
   }
 
+  /**
+   * Applique les passifs de mitigation de dégâts subis (DMG_REDUCTION_40_DEATH_RESIST)
+   * — réduction % puis, si le coup serait fatal, chance de laisser le joueur à 1 HP
+   * au lieu de mourir. Partagé entre applyEnemyMeleeDamage/applyDamageToPlayer pour
+   * ne jamais l'oublier dans l'un des deux chemins (cf. précédent Soul Echo).
+   */
+  private mitigatePlayerDamage(rawDamage: number, hpBefore: number): number {
+    const equipment = this.gameState.player.equipment;
+    let dmg = rawDamage;
+
+    // LOW_HP_SHIELD_30_PCT — absorbe les dégâts en premier, avant tout le reste.
+    if (this.playerShieldHp > 0) {
+      const absorbed = Math.min(this.playerShieldHp, dmg);
+      this.playerShieldHp -= absorbed;
+      dmg -= absorbed;
+    }
+
+    const reductionPct = PassiveSystem.getDamageReductionPct(equipment);
+    dmg = reductionPct > 0 ? Math.round(dmg * (1 - reductionPct / 100)) : dmg;
+    if (hpBefore - dmg <= 0) {
+      const resistChance = PassiveSystem.getDeathResistChance(equipment);
+      if (resistChance > 0 && Math.random() < resistChance) {
+        dmg = Math.max(0, hpBefore - 1); // laisse le joueur à 1 HP pile
+      }
+    }
+
+    this.maybeTriggerLowHpShield(hpBefore - dmg);
+    return dmg;
+  }
+
+  /** Déclenche le bouclier de ring_of_preservation si HP < 20% et pas en cooldown. */
+  private maybeTriggerLowHpShield(hpAfter: number): void {
+    const equipment = this.gameState.player.equipment;
+    if (!PassiveSystem.hasLowHpShield(equipment)) return;
+    if (this.playerShieldHp > 0) return; // déjà actif
+    if (this.time.now < this.lowHpShieldCooldownUntil) return;
+    const maxHp = this.gameState.player.stats.maxHp;
+    if (maxHp <= 0 || hpAfter / maxHp >= PassiveSystem.LOW_HP_SHIELD_THRESHOLD_PCT / 100) return;
+    this.playerShieldHp = Math.round(maxHp * PassiveSystem.LOW_HP_SHIELD_AMOUNT_PCT / 100);
+    this.lowHpShieldCooldownUntil = this.time.now + PassiveSystem.LOW_HP_SHIELD_COOLDOWN_MS;
+  }
+
   /** Apply melee damage from an enemy to the player, with guard/windup checks. */
   private applyEnemyMeleeDamage(ae: ActiveEnemy, damageMult: number) {
     if (this.inWindup && this.playerModifiers.windupArmor) return;
@@ -1980,6 +2064,16 @@ export class GameScene extends Phaser.Scene {
 
     let finalDmg = Math.round(result.damage * damageMult);
     if (guardActive) finalDmg -= Math.round(finalDmg * 0.3);
+    finalDmg = this.mitigatePlayerDamage(finalDmg, hpBeforeHit);
+
+    // MAGIC_REFLECT_25_PCT (hidden_mirror_helm) — renvoie une partie du coup à
+    // l'attaquant. Aucune notion de dégâts "magiques" vs "physiques" n'existe côté
+    // mêlée ennemie (CombatSystem.enemyAttack ne différencie pas) — appliqué à tout
+    // coup de mêlée, simplification assumée en l'absence de ce tag dans le moteur.
+    const reflectPct = PassiveSystem.getMagicReflectPct(this.gameState.player.equipment);
+    if (reflectPct > 0 && finalDmg > 0) {
+      this.applyDamageToEnemy(ae.instanceId, Math.round(finalDmg * reflectPct / 100));
+    }
 
     this.gameState.player.stats.hp = Math.max(0, Math.min(
       this.gameState.player.stats.maxHp, hpBeforeHit - finalDmg,
@@ -2006,6 +2100,7 @@ export class GameScene extends Phaser.Scene {
       if (damage <= 0) return;
     }
 
+    damage = this.mitigatePlayerDamage(damage, this.gameState.player.stats.hp);
     this.gameState.player.stats.hp = Math.max(0, this.gameState.player.stats.hp - damage);
     this.iframeUntil = this.time.now + 800;
     this.showDamageNumber(this.player.x, this.player.y - 20, damage, false, undefined, true);
@@ -2202,13 +2297,17 @@ export class GameScene extends Phaser.Scene {
     if (!enemyDef) return;
 
     // BLOCKER-D: killHealPct — soin au kill (approximation : appliqué sur toute mort)
-    if (this.playerModifiers.killHealPct > 0) {
-      const heal = Math.round(this.gameState.player.stats.maxHp * this.playerModifiers.killHealPct / 100);
+    // + bonus KILL_HEAL_15_PCT (hidden_void_reaper), cumulé au même % (même effet).
+    const killHealPct = this.playerModifiers.killHealPct + PassiveSystem.getKillHealBonusPct(this.gameState.player.equipment);
+    if (killHealPct > 0) {
+      const heal = Math.round(this.gameState.player.stats.maxHp * killHealPct / 100);
       this.gameState.player.stats.hp = Math.min(
         this.gameState.player.stats.maxHp,
         this.gameState.player.stats.hp + heal,
       );
     }
+    // KILL_STACK_DAMAGE (hidden_soul_bow) — stack permanent, ne se réinitialise jamais.
+    PassiveSystem.incrementKillStackIfEquipped(this.gameState.player);
 
     // BLOCKER 1: cancel charge timers to prevent ghost damage after death
     const telegraphTimer = sprite.getData('telegraphTimer') as Phaser.Time.TimerEvent | undefined;

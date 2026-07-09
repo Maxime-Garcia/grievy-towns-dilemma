@@ -5,6 +5,7 @@ import {
 import { SCALED_ENEMY_LEVEL } from './ProgressionSystem';
 import { TalentModifiers } from './TalentSystem';
 import { StatsSystem, ComputedStats } from './StatsSystem';
+import { PassiveSystem } from './PassiveSystem';
 import { SKILL_MAP } from '../data/skills';
 
 const ELEMENTAL_ADVANTAGE = WEAKNESS_MULTIPLIER;
@@ -66,7 +67,18 @@ export class CombatSystem {
       ? 1 + cs.elemBonus / 100
       : 1;
     const soulBonus = CombatSystem.getSoulEchoBonus(player);
-    const damage = Math.max(1, Math.floor(reduced * mult * elemMult * elemBonusMult * (0.9 + Math.random() * 0.2) * soulBonus));
+    // Passifs d'objet — mêmes multiplicateurs appliqués dans playerAttack() ET
+    // playerSkill() (cf. précédent Soul Echo : un passif de dégâts doit toucher
+    // les deux chemins, sinon la moitié du kit du joueur en est exempté).
+    const waterDmgMult = weaponElement === ElementType.WATER
+      ? 1 + PassiveSystem.getWaterDmgBonusPct(player.equipment) / 100
+      : 1;
+    const killStackMult = PassiveSystem.getKillStackDamageMultiplier(player);
+    const firstStrikeMult = PassiveSystem.getFirstStrikeMultiplier(player);
+    const damage = Math.max(1, Math.floor(
+      reduced * mult * elemMult * elemBonusMult * (0.9 + Math.random() * 0.2)
+      * soulBonus * waterDmgMult * killStackMult * firstStrikeMult,
+    ));
 
     target.currentHp = Math.max(0, target.currentHp - damage);
     if (cs.lifesteal > 0) {
@@ -82,13 +94,17 @@ export class CombatSystem {
     target?: ActiveEnemy,
     mods?: TalentModifiers,
   ): DamageResult | null {
-    if (player.stats.mana < skill.manaCost) return null;
-    player.stats.mana -= skill.manaCost;
+    const zeroManaCost = PassiveSystem.hasZeroManaCost(player.equipment);
+    if (!zeroManaCost) {
+      if (player.stats.mana < skill.manaCost) return null;
+      player.stats.mana -= skill.manaCost;
+    }
 
     if (skill.effect?.heal || skill.effect?.healPercent) {
+      const healSkillMult = 1 + PassiveSystem.getHealSkillBonusPct(player.equipment) / 100;
       const amt = skill.effect.heal
-        ? skill.effect.heal
-        : Math.floor(player.stats.maxHp * (skill.effect.healPercent ?? 0));
+        ? Math.round(skill.effect.heal * healSkillMult)
+        : Math.round(player.stats.maxHp * (skill.effect.healPercent ?? 0) * healSkillMult);
       player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + amt);
       return { damage: 0, isCrit: false, isKill: false };
     }
@@ -109,8 +125,23 @@ export class CombatSystem {
       : 1;
 
     const soulBonus = CombatSystem.getSoulEchoBonus(player);
-    const magicDmg = Math.floor(rawMagic * (100 / (100 + target.stats.baseMagicDef)) * mult * elemMult * elemBonusMult * soulBonus);
-    const physDmg  = Math.floor(rawPhys  * (100 / (100 + target.stats.baseDef))      * mult * soulBonus);
+    // Passifs d'objet dépendant de l'élément du sort — appliqués AVANT les
+    // multiplicateurs de talents (mods) pour rester cohérent avec l'ordre déjà
+    // établi (élément → talents), et AVANT de savoir si c'est un kill.
+    const targetAlreadyStunned = target.statusEffects.some(e => e.type === 'STUN' || e.type === 'FREEZE');
+    const lightningStunnedMult = skill.element === ElementType.LIGHTNING && targetAlreadyStunned
+      ? 1 + PassiveSystem.getLightningStunnedDmgBonusPct(player.equipment) / 100
+      : 1;
+    const waterDmgMult = skill.element === ElementType.WATER
+      ? 1 + PassiveSystem.getWaterDmgBonusPct(player.equipment) / 100
+      : 1;
+    const unboundDmgMult = 1 + PassiveSystem.getUnboundSkillDmgCdPct(player.equipment).dmgPct / 100;
+    const killStackMult = PassiveSystem.getKillStackDamageMultiplier(player);
+    const firstStrikeMult = PassiveSystem.getFirstStrikeMultiplier(player);
+    const passiveMult = lightningStunnedMult * waterDmgMult * unboundDmgMult * killStackMult * firstStrikeMult;
+
+    const magicDmg = Math.floor(rawMagic * (100 / (100 + target.stats.baseMagicDef)) * mult * elemMult * elemBonusMult * soulBonus * passiveMult);
+    const physDmg  = Math.floor(rawPhys  * (100 / (100 + target.stats.baseDef))      * mult * soulBonus * passiveMult);
     const total    = Math.max(1, magicDmg + physDmg);
 
     // BLOCKER-C: apply talent multipliers (skillDmgMult, projectileSkillMult, magicDmgMult)
@@ -128,6 +159,7 @@ export class CombatSystem {
     }
 
     let statusApplied: StatusEffect | undefined;
+    const iceSlowBonusPct = PassiveSystem.getIceSlowBonusPct(player.equipment);
     if (skill.effect?.stun && Math.random() < 0.7) {
       statusApplied = { type: 'STUN', duration: skill.effect.stunDuration ?? 1, strength: 1 };
       target.statusEffects.push(statusApplied);
@@ -135,7 +167,9 @@ export class CombatSystem {
       statusApplied = { type: 'FREEZE', duration: skill.effect.freezeDuration ?? 2, strength: 1 };
       target.statusEffects.push(statusApplied);
     } else if (skill.effect?.slow) {
-      statusApplied = { type: 'SLOW', duration: skill.effect.slowDuration ?? 3, strength: skill.effect.slowAmount ?? 0.3 };
+      const baseSlow = skill.effect.slowAmount ?? 0.3;
+      const slowStrength = skill.element === ElementType.ICE ? baseSlow * (1 + iceSlowBonusPct / 100) : baseSlow;
+      statusApplied = { type: 'SLOW', duration: skill.effect.slowDuration ?? 3, strength: slowStrength };
       target.statusEffects.push(statusApplied);
     } else if (skill.element === ElementType.FIRE && skill.effect?.dot) {
       statusApplied = { type: 'BURN', duration: skill.effect.dotDuration ?? 3, strength: skill.effect.dotDamage ?? 8, sourceSkillId: skill.id };

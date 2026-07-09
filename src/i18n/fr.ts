@@ -70,6 +70,7 @@ export const FR: Record<string, string> = {
   'arsenal.locked': 'Verrouillé',
   'arsenal.not_discovered': 'Équipement inconnu. Trouvez-le en jeu pour le découvrir.',
   'arsenal.description_title': 'DESCRIPTION',
+  'arsenal.passive_label': 'Passif :',
   'arsenal.hint': '[↑↓] naviguer · molette/glisser · [Échap] fermer',
   'arsenal.section_weapon': 'Armes',
   'arsenal.section_helm': 'Casques',

@@ -136,6 +136,8 @@ export class ProgressionSystem {
       talentPoints: 1,    // niveau 1 → 1 point disponible immédiatement
       unlockedTalents: [],
       respecCount: 0,
+      passiveStacks: {},
+      firstStrikeReady: true,
     };
   }
 }

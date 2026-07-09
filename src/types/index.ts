@@ -621,6 +621,12 @@ export interface PlayerState {
   talentPoints: number;       // points disponibles à dépenser (1 par niveau, cap 20)
   unlockedTalents: string[];  // IDs des nœuds débloqués
   respecCount: number;        // nombre de respecs effectués
+  /** Compteurs de stacks permanents pour certains passifs d'objet (ex: KILL_STACK_DAMAGE
+   *  — clé = passiveEffect id, valeur = nombre de stacks accumulés, ne redescend jamais). */
+  passiveStacks: Record<string, number>;
+  /** true tant que le bonus FIRST_STRIKE_500_PCT n'a pas été consommé ce combat —
+   *  remis à true à chaque transition hors-combat → en-combat (cf. GameScene). */
+  firstStrikeReady: boolean;
 }
 
 // ============================================================

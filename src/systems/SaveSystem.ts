@@ -1,7 +1,7 @@
 import { GameState, SaveData, PlayerState, WorldState, EndingChoice } from '../types';
 import { ProgressionSystem } from './ProgressionSystem';
 
-const SAVE_VERSION = '1.5.0';
+const SAVE_VERSION = '1.6.0';
 const SAVE_KEY_PREFIX = 'gtd_save_';
 const MAX_SLOTS = 3;
 
@@ -74,6 +74,16 @@ const MIGRATION_MAP: Record<string, (state: GameState) => GameState> = {
     world: {
       ...state.world,
       arsenal: (state.world as any).arsenal ?? {},
+    },
+  }),
+  // Ajout des champs passifs d'objet (passiveStacks, firstStrikeReady)
+  '1.5.0': (state) => ({
+    ...state,
+    version: '1.6.0',
+    player: {
+      ...state.player,
+      passiveStacks: (state.player as any).passiveStacks ?? {},
+      firstStrikeReady: (state.player as any).firstStrikeReady ?? true,
     },
   }),
 };

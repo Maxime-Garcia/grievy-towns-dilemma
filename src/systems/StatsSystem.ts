@@ -42,7 +42,7 @@ export interface ComputedStats {
   lifesteal: number; // % lifesteal
 }
 
-type GearPiece = Weapon | Armor | Accessory;
+export type GearPiece = Weapon | Armor | Accessory;
 
 // GDD §Combat : crit chance = 5% + AGI * 0.3%, crit multiplier = 2.0x (un crit double les dégâts)
 // Exportées : InventoryScene s'en sert pour calculer la baseline "sans équipement"
@@ -183,7 +183,8 @@ export class StatsSystem {
 
   // ── Internes ──────────────────────────────────────────────
 
-  private static getEquippedGear(equipment: Equipment): GearPiece[] {
+  /** Public : aussi utilisé par PassiveSystem pour collecter les passiveEffect actifs. */
+  static getEquippedGear(equipment: Equipment): GearPiece[] {
     const slots: (GearPiece | undefined)[] = [
       equipment.weapon,
       equipment.helm,

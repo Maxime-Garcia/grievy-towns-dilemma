@@ -1,5 +1,6 @@
 import { PlayerState, Skill, ElementType, EquippedSkills } from '../types';
 import { SKILL_MAP } from '../data/skills';
+import { PassiveSystem } from './PassiveSystem';
 
 const SKILL_SLOTS: (keyof EquippedSkills)[] = ['slot1', 'slot2', 'slot3', 'slot4'];
 
@@ -73,14 +74,28 @@ export class SkillSystem {
   static canUseSkill(player: PlayerState, skillId: string, cooldowns: Record<string, number>): boolean {
     const skill = SKILL_MAP[skillId];
     if (!skill) return false;
-    if (player.stats.mana < skill.manaCost) return false;
+    if (!PassiveSystem.hasZeroManaCost(player.equipment) && player.stats.mana < skill.manaCost) return false;
     if ((cooldowns[skillId] ?? 0) > 0) return false;
     return true;
   }
 
-  static startCooldown(cooldowns: Record<string, number>, skillId: string): void {
+  /**
+   * Démarre le cooldown d'un skill, modulé par les passifs d'objet dépendant de
+   * l'élément (ex: FIRE_SKILL_CD_15_PCT) ou globaux (SKILL_DMG_15_CD_10_PCT, qui
+   * AUGMENTE le cooldown — trade-off de l'Anneau du Délié). `player` optionnel
+   * pour ne pas casser les appels existants qui n'ont pas de passif à appliquer.
+   */
+  static startCooldown(cooldowns: Record<string, number>, skillId: string, player?: PlayerState): void {
     const skill = SKILL_MAP[skillId];
-    if (skill) cooldowns[skillId] = skill.cooldown;
+    if (!skill) return;
+    let cd = skill.cooldown;
+    if (player) {
+      if (skill.element === ElementType.FIRE) {
+        cd *= 1 - PassiveSystem.getFireSkillCdReductionPct(player.equipment) / 100;
+      }
+      cd *= 1 + PassiveSystem.getUnboundSkillDmgCdPct(player.equipment).cdPct / 100;
+    }
+    cooldowns[skillId] = Math.max(0, cd);
   }
 
   static tickCooldowns(cooldowns: Record<string, number>, delta: number): void {

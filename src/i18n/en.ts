@@ -69,6 +69,7 @@ export const EN: Record<string, string> = {
   'arsenal.locked': 'Locked',
   'arsenal.not_discovered': 'Unknown equipment. Find it in-game to discover it.',
   'arsenal.description_title': 'DESCRIPTION',
+  'arsenal.passive_label': 'Passive:',
   'arsenal.hint': '[↑↓] navigate · scroll/drag · [Esc] close',
   'arsenal.section_weapon': 'Weapons',
   'arsenal.section_helm': 'Helms',

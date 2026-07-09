@@ -15,6 +15,7 @@ import {
   renderScrollableText, formatDropRate,
 } from '../utils/UITheme';
 import { ALL_ITEMS } from '../data/items';
+import { PASSIVE_EFFECT_LABELS } from '../data/passiveEffects';
 import { ArsenalSystem } from '../systems/ArsenalSystem';
 import { BESTIARY_DATA, BESTIARY_RECORD, BestiaryDropData } from '../data/bestiary';
 import { BestiarySystem } from '../systems/BestiarySystem';
@@ -488,9 +489,13 @@ export class ArsenalScene extends Phaser.Scene {
     const descY = this.DET_Y + pad + 96 + 18;
     this.addSectionTitle(t('arsenal.description_title'), descY);
 
+    const passiveLabel = ('passiveEffect' in item && item.passiveEffect)
+      ? PASSIVE_EFFECT_LABELS[item.passiveEffect]
+      : undefined;
+    const baseDesc = loc.lore ?? loc.description;
     const descText = !entry.discovered
       ? t('arsenal.not_discovered')
-      : (loc.lore ?? loc.description);
+      : (passiveLabel ? `${baseDesc}\n\n${t('arsenal.passive_label')} ${passiveLabel}` : baseDesc);
     const descColor = entry.discovered ? UI.TXT_PARCHMENT : UI.TXT_MUTED;
 
     const loreResult = renderScrollableText(
@@ -682,10 +687,9 @@ export class ArsenalScene extends Phaser.Scene {
       lines.push(`${t('stats.def')}: ${a.defense}`);
       lines.push(`${t('stats.mdef')}: ${a.magicDefense}`);
     }
-    // Accessory.passiveEffect n'est volontairement pas affiché ici : ce champ n'est
-    // pas traduit dans la data (souvent écrit en anglais brut, ex: HIDDEN_ACCESSORIES)
-    // — l'afficher tel quel montrerait de l'anglais à un joueur en FR. À revoir si
-    // une passe de localisation dédiée est faite sur ce champ.
+    // Le passif est affiché dans le bloc description/lore scrollable ci-dessous
+    // (renderDetail), pas ici : cette zone de stats a un budget vertical FIXE
+    // (LORE_Y ne bouge pas selon le nombre de lignes), un passif long y déborderait.
     return lines;
   }
 
