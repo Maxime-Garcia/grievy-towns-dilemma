@@ -38,8 +38,14 @@ export class PassiveSystem {
     player.passiveStacks['KILL_STACK_DAMAGE'] = Math.min(KILL_STACK_MAX, current + 1);
   }
 
-  /** Multiplicateur de dégâts depuis le stack permanent (1.0 = pas de bonus). */
+  /**
+   * Multiplicateur de dégâts depuis le stack permanent (1.0 = pas de bonus).
+   * BUG (code-reviewer) : gate hasPassive manquant ici alors que tous les autres
+   * getters l'ont — sans ça, déséquiper hidden_soul_bow après avoir stacké
+   * conservait le bonus pour toujours sur n'importe quelle arme.
+   */
   static getKillStackDamageMultiplier(player: PlayerState): number {
+    if (!PassiveSystem.hasPassive(player.equipment, 'KILL_STACK_DAMAGE')) return 1.0;
     const stacks = player.passiveStacks['KILL_STACK_DAMAGE'] ?? 0;
     return 1 + Math.min(stacks, KILL_STACK_MAX) * KILL_STACK_PCT_PER_KILL / 100;
   }

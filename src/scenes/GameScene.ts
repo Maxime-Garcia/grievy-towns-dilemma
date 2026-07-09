@@ -329,6 +329,13 @@ export class GameScene extends Phaser.Scene {
     this.guardUntil      = 0;
     this.inWindup        = false;
     this.playerModifiers = TalentSystem.getModifiers(this.gameState.player);
+    // Passifs d'objet (code-reviewer BUG) : sans ce reset, recharger une partie
+    // dans la même instance de Scene (menu principal → Continuer) hérite d'un
+    // bouclier/état de combat résiduel de la session précédente.
+    this.playerShieldHp          = 0;
+    this.lowHpShieldCooldownUntil = 0;
+    this.wasInCombat             = false;
+    this.lastPermanentRegenTime  = 0;
     // Reset zone-scoped refs on each scene start (full Phaser restart)
     this.zoneGraphics       = null;
     this.zoneTileSprites    = [];
