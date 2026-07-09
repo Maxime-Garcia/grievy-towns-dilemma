@@ -10,6 +10,8 @@ import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { SkillSystem } from '../systems/SkillSystem';
 import { SaveSystem } from '../systems/SaveSystem';
 import { ENEMY_MAP } from '../data/enemies';
+import { ENEMY_SPAWN_REGIONS } from '../data/enemySpawnRegions';
+import { getSpawnRegionRect, pickSpawnRegion } from '../systems/SpawnRegionSystem';
 import { ZONE_MAP } from '../data/zones';
 import {
   PATTERNS,
@@ -3459,10 +3461,27 @@ export class GameScene extends Phaser.Scene {
       }
 
       const count = Math.floor(def.spawnWeight * 4);
+      const spawnRegions = ENEMY_SPAWN_REGIONS[enemyId];
+      // Les régions nw/ne/.../center sont arbitrées pour la géométrie ~carrée des zones
+      // principales — sur un connecteur très étiré (ex: route_lava_bridge, 1200x3000),
+      // le quadrant assigné pour la zone "maison" de l'ennemi peut chevaucher un mur/de la
+      // lave. Désactiver le biais dès que le ratio d'aspect de la map est extrême évite ce
+      // cas sans avoir à indexer ENEMY_SPAWN_REGIONS par (enemyId, zoneId).
+      const aspectRatio = Math.max(mapWidth, mapHeight) / Math.min(mapWidth, mapHeight);
+      const regionsUsable = aspectRatio <= 1.5;
       for (let i = 0; i < count; i++) {
         const isElite = Math.random() < 0.20;
-        const ex = Phaser.Math.Between(150, mapWidth - 150);
-        const ey = Phaser.Math.Between(150, mapHeight - 150);
+        // Provisoire/approximatif : biaise le spawn vers un quadrant plausible de la zone
+        // (ENEMY_SPAWN_REGIONS, cf. heatmap Bestiaire) au lieu d'un tirage uniforme sur
+        // toute la map — à remplacer une fois les maps de zone finalisées.
+        const region = regionsUsable ? pickSpawnRegion(spawnRegions) : undefined;
+        const rect = region ? getSpawnRegionRect(region, mapWidth, mapHeight) : null;
+        const ex = rect
+          ? Phaser.Math.Between(Math.floor(rect.x0), Math.ceil(rect.x1))
+          : Phaser.Math.Between(150, mapWidth - 150);
+        const ey = rect
+          ? Phaser.Math.Between(Math.floor(rect.y0), Math.ceil(rect.y1))
+          : Phaser.Math.Between(150, mapHeight - 150);
 
         // Sprites bitmap réels ont un cadre natif très rembourré de transparence (10-40%
         // de remplissage) — dimensionner l'affichage ET la hitbox sur le contenu opaque
