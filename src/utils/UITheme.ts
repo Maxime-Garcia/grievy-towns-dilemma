@@ -351,6 +351,57 @@ export function drawScrollbar(
   g.fillRoundedRect(x, thumbY, w, thumbH, w / 2);
 }
 
+/** Formate un taux de drop (0-1) en pourcentage lisible — plus de décimales pour
+ *  les taux rares (ex. 0.4% plutôt que 0%). Partagé entre ArsenalScene/BestiaryScene. */
+export function formatDropRate(rate: number): string {
+  const pct = rate * 100;
+  return pct >= 10 ? `${Math.round(pct)}%` : pct >= 1 ? `${pct.toFixed(1)}%` : `${pct.toFixed(2)}%`;
+}
+
+/** Result of {@link renderScrollableText} — caller owns both objects and must push
+ * them into its own cleanup array (destroyed on every re-render + on shutdown). */
+export interface ScrollTextResult {
+  text: Phaser.GameObjects.Text;
+  /** Source Graphics for the GeometryMask applied to `text` — never added to the
+   *  display list (created via `scene.make.graphics(undefined, false)`), but still
+   *  a real GameObject that must be `.destroy()`-ed like any other. */
+  mask: Phaser.GameObjects.Graphics;
+  /** `max(0, contentHeight - viewportHeight)` — 0 means the text fits, no scroll needed. */
+  maxScrollPx: number;
+}
+
+/**
+ * Renders a block of text clipped to a fixed viewport rectangle (GeometryMask),
+ * with a caller-controlled vertical scroll offset in pixels. Lets detail panels
+ * (Arsenal/Bestiary description & lore) stay a UNIFORM fixed size for every entry
+ * while guaranteeing the full text remains reachable via scroll, instead of
+ * overflowing past the panel or being silently clipped without a way to read the rest.
+ *
+ * Purely a rendering primitive: the caller is responsible for clamping/storing
+ * `scrollPx` across renders, wiring wheel/drag input, and drawing a scrollbar
+ * (see `drawScrollbar`) using the returned `maxScrollPx`.
+ */
+export function renderScrollableText(
+  scene: Phaser.Scene,
+  x: number, y: number, w: number, h: number,
+  content: string,
+  style: Phaser.Types.GameObjects.Text.TextStyle,
+  scrollPx: number,
+): ScrollTextResult {
+  const text = scene.add.text(x, y - scrollPx, content, { ...style, wordWrap: { width: w } });
+
+  const mask = scene.make.graphics(undefined, false);
+  mask.fillStyle(0xffffff, 1);
+  mask.fillRect(x, y, w, h);
+  text.setMask(mask.createGeometryMask());
+
+  const maxScrollPx = Math.max(0, Math.ceil(text.height) - h);
+  if (scrollPx > maxScrollPx) {
+    text.y = y - maxScrollPx;
+  }
+  return { text, mask, maxScrollPx };
+}
+
 /**
  * Bouton de fermeture standard (règle inter-écrans §7.1 des guidelines) :
  * glyphe × rouge + hit zone invisible 48×48 + hover orange.

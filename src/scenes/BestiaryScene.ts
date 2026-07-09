@@ -15,15 +15,20 @@
 // or réservé à l'identité/valeur (titre, boss, niveaux).
 // ============================================================
 
-import { WorldState, ElementType, ItemRarity, RARITY_COLORS } from '../types';
+import { WorldState, ElementType, ItemRarity, RARITY_COLORS, SpawnRegion } from '../types';
 import {
   UI, drawGlowPanel, drawCard, drawSlot, drawBadge, uiStyle,
-  addCloseButton, drawScrollbar,
+  addCloseButton, drawScrollbar, renderScrollableText, formatDropRate,
 } from '../utils/UITheme';
 import { ENEMY_MAP } from '../data/enemies';
 import { BESTIARY_IDS, BESTIARY_RECORD, BestiaryDropData } from '../data/bestiary';
 import { BestiarySystem } from '../systems/BestiarySystem';
+import { ArsenalSystem } from '../systems/ArsenalSystem';
 import { ALL_ITEMS } from '../data/items';
+import { ZONES } from '../data/zones';
+import { getZoneLayout } from '../data/zoneMaps';
+import { ENEMY_SPAWN_REGIONS } from '../data/enemySpawnRegions';
+import { getSpawnRegionRect } from '../systems/SpawnRegionSystem';
 import { t, localizeEnemy, localizeItem, localizeBestiaryEntry } from '../i18n';
 import { GameScene } from './GameScene';
 
@@ -45,8 +50,9 @@ const BRIGHT_ELEMENTS: ElementType[] = [
   ElementType.LIGHTNING, ElementType.ICE, ElementType.WIND, ElementType.DIVINE,
 ];
 
-/** Mapping élément → clé de zone (groupement de la liste). */
-const ZONE_HABITAT_KEYS: Partial<Record<ElementType, string>> = {
+/** Mapping élément → clé de zone (groupement de la liste). Exporté pour que
+ *  ArsenalScene puisse afficher le même habitat traduit dans sa mini-card monstre. */
+export const ZONE_HABITAT_KEYS: Partial<Record<ElementType, string>> = {
   [ElementType.FIRE]:      'zone.ignis_reach',
   [ElementType.EARTH]:     'zone.terravast',
   [ElementType.WIND]:      'zone.zephyr_peaks',
@@ -66,9 +72,18 @@ const ENEMY_ROW_H  = 50;
 const HEADER_ROW_H = 22;
 const ROW_GAP      = 2;
 
+/** Pixels par cran de molette dans le viewport Histoire/lore. */
+const LORE_SCROLL_STEP = 28;
+/** Taille de la mini-carte de localisation approximative (chantier heatmap). */
+const LOCATION_MAP_W = 140;
+const LOCATION_MAP_H = 90;
+
 export class BestiaryScene extends Phaser.Scene {
   private gameScene!: GameScene;
   private world!: WorldState;
+  /** Ennemi à pré-sélectionner au démarrage (navigation depuis l'Arsenal) — n'est
+   *  honoré que s'il est déjà découvert par ce joueur (cf. create()). */
+  private focusEnemyId?: string;
 
   private rows: RowDef[] = [];
   private enemyRowIndices: number[] = [];
@@ -84,6 +99,11 @@ export class BestiaryScene extends Phaser.Scene {
   private tooltipTimer: Phaser.Time.TimerEvent | null = null;
   private tooltipJustOpened = false;
 
+  // Scroll interne du bloc Histoire/lore (viewport masqué à taille fixe — voir
+  // renderScrollableText) : offset en pixels, indépendant du scroll de la liste.
+  private loreScrollPx = 0;
+  private loreMaxScrollPx = 0;
+
   private keyUp:   Phaser.Input.Keyboard.Key | null = null;
   private keyDown: Phaser.Input.Keyboard.Key | null = null;
 
@@ -94,16 +114,20 @@ export class BestiaryScene extends Phaser.Scene {
   private pointerMoveHandler: ((p: Phaser.Input.Pointer) => void) | null = null;
   private pointerUpHandler:   (() => void) | null = null;
 
+  private readonly PAD = 14;
+
   // Layout (calculé dans create() depuis la caméra)
   private LIST_X = 0; private LIST_Y = 0; private LIST_W = 0; private LIST_H = 0;
   private DET_X = 0;  private DET_Y = 0;  private DET_W = 0;  private DET_H = 0;
+  private LORE_X = 0; private LORE_Y = 0; private LORE_W = 0; private readonly LORE_H = 100;
   private rowsTop = 0; private rowsBottom = 0;
 
   constructor() { super({ key: 'BestiaryScene' }); }
 
-  init(data: { gameScene: GameScene; world?: WorldState }) {
+  init(data: { gameScene: GameScene; world?: WorldState; focusEnemyId?: string }) {
     this.gameScene = data.gameScene;
     this.world     = data.world ?? data.gameScene.gameState.world;
+    this.focusEnemyId = data.focusEnemyId;
     this.rows = [];
     this.enemyRowIndices = [];
     this.scrollOffset = 0;
@@ -112,6 +136,8 @@ export class BestiaryScene extends Phaser.Scene {
     this.detailObjs = [];
     this.tooltip = null;
     this.tooltipTimer = null;
+    this.loreScrollPx = 0;
+    this.loreMaxScrollPx = 0;
     this.dragging = false;
     this.dragAccum = 0;
   }
@@ -152,6 +178,13 @@ export class BestiaryScene extends Phaser.Scene {
     this.rowsTop    = this.LIST_Y + 24;
     this.rowsBottom = this.LIST_Y + this.LIST_H - 24;
 
+    // Viewport fixe du bloc Histoire/lore — même géométrie pour tous les monstres
+    // (panneau uniforme), le texte défile DEDANS au lieu de faire varier la taille
+    // du panneau ou de déborder sur la section Butin (cf. renderScrollableText).
+    this.LORE_X = this.DET_X + this.PAD;
+    this.LORE_Y = this.DET_Y + this.PAD + 96 + 18 + 14;
+    this.LORE_W = this.DET_W - this.PAD * 2;
+
     const listBg = this.add.graphics();
     drawGlowPanel(listBg, this.LIST_X, this.LIST_Y, this.LIST_W, this.LIST_H, UI.ACCENT_ARCANE, UI.BG_MID, 8, 0.55);
 
@@ -166,9 +199,12 @@ export class BestiaryScene extends Phaser.Scene {
     this.buildRows();
     this.maxScrollOffset = this.computeMaxOffset();
 
-    // Sélection initiale : premier ennemi découvert, sinon premier
+    // Sélection initiale : focusEnemyId (navigation depuis l'Arsenal, si découvert)
+    // en priorité, sinon premier ennemi découvert, sinon premier tout court.
+    const focusValid = this.focusEnemyId && BestiarySystem.peekEntry(this.world, this.focusEnemyId).discovered
+      ? this.focusEnemyId : undefined;
     const firstDiscovered = BESTIARY_IDS.find(id => BestiarySystem.peekEntry(this.world, id).discovered);
-    this.selectedId = firstDiscovered ?? BESTIARY_IDS[0] ?? null;
+    this.selectedId = focusValid ?? firstDiscovered ?? BESTIARY_IDS[0] ?? null;
     if (this.selectedId) this.ensureVisible(this.rowIndexOf(this.selectedId));
 
     this.renderList();
@@ -250,6 +286,15 @@ export class BestiaryScene extends Phaser.Scene {
     this.scrollOffset = next;
     this.destroyTooltip();
     this.renderList();
+  }
+
+  /** Scroll interne du viewport Histoire/lore (en pixels) — indépendant du scroll
+   *  de la liste ; déclenche un re-rendu complet du panneau détail (cf. renderDetail). */
+  private scrollLore(deltaPx: number) {
+    const next = Phaser.Math.Clamp(this.loreScrollPx + deltaPx, 0, this.loreMaxScrollPx);
+    if (next === this.loreScrollPx) return;
+    this.loreScrollPx = next;
+    this.renderDetail();
   }
 
   // ════════════════════════════════════════════════════════════
@@ -396,6 +441,7 @@ export class BestiaryScene extends Phaser.Scene {
   private selectEnemy(id: string) {
     if (this.selectedId === id) return;
     this.selectedId = id;
+    this.loreScrollPx = 0;
     this.destroyTooltip();
     this.renderList();
     this.renderDetail();
@@ -500,6 +546,9 @@ export class BestiaryScene extends Phaser.Scene {
     }
 
     // ── Section Histoire ─────────────────────────────────────
+    // Viewport fixe (this.LORE_X/Y/W/H, calculé une fois dans create()) : le texte
+    // défile DEDANS (molette + scrollbar) au lieu de faire varier la taille du
+    // panneau ou de déborder sur la section Butin ci-dessous (cf. renderScrollableText).
     const loreY = this.DET_Y + pad + 96 + 18;
     this.addSectionTitle(t('bestiary.lore_title'), loreY);
 
@@ -511,10 +560,29 @@ export class BestiaryScene extends Phaser.Scene {
       loreText  = localizeBestiaryEntry(data).lore;
       loreColor = UI.TXT_PARCHMENT;
     }
-    this.detailObjs.push(
-      this.add.text(this.DET_X + pad, loreY + 18, loreText,
-        uiStyle(9, loreColor, { wordWrapWidth: this.DET_W - pad * 2, lineSpacing: 5 })),
+
+    const loreResult = renderScrollableText(
+      this, this.LORE_X, this.LORE_Y, this.LORE_W, this.LORE_H,
+      loreText, uiStyle(9, loreColor, { lineSpacing: 5 }), this.loreScrollPx,
     );
+    this.detailObjs.push(loreResult.text, loreResult.mask);
+    this.loreMaxScrollPx = loreResult.maxScrollPx;
+    if (this.loreScrollPx > this.loreMaxScrollPx) this.loreScrollPx = this.loreMaxScrollPx;
+    if (loreResult.maxScrollPx > 0) {
+      const sbGfx = this.add.graphics();
+      drawScrollbar(
+        sbGfx, this.LORE_X + this.LORE_W - 6, this.LORE_Y, 4, this.LORE_H,
+        this.loreScrollPx, loreResult.maxScrollPx, this.LORE_H / (this.LORE_H + loreResult.maxScrollPx),
+      );
+      this.detailObjs.push(sbGfx);
+    }
+
+    // ── Mini-carte de localisation approximative ─────────────
+    // Toujours affichée (même monstre non découvert) — même logique que l'habitat
+    // ci-dessus ("guide le joueur vers la créature manquante"). PROVISIONAL/APPROXIMATE :
+    // les vraies maps de zone ne sont pas finalisées (cf. enemySpawnRegions.ts /
+    // SpawnRegionSystem.ts) — à revoir une fois le placement réel des ennemis connu.
+    this.renderLocationMap(def.id, this.LORE_Y + this.LORE_H + 10);
 
     // ── Section Butin (zone basse = zone de pouce) ───────────
     const dropsY = this.DET_Y + this.DET_H - 130;
@@ -555,6 +623,49 @@ export class BestiaryScene extends Phaser.Scene {
     this.detailObjs.push(txt, g);
   }
 
+  /**
+   * Mini heatmap floue de localisation — carte proportionnelle de la zone du
+   * monstre avec un ou deux blobs flous marquant sa région de spawn approximative.
+   * PROVISIONAL/APPROXIMATE (voir enemySpawnRegions.ts / SpawnRegionSystem.ts) :
+   * les régions ne sont pas la vraie géométrie de spawn (maps non finalisées) —
+   * ne rien afficher plutôt que crasher si les données manquent pour ce monstre.
+   */
+  private renderLocationMap(enemyId: string, y: number) {
+    const zone = ZONES.find(z => z.enemies.includes(enemyId));
+    const regions: SpawnRegion[] | undefined = ENEMY_SPAWN_REGIONS[enemyId];
+    if (!zone || !regions || regions.length === 0) return;
+
+    const layout = getZoneLayout(zone.id);
+    const mapX = this.DET_X + this.PAD;
+    const mapY = y;
+    const scaleX = LOCATION_MAP_W / layout.mapWidth;
+    const scaleY = LOCATION_MAP_H / layout.mapHeight;
+
+    const g = this.add.graphics();
+    g.fillStyle(zone.ambientColor ?? 0x222233, 0.22);
+    g.fillRoundedRect(mapX, mapY, LOCATION_MAP_W, LOCATION_MAP_H, 4);
+    g.lineStyle(1, UI.SEPARATOR, 1);
+    g.strokeRoundedRect(mapX, mapY, LOCATION_MAP_W, LOCATION_MAP_H, 4);
+
+    const radii  = [18, 13, 8];
+    const alphas = [0.15, 0.25, 0.4];
+    for (const region of regions) {
+      const rect = getSpawnRegionRect(region, layout.mapWidth, layout.mapHeight);
+      const rcx = mapX + ((rect.x0 + rect.x1) / 2) * scaleX;
+      const rcy = mapY + ((rect.y0 + rect.y1) / 2) * scaleY;
+      for (let i = 0; i < radii.length; i++) {
+        g.fillStyle(UI.GLOW_GOLD, alphas[i]);
+        g.fillCircle(rcx, rcy, radii[i]);
+      }
+    }
+    this.detailObjs.push(g);
+
+    this.detailObjs.push(
+      this.add.text(mapX + LOCATION_MAP_W / 2, mapY + LOCATION_MAP_H + 8, t('bestiary.location_approx'),
+        uiStyle(7, UI.TXT_HINT)).setOrigin(0.5, 0),
+    );
+  }
+
   private renderDropSlot(drop: BestiaryDropData, revealedDrops: string[], sx: number, sy: number, size: number) {
     const item = ALL_ITEMS[drop.itemId];
     const revealed = !drop.isHidden || revealedDrops.includes(drop.itemId);
@@ -590,7 +701,7 @@ export class BestiaryScene extends Phaser.Scene {
     // Taux de drop sous le slot — info immédiate sans tap (dropRatePct / 100 → ratio 0-1)
     const rate = drop.dropRatePct / 100;
     this.detailObjs.push(
-      this.add.text(sx + size / 2, sy + size + 10, this.formatRate(rate),
+      this.add.text(sx + size / 2, sy + size + 10, formatDropRate(rate),
         uiStyle(8, revealed ? UI.TXT_MUTED : UI.TXT_HINT)).setOrigin(0.5),
     );
 
@@ -602,11 +713,6 @@ export class BestiaryScene extends Phaser.Scene {
       this.showDropTooltip(drop, revealed, sx, sy);
     });
     this.detailObjs.push(hit);
-  }
-
-  private formatRate(rate: number): string {
-    const pct = rate * 100;
-    return pct >= 10 ? `${Math.round(pct)}%` : pct >= 1 ? `${pct.toFixed(1)}%` : `${pct.toFixed(2)}%`;
   }
 
   // ════════════════════════════════════════════════════════════
@@ -633,7 +739,7 @@ export class BestiaryScene extends Phaser.Scene {
 
     const rate = drop.dropRatePct / 100;
     const rateTxt = this.add.text(padT, ty,
-      t('bestiary.drop_rate').replace('{rate}', this.formatRate(rate)),
+      t('bestiary.drop_rate').replace('{rate}', formatDropRate(rate)),
       uiStyle(9, UI.TXT_GOLD, { bold: true }));
     parts.push(rateTxt);
     ty += rateTxt.height + 6;
@@ -645,6 +751,21 @@ export class BestiaryScene extends Phaser.Scene {
     parts.push(descTxt);
     ty += descTxt.height + padT;
 
+    // Cross-link vers l'Arsenal — uniquement si CE joueur a déjà découvert l'item
+    // (jamais de raccourci vers un équipement qu'il n'a pas encore obtenu).
+    const canViewInArsenal = !!item && ArsenalSystem.peekEntry(this.world, item.id).discovered;
+    if (canViewInArsenal && item) {
+      const linkTxt = this.add.text(padT, ty, t('bestiary.view_in_arsenal'), uiStyle(9, UI.TXT_CYAN, { bold: true }));
+      const linkHit = this.add.rectangle(TW / 2, ty + linkTxt.height / 2, TW - padT * 2, linkTxt.height + 6, 0, 0)
+        .setInteractive({ useHandCursor: true });
+      linkHit.on('pointerdown', () => {
+        this.scene.stop();
+        this.scene.launch('ArsenalScene', { gameScene: this.gameScene, world: this.world, focusItemId: item.id });
+      });
+      parts.push(linkTxt, linkHit);
+      ty += linkTxt.height + padT;
+    }
+
     const g = this.add.graphics();
     drawGlowPanel(g, 0, 0, TW, ty, UI.ACCENT_ARCANE, UI.PANEL_BG, 4, 0.97);
 
@@ -652,7 +773,11 @@ export class BestiaryScene extends Phaser.Scene {
     const tyPos = Math.max(this.DET_Y + 6, slotY - ty - 8);
     this.tooltip = this.add.container(tx, tyPos, [g, ...parts]).setDepth(30);
 
-    this.tooltipTimer = this.time.delayedCall(3000, () => this.destroyTooltip());
+    // Le lien vers l'Arsenal a besoin de temps pour être cliqué — pas d'auto-dismiss
+    // dans ce cas (fermeture uniquement via tap en dehors, cf. onDown/tooltipJustOpened).
+    if (!canViewInArsenal) {
+      this.tooltipTimer = this.time.delayedCall(3000, () => this.destroyTooltip());
+    }
   }
 
   private destroyTooltip() {
@@ -673,8 +798,12 @@ export class BestiaryScene extends Phaser.Scene {
       this.keyDown.on('down', () => this.navigate(1));
     }
 
-    const onWheel = (_p: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number) =>
-      this.scroll(dy > 0 ? 1 : -1);
+    const onWheel = (p: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number) => {
+      const overLore = p.x >= this.LORE_X && p.x <= this.LORE_X + this.LORE_W
+        && p.y >= this.LORE_Y && p.y <= this.LORE_Y + this.LORE_H;
+      if (overLore) this.scrollLore(dy > 0 ? LORE_SCROLL_STEP : -LORE_SCROLL_STEP);
+      else          this.scroll(dy > 0 ? 1 : -1);
+    };
     this.wheelHandler = onWheel;
     this.input.on('wheel', onWheel);
 
@@ -711,6 +840,7 @@ export class BestiaryScene extends Phaser.Scene {
     const nextRow = this.rows[this.enemyRowIndices[nextPos]];
     if (nextRow.kind !== 'enemy') return;
     this.selectedId = nextRow.id;
+    this.loreScrollPx = 0;
     this.ensureVisible(this.enemyRowIndices[nextPos]);
     this.destroyTooltip();
     this.renderList();
@@ -751,6 +881,11 @@ export class BestiaryScene extends Phaser.Scene {
     if (this.pointerMoveHandler) { this.input.off('pointermove', this.pointerMoveHandler); this.pointerMoveHandler = null; }
     if (this.pointerUpHandler)   { this.input.off('pointerup', this.pointerUpHandler);     this.pointerUpHandler = null; }
     this.destroyTooltip();
+    // Détruit explicitement (pas juste vidage de tableau) : le masque de scroll du
+    // bloc lore (renderScrollableText) n'est jamais ajouté à la display list —
+    // Phaser ne le nettoie pas tout seul à l'arrêt de la scène.
+    this.listObjs.forEach(o => o.destroy());
+    this.detailObjs.forEach(o => o.destroy());
     this.listObjs = [];
     this.detailObjs = [];
   }
