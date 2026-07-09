@@ -873,11 +873,32 @@ export class InventoryScene extends Phaser.Scene {
     const W       = this.cameras.main.width;
     const H       = this.cameras.main.height;
     const PW      = isEquip ? 240 : 210;
-    // 210 (not the tighter-computed ~190) leaves headroom for the worst case:
-    // 3 rendered substats + a near-90-char description wrapping to 3 lines —
-    // no current item combines both maxima, but future rich gear could.
-    const PH      = isEquip ? 210 : 116;
     const MARGIN  = 6;
+
+    // Hauteur du panneau calculée depuis le contenu réel (plus de troncature à 90
+    // caractères ni de taille fixe trop courte pour un lore long) : on mesure le
+    // texte de description avec un Text jetable au wordWrapWidth final, AVANT de
+    // décider PH, puis on le détruit — le vrai texte est recréé plus bas une fois
+    // la position finale connue.
+    const locItem0   = localizeItem(item);
+    const substatCount = isEquip ? this.getItemSubstats(item).slice(0, 3).length : 0;
+    const descRaw0   = isEquip ? (locItem0.lore ?? locItem0.description) : '';
+    let   descHeight = 0;
+    if (isEquip && descRaw0) {
+      const probe = this.add.text(0, 0, descRaw0, uiStyle(9, UI.TXT_MUTED, {
+        italic: true, wordWrapWidth: PW - MARGIN * 2, lineSpacing: 2,
+      }));
+      descHeight = probe.height;
+      probe.destroy();
+    }
+    const headerHEstimate = MARGIN + 32 + MARGIN; // icône + marges (== headerH plus bas)
+    const BTN_H_ESTIMATE  = 44;
+    const contentH = isEquip
+      ? headerHEstimate + substatCount * 14 + 4 + descHeight + 10 + BTN_H_ESTIMATE + MARGIN * 2
+      : 116;
+    // Bornes : jamais plus petit que l'ancien minimum (évite une régression visuelle
+    // sur les items courts), jamais plus grand que l'écran moins une marge de sécurité.
+    const PH = Math.min(Math.max(contentH, isEquip ? 130 : 116), H - MARGIN * 4);
 
     // Anchor near the slot, clamp so the popup stays fully on screen
     let px = nearX - PW / 2;
@@ -981,8 +1002,10 @@ export class InventoryScene extends Phaser.Scene {
         bodyY += 14;
       }
       bodyY += 4;
-      const rawDesc = locItem.description;
-      const desc    = rawDesc.length > 90 ? `${rawDesc.slice(0, 88)}…` : rawDesc;
+      // Texte complet (plus de troncature à 90 caractères) — le panneau est
+      // désormais dimensionné sur la hauteur réelle de ce texte (cf. descHeight
+      // mesuré plus haut, avant que PH ne soit fixé).
+      const desc = locItem.lore ?? locItem.description;
       this.consumePopupObjects.push(
         this.add.text(px + MARGIN, bodyY, desc, uiStyle(9, UI.TXT_MUTED, {
           italic: true, wordWrapWidth: PW - MARGIN * 2, lineSpacing: 2,
