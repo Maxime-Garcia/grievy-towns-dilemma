@@ -17,7 +17,7 @@ export default defineConfig({
         // ("manualChunks is not a function") — l'ancienne forme rollup marchait
         // encore avec vite 5, mais plus avec le backend rolldown de vite 8.
         manualChunks(id: string) {
-          if (id.includes('node_modules/phaser')) return 'phaser';
+          if (id.includes('node_modules/phaser/')) return 'phaser';
         }
       }
     }
