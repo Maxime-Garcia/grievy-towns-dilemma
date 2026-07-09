@@ -90,11 +90,16 @@ ci/<nom>         → CI/CD, configuration, scripts
 2. Si des modifications non-committées sur `master` → les committer sur une branche dédiée avant de commencer
 3. Créer une branche du type correspondant à la tâche (voir tableau ci-dessus) : `git checkout -b feat/<nom>`
 4. Implémenter, committer au fil des étapes
-5. Clore par un commit final, puis proposer une PR
+5. Invoquer `code-reviewer`, appliquer tous les BLOCKER et BUG (voir Gate ci-dessous)
+6. Clore par un commit final (avec mise à jour du `BUILD_LABEL`), push, puis ouvrir une PR (`gh pr create`)
+7. Si le code-reviewer signale encore des BLOCKER/BUG au moment de conclure → **ne pas** demander la validation finale, lister les problèmes restants à l'utilisateur d'abord
+8. Sinon, poser une question explicite à l'utilisateur (« Merger `<branche>` dans `master` maintenant ? ») via un prompt de validation dédié
+9. Si validé : `gh pr merge --delete-branch` (merge la PR + supprime la branche distante), puis `git checkout master && git pull && git branch -d <branche>` pour supprimer la branche locale
+10. Objectif permanent : ne jamais laisser de branche mergée traîner — `master` doit rester la seule branche active en local et sur `origin`
 
 > **Ce workflow s'applique automatiquement.** L'utilisateur n'a pas à le demander explicitement.
 
-Chaque session ouvre sa branche, vérifie `git status` avant de commencer, et merge via PR uniquement après CI verte.
+Chaque session ouvre sa branche, vérifie `git status` avant de commencer, et merge via PR uniquement après CI verte **et** validation explicite de l'utilisateur.
 
 ### Types de PR — ne jamais mélanger
 
@@ -122,3 +127,5 @@ git push --tags
 ### Gate code-reviewer
 
 Invoquer `code-reviewer` avant toute PR sur `master`. Résoudre tous les BLOCKERs et BUGs avant de merge.
+
+Tant qu'un BLOCKER ou un BUG reste ouvert, ne jamais poser la question de merge final à l'utilisateur — les lister explicitement à la place et corriger avant de redemander.
