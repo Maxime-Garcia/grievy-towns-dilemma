@@ -18,7 +18,7 @@
 import { WorldState, ElementType, ItemRarity, RARITY_COLORS, SpawnRegion } from '../types';
 import {
   UI, drawGlowPanel, drawCard, drawSlot, drawBadge, uiStyle,
-  addCloseButton, drawScrollbar, renderScrollableText,
+  addCloseButton, drawScrollbar, renderScrollableText, formatDropRate,
 } from '../utils/UITheme';
 import { ENEMY_MAP } from '../data/enemies';
 import { BESTIARY_IDS, BESTIARY_RECORD, BestiaryDropData } from '../data/bestiary';
@@ -50,8 +50,9 @@ const BRIGHT_ELEMENTS: ElementType[] = [
   ElementType.LIGHTNING, ElementType.ICE, ElementType.WIND, ElementType.DIVINE,
 ];
 
-/** Mapping élément → clé de zone (groupement de la liste). */
-const ZONE_HABITAT_KEYS: Partial<Record<ElementType, string>> = {
+/** Mapping élément → clé de zone (groupement de la liste). Exporté pour que
+ *  ArsenalScene puisse afficher le même habitat traduit dans sa mini-card monstre. */
+export const ZONE_HABITAT_KEYS: Partial<Record<ElementType, string>> = {
   [ElementType.FIRE]:      'zone.ignis_reach',
   [ElementType.EARTH]:     'zone.terravast',
   [ElementType.WIND]:      'zone.zephyr_peaks',
@@ -634,7 +635,7 @@ export class BestiaryScene extends Phaser.Scene {
     const regions: SpawnRegion[] | undefined = ENEMY_SPAWN_REGIONS[enemyId];
     if (!zone || !regions || regions.length === 0) return;
 
-    const layout = getZoneLayout(zone.mapKey);
+    const layout = getZoneLayout(zone.id);
     const mapX = this.DET_X + this.PAD;
     const mapY = y;
     const scaleX = LOCATION_MAP_W / layout.mapWidth;
@@ -700,7 +701,7 @@ export class BestiaryScene extends Phaser.Scene {
     // Taux de drop sous le slot — info immédiate sans tap (dropRatePct / 100 → ratio 0-1)
     const rate = drop.dropRatePct / 100;
     this.detailObjs.push(
-      this.add.text(sx + size / 2, sy + size + 10, this.formatRate(rate),
+      this.add.text(sx + size / 2, sy + size + 10, formatDropRate(rate),
         uiStyle(8, revealed ? UI.TXT_MUTED : UI.TXT_HINT)).setOrigin(0.5),
     );
 
@@ -712,11 +713,6 @@ export class BestiaryScene extends Phaser.Scene {
       this.showDropTooltip(drop, revealed, sx, sy);
     });
     this.detailObjs.push(hit);
-  }
-
-  private formatRate(rate: number): string {
-    const pct = rate * 100;
-    return pct >= 10 ? `${Math.round(pct)}%` : pct >= 1 ? `${pct.toFixed(1)}%` : `${pct.toFixed(2)}%`;
   }
 
   // ════════════════════════════════════════════════════════════
@@ -743,7 +739,7 @@ export class BestiaryScene extends Phaser.Scene {
 
     const rate = drop.dropRatePct / 100;
     const rateTxt = this.add.text(padT, ty,
-      t('bestiary.drop_rate').replace('{rate}', this.formatRate(rate)),
+      t('bestiary.drop_rate').replace('{rate}', formatDropRate(rate)),
       uiStyle(9, UI.TXT_GOLD, { bold: true }));
     parts.push(rateTxt);
     ty += rateTxt.height + 6;

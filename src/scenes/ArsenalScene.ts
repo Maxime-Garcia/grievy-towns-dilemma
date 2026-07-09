@@ -12,15 +12,17 @@
 import { WorldState, ElementType, ItemType, ItemRarity, RARITY_COLORS, Item, Weapon, Armor } from '../types';
 import {
   UI, drawGlowPanel, drawCard, drawBadge, uiStyle, addCloseButton, drawScrollbar,
-  renderScrollableText,
+  renderScrollableText, formatDropRate,
 } from '../utils/UITheme';
 import { ALL_ITEMS } from '../data/items';
 import { ArsenalSystem } from '../systems/ArsenalSystem';
 import { BESTIARY_DATA, BESTIARY_RECORD, BestiaryDropData } from '../data/bestiary';
 import { BestiarySystem } from '../systems/BestiarySystem';
+import { ENEMY_MAP } from '../data/enemies';
 import { itemTextureKey } from '../utils/ItemAssets';
 import { t, localizeItem, localizeBestiaryEntry } from '../i18n';
 import { GameScene } from './GameScene';
+import { ZONE_HABITAT_KEYS } from './BestiaryScene';
 
 const ELEMENT_COLORS: Record<ElementType, number> = {
   [ElementType.FIRE]:      0xff4400,
@@ -585,18 +587,13 @@ export class ArsenalScene extends Phaser.Scene {
     this.detailObjs.push(this.add.text(x + 34, y + 2, name, uiStyle(9, discovered ? UI.TXT_PARCHMENT : UI.TXT_MUTED, { bold: discovered })));
     const rate = drop.dropRatePct / 100;
     this.detailObjs.push(
-      this.add.text(x + 34, y + 17, t('bestiary.drop_rate').replace('{rate}', this.formatRate(rate)),
+      this.add.text(x + 34, y + 17, t('bestiary.drop_rate').replace('{rate}', formatDropRate(rate)),
         uiStyle(8, UI.TXT_MUTED)),
     );
 
     hit.on('pointerover', () => hit.setFillStyle(0xffffff, 0.05));
     hit.on('pointerout',  () => hit.setFillStyle(0, 0));
     hit.on('pointerdown', () => this.openMonsterCard(enemyId));
-  }
-
-  private formatRate(rate: number): string {
-    const pct = rate * 100;
-    return pct >= 10 ? `${Math.round(pct)}%` : pct >= 1 ? `${pct.toFixed(1)}%` : `${pct.toFixed(2)}%`;
   }
 
   /** Mini-card monstre — nom, habitat, teaser + bouton vers le Bestiaire (focus). */
@@ -621,7 +618,12 @@ export class ArsenalScene extends Phaser.Scene {
     parts.push(nameTxt);
     cy += nameTxt.height + 6;
 
-    const habitatTxt = this.add.text(padC, cy, data.habitat,
+    // Même logique que BestiaryScene.renderDetail() : préfère la clé de zone traduite,
+    // ne retombe sur le texte libre (souvent non traduit) que si l'élément n'a pas de clé.
+    const enemyDef = ENEMY_MAP[enemyId];
+    const zoneKey = enemyDef ? ZONE_HABITAT_KEYS[enemyDef.element] : undefined;
+    const habitatStr = zoneKey ? t(zoneKey) : data.habitat;
+    const habitatTxt = this.add.text(padC, cy, habitatStr,
       uiStyle(8, UI.TXT_MUTED, { wordWrapWidth: CW - padC * 2 }));
     parts.push(habitatTxt);
     cy += habitatTxt.height + 6;

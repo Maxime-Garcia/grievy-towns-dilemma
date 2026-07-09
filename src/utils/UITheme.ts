@@ -351,6 +351,13 @@ export function drawScrollbar(
   g.fillRoundedRect(x, thumbY, w, thumbH, w / 2);
 }
 
+/** Formate un taux de drop (0-1) en pourcentage lisible — plus de décimales pour
+ *  les taux rares (ex. 0.4% plutôt que 0%). Partagé entre ArsenalScene/BestiaryScene. */
+export function formatDropRate(rate: number): string {
+  const pct = rate * 100;
+  return pct >= 10 ? `${Math.round(pct)}%` : pct >= 1 ? `${pct.toFixed(1)}%` : `${pct.toFixed(2)}%`;
+}
+
 /** Result of {@link renderScrollableText} — caller owns both objects and must push
  * them into its own cleanup array (destroyed on every re-render + on shutdown). */
 export interface ScrollTextResult {
