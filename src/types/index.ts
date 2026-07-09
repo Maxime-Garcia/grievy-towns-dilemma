@@ -422,6 +422,11 @@ export interface EnemyStats {
   baseMagicDef: number;
 }
 
+// Coarse quadrant used to bias an enemy's random spawn position within its zone map
+// (3x3 grid: 4 corners, 4 edges, 1 center). Backs the Bestiary "roughly where it spawns"
+// heatmap. See src/data/enemySpawnRegions.ts for the per-enemy assignment.
+export type SpawnRegion = 'nw' | 'ne' | 'sw' | 'se' | 'center' | 'n' | 's' | 'e' | 'w';
+
 export interface Enemy {
   id: string;
   name: string;
