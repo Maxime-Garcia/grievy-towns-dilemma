@@ -19,7 +19,7 @@ import {
 import { NPC_MAP } from '../data/npcs';
 import { getZoneLayout, ZoneLayout, LootableObject, WaterArea } from '../data/zoneMaps';
 import { ALL_ITEMS } from '../data/items';
-import { loadBindings, KeyBindings } from '../data/keyBindings';
+import { loadBindings, KeyBindings } from '../data/keybindings';
 import { keyIconFrame, keyCodeLabel } from '../utils/KeyIcons';
 import { uiStyle } from '../utils/UITheme';
 import { t, localizeItem } from '../i18n';

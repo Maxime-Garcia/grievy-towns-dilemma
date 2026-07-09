@@ -1,6 +1,6 @@
 import { SaveSystem }  from '../systems/SaveSystem';
 import { GameScene }   from './GameScene';
-import { KeyBindings, DEFAULT_BINDINGS, loadBindings, saveBindings } from '../data/keyBindings';
+import { KeyBindings, DEFAULT_BINDINGS, loadBindings, saveBindings } from '../data/keybindings';
 import { UI, drawGlowPanel, drawDivider, uiStyle, addCloseButton } from '../utils/UITheme';
 import { t, getLang, setLang, type Lang } from '../i18n';
 

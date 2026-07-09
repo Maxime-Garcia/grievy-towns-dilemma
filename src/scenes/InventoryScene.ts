@@ -1083,7 +1083,7 @@ export class InventoryScene extends Phaser.Scene {
     // Toutes les pièces du popup sauf la zone de dismiss (elle doit rester en place)
     const popObjects = this.consumePopupObjects.filter(o => o !== dismissHit);
     popObjects.forEach(o => {
-      if ('setAlpha' in o) (o as Phaser.GameObjects.Components.Alpha).setAlpha(0);
+      if ('setAlpha' in o) (o as unknown as Phaser.GameObjects.Components.Alpha).setAlpha(0);
     });
     this.tweens.add({
       targets: popObjects.filter(o => 'setScale' in o),
