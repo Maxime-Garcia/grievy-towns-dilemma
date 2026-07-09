@@ -441,7 +441,7 @@ export function drawBar(
  */
 export function pxStyle(
   size: number,
-  color = UI.TXT_PARCHMENT,
+  color: string = UI.TXT_PARCHMENT,
   stroke = false,
 ): Phaser.Types.GameObjects.Text.TextStyle {
   const s: Phaser.Types.GameObjects.Text.TextStyle = {

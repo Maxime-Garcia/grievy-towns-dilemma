@@ -224,7 +224,7 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
     name: 'Colosse des Ruines',
     habitat: 'Ruines effondrées, Terravast (élite)',
     shortDesc: 'Un assemblage de gravats des structures anciennes, tenu debout par quelque chose qui ressemble à de la volonté.',
-    lore: 'Quand Gorvun tremble, les structures anciennes s\'effondrent et se reforment. La pierre de Terravast a de la mémoire — c\'est le domaine de la permanence, rien n\'y oublie sa forme. Mais parfois, la reformation se fait mal : un temple se relève avec les pierres d\'un pont, une tour avec les dalles d\'un tombeau. Le colossus est un bâtiment qui ne sait plus ce qu\'il était, animé, agressif, sans fonction. Il cherche son plan d\'origine. Il ne le trouvera pas.',
+    lore: 'Quand Gorvun tremble, les structures anciennes s\'effondrent et se reforment. La pierre de Terravast a de la mémoire — c\'est le domaine de la permanence, rien n\'y oublie sa forme. Mais parfois, la reformation se fait mal : un temple se relève avec les pierres d\'un pont, une tour avec les dalles d\'un tombeau. Le colosse est un bâtiment qui ne sait plus ce qu\'il était, animé, agressif, sans fonction. Il cherche son plan d\'origine. Il ne le trouvera pas.',
     drops: [
       { itemId: 'ancient_stone_rune', dropRatePct: 85, isHidden: false },
       { itemId: 'ruin_colossus_core', dropRatePct: 40, isHidden: false },
@@ -292,7 +292,7 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
     name: 'Esprit Cyclone',
     habitat: 'Vallées ventées, Zephyr Peaks',
     shortDesc: 'Un nœud de vent condensé en une sphère pâle. Il tourne sur lui-même, trop vite pour qu\'on lise sa trajectoire.',
-    lore: 'Sylvael a créé les sprites pour porter le pollen et les graines à travers les montagnes — c\'est grâce à eux que des fleurs poussaient sur des îles flottantes où aucune abeille ne montait jamais. Chaque printemps des Peaks était leur œuvre. Sans direction, ils ne portent plus rien. Ils tournent. C\'est tout ce qui reste du printemps.',
+    lore: 'Sylvael a créé ces esprits pour porter le pollen et les graines à travers les montagnes — c\'est grâce à eux que des fleurs poussaient sur des îles flottantes où aucune abeille ne montait jamais. Chaque printemps des Peaks était leur œuvre. Sans direction, ils ne portent plus rien. Ils tournent. C\'est tout ce qui reste du printemps.',
     drops: [
       { itemId: 'zephyr_feather', dropRatePct: 70, isHidden: false },
       { itemId: 'minor_mana_potion', dropRatePct: 15, isHidden: false },
@@ -330,7 +330,7 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
     name: 'Percenuage',
     habitat: 'Crêtes exposées, Zephyr Peaks',
     shortDesc: 'Un petit être encapuchonné dont l\'unique corne condense une lance d\'air — tirée à des distances invraisemblables avant qu\'il ne disparaisse dans les nuages.',
-    lore: 'Certaines choses des Zephyr Peaks ont évolué pour être invisibles de loin. Le cloudpiercer est l\'une d\'elles — même Sylvael, dit-on, les comptait mal. La première fois que vous en voyez un, il vous a déjà vu. La malédiction n\'a rien eu besoin d\'ajouter à cette créature. Elle a juste retiré ce qui lui donnait une raison de ne pas tirer.',
+    lore: 'Certaines choses des Zephyr Peaks ont évolué pour être invisibles de loin. Le percenuage est l\'une d\'elles — même Sylvael, dit-on, les comptait mal. La première fois que vous en voyez un, il vous a déjà vu. La malédiction n\'a rien eu besoin d\'ajouter à cette créature. Elle a juste retiré ce qui lui donnait une raison de ne pas tirer.',
     drops: [
       { itemId: 'zephyr_feather', dropRatePct: 70, isHidden: false },
       { itemId: 'stormstone', dropRatePct: 30, isHidden: false },
@@ -526,7 +526,7 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
     name: 'Architecte du Réseau',
     habitat: 'Ateliers effondrés, Volterra',
     shortDesc: 'Une silhouette pâle et hagarde qui dérive dans les ateliers effondrés, assemblant de nouveaux nœuds d\'arc avec des gestes lents, appris par cœur.',
-    lore: 'Le dernier ingénieur de Volterra a construit cette chose pour continuer son œuvre après sa mort. Il y a mis tout ce qu\'il savait : ses gestes, ses plans, sa précision — et sans le vouloir, sa silhouette. Elle ne le sait pas. Il n\'a pas envisagé une possibilité — que son œuvre ait déjà tout détruit. L\'architecte assemble donc, inlassablement, des mainteneurs pour un réseau qui a tué la ville qu\'il alimentait. C\'est le monument le plus honnête de Volterra : un homme brillant qui n\'a pas su s\'arrêter, réduit à un fantôme de gestes qui ne le peut pas.',
+    lore: 'Le dernier ingénieur de Volterra a construit cette chose pour continuer son œuvre après sa mort. Il y a mis tout ce qu\'il savait : ses gestes, ses plans, sa précision — et sans le vouloir, sa silhouette. La chose l\'ignore. Il n\'avait pas envisagé une seule possibilité : que son œuvre ait déjà tout détruit. L\'architecte assemble donc, inlassablement, des mainteneurs pour un réseau qui a tué la ville qu\'il alimentait. C\'est le monument le plus honnête de Volterra : un homme brillant qui n\'a pas su s\'arrêter, réduit à un fantôme de gestes qui ne le peut pas.',
     drops: [
       { itemId: 'charged_metal', dropRatePct: 75, isHidden: false },
       { itemId: 'thunder_rune', dropRatePct: 50, isHidden: false },
@@ -539,7 +539,7 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
     name: 'Héraut de la Tempête',
     habitat: 'Sanctum du réseau, Volterra (élite)',
     shortDesc: 'Un chevalier de foudre pure, épée et bouclier parcourus d\'arcs, créé par les derniers ingénieurs. Il exécute encore son dernier ordre.',
-    lore: 'Avant de mourir, les derniers ingénieurs de Volterra ont tenté de créer des porteurs artificiels du pouvoir de Volkran — si le dieu était devenu fou, peut-être qu\'une copie saine pourrait le remplacer. Ils ont réussi. C\'est la partie tragique : les heralds fonctionnent parfaitement. Ils exécutent leur dernier ordre reçu — éliminer tous les intrus — avec la fidélité exacte pour laquelle ils ont été conçus. Personne n\'a survécu assez longtemps pour leur en donner un autre.',
+    lore: 'Avant de mourir, les derniers ingénieurs de Volterra ont tenté de créer des porteurs artificiels du pouvoir de Volkran — si le dieu était devenu fou, peut-être qu\'une copie saine pourrait le remplacer. Ils ont réussi. C\'est la partie tragique : les hérauts fonctionnent parfaitement. Ils exécutent leur dernier ordre reçu — éliminer tous les intrus — avec la fidélité exacte pour laquelle ils ont été conçus. Personne n\'a survécu assez longtemps pour leur en donner un autre.',
     drops: [
       { itemId: 'volkran_coil', dropRatePct: 60, isHidden: false },
       { itemId: 'thunder_rune', dropRatePct: 80, isHidden: false },
@@ -634,7 +634,7 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
     name: 'Façonneur Glacial',
     habitat: 'Charniers gelés, Glaciem',
     shortDesc: 'Une silhouette voûtée et encapuchonnée de glace vivante, dont les mains traînent un feu bleu. Elle rappelle les morts du grand gel hors de la glace qui les gardait.',
-    lore: 'Crysthea préservait les morts — c\'était son office le plus sacré, celui pour lequel les familles traversaient la toundra. Le shaper n\'existait pas avant la malédiction : c\'est un effet secondaire de la magie de préservation appliquée sans limite ni jugement. Il ne comprend pas la différence entre préserver les morts et les réveiller. Personne ne la lui a apprise, et la seule qui aurait pu est en train de geler le monde.',
+    lore: 'Crysthea préservait les morts — c\'était son office le plus sacré, celui pour lequel les familles traversaient la toundra. Le façonneur n\'existait pas avant la malédiction : c\'est un effet secondaire de la magie de préservation appliquée sans limite ni jugement. Il ne comprend pas la différence entre préserver les morts et les réveiller. Personne ne la lui a apprise, et la seule qui aurait pu est en train de geler le monde.',
     drops: [
       { itemId: 'frozen_essence', dropRatePct: 70, isHidden: false },
       { itemId: 'ancient_frost_rune', dropRatePct: 45, isHidden: false },
@@ -716,7 +716,7 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
     name: 'Traqueur du Vide',
     habitat: 'Recoins sans lumière, Malachar\'s Spire',
     shortDesc: 'Une petite masse ronde d\'absence, deux cornes, deux yeux jaunes. Elle attend dans les angles morts et charge depuis l\'immobilité absolue.',
-    lore: 'La Spire a été conçue avec les ombres en tête — Malachar savait ce que le noir peut cacher, et il a dessiné chaque couloir pour en avoir. Mais les stalkers, il ne les a pas conçus. Ce sont les créatures que le noir a choisi d\'y mettre de lui-même, comme si l\'obscurité avait accepté l\'invitation puis amené ses propres invités. Même Malachar les évite. C\'est la seule chose de sa tour qu\'il n\'a pas voulue.',
+    lore: 'La Spire a été conçue avec les ombres en tête — Malachar savait ce que le noir peut cacher, et il a dessiné chaque couloir pour en avoir. Mais les traqueurs, il ne les a pas conçus. Ce sont les créatures que le noir a choisi d\'y mettre de lui-même, comme si l\'obscurité avait accepté l\'invitation puis amené ses propres invités. Même Malachar les évite. C\'est la seule chose de sa tour qu\'il n\'a pas voulue.',
     drops: [
       { itemId: 'void_shard', dropRatePct: 65, isHidden: false },
       { itemId: 'dark_essence', dropRatePct: 45, isHidden: false },

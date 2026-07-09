@@ -659,7 +659,7 @@ export class UIScene extends Phaser.Scene {
     this.pushNotif(`Nouvelle créature : ${name} !`, UI.TXT_BLUE);
   }
 
-  private pushNotif(msg: string, color = UI.TXT_PARCHMENT) {
+  private pushNotif(msg: string, color: string = UI.TXT_PARCHMENT) {
     this.notifQueue.push(`${color}|${msg}`);
     if (this.notifTimer <= 0) this.showNextNotif();
   }

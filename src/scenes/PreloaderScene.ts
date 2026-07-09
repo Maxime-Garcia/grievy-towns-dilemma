@@ -270,7 +270,7 @@ export class PreloaderScene extends Phaser.Scene {
   private generateWeaponIcons(): void {
     const S = 32;
     const mk = (key: string, fn: (g: Phaser.GameObjects.Graphics) => void) => {
-      const g = this.make.graphics({ add: false });
+      const g = this.make.graphics();
       fn(g);
       g.generateTexture(key, S, S);
       g.destroy();
@@ -278,21 +278,21 @@ export class PreloaderScene extends Phaser.Scene {
 
     // SWORD — blade argenté, garde bleue
     mk('wpn_sword', g => {
-      g.fillStyle(0x8899cc); g.fillTriangle(9, 29, 13, 29, 26, 5, 22, 5);
+      g.fillStyle(0x8899cc); g.fillPoints([{ x: 9, y: 29 }, { x: 13, y: 29 }, { x: 26, y: 5 }, { x: 22, y: 5 }], true);
       g.fillStyle(0x223366); g.fillRect(7, 23, 16, 3);
       g.fillStyle(0x997755); g.fillRect(12, 26, 6, 6);
     });
 
     // GREATSWORD — lame plus large, gris foncé
     mk('wpn_greatsword', g => {
-      g.fillStyle(0x556688); g.fillTriangle(7, 30, 13, 30, 28, 2, 22, 2);
+      g.fillStyle(0x556688); g.fillPoints([{ x: 7, y: 30 }, { x: 13, y: 30 }, { x: 28, y: 2 }, { x: 22, y: 2 }], true);
       g.fillStyle(0x223344); g.fillRect(4, 24, 22, 4);
       g.fillStyle(0x775533); g.fillRect(12, 28, 7, 4);
     });
 
     // DAGGER — courte, ambre
     mk('wpn_dagger', g => {
-      g.fillStyle(0xddaa33); g.fillTriangle(12, 25, 17, 25, 23, 9, 19, 9);
+      g.fillStyle(0xddaa33); g.fillPoints([{ x: 12, y: 25 }, { x: 17, y: 25 }, { x: 23, y: 9 }, { x: 19, y: 9 }], true);
       g.fillStyle(0x554422); g.fillRect(10, 22, 12, 4);
       g.fillStyle(0x886633); g.fillRect(12, 26, 8, 6);
     });
@@ -300,8 +300,8 @@ export class PreloaderScene extends Phaser.Scene {
     // DUAL_DAGGER — deux dagues ambre
     mk('wpn_dual_dagger', g => {
       g.fillStyle(0xddaa33);
-      g.fillTriangle(4, 27, 8, 27, 14, 8, 10, 8);
-      g.fillTriangle(18, 27, 22, 27, 28, 8, 24, 8);
+      g.fillPoints([{ x: 4, y: 27 }, { x: 8, y: 27 }, { x: 14, y: 8 }, { x: 10, y: 8 }], true);
+      g.fillPoints([{ x: 18, y: 27 }, { x: 22, y: 27 }, { x: 28, y: 8 }, { x: 24, y: 8 }], true);
       g.fillStyle(0x886633);
       g.fillRect(4, 25, 5, 7); g.fillRect(18, 25, 5, 7);
       g.fillStyle(0x554422);
@@ -311,8 +311,8 @@ export class PreloaderScene extends Phaser.Scene {
     // DUAL_SWORD — deux lames bleues
     mk('wpn_dual_sword', g => {
       g.fillStyle(0x8899cc);
-      g.fillTriangle(3, 29, 8, 29, 17, 4, 12, 4);
-      g.fillTriangle(16, 29, 21, 29, 30, 4, 25, 4);
+      g.fillPoints([{ x: 3, y: 29 }, { x: 8, y: 29 }, { x: 17, y: 4 }, { x: 12, y: 4 }], true);
+      g.fillPoints([{ x: 16, y: 29 }, { x: 21, y: 29 }, { x: 30, y: 4 }, { x: 25, y: 4 }], true);
       g.fillStyle(0x334466);
       g.fillRect(2, 22, 13, 3); g.fillRect(16, 22, 13, 3);
       g.fillStyle(0x997755);
@@ -371,7 +371,7 @@ export class PreloaderScene extends Phaser.Scene {
     // ── Helper: bake a Graphics → texture and destroy the Graphics ────────────
     const mk = (key: string, fn: (g: Phaser.GameObjects.Graphics) => void): void => {
       if (this.textures.exists(key)) return; // already created (hot-reload guard)
-      const g = this.make.graphics({ add: false });
+      const g = this.make.graphics();
       fn(g);
       g.generateTexture(key, S, S);
       g.destroy();
@@ -557,12 +557,12 @@ export class PreloaderScene extends Phaser.Scene {
       g.fillRect(10, 4, 12, 5);
       // Body
       g.fillStyle(tint, 1);
-      g.fillTriangle(5, 8, 27, 8, 21, 30, 11, 30);
+      g.fillPoints([{ x: 5, y: 8 }, { x: 27, y: 8 }, { x: 21, y: 30 }, { x: 11, y: 30 }], true);
       // Fold highlight
       g.fillStyle(0xffffff, 0.1);
       g.fillTriangle(14, 9, 20, 9, 17, 24);
       g.lineStyle(1, 0x000020, 0.5);
-      g.strokeTriangle(5, 8, 27, 8, 21, 30, 11, 30);
+      g.strokePoints([{ x: 5, y: 8 }, { x: 27, y: 8 }, { x: 21, y: 30 }, { x: 11, y: 30 }], true);
     };
 
     // Ring — circle with gem
@@ -716,9 +716,9 @@ export class PreloaderScene extends Phaser.Scene {
     mk('item_type_weapon', g => {
       // Blade 1: diagonal top-left → bottom-right
       g.fillStyle(0x8899bb, 1);
-      g.fillTriangle(6, 4, 10, 4, 26, 28, 22, 28);
+      g.fillPoints([{ x: 6, y: 4 }, { x: 10, y: 4 }, { x: 26, y: 28 }, { x: 22, y: 28 }], true);
       // Blade 2: diagonal top-right → bottom-left
-      g.fillTriangle(22, 4, 26, 4, 10, 28, 6, 28);
+      g.fillPoints([{ x: 22, y: 4 }, { x: 26, y: 4 }, { x: 10, y: 28 }, { x: 6, y: 28 }], true);
       // Crossguard center
       g.fillStyle(0x445566, 1);
       g.fillRect(11, 13, 10, 4);
