@@ -8,6 +8,7 @@ import {
   Accessory,
 } from '../types';
 import { ProgressionSystem } from './ProgressionSystem';
+import { CDR_CAP_PCT, DODGE_CAP_PCT, BOSS_DMG_CAP_PCT } from './StatRollSystem';
 
 // ============================================================
 // StatsSystem — agrégation des stats joueur + équipement
@@ -26,6 +27,10 @@ import { ProgressionSystem } from './ProgressionSystem';
  * - `aspd` est un multiplicateur GLOBAL (1.1 = +10%) à appliquer PAR-DESSUS
  *   le `attackSpeed` propre à l'arme équipée.
  * - `elemBonus` / `lifesteal` sont des pourcentages totaux.
+ * - `cdr` / `dodge` / `bossDmg` sont des pourcentages totaux, CAPPÉS
+ *   (docs/design/LOOT_STAT_ROLLS.md §3) : cdr ≤ 30, dodge ≤ 20, bossDmg ≤ 40.
+ * - `hpOnKill` / `manaOnKill` sont des valeurs PLATES (non cappées — pas de
+ *   cap spécifié par le design), additives avec KILL_HEAL_15_PCT / MANA_ON_KILL_PCT.
  */
 export interface ComputedStats {
   atk: number;
@@ -40,6 +45,11 @@ export interface ComputedStats {
   spd: number;
   elemBonus: number; // % bonus élémentaire global
   lifesteal: number; // % lifesteal
+  cdr: number;       // % réduction de cooldown de compétences (cap 30)
+  dodge: number;     // % chance d'esquiver totalement une attaque ennemie (cap 20)
+  bossDmg: number;   // % dégâts bonus contre boss/élites (cap 40)
+  hpOnKill: number;  // PV rendus par kill (plat)
+  manaOnKill: number; // Mana rendu par kill (plat)
 }
 
 export type GearPiece = Weapon | Armor | Accessory;
@@ -55,6 +65,7 @@ export const BASE_CRIT_MULT = 2.0;
 const PERCENT_KEYS: ReadonlySet<SubstatKey> = new Set<SubstatKey>([
   'ATK_PCT', 'MATK_PCT', 'DEF_PCT', 'HP_PCT',
   'CRIT_RATE', 'CRIT_DMG', 'ASPD_PCT', 'ELEM_BONUS_PCT', 'LIFESTEAL_PCT',
+  'CDR_PCT', 'DODGE_PCT', 'BOSS_DMG_PCT',
 ]);
 
 /** Libellés lisibles par le joueur (UI panneaux d'items, comparaisons). */
@@ -74,6 +85,12 @@ const STAT_LABELS: Record<SubstatKey, string> = {
   ELEM_BONUS_PCT: 'Dégâts élém.',
   MANA_FLAT: 'Mana',
   LIFESTEAL_PCT: 'Vol de vie',
+  MDEF_FLAT: 'DEF Mag.',
+  CDR_PCT: 'Réd. Cooldown',
+  DODGE_PCT: 'Esquive',
+  BOSS_DMG_PCT: 'DGT vs Boss',
+  HP_ON_KILL_FLAT: 'PV au kill',
+  MANA_ON_KILL_FLAT: 'Mana au kill',
 };
 
 const ZERO_TOTALS = (): Record<SubstatKey, number> => ({
@@ -81,6 +98,8 @@ const ZERO_TOTALS = (): Record<SubstatKey, number> => ({
   DEF_FLAT: 0, DEF_PCT: 0, HP_FLAT: 0, HP_PCT: 0,
   CRIT_RATE: 0, CRIT_DMG: 0, ASPD_PCT: 0, SPD_FLAT: 0,
   ELEM_BONUS_PCT: 0, MANA_FLAT: 0, LIFESTEAL_PCT: 0,
+  MDEF_FLAT: 0, CDR_PCT: 0, DODGE_PCT: 0, BOSS_DMG_PCT: 0,
+  HP_ON_KILL_FLAT: 0, MANA_ON_KILL_FLAT: 0,
 });
 
 export class StatsSystem {
@@ -138,6 +157,9 @@ export class StatsSystem {
     hp   = Math.round((hp   + t.HP_FLAT)   * (1 + t.HP_PCT   / 100));
     mana = Math.round(mana + t.MANA_FLAT);
     spd  = Math.round(spd  + t.SPD_FLAT);
+    // MDEF_FLAT (loot stat rolls) — comble le trou historique : magicDef n'avait
+    // jusqu'ici aucune substat dédiée, seulement bonusStats.magicDef/end + defense d'armure.
+    magicDef += t.MDEF_FLAT;
 
     return {
       atk,
@@ -152,6 +174,11 @@ export class StatsSystem {
       spd,
       elemBonus: t.ELEM_BONUS_PCT,
       lifesteal: t.LIFESTEAL_PCT,
+      cdr: Math.min(CDR_CAP_PCT, t.CDR_PCT),
+      dodge: Math.min(DODGE_CAP_PCT, t.DODGE_PCT),
+      bossDmg: Math.min(BOSS_DMG_CAP_PCT, t.BOSS_DMG_PCT),
+      hpOnKill: t.HP_ON_KILL_FLAT,
+      manaOnKill: t.MANA_ON_KILL_FLAT,
     };
   }
 
