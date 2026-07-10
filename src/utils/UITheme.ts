@@ -432,6 +432,13 @@ export function addCloseButton(
  * distinguer visuellement une fermeture normale (noir, défaut) d'une
  * redirection vers une autre scène (teinte caractéristique de la destination).
  *
+ * FADE_OUT_COMPLETE se déclenche depuis le cycle de rendu de la caméra —
+ * appeler scene.stop()/scene.launch() de façon SYNCHRONE dedans casse le
+ * rendu (l'écran reste figé sur la dernière frame, entièrement teintée).
+ * Cf. GameScene.performZoneTransition()/onPlayerDeath()/goToMainMenu(), qui
+ * différent systématiquement d'un tick via time.delayedCall(0, ...) pour la
+ * même raison — on réplique ici cette précaution.
+ *
  * Pure enveloppe autour de l'API caméra Phaser : n'appelle jamais scene.stop()
  * elle-même, c'est `onFadedOut` qui décide (stop seul, ou stop + launch).
  */
@@ -444,7 +451,9 @@ export function fadeOutAndClose(
   const r = (tint >> 16) & 0xff;
   const g = (tint >> 8) & 0xff;
   const b = tint & 0xff;
-  scene.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, onFadedOut);
+  scene.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+    scene.time.delayedCall(0, onFadedOut);
+  });
   scene.cameras.main.fadeOut(durationMs, r, g, b);
 }
 
