@@ -1,6 +1,9 @@
 // Shared pixel-art UI theme — medieval fantasy palette
 // All scenes import from here to stay visually consistent.
 
+import type { RangedStat } from '../types';
+import { StatsSystem } from '../systems/StatsSystem';
+
 export const UI = {
   // Panel backgrounds
   PANEL_BG:    0x0c0c18,
@@ -505,4 +508,66 @@ export function pxStyle(
     s.strokeThickness = 3;
   }
   return s;
+}
+
+// ============================================================
+// LOOT STAT ROLLS — helpers d'affichage partagés Arsenal/Inventaire
+// (docs/design/LOOT_STAT_ROLLS.md §7). Formatage pur (aucun GameObject créé
+// ici) — les scènes restent responsables du rendu Phaser.
+// ============================================================
+
+/** Sépare une chaîne `StatsSystem.formatStat` en (valeur signée, libellé) — ex.
+ *  "+91 PV" → { num: "+91", label: "PV" }. Le libellé peut contenir des espaces
+ *  (ex. "PV Max", "Vit. d'attaque"), d'où le split sur le PREMIER espace seulement. */
+function splitFormattedStat(full: string): { num: string; label: string } {
+  const i = full.indexOf(' ');
+  return i === -1 ? { num: full, label: '' } : { num: full.slice(0, i), label: full.slice(i + 1) };
+}
+
+/** Retire le signe "+" — non pertinent pour une fourchette catalogue (seule une
+ *  valeur rollée a un signe qui a du sens à afficher). */
+function stripSign(num: string): string {
+  return num.replace(/^\+/, '');
+}
+
+/**
+ * Ligne "label + fourchette" d'une stat catalogue — format Arsenal (§7.1) :
+ * `PV  91 – 150`. Réutilise `StatsSystem.formatStat` pour dériver libellé et
+ * suffixe % sans dupliquer STAT_LABELS/PERCENT_KEYS (source de vérité unique).
+ */
+export function formatRangedStatLine(range: RangedStat): string {
+  const { num: minNum, label } = splitFormattedStat(StatsSystem.formatStat(range.key, range.min, range.isPercentage));
+  const { num: maxNum } = splitFormattedStat(StatsSystem.formatStat(range.key, range.max, range.isPercentage));
+  return `${label}  ${stripSign(minNum)} – ${stripSign(maxNum)}`;
+}
+
+/**
+ * Fourchette seule, sans libellé — format Inventaire (§7.2), affichée en petit
+ * gris juste après une valeur rollée : `(91–150)`.
+ */
+export function formatRangedStatBounds(range: RangedStat): string {
+  const minNum = stripSign(splitFormattedStat(StatsSystem.formatStat(range.key, range.min, range.isPercentage)).num);
+  const maxNum = stripSign(splitFormattedStat(StatsSystem.formatStat(range.key, range.max, range.isPercentage)).num);
+  return `(${minNum}–${maxNum})`;
+}
+
+/** Qualité locale d'une ligne rollée (0–1) — q = (value-min)/(max-min), clampée.
+ *  Ligne fixe (max <= min) : 0.5 neutre (ni bonne ni mauvaise, rien à jauger). */
+export function lineQuality(value: number, min: number, max: number): number {
+  if (max <= min) return 0.5;
+  return Math.max(0, Math.min(1, (value - min) / (max - min)));
+}
+
+/**
+ * Couleur de qualité pour une Résonance globale OU une qualité locale de ligne,
+ * exprimée en 0–100 — mêmes paliers pour les deux usages (docs/design/
+ * LOOT_STAT_ROLLS.md §4.3/§7.2) : <30 gris sombre, 30–59 blanc, 60–84 cyan,
+ * ≥85 or (Vibrante ET Parfaite partagent l'or — le scintillement de la
+ * Parfaite est un traitement de notification de drop séparé, hors scope ici).
+ */
+export function resonanceColor(pct: number): string {
+  if (pct >= 85) return UI.TXT_GOLD;
+  if (pct >= 60) return UI.TXT_CYAN;
+  if (pct >= 30) return UI.TXT_WHITE;
+  return UI.TXT_MUTED;
 }

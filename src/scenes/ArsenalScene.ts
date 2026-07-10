@@ -12,11 +12,13 @@
 import { WorldState, ElementType, ItemType, ItemRarity, RARITY_COLORS, Item, Weapon, Armor } from '../types';
 import {
   UI, drawGlowPanel, drawCard, drawBadge, uiStyle, addCloseButton, drawScrollbar,
-  renderScrollableText, formatDropRate,
+  renderScrollableText, formatDropRate, formatRangedStatLine,
 } from '../utils/UITheme';
 import { ALL_ITEMS } from '../data/items';
 import { getPassiveEffectLabel } from '../data/passiveEffects';
 import { ArsenalSystem } from '../systems/ArsenalSystem';
+import { StatsSystem } from '../systems/StatsSystem';
+import { isEquipableItem } from '../systems/StatRollSystem';
 import { BESTIARY_DATA, BESTIARY_RECORD, BestiaryDropData } from '../data/bestiary';
 import { BestiarySystem } from '../systems/BestiarySystem';
 import { ENEMY_MAP } from '../data/enemies';
@@ -77,6 +79,13 @@ const LORE_SCROLL_STEP = 28;
 const DROP_SOURCE_ROW_H = 34;
 /** Nombre max de monstres affichés avant de replier en "+N autres". */
 const DROP_SOURCE_MAX_ROWS = 6;
+
+/**
+ * Sous-titre du bloc fourchettes (§7.1) — hardcodé FR (pas de clé i18n) : la
+ * catégorie de contenu equipStats/equipRanges n'est pas encore localisée
+ * ailleurs dans ce fichier (cf. StatsSystem.STAT_LABELS, même convention).
+ */
+const RANGES_SUBTITLE = 'Fourchettes à l\'obtention';
 
 export class ArsenalScene extends Phaser.Scene {
   private gameScene!: GameScene;
@@ -476,7 +485,7 @@ export class ArsenalScene extends Phaser.Scene {
     // ── Stats principales (selon le type d'item) ───────────────
     if (entry.discovered) {
       for (const line of this.statLines(item)) {
-        this.detailObjs.push(this.add.text(ix, iy, line, uiStyle(9, UI.TXT_PARCHMENT)));
+        this.detailObjs.push(this.add.text(ix, iy, line.text, uiStyle(9, line.muted ? UI.TXT_MUTED : UI.TXT_PARCHMENT)));
         iy += 15;
       }
     }
@@ -498,18 +507,56 @@ export class ArsenalScene extends Phaser.Scene {
       : (passiveLabel ? `${baseDesc}\n\n${t('arsenal.passive_label')} ${passiveLabel}` : baseDesc);
     const descColor = entry.discovered ? UI.TXT_PARCHMENT : UI.TXT_MUTED;
 
-    const loreResult = renderScrollableText(
-      this, this.LORE_X, this.LORE_Y, this.LORE_W, this.LORE_H,
-      descText, uiStyle(9, descColor, { lineSpacing: 5 }), this.loreScrollPx,
-    );
-    this.detailObjs.push(loreResult.text, loreResult.mask);
-    this.loreMaxScrollPx = loreResult.maxScrollPx;
+    // Fourchettes de roll (§7.1) : contenu de longueur VARIABLE (2 lignes en
+    // COMMON, jusqu'à 8 en HIDDEN) — ne peut pas tenir dans la zone identité
+    // fixe au-dessus (déjà pleine à 3 lignes avec ATK/MATK/ASPD). Rendu DANS
+    // le même viewport scrollable que le lore, en tête, avec sa propre teinte
+    // grise — deux Text partageant un seul mask/scroll, plutôt qu'un second
+    // viewport indépendant (garde LORE_Y/dropTitleY strictement inchangés).
+    const rangeLines = entry.discovered ? this.equipRangeLines(item) : [];
+    let maxScrollPx: number;
+
+    if (rangeLines.length > 0) {
+      const rangesTxt = this.add.text(
+        this.LORE_X, this.LORE_Y - this.loreScrollPx,
+        `${RANGES_SUBTITLE}\n${rangeLines.join('\n')}`,
+        uiStyle(8, UI.TXT_MUTED, { italic: true, lineSpacing: 4, wordWrapWidth: this.LORE_W }),
+      );
+      const gapY = 8;
+      const loreTxt = this.add.text(
+        this.LORE_X, rangesTxt.y + rangesTxt.height + gapY,
+        descText, uiStyle(9, descColor, { lineSpacing: 5, wordWrapWidth: this.LORE_W }),
+      );
+
+      maxScrollPx = Math.max(0, Math.ceil(rangesTxt.height + gapY + loreTxt.height) - this.LORE_H);
+      if (this.loreScrollPx > maxScrollPx) {
+        rangesTxt.y = this.LORE_Y - maxScrollPx;
+        loreTxt.y = rangesTxt.y + rangesTxt.height + gapY;
+      }
+
+      const maskGfx = this.make.graphics(undefined, false);
+      maskGfx.fillStyle(0xffffff, 1);
+      maskGfx.fillRect(this.LORE_X, this.LORE_Y, this.LORE_W, this.LORE_H);
+      const geomMask = maskGfx.createGeometryMask();
+      rangesTxt.setMask(geomMask);
+      loreTxt.setMask(geomMask);
+      this.detailObjs.push(rangesTxt, loreTxt, maskGfx);
+    } else {
+      const loreResult = renderScrollableText(
+        this, this.LORE_X, this.LORE_Y, this.LORE_W, this.LORE_H,
+        descText, uiStyle(9, descColor, { lineSpacing: 5 }), this.loreScrollPx,
+      );
+      this.detailObjs.push(loreResult.text, loreResult.mask);
+      maxScrollPx = loreResult.maxScrollPx;
+    }
+
+    this.loreMaxScrollPx = maxScrollPx;
     if (this.loreScrollPx > this.loreMaxScrollPx) this.loreScrollPx = this.loreMaxScrollPx;
-    if (loreResult.maxScrollPx > 0) {
+    if (maxScrollPx > 0) {
       const sbGfx = this.add.graphics();
       drawScrollbar(
         sbGfx, this.LORE_X + this.LORE_W - 6, this.LORE_Y, 4, this.LORE_H,
-        this.loreScrollPx, loreResult.maxScrollPx, this.LORE_H / (this.LORE_H + loreResult.maxScrollPx),
+        this.loreScrollPx, maxScrollPx, this.LORE_H / (this.LORE_H + maxScrollPx),
       );
       this.detailObjs.push(sbGfx);
     }
@@ -674,23 +721,70 @@ export class ArsenalScene extends Phaser.Scene {
     return itemTextureKey(item.id, item.type, k => this.textures.exists(k));
   }
 
-  /** Lignes de stats affichées dans le panneau détail, selon le type d'objet. */
-  private statLines(item: Item): string[] {
-    const lines: string[] = [];
+  /**
+   * Lignes de stats affichées dans le panneau détail, selon le type d'objet.
+   * Le mainStat (miroir ATK/MATK pour une arme, ligne d'identité pour une
+   * armure/accessoire) est affiché en fourchette grise (`muted: true`) au lieu
+   * de sa valeur figée — §7.1 : « au lieu des valeurs figées actuelles pour le
+   * mainStat ». Le dégât secondaire (non mainStat) et l'ASPD ne roll jamais
+   * (§1.3) et restent figés, couleur normale. Les SUBSTATS (nombre variable,
+   * 1 à 7 lignes) ne sont PAS ici : cette zone a un budget vertical fixe (déjà
+   * ~pleine avec 3 lignes) — elles vivent dans le bloc lore scrollable
+   * (cf. equipRangeLines + renderDetail).
+   */
+  private statLines(item: Item): { text: string; muted?: boolean }[] {
+    const lines: { text: string; muted?: boolean }[] = [];
+    const ranges = isEquipableItem(item) ? item.equipRanges : undefined;
+
     if ('weaponType' in item) {
       const w = item as Weapon;
-      if (w.damage)      lines.push(`${t('stats.atk')}: ${w.damage}`);
-      if (w.magicDamage) lines.push(`${t('stats.matk')}: ${w.magicDamage}`);
-      lines.push(`${t('stats.aspd')}: ×${w.attackSpeed.toFixed(1)}`);
+      if (ranges) {
+        lines.push({ text: formatRangedStatLine(ranges.mainStat), muted: true });
+        if (ranges.mainStat.key === 'ATK_FLAT' && w.magicDamage > 0) {
+          lines.push({ text: `${t('stats.matk')}: ${w.magicDamage}` });
+        } else if (ranges.mainStat.key === 'MATK_FLAT' && w.damage > 0) {
+          lines.push({ text: `${t('stats.atk')}: ${w.damage}` });
+        }
+      } else {
+        if (w.damage)      lines.push({ text: `${t('stats.atk')}: ${w.damage}` });
+        if (w.magicDamage) lines.push({ text: `${t('stats.matk')}: ${w.magicDamage}` });
+      }
+      lines.push({ text: `${t('stats.aspd')}: ×${w.attackSpeed.toFixed(1)}` });
     } else if ('defense' in item) {
       const a = item as Armor;
-      lines.push(`${t('stats.def')}: ${a.defense}`);
-      lines.push(`${t('stats.mdef')}: ${a.magicDefense}`);
+      lines.push({ text: `${t('stats.def')}: ${a.defense}` });
+      lines.push({ text: `${t('stats.mdef')}: ${a.magicDefense}` });
+      if (ranges) lines.push({ text: formatRangedStatLine(ranges.mainStat), muted: true });
+    } else if (ranges) {
+      // Accessoires (ring/amulet) : ni arme ni armure — seule la ligne d'identité existe ici.
+      lines.push({ text: formatRangedStatLine(ranges.mainStat), muted: true });
     }
     // Le passif est affiché dans le bloc description/lore scrollable ci-dessous
     // (renderDetail), pas ici : cette zone de stats a un budget vertical FIXE
     // (LORE_Y ne bouge pas selon le nombre de lignes), un passif long y déborderait.
     return lines;
+  }
+
+  /**
+   * Fourchettes de roll de chaque SUBSTAT (§7.1) — SOURCE : le catalogue
+   * (`item.equipRanges`), jamais une instance possédée (l'Arsenal est un
+   * glossaire du monde, pas un inventaire). Le mainStat est traité séparément
+   * dans `statLines` (zone identité, budget fixe) ; les substats (1 à 7
+   * lignes selon la rareté) vivent ici, dans le bloc lore scrollable — seul
+   * viewport capable d'absorber un nombre de lignes variable sans déborder.
+   * Filet défensif si un item équipable n'a pas encore `equipRanges` : retombe
+   * sur les valeurs figées `equipStats` (centre), sinon liste vide (ne
+   * devrait plus arriver après la migration de contenu, cf. §6.2).
+   */
+  private equipRangeLines(item: Item): string[] {
+    if (!isEquipableItem(item)) return [];
+    const r = item.equipRanges;
+    if (r) return r.substats.map(formatRangedStatLine);
+
+    const es = item.equipStats;
+    if (es) return es.substats.map(s => StatsSystem.formatStat(s.key, s.value, s.isPercentage));
+
+    return [];
   }
 
   /** Badge d'info compact — retourne la largeur occupée (badge + marge). */
