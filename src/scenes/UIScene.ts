@@ -651,7 +651,7 @@ export class UIScene extends Phaser.Scene {
     // Paliers lus via StatRollSystem (source de vérité §4.3) — aucun seuil dupliqué ici.
     const label   = StatRollSystem.getResonanceLabel(q);
     const perfect = label === 'Parfaite';
-    if (!perfect && label !== 'Vibrante') {
+    if (!StatRollSystem.isNotableResonance(q)) {
       // Résonance ordinaire (< 85) : rien de plus que l'existant.
       if (item.rarity !== ItemRarity.COMMON) this.pushNotif(`${name}  ×${quantity}`, rarityColor);
       return;

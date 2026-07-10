@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType } from '../types';
+import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType, ItemRarity } from '../types';
 import { CombatSystem } from '../systems/CombatSystem';
 import { StatsSystem } from '../systems/StatsSystem';
 import { PassiveSystem } from '../systems/PassiveSystem';
@@ -4100,7 +4100,14 @@ export class GameScene extends Phaser.Scene {
         LootSystem.addToInventory(this.gameState.player, item, 1, this.gameState.world);
         this.events.emit('item_looted', { item, quantity: 1 });
         const typeKey = `notif.loot_${lo.type}` as const;
-        this.events.emit('show_notification', `${t(typeKey)} ${localizeItem(item).name}${gold > 0 ? ` +${gold}G` : ''}`);
+        // Un Common à Résonance notable (Vibrante+) déclenche déjà sa propre
+        // notification enrichie via item_looted (nom + % + scintillement) —
+        // répéter le nom ici empilerait deux popups pour un seul ramassage.
+        // On garde uniquement la mention d'or, s'il y en a.
+        const skipItemName = item.rarity === ItemRarity.COMMON
+          && typeof item.rollQuality === 'number' && StatRollSystem.isNotableResonance(item.rollQuality);
+        const itemPart = skipItemName ? '' : ` ${localizeItem(item).name}`;
+        this.events.emit('show_notification', `${t(typeKey)}${itemPart}${gold > 0 ? ` +${gold}G` : ''}`);
       } else if (gold > 0) {
         this.events.emit('show_notification', t('notif.gold').replace('{gold}', String(gold)));
       }

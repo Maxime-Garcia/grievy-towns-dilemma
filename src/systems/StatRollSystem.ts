@@ -178,6 +178,15 @@ export class StatRollSystem {
   }
 
   /**
+   * True si la Résonance mérite une notification même sur un Common (§7.2 :
+   * Vibrante ou mieux) — seuil unique, ne JAMAIS réécrire `>= 85` ailleurs.
+   */
+  static isNotableResonance(quality: number): boolean {
+    const label = this.getResonanceLabel(quality);
+    return label === 'Vibrante' || label === 'Parfaite';
+  }
+
+  /**
    * À appeler UNE FOIS au chargement de src/data/items.ts, juste avant le
    * remplissage de ALL_ITEMS. Mute les items en place :
    * - calcule `equipStats` = centre de chaque fourchette pour tout item ayant
