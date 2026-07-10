@@ -53,7 +53,11 @@ export class CombatSystem {
     // cs.atk includes DÉJÀ la main stat de l'arme (StatsSystem.computeAll) — ne
     // jamais réadditionner weapon.damage ici, sous peine de compter l'arme deux fois.
     const rawDamage = cs.atk;
-    const critRoll = Math.random() < cs.crit / 100;
+    // FIRST_STRIKE_500_PCT (qa-agent BUG) : calculé AVANT le crit pour pouvoir
+    // désactiver ce dernier sur le coup — évite le cumul ×5 × crit(×2) qui montait
+    // à ×17,7 avec élément+Soul Echo. Réservé aux boss (cf. PassiveSystem).
+    const firstStrikeMult = PassiveSystem.getFirstStrikeMultiplier(player, target.isBoss ?? false);
+    const critRoll = firstStrikeMult > 1 ? false : Math.random() < cs.crit / 100;
     const mult = critRoll ? cs.critDmg : 1.0;
     // BUG2 fix: EXPOSE status reduces effective DEF before damage calculation
     const expose = target.statusEffects.find(e => e.type === 'EXPOSE');
@@ -74,7 +78,6 @@ export class CombatSystem {
       ? 1 + PassiveSystem.getWaterDmgBonusPct(player.equipment) / 100
       : 1;
     const killStackMult = PassiveSystem.getKillStackDamageMultiplier(player);
-    const firstStrikeMult = PassiveSystem.getFirstStrikeMultiplier(player);
     const damage = Math.max(1, Math.floor(
       reduced * mult * elemMult * elemBonusMult * (0.9 + Math.random() * 0.2)
       * soulBonus * waterDmgMult * killStackMult * firstStrikeMult,
@@ -116,7 +119,10 @@ export class CombatSystem {
     // au sort (skill.damage/magicDamage) s'additionne par-dessus.
     const rawMagic = cs.matk + (skill.magicDamage ?? 0);
     const rawPhys  = cs.atk  + (skill.damage      ?? 0);
-    const critRoll = Math.random() < cs.crit / 100;
+    // FIRST_STRIKE_500_PCT : calculé avant le crit pour le désactiver sur ce coup
+    // (même raisonnement que playerAttack — évite le cumul ×5 × crit).
+    const firstStrikeMult = PassiveSystem.getFirstStrikeMultiplier(player, target.isBoss ?? false);
+    const critRoll = firstStrikeMult > 1 ? false : Math.random() < cs.crit / 100;
     const mult = critRoll ? cs.critDmg : 1.0;
 
     const elemMult = CombatSystem.elementalMultiplier(skill.element, target);
@@ -137,7 +143,6 @@ export class CombatSystem {
       : 1;
     const unboundDmgMult = 1 + PassiveSystem.getUnboundSkillDmgCdPct(player.equipment).dmgPct / 100;
     const killStackMult = PassiveSystem.getKillStackDamageMultiplier(player);
-    const firstStrikeMult = PassiveSystem.getFirstStrikeMultiplier(player);
     const passiveMult = lightningStunnedMult * waterDmgMult * unboundDmgMult * killStackMult * firstStrikeMult;
 
     const magicDmg = Math.floor(rawMagic * (100 / (100 + target.stats.baseMagicDef)) * mult * elemMult * elemBonusMult * soulBonus * passiveMult);

@@ -15,7 +15,7 @@ import {
   renderScrollableText, formatDropRate,
 } from '../utils/UITheme';
 import { ALL_ITEMS } from '../data/items';
-import { PASSIVE_EFFECT_LABELS } from '../data/passiveEffects';
+import { getPassiveEffectLabel } from '../data/passiveEffects';
 import { ArsenalSystem } from '../systems/ArsenalSystem';
 import { BESTIARY_DATA, BESTIARY_RECORD, BestiaryDropData } from '../data/bestiary';
 import { BestiarySystem } from '../systems/BestiarySystem';
@@ -490,7 +490,7 @@ export class ArsenalScene extends Phaser.Scene {
     this.addSectionTitle(t('arsenal.description_title'), descY);
 
     const passiveLabel = ('passiveEffect' in item && item.passiveEffect)
-      ? PASSIVE_EFFECT_LABELS[item.passiveEffect]
+      ? getPassiveEffectLabel(item.passiveEffect)
       : undefined;
     const baseDesc = loc.lore ?? loc.description;
     const descText = !entry.discovered

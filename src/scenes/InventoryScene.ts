@@ -7,7 +7,7 @@ import { InventorySystem } from '../systems/InventorySystem';
 import { StatsSystem, BASE_CRIT_PCT, CRIT_PER_AGI_PCT, BASE_CRIT_MULT } from '../systems/StatsSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { ALL_ITEMS } from '../data/items';
-import { PASSIVE_EFFECT_LABELS } from '../data/passiveEffects';
+import { getPassiveEffectLabel } from '../data/passiveEffects';
 import {
   UI, drawGlowPanel, drawCard, drawSlot,
   drawDivider, addCloseButton, uiStyle,
@@ -886,10 +886,10 @@ export class InventoryScene extends Phaser.Scene {
     const locItem    = localizeItem(item);
     const substatCount = isEquip ? this.getItemSubstats(item).slice(0, 3).length : 0;
     const passiveLabel = ('passiveEffect' in item && item.passiveEffect)
-      ? PASSIVE_EFFECT_LABELS[item.passiveEffect]
+      ? getPassiveEffectLabel(item.passiveEffect)
       : undefined;
     const baseDesc0  = isEquip ? (locItem.lore ?? locItem.description) : '';
-    const descRaw0   = passiveLabel ? `${baseDesc0}\n\nPassif : ${passiveLabel}` : baseDesc0;
+    const descRaw0   = passiveLabel ? `${baseDesc0}\n\n${t('arsenal.passive_label')} ${passiveLabel}` : baseDesc0;
     let   descHeight = 0;
     if (isEquip && descRaw0) {
       const probe = this.add.text(0, 0, descRaw0, uiStyle(9, UI.TXT_MUTED, {

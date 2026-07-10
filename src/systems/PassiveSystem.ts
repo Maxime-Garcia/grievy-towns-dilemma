@@ -14,6 +14,14 @@ const KILL_STACK_PCT_PER_KILL = 2;
 
 export class PassiveSystem {
 
+  /**
+   * Plancher de cooldown d'attaque pour NO_ATTACK_COOLDOWN — qa-agent BLOCKER :
+   * un cooldown nul rendait le DPS quasi-infini (attaque à chaque frame, borné
+   * uniquement par le débit d'input). 250ms = ~4 attaques/s, largement au-dessus
+   * de la cadence de n'importe quelle arme de base, sans être un exploit de frame-rate.
+   */
+  static readonly NO_ATTACK_COOLDOWN_FLOOR_MS = 250;
+
   /** Tous les passiveEffect actifs sur l'équipement porté (armes+armure+accessoires). */
   static getActivePassiveIds(equipment: Equipment): string[] {
     return StatsSystem.getEquippedGear(equipment)
@@ -54,9 +62,15 @@ export class PassiveSystem {
    * Multiplicateur "premier coup du combat" (5x si FIRST_STRIKE_500_PCT équipé et
    * pas encore consommé ce combat) — consomme le flag en mutant player.firstStrikeReady.
    * Effet de bord assumé (même style que CombatSystem.getSoulEchoBonus/playerSkill).
+   *
+   * qa-agent BUG : réservé aux cibles isBoss=true — sans ça, le ×5 se cumule avec
+   * crit(×2)/élément/Soul Echo (jusqu'à ×17,7) et se déclenchait sur CHAQUE combat,
+   * one-shot systématique du trash mob. Contre un non-boss, le flag n'est PAS
+   * consommé : il reste prêt pour le prochain boss rencontré.
    */
-  static getFirstStrikeMultiplier(player: PlayerState): number {
+  static getFirstStrikeMultiplier(player: PlayerState, targetIsBoss: boolean): number {
     if (!player.firstStrikeReady) return 1.0;
+    if (!targetIsBoss) return 1.0;
     if (!PassiveSystem.hasPassive(player.equipment, 'FIRST_STRIKE_500_PCT')) return 1.0;
     player.firstStrikeReady = false;
     return 5.0;
