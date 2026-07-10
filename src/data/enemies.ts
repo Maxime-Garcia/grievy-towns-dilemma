@@ -1664,6 +1664,77 @@ export const ENEMIES: Enemy[] = [
     behavior: 'ranged',
     projectileColor: 0x8833cc,
     lore: 'Malachar is not a monster. He is a man who chose a path thirty years ago and never once doubted it. The horned shape was never Pyrath\'s, or Sylvael\'s, or Volkran\'s — it always belonged to the curse, and the curse has come for its author. He underestimated one thing: that the world would send someone back.'
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // ⚠ DEV TOOL — MANNEQUINS DE KELVAR (test des stat rolls, LOOT_STAT_ROLLS.md §10)
+  //
+  // Deux cibles inoffensives à drop garanti 100% pour constater l'aléatoire des
+  // rolls (titan_greatsword LEGENDARY ±30% / echo_blade MYTHIC ±35%, le range le
+  // plus large du jeu). spawnWeight: 0 → jamais spawnés par le spawner aléatoire ;
+  // placés à la main via ZONE_LAYOUTS.grievy_town.fixedEnemies (zoneMaps.ts),
+  // GATÉS derrière player.flags['dev_training_dummies'] === true.
+  //
+  // À RETIRER (ou reconvertir en props muets) avant tout milestone jouable
+  // public — un drop garanti Legendary/Mythic est un exploit de farm évident.
+  // ═══════════════════════════════════════════════════════════════
+
+  // Creature concept: a straw practice dummy that has stood in the barracks yard
+  // for thirty years. It does not move, does not fight back, and dies in one hit —
+  // killing it should feel faintly like an apology.
+  {
+    id: 'training_dummy_straw',
+    name: 'Mannequin de Kelvar',
+    description: 'Straw, canvas, and thirty years of taking hits without complaint.',
+    sprite: 'enemy_training_dummy_straw',
+    zone: 'NEUTRAL',
+    baseLevel: 1,
+    stats: { baseHp: 1, baseMana: 0, baseAtk: 1, baseDef: 0, baseSpd: 0, baseMagicAtk: 0, baseMagicDef: 0 },
+    element: ElementType.NEUTRAL,
+    skills: [],
+    loot: [
+      { itemId: 'titan_greatsword', dropRate: 1.0, minQty: 1, maxQty: 1 }
+    ],
+    baseXp: 1,
+    baseGold: { min: 0, max: 0 },
+    isBoss: false,
+    isElite: false,
+    spawnWeight: 0,
+    aggroRange: 0,
+    attackRange: 0,
+    moveSpeed: 0,
+    behavior: 'patrol',
+    patrolRadius: 0,
+    lore: 'Kelvar repairs it himself, every winter. He says a guard who cannot maintain a dummy cannot maintain a wall.'
+  },
+
+  // Creature concept: the same dummy, gilded for a promotion Kelvar never asked for.
+  // It drops the widest stat range in the game — the joke is that the shiniest thing
+  // in Grievy Town is also the most unpredictable.
+  {
+    id: 'training_dummy_gilded',
+    name: 'Mannequin Doré',
+    description: 'Kelvar had it gilded the day of his promotion. He regrets it.',
+    sprite: 'enemy_training_dummy_gilded',
+    zone: 'NEUTRAL',
+    baseLevel: 1,
+    stats: { baseHp: 1, baseMana: 0, baseAtk: 1, baseDef: 0, baseSpd: 0, baseMagicAtk: 0, baseMagicDef: 0 },
+    element: ElementType.NEUTRAL,
+    skills: [],
+    loot: [
+      { itemId: 'echo_blade', dropRate: 1.0, minQty: 1, maxQty: 1 }
+    ],
+    baseXp: 1,
+    baseGold: { min: 0, max: 0 },
+    isBoss: false,
+    isElite: false,
+    spawnWeight: 0,
+    aggroRange: 0,
+    attackRange: 0,
+    moveSpeed: 0,
+    behavior: 'patrol',
+    patrolRadius: 0,
+    lore: 'The gold leaf flakes a little more with every strike. Kelvar has never once asked anyone to stop.'
   }
 ];
 

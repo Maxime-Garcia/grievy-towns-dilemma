@@ -6,6 +6,13 @@ export interface PathRect       { x: number; y: number; w: number; h: number; }
 export interface NpcPlacement   { id: string; x: number; y: number; }
 export interface TeleportZone   { x: number; y: number; w: number; h: number; targetZone: string; targetX: number; targetY: number; label: string; }
 export interface LootableObject { id: string; type: 'chest' | 'plant' | 'mineral' | 'shrine'; x: number; y: number; itemPool: string[]; goldMin?: number; goldMax?: number; }
+/**
+ * Ennemi placé à la main (spawnWeight 0 dans enemies.ts — ignoré par le spawner
+ * aléatoire de GameScene.createEnemiesForZone). `requiresFlag` : l'ennemi ne doit
+ * être spawné que si player.flags[requiresFlag] === true (même convention que
+ * DialogueSystem.checkCondition). Hook engine à brancher côté GameScene.
+ */
+export interface FixedEnemyPlacement { id: string; x: number; y: number; requiresFlag?: string; }
 export interface WaterArea      { x: number; y: number; w: number; h: number; }
 
 export interface ZoneLayout {
@@ -21,6 +28,7 @@ export interface ZoneLayout {
   npcs:        NpcPlacement[];
   teleports:   TeleportZone[];
   lootables:   LootableObject[];
+  fixedEnemies?: FixedEnemyPlacement[];
   spawnX:      number;
   spawnY:      number;
 }
@@ -116,6 +124,15 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
       { id: 'gt_mineral_1', type: 'mineral', x: 1600, y: 680,  itemPool: ['iron_ore', 'coal'],             goldMin: 5,  goldMax: 10 },
       { id: 'gt_chest_1',   type: 'chest',   x: 360,  y: 380,  itemPool: ['minor_health_potion', 'rope'],  goldMin: 20, goldMax: 40 },
       { id: 'gt_shrine_1',  type: 'shrine',  x: 1180, y: 980,  itemPool: [],                               goldMin: 10, goldMax: 25 },
+    ],
+
+    // ⚠ DEV TOOL — Mannequins de Kelvar (LOOT_STAT_ROLLS.md §10) : cour de la
+    // caserne (sud du poste de garde nord), à côté de Kelvar. Gate obligatoire :
+    // ne spawner QUE si player.flags['dev_training_dummies'] === true.
+    // À retirer avant tout milestone jouable public (drop garanti Legendary/Mythic).
+    fixedEnemies: [
+      { id: 'training_dummy_straw',  x: 1150, y: 260, requiresFlag: 'dev_training_dummies' },
+      { id: 'training_dummy_gilded', x: 1214, y: 260, requiresFlag: 'dev_training_dummies' }, // 2 tiles à droite du premier
     ],
 
     spawnX: 1180, spawnY: 920,

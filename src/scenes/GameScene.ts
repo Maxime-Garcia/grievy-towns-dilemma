@@ -3708,6 +3708,61 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // Ennemis placés à la main (spawnWeight 0, ignorés par la boucle aléatoire
+    // ci-dessus) — DEV TOOL, cf. docs/design/LOOT_STAT_ROLLS.md §10. Chacun ne
+    // spawn que si son requiresFlag est vrai sur le joueur (même convention que
+    // DialogueSystem.checkCondition). Position fixe, jamais élite.
+    for (const placement of this.layout.fixedEnemies ?? []) {
+      if (placement.requiresFlag && !this.gameState.player.flags[placement.requiresFlag]) continue;
+      const def = ENEMY_MAP[placement.id];
+      if (!def || def.isBoss) continue;
+
+      const texKey        = `enemy_${placement.id}`;
+      const texKeyElite    = `enemy_${placement.id}_elite`;
+      const hasRealSprite = this.textures.exists(`enemy_${placement.id}_idle`);
+      if (!hasRealSprite) {
+        this.ensureTexture(texKey, enemyColor);
+        this.ensureTexture(texKeyElite, eliteColor, 44, 44);
+      }
+
+      const ex = placement.x;
+      const ey = placement.y;
+      const enemyBbox = ENEMY_SPRITE_BBOX[placement.id];
+      const enemyFit  = hasRealSprite && enemyBbox ? fitSpriteToContent(enemyBbox, 36) : null;
+      const dispSize  = enemyFit ? enemyFit.dispSize : 28;
+      const sprite = hasRealSprite
+        ? this.physics.add.sprite(ex, ey, `enemy_${placement.id}_idle`)
+        : this.physics.add.sprite(ex, ey, texKey);
+      sprite.setDisplaySize(dispSize, dispSize);
+      const body = sprite.body as Phaser.Physics.Arcade.Body;
+      if (enemyFit && enemyBbox) {
+        body.setSize(enemyBbox.w, enemyBbox.h);
+        body.setOffset(enemyBbox.x, enemyBbox.y);
+      } else {
+        body.setSize(dispSize - 8, dispSize - 8);
+      }
+      sprite.setDepth(4);
+      sprite.setData('baseScale', sprite.scale);
+      if (hasRealSprite) {
+        sprite.setData('hasRealSprite', true);
+        sprite.play(`enemy_${placement.id}_idle`);
+      }
+
+      const active = CombatSystem.spawnEnemy(def, this.gameState.player.level);
+      active.x = ex;
+      active.y = ey;
+      sprite.name = active.instanceId;
+      this.activeEnemies.set(active.instanceId, active);
+      this.enemies.add(sprite);
+
+      const contentTopGap = enemyFit ? dispSize / 2 - enemyFit.offsetY : dispSize / 2;
+      const barY  = ey - contentTopGap - 8;
+      const barW  = (enemyFit ? enemyFit.bodyW : dispSize) + 4;
+      const barBg = this.add.rectangle(ex, barY, barW, 6, 0x220000).setDepth(8);
+      const barFg = this.add.rectangle(ex - barW / 2, barY, barW, 4, 0xff2222).setDepth(9).setOrigin(0, 0.5);
+      this.enemyHpBars.set(active.instanceId, { bg: barBg, bar: barFg, baseW: barW });
+    }
+
     // Boss spawn — only if zone has a boss and it hasn't been cleared yet
     if (zone.bossId && !this.gameState.player.clearedZones.includes(zone.element as ElementType)) {
       const bossDef = ENEMY_MAP[zone.bossId];
