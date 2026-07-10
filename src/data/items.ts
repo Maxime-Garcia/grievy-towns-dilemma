@@ -225,7 +225,7 @@ export const HIDDEN_WEAPONS: Weapon[] = [
   {
     id: 'hidden_temporal_blade',
     name: 'Lame Temporelle',
-    description: 'Les attaques basiques ne consomment aucun temps de recharge. Frappe comme la foudre.',
+    description: 'Les attaques basiques ont un temps de recharge quasi nul. Frappe comme la foudre.',
     rarity: ItemRarity.HIDDEN,
     type: ItemType.WEAPON,
     icon: 'item_temporal_blade',
@@ -259,7 +259,7 @@ export const HIDDEN_WEAPONS: Weapon[] = [
   {
     id: 'hidden_first_blade',
     name: 'Épée Originelle',
-    description: 'Le premier coup de chaque combat inflige 500% des dégâts. Une seule chance.',
+    description: 'Le premier coup porté à un boss inflige 500% des dégâts, sans critique. Une fois par combat.',
     rarity: ItemRarity.HIDDEN,
     type: ItemType.WEAPON,
     icon: 'item_first_blade',
