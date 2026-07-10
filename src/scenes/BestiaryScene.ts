@@ -908,10 +908,11 @@ export class BestiaryScene extends Phaser.Scene {
     if (this.pointerUpHandler)   { this.input.off('pointerup', this.pointerUpHandler);     this.pointerUpHandler = null; }
     // Si la scène est stoppée de force (ex: GameScene.goToMainMenu()) pendant un
     // fondu lancé par fadeOutAndClose(), le listener .once(FADE_OUT_COMPLETE) reste
-    // sinon attaché à cameras.main (qui persiste entre stop/relaunch d'une même
-    // clé de scène) et pourrait se déclencher au prochain fondu avec un callback
-    // obsolète — no-op si le fondu s'est déjà terminé normalement.
-    this.cameras.main.off(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE);
+    // sinon attaché à cameras.main et pourrait se déclencher au prochain fondu avec
+    // un callback obsolète — no-op si le fondu s'est déjà terminé normalement.
+    // `?.` : au moment où Phaser émet SHUTDOWN, son propre CameraManager.shutdown()
+    // a déjà pu remettre `main` à undefined (crash reporté sans ce garde).
+    this.cameras.main?.off(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE);
     this.destroyTooltip();
     // Détruit explicitement (pas juste vidage de tableau) : le masque de scroll du
     // bloc lore (renderScrollableText) n'est jamais ajouté à la display list —
