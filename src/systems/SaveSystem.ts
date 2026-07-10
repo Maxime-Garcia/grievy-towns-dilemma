@@ -1,9 +1,33 @@
-import { GameState, SaveData, PlayerState, WorldState, EndingChoice } from '../types';
+import { GameState, SaveData, PlayerState, WorldState, EndingChoice, Item, Equipment } from '../types';
 import { ProgressionSystem } from './ProgressionSystem';
+import { StatRollSystem, isEquipableItem } from './StatRollSystem';
+import { ALL_ITEMS } from '../data/items';
 
-const SAVE_VERSION = '1.6.0';
+const SAVE_VERSION = '1.7.0';
 const SAVE_KEY_PREFIX = 'gtd_save_';
 const MAX_SLOTS = 3;
+
+/** Les 10 slots d'équipement portant un Item — exclut `skins` (pas un Item). */
+type GearSlotKey = Exclude<keyof Equipment, 'skins'>;
+const EQUIPMENT_SLOTS: GearSlotKey[] = [
+  'weapon', 'helm', 'chest', 'legs', 'boots', 'gloves', 'cape', 'ring1', 'ring2', 'amulet',
+];
+
+/**
+ * Re-roll un item équipable à Q = 0.5 exactement (docs/design/LOOT_STAT_ROLLS.md
+ * §8.2 : le centre EST l'ancienne valeur fixe par construction §6.1 — migration
+ * invisible en puissance, personne ne perd ni ne gagne rien). Préserve les
+ * champs d'instance déjà mutés (élément roulé au drop). No-op sûr pour tout
+ * item sans equipRanges (consommables/matériaux/clés/skins, ou équipement pas
+ * encore migré côté data — cf. StatRollSystem.rollItem).
+ */
+function reRollEquipableInstance(item: Item): Item {
+  const template = ALL_ITEMS[item.id];
+  if (!template || !isEquipableItem(template) || !template.equipRanges) return item;
+  const rolled = StatRollSystem.rollItem(template, 0.5);
+  if (item.element !== undefined) rolled.element = item.element;
+  return rolled;
+}
 
 // Each entry migrates a save from its key version to the next.
 // Add a new entry here whenever PlayerState, WorldState, or GameState changes.
@@ -86,6 +110,38 @@ const MIGRATION_MAP: Record<string, (state: GameState) => GameState> = {
       firstStrikeReady: (state.player as any).firstStrikeReady ?? true,
     },
   }),
+  // Loot stat rolls (docs/design/LOOT_STAT_ROLLS.md §8) : re-roll à Q = 0.5
+  // exactement chaque équipable de l'inventaire ET des 10 slots d'équipement —
+  // Q = 0.5 = centre = ancienne valeur fixe, migration invisible en puissance.
+  '1.6.0': (state) => {
+    const inventory = state.player.inventory.map(slot => ({
+      ...slot,
+      item: reRollEquipableInstance(slot.item),
+    }));
+
+    const equipment: Equipment = { ...state.player.equipment };
+    // Écriture par clé générique sur un objet à propriétés hétérogènes (Weapon |
+    // Armor | Accessory selon le slot) — TypeScript ne peut pas prouver la
+    // correspondance clé→type dans une boucle générique ; on passe par `unknown`
+    // (plutôt que `any`) sur un type de vue borné aux 10 slots réels, jamais
+    // sur `equipment` entier. Même limitation déjà acceptée dans
+    // InventorySystem.equip/unequip pour la même raison structurelle.
+    const gearView = equipment as unknown as Record<GearSlotKey, Item | undefined>;
+    for (const slot of EQUIPMENT_SLOTS) {
+      const current = gearView[slot];
+      if (current) gearView[slot] = reRollEquipableInstance(current);
+    }
+
+    return {
+      ...state,
+      version: '1.7.0',
+      player: {
+        ...state.player,
+        inventory,
+        equipment,
+      },
+    };
+  },
 };
 
 function migrate(state: GameState): GameState {

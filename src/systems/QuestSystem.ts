@@ -4,6 +4,7 @@ import { ALL_ITEMS } from '../data/items';
 import { LootSystem } from './LootSystem';
 import { ProgressionSystem } from './ProgressionSystem';
 import { SkillSystem } from './SkillSystem';
+import { StatRollSystem } from './StatRollSystem';
 
 export class QuestSystem {
 
@@ -102,8 +103,13 @@ export class QuestSystem {
     if (r.xp)    ProgressionSystem.addXp(player, r.xp);
     if (r.items) {
       for (const entry of r.items) {
-        const item = ALL_ITEMS[entry.itemId];
-        if (item) LootSystem.addToInventory(player, item, entry.quantity, world);
+        const template = ALL_ITEMS[entry.itemId];
+        if (!template) continue;
+        // Récompense de quête = cadeau narratif, jamais une gifle : qFloor 0.35
+        // (docs/design/LOOT_STAT_ROLLS.md §5). Point d'entrée unique identifié :
+        // c'est le seul endroit qui distribue r.items, main/side confondues.
+        const item = StatRollSystem.rollItem(template, 0.35);
+        LootSystem.addToInventory(player, item, entry.quantity, world);
       }
     }
     if (r.skillUnlock) SkillSystem.unlockSkill(player, r.skillUnlock);

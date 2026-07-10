@@ -2070,6 +2070,12 @@ export class GameScene extends Phaser.Scene {
     const guardActive = this.time.now < this.guardUntil;
     const hpBeforeHit = this.gameState.player.stats.hp;
     const result = CombatSystem.enemyAttack(ae, this.gameState.player);
+    // DODGE_PCT (loot stat rolls) — feedback dédié ("no mechanic without feedback"),
+    // distinct du silence d'un ennemi stun/freeze ci-dessous.
+    if (result.wasDodged) {
+      this.showDodgeText(this.player.x, this.player.y - 20);
+      return;
+    }
     if (result.damage <= 0) return; // stunned enemy — no hit landed
 
     let finalDmg = Math.round(result.damage * damageMult);
@@ -2316,6 +2322,21 @@ export class GameScene extends Phaser.Scene {
         this.gameState.player.stats.hp + heal,
       );
     }
+    // HP_ON_KILL_FLAT / MANA_ON_KILL_FLAT (loot stat rolls) — additif avec
+    // KILL_HEAL_15_PCT / MANA_ON_KILL_PCT (ABYSSAL), même point de branchement.
+    const csOnKill = StatsSystem.computeAll(this.gameState.player);
+    if (csOnKill.hpOnKill > 0) {
+      this.gameState.player.stats.hp = Math.min(
+        this.gameState.player.stats.maxHp,
+        this.gameState.player.stats.hp + csOnKill.hpOnKill,
+      );
+    }
+    if (csOnKill.manaOnKill > 0) {
+      this.gameState.player.stats.mana = Math.min(
+        this.gameState.player.stats.maxMana,
+        this.gameState.player.stats.mana + csOnKill.manaOnKill,
+      );
+    }
     // KILL_STACK_DAMAGE (hidden_soul_bow) — stack permanent, ne se réinitialise jamais.
     PassiveSystem.incrementKillStackIfEquipped(this.gameState.player);
 
@@ -2345,6 +2366,11 @@ export class GameScene extends Phaser.Scene {
     const deathY   = sprite.y;
     const isBoss   = enemyDef.isBoss;
 
+    // Bestiaire — premier kill (capturé AVANT le roll de loot : sert de qFloor
+    // de Résonance boss ci-dessous — pas de notion distincte de "drop garanti"
+    // ailleurs dans le code, recordKill() est le seul signal "premier kill").
+    const isFirstKill = BestiarySystem.recordKill(this.gameState.world, activeEnemy.enemyId);
+
     // Remove from physics immediately so it no longer blocks or attacks
     sprite.disableBody(true, false);
 
@@ -2354,13 +2380,14 @@ export class GameScene extends Phaser.Scene {
       this.playEnemyDeathSequence(sprite);
     }
 
+    // Drop garanti de boss (première mort) : Résonance plancher 0.5
+    // (docs/design/LOOT_STAT_ROLLS.md §5 — "la mort d'une divinité ne récompense
+    // jamais par une insulte"). Standard sinon (qFloor 0).
+    const lootQFloor = (isBoss && isFirstKill) ? 0.5 : 0;
     const loot = LootSystem.rollLoot(
       enemyDef.loot, enemyDef.baseGold, enemyDef.baseXp,
-      activeEnemy.level, this.gameState.player,
+      activeEnemy.level, this.gameState.player, lootQFloor,
     );
-
-    // Bestiaire — premier kill
-    BestiarySystem.recordKill(this.gameState.world, activeEnemy.enemyId);
 
     this.gameState.player.gold += loot.gold;
     for (const { item, quantity } of loot.items) {
@@ -3299,6 +3326,23 @@ export class GameScene extends Phaser.Scene {
         ease: 'Back.easeOut',
       });
     }
+  }
+
+  /** Feedback flottant DODGE_PCT (loot stat rolls) — même style que showDamageNumber. */
+  private showDodgeText(x: number, y: number) {
+    const txt = this.add.text(x + Phaser.Math.Between(-6, 6), y, 'Esquive !', {
+      fontSize: '13px', color: '#88ddff', fontFamily: 'monospace',
+      stroke: '#000000', strokeThickness: 2,
+    }).setDepth(100).setOrigin(0.5, 1);
+
+    this.tweens.add({
+      targets: txt,
+      y: y - 40,
+      alpha: 0,
+      duration: 900,
+      ease: 'Quad.easeOut',
+      onComplete: () => txt.destroy(),
+    });
   }
 
   private showHealNumber(x: number, y: number, amount: number) {

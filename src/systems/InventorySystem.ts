@@ -82,8 +82,14 @@ export class InventorySystem {
   }
 
   static equip(player: PlayerState, itemId: string): boolean {
-    const item = ALL_ITEMS[itemId];
-    if (!item) return false;
+    // BLOCKER (loot stat rolls, risque n°1 de docs/design/LOOT_STAT_ROLLS.md) :
+    // lire l'INSTANCE réelle depuis l'inventaire, jamais ALL_ITEMS[itemId] — le
+    // catalogue ne porte que les valeurs centre (cf. StatRollSystem.finalizeCatalogue),
+    // équiper le template écraserait silencieusement les stats rollées à l'obtention
+    // (élément, mainStat/substats, rollQuality) par les valeurs génériques du jeu.
+    const slotIndex = player.inventory.findIndex(s => s.item.id === itemId);
+    if (slotIndex === -1) return false;
+    const item = player.inventory[slotIndex].item;
 
     const slot = this.getEquipSlot(item, player);
     if (!slot) return false;
@@ -91,6 +97,9 @@ export class InventorySystem {
     // Le nouvel item doit quitter le sac avant d'occuper le slot — sans ça, il
     // restait dupliqué dans l'inventaire à chaque équipement (bug reporté :
     // rééquiper une arme la faisait réapparaître en plus dans le sac).
+    // removeFromInventory retrouve CE MÊME slot (findIndex par id, rien n'a
+    // muté l'inventaire entre les deux appels) — l'instance capturée ci-dessus
+    // reste valide après la suppression.
     const removed = LootSystem.removeFromInventory(player, itemId, 1);
     if (!removed) return false;
 
@@ -145,6 +154,12 @@ export class InventorySystem {
     return gold;
   }
 
+  // NOTE (loot stat rolls audit) : méthode actuellement sans appelant dans le
+  // code (ShopScene.buyItem est le flux d'achat réellement utilisé, et lui
+  // roll via StatRollSystem). Si ce chemin est un jour câblé à une UI, il
+  // faudra y appeler StatRollSystem.rollItem() comme dans ShopScene.buyItem —
+  // sinon les items achetés via cette méthode resteraient non rollés (valeurs
+  // centre du catalogue).
   static buy(player: PlayerState, itemId: string, quantity: number): boolean {
     const item = ALL_ITEMS[itemId];
     if (!item) return false;
