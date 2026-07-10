@@ -1,7 +1,8 @@
 import { PlayerState, Item, ItemRarity, RARITY_COLORS } from '../types';
 import { GameScene } from './GameScene';
 import { SKILL_MAP } from '../data/skills';
-import { UI, drawGlowPanel, drawSlot, drawBar, uiStyle } from '../utils/UITheme';
+import { UI, drawGlowPanel, drawSlot, drawBar, uiStyle, resonanceColor } from '../utils/UITheme';
+import { StatRollSystem } from '../systems/StatRollSystem';
 import { t, localizeItem, localizeSkill } from '../i18n';
 
 const BAR_W = 178;
@@ -12,6 +13,23 @@ const BAR_X = 42;
 // Barre de sorts retirée temporairement du HUD (demande utilisateur 2026-07-08) —
 // on verra plus tard comment on organise ça. Repasser à true pour la réafficher.
 const SHOW_SKILL_BAR = false;
+
+/**
+ * Entrée de la file de notifications — enrichie pour les drops à Résonance
+ * (docs/design/LOOT_STAT_ROLLS.md §7.2). Les champs optionnels ont les
+ * défauts historiques : glow SEPARATOR, 2500 ms, pas de scintillement.
+ */
+interface NotifEntry {
+  msg: string;
+  /** Couleur du texte (pour un drop d'item : toujours la couleur de rareté). */
+  color: string;
+  /** Couleur d'accent du panneau drawGlowPanel (défaut : UI.SEPARATOR). */
+  glow?: number;
+  /** Durée d'affichage en ms (défaut : 2500). */
+  duration?: number;
+  /** Résonance Parfaite : pulse doré borné du panneau + micro-scale du texte. */
+  shimmer?: boolean;
+}
 
 export class UIScene extends Phaser.Scene {
   private gameScene!: GameScene;
@@ -31,10 +49,12 @@ export class UIScene extends Phaser.Scene {
   private skillCdOverlays: Phaser.GameObjects.Graphics[]  = [];
   private skillCdTexts: Phaser.GameObjects.Text[]         = [];
 
-  private notifQueue: string[] = [];
+  private notifQueue: NotifEntry[] = [];
   private notifText!: Phaser.GameObjects.Text;
   private notifBg!: Phaser.GameObjects.Graphics;
   private notifTimer = 0;
+  /** Tweens du scintillement « Parfaite » en cours — tués avant tout fade/notif suivante. */
+  private notifShimmerTweens: Phaser.Tweens.Tween[] = [];
 
   private zoneText!: Phaser.GameObjects.Text;
   private zoneBg!: Phaser.GameObjects.Graphics;
@@ -232,6 +252,9 @@ export class UIScene extends Phaser.Scene {
     this.notifText = this.add.text(W / 2, H - SLOT_SZ - 20, '',
       uiStyle(12, UI.TXT_PARCHMENT, { bold: true, stroke: true }),
     ).setOrigin(0.5).setAlpha(0).setDepth(10);
+    // Reset explicite (scene.restart() réutilise l'instance) : les tweens de la
+    // scène précédente ont été détruits avec elle, on repart sans référence morte.
+    this.notifShimmerTweens = [];
 
     // ── Zone name (top-right) — encadré discret ───
     this.zoneBg = this.add.graphics().setAlpha(0).setDepth(4);
@@ -283,6 +306,7 @@ export class UIScene extends Phaser.Scene {
     this.gameScene.events.off('finisher-executed',       this.onFinisherExecuted,      this);
     this.gameScene.events.off('new_creature_discovered', this.onNewCreatureDiscovered, this);
     this.pipTween = null;
+    this.notifShimmerTweens = [];
   }
 
   private onLanguageChanged() {
@@ -295,6 +319,7 @@ export class UIScene extends Phaser.Scene {
     if (this.notifTimer > 0) {
       this.notifTimer -= delta;
       if (this.notifTimer <= 0) {
+        this.stopNotifShimmer(); // évite un conflit alpha entre pulse et fade-out
         this.tweens.add({
           targets: [this.notifText, this.notifBg],
           alpha: 0,
@@ -612,10 +637,43 @@ export class UIScene extends Phaser.Scene {
   }
 
   private onItemLooted({ item, quantity }: { item: Item; quantity: number }) {
-    const color = RARITY_COLORS[item.rarity] ?? '#ffffff';
-    if (item.rarity !== ItemRarity.COMMON) {
-      this.pushNotif(`${localizeItem(item).name}  ×${quantity}`, color);
+    const rarityColor = RARITY_COLORS[item.rarity] ?? '#ffffff';
+    const name = localizeItem(item).name;
+    const q = item.rollQuality;
+
+    // Item non rollé (matériaux, consommables, key items, équipables sans
+    // equipRanges) : comportement historique — les Common restent silencieux.
+    if (typeof q !== 'number') {
+      if (item.rarity !== ItemRarity.COMMON) this.pushNotif(`${name}  ×${quantity}`, rarityColor);
+      return;
     }
+
+    // Paliers lus via StatRollSystem (source de vérité §4.3) — aucun seuil dupliqué ici.
+    const label   = StatRollSystem.getResonanceLabel(q);
+    const perfect = label === 'Parfaite';
+    if (!perfect && label !== 'Vibrante') {
+      // Résonance ordinaire (< 85) : rien de plus que l'existant.
+      if (item.rarity !== ItemRarity.COMMON) this.pushNotif(`${name}  ×${quantity}`, rarityColor);
+      return;
+    }
+
+    // Vibrante ou Parfaite (§7.2) : notifie TOUJOURS — même un Common.
+    // Arbitrage lisibilité : le TEXTE garde la couleur de rareté (l'identité du
+    // drop prime), la Résonance s'exprime par l'accent doré du panneau + la
+    // mention chiffrée dans le message — les deux infos cohabitent sans se
+    // voler la couleur.
+    const glow = perfect
+      ? UI.GLOW_GOLD // halo « événement » — même or que le bandeau de zone (onZoneEntered)
+      : parseInt(resonanceColor(q).slice(1), 16); // or de palier §4.3, seuils non dupliqués
+    this.pushNotifEntry({
+      msg: `${name}  ×${quantity} — Résonance ${q}% (${label})`,
+      color: rarityColor,
+      glow,
+      // « Un Common parfait est un petit événement ; il doit se sentir » :
+      // 4200 ms = 6 cycles complets du pulse (350 ms × yoyo × repeat 5).
+      duration: perfect ? 4200 : 2500,
+      shimmer: perfect,
+    });
   }
 
   private onQuestCompleted() {
@@ -660,17 +718,19 @@ export class UIScene extends Phaser.Scene {
   }
 
   private pushNotif(msg: string, color: string = UI.TXT_PARCHMENT) {
-    this.notifQueue.push(`${color}|${msg}`);
+    this.pushNotifEntry({ msg, color });
+  }
+
+  private pushNotifEntry(entry: NotifEntry) {
+    this.notifQueue.push(entry);
     if (this.notifTimer <= 0) this.showNextNotif();
   }
 
   private showNextNotif() {
     if (!this.notifQueue.length) return;
-    const entry  = this.notifQueue.shift()!;
-    const pipe   = entry.indexOf('|');
-    const color  = entry.slice(0, pipe);
-    const msg    = entry.slice(pipe + 1);
-    this.notifText.setText(msg).setStyle({ color }).setAlpha(1);
+    const entry = this.notifQueue.shift()!;
+    this.stopNotifShimmer(); // reset scale/tweens si la notif précédente scintillait
+    this.notifText.setText(entry.msg).setStyle({ color: entry.color }).setAlpha(1);
 
     // Fond semi-opaque ajusté à la largeur du message
     const padX = 10;
@@ -681,10 +741,34 @@ export class UIScene extends Phaser.Scene {
     drawGlowPanel(
       this.notifBg,
       this.notifText.x - bw / 2, this.notifText.y - bh / 2,
-      bw, bh, UI.SEPARATOR, UI.BG_MID, 3,
+      bw, bh, entry.glow ?? UI.SEPARATOR, UI.BG_MID, 3,
     );
     this.notifBg.setAlpha(0.92);
 
-    this.notifTimer = 2500;
+    // Scintillement « Parfaite » (LOOT_STAT_ROLLS.md §7.2) : pulse BORNÉ
+    // (repeat fini, ~4.2 s au total) sur l'alpha du panneau doré + micro-scale
+    // du texte — même vocabulaire visuel que les tweens du bandeau de zone,
+    // zéro asset/particule (ton sobre : « rien de plus qu'un drop Legendary »).
+    if (entry.shimmer) {
+      this.notifShimmerTweens = [
+        this.tweens.add({
+          targets: this.notifBg,
+          alpha: 0.55, duration: 350, yoyo: true, repeat: 5, ease: 'Sine.easeInOut',
+        }),
+        this.tweens.add({
+          targets: this.notifText,
+          scaleX: 1.06, scaleY: 1.06, duration: 350, yoyo: true, repeat: 5, ease: 'Sine.easeInOut',
+        }),
+      ];
+    }
+
+    this.notifTimer = entry.duration ?? 2500;
+  }
+
+  /** Tue les tweens du scintillement et remet le texte à l'échelle 1. */
+  private stopNotifShimmer() {
+    for (const tw of this.notifShimmerTweens) tw.remove();
+    this.notifShimmerTweens = [];
+    if (this.notifText) this.notifText.setScale(1);
   }
 }
