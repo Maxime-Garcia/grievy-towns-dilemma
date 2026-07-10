@@ -1,4 +1,5 @@
 import { Weapon, Armor, Accessory, Consumable, Material, KeyItem, Skin, ItemRarity, ItemType, WeaponType, ElementType } from '../types';
+import { StatRollSystem } from '../systems/StatRollSystem';
 
 // ── WEAPONS ────────────────────────────────────────────────────
 
@@ -494,11 +495,17 @@ export const EXTRA_MATERIALS: Material[] = [
 
 // ── ITEM REGISTRY ──────────────────────────────────────────────
 
-export const ALL_ITEMS: Record<string, import('../types').Item> = {};
-[
+const ALL_ITEM_DEFS: import('../types').Item[] = [
   ...WEAPONS, ...ARMORS, ...ACCESSORIES, ...CONSUMABLES, ...MATERIALS, ...KEY_ITEMS,
   ...HIDDEN_WEAPONS, ...HIDDEN_ARMORS, ...HIDDEN_ACCESSORIES,
   ...SKINS, ...EXTRA_WEAPONS, ...EXTRA_ARMORS, ...EXTRA_MATERIALS, ...SHOP_ARMORS,
-].forEach(item => {
-  ALL_ITEMS[item.id] = item as import('../types').Item;
+] as import('../types').Item[];
+
+// Génère equipStats (centre de equipRanges) + valide la data en dev — no-op
+// sûr pour tout item sans equipRanges (cf. docs/design/LOOT_STAT_ROLLS.md §1.2).
+StatRollSystem.finalizeCatalogue(ALL_ITEM_DEFS);
+
+export const ALL_ITEMS: Record<string, import('../types').Item> = {};
+ALL_ITEM_DEFS.forEach(item => {
+  ALL_ITEMS[item.id] = item;
 });
