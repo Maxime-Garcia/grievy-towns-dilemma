@@ -199,6 +199,7 @@ export class GameScene extends Phaser.Scene {
   private speedBoostKey!: Phaser.Input.Keyboard.Key;
   private debugSpeedMult = 1;
   private giveAllWeaponsKey!: Phaser.Input.Keyboard.Key;
+  private toggleDummiesKey!: Phaser.Input.Keyboard.Key;
 
   private xpOrbs!: Phaser.Physics.Arcade.Group;
   private readonly XP_ATTRACT_RANGE = 96;
@@ -439,6 +440,8 @@ export class GameScene extends Phaser.Scene {
 
     // Debug: press G to add one of every weapon to the inventory (asset-review aid)
     if (Phaser.Input.Keyboard.JustDown(this.giveAllWeaponsKey)) this.debugGiveAllWeapons();
+    // Debug: press T to toggle the training dummies flag (loot stat rolls test aid, cf. LOOT_STAT_ROLLS.md §10)
+    if (Phaser.Input.Keyboard.JustDown(this.toggleDummiesKey)) this.debugToggleTrainingDummies();
 
     // ── IFRAMES : clignotement du joueur pendant l'invincibilité post-hit ──
     // Alterne alpha 0.25 / 1 toutes les 80ms ; alpha restauré à la fin de la fenêtre.
@@ -535,6 +538,19 @@ export class GameScene extends Phaser.Scene {
     }
     this.events.emit('player_update', this.gameState.player);
     this.events.emit('show_notification', `[DEBUG] Sac vidé — ${added}/${weapons.length} armes ajoutées`);
+  }
+
+  /** Debug aid (press T) : bascule player.flags['dev_training_dummies'] pour tester
+   * les rolls de stats (mannequins de Kelvar, cf. docs/design/LOOT_STAT_ROLLS.md §10).
+   * Sans point d'entrée en jeu sinon (flag jamais posé par aucun autre chemin) —
+   * createEnemiesForZone() ne relit layout.fixedEnemies qu'à l'entrée en zone, donc
+   * il faut changer de zone (ou recharger) après bascule pour voir les mannequins. */
+  private debugToggleTrainingDummies(): void {
+    const flags = this.gameState.player.flags;
+    const next = !flags['dev_training_dummies'];
+    flags['dev_training_dummies'] = next;
+    this.events.emit('show_notification',
+      `[DEBUG] Mannequins de Kelvar ${next ? 'activés' : 'désactivés'} — changez de zone pour voir l'effet`);
   }
 
   // ── MOVEMENT ─────────────────────────────────────────────────
@@ -3930,6 +3946,8 @@ export class GameScene extends Phaser.Scene {
     this.speedBoostKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.B);
     // Debug: press G to add one of every weapon to the inventory (asset-review aid)
     this.giveAllWeaponsKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.G);
+    // Debug: press T to toggle the training dummies flag (loot stat rolls test aid)
+    this.toggleDummiesKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.T);
     // Remaining keys (attack, dash, inventory, skill menu, skill slots)
     // are all wired by applyKeyBindings() called right after setupInput().
   }
