@@ -745,9 +745,12 @@ export class GameScene extends Phaser.Scene {
     // ASPD_PCT (equipStats) accélère le cooldown d'attaque de base — cf. StatsSystem.
     const aspd = StatsSystem.computeAll(this.gameState.player).aspd;
     // NO_ATTACK_COOLDOWN (hidden_temporal_blade) : les attaques basiques n'ont
-    // plus aucun temps de recharge — lastAttackEnd reste utile pour la grâce combo.
+    // plus le cooldown propre à l'arme — plancher à NO_ATTACK_COOLDOWN_FLOOR_MS
+    // (pas 0 : qa-agent BLOCKER, un cooldown nul rendait le DPS quasi-infini,
+    // borné uniquement par le débit d'input/frame-rate) — lastAttackEnd reste
+    // utile pour la grâce combo.
     const noAttackCooldown = PassiveSystem.hasNoAttackCooldown(this.gameState.player.equipment);
-    const cooldown = noAttackCooldown ? 0 : pattern.cooldown / aspd;
+    const cooldown = noAttackCooldown ? PassiveSystem.NO_ATTACK_COOLDOWN_FLOOR_MS : pattern.cooldown / aspd;
 
     // ── FINISHER ─────────────────────────────────────────────────
     let finisherFired = false;
@@ -755,7 +758,7 @@ export class GameScene extends Phaser.Scene {
       finisherFired = true;
       this.executeFinisherAttack(weaponType, pattern, comboConfig, now);
       this.comboCount = 0;
-      const finisherCd = noAttackCooldown ? 0 : cooldown * comboConfig.finisher.cooldownMult;
+      const finisherCd = noAttackCooldown ? PassiveSystem.NO_ATTACK_COOLDOWN_FLOOR_MS : cooldown * comboConfig.finisher.cooldownMult;
       this.lastAttackEnd      = now + finisherCd;
       this.attackCooldownUntil = this.lastAttackEnd;
     } else {

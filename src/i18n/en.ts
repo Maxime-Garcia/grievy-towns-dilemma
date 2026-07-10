@@ -563,11 +563,11 @@ export const EN: Record<string, string> = {
   'item.hidden_void_reaper.name': 'Void Reaper',
   'item.hidden_void_reaper.description': 'Every killing blow restores 15% of max HP. A thirst for nothing.',
   'item.hidden_temporal_blade.name': 'Temporal Blade',
-  'item.hidden_temporal_blade.description': 'Basic attacks consume no cooldown. Strikes like lightning.',
+  'item.hidden_temporal_blade.description': 'Basic attacks have a near-zero cooldown. Strikes like lightning.',
   'item.hidden_world_eater_staff.name': 'Staff of the World Eater',
   'item.hidden_world_eater_staff.description': "All active skills cost 0 mana. Malachar's power without the price.",
   'item.hidden_first_blade.name': 'The First Blade',
-  'item.hidden_first_blade.description': 'The first strike of every battle deals 500% damage. One chance.',
+  'item.hidden_first_blade.description': 'The first strike against a boss deals 500% damage, cannot crit. Once per combat.',
   'item.hidden_soul_bow.name': 'Soul Bow',
   'item.hidden_soul_bow.description': 'Each enemy slain grants +2% permanent damage (up to +200%). Never resets.',
 

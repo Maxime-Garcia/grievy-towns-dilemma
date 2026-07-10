@@ -564,11 +564,11 @@ export const FR: Record<string, string> = {
   'item.hidden_void_reaper.name': 'Faucheur du Néant',
   'item.hidden_void_reaper.description': 'Chaque coup fatal rend 15% du HP maximum. Soif de néant.',
   'item.hidden_temporal_blade.name': 'Lame Temporelle',
-  'item.hidden_temporal_blade.description': 'Les attaques basiques ne consomment aucun temps de recharge. Frappe comme la foudre.',
+  'item.hidden_temporal_blade.description': 'Les attaques basiques ont un temps de recharge quasi nul. Frappe comme la foudre.',
   'item.hidden_world_eater_staff.name': 'Bâton du Dévoreur de Mondes',
   'item.hidden_world_eater_staff.description': 'Toutes les compétences actives coûtent 0 mana. Le pouvoir de Malachar sans le prix.',
   'item.hidden_first_blade.name': 'Épée Originelle',
-  'item.hidden_first_blade.description': 'Le premier coup de chaque combat inflige 500% des dégâts. Une seule chance.',
+  'item.hidden_first_blade.description': 'Le premier coup porté à un boss inflige 500% des dégâts, sans critique. Une fois par combat.',
   'item.hidden_soul_bow.name': 'Arc des Âmes',
   'item.hidden_soul_bow.description': 'Chaque ennemi tué ajoute +2% aux dégâts permanents (jusqu\'à +200%). Ne se réinitialise pas.',
 

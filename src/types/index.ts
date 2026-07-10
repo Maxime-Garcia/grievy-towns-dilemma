@@ -696,6 +696,10 @@ export interface ActiveEnemy {
   x: number;
   y: number;
   isElite?: boolean;
+  /** Spread depuis Enemy.isBoss dans CombatSystem.spawnEnemy — déclaré ici pour
+   *  que CombatSystem puisse le lire directement (ex: FIRST_STRIKE_500_PCT réservé
+   *  aux boss) sans réimporter ENEMY_MAP juste pour ce champ. */
+  isBoss?: boolean;
   sprite?: Phaser.GameObjects.Sprite;
 }
 
