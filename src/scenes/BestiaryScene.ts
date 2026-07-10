@@ -4,7 +4,7 @@
 // à droite : portrait, badges, lore, butin avec drops cachés.
 //
 // UX (docs/design/UI_UX_GUIDELINES.md) :
-//  - overlay 0.88 + fade-in 300 ms
+//  - overlay 0.88 + matérialisation openScreenTransition (fade + scale-in)
 //  - tap = action, feedback < 100 ms sur pointerdown
 //  - scroll = molette + drag vertical + flèches + touches ↑↓
 //  - bouton × rouge haut-droite (hit 48×48) + ESC (géré par GameScene)
@@ -19,6 +19,8 @@ import { WorldState, ElementType, ItemRarity, RARITY_COLORS, SpawnRegion } from 
 import {
   UI, drawGlowPanel, drawCard, drawSlot, drawBadge, uiStyle,
   addCloseButton, drawScrollbar, renderScrollableText, formatDropRate,
+  drawConfirmCancelButtons,
+  openScreenTransition, closeScreenTransition, portalRedirectTransition,
 } from '../utils/UITheme';
 import { ENEMY_MAP } from '../data/enemies';
 import { BESTIARY_IDS, BESTIARY_RECORD, BestiaryDropData } from '../data/bestiary';
@@ -99,6 +101,12 @@ export class BestiaryScene extends Phaser.Scene {
   private tooltipTimer: Phaser.Time.TimerEvent | null = null;
   private tooltipJustOpened = false;
 
+  // Garde anti double-déclenchement : un fondu de sortie (fermeture ou
+  // redirection) est en cours — ignore tout nouvel appel tant qu'il tourne
+  // (évite un scene.stop()/launch() dupliqué si le bouton est tapé deux fois
+  // pendant les ~200ms de fondu).
+  private closing = false;
+
   // Scroll interne du bloc Histoire/lore (viewport masqué à taille fixe — voir
   // renderScrollableText) : offset en pixels, indépendant du scroll de la liste.
   private loreScrollPx = 0;
@@ -136,6 +144,7 @@ export class BestiaryScene extends Phaser.Scene {
     this.detailObjs = [];
     this.tooltip = null;
     this.tooltipTimer = null;
+    this.closing = false;
     this.loreScrollPx = 0;
     this.loreMaxScrollPx = 0;
     this.dragging = false;
@@ -144,7 +153,9 @@ export class BestiaryScene extends Phaser.Scene {
 
   create() {
     const { width: W, height: H } = this.cameras.main;
-    this.cameras.main.fadeIn(300, 0, 0, 0);
+    // focusEnemyId présent = arrivée via le portail de l'Arsenal (teinte cyan
+    // arcane, même couleur que le fondu de départ) ; sinon ouverture normale.
+    openScreenTransition(this, this.focusEnemyId !== undefined ? { portalTint: UI.ACCENT_ARCANE } : {});
 
     // ── Overlay + cadre ──────────────────────────────────────
     this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88);
@@ -160,6 +171,27 @@ export class BestiaryScene extends Phaser.Scene {
       .replace('{slain}', String(counts.slain))
       .replace('{total}', String(counts.total));
     this.add.text(20, 24, progressLabel, uiStyle(8, UI.TXT_MUTED)).setOrigin(0, 0.5);
+
+    // [DEBUG] Tout débloquer — outil de review de contenu (lore/drops), pas une
+    // mécanique de jeu : couleur d'alerte distincte pour ne jamais le confondre
+    // avec un bouton normal. Ne persiste rien de spécifique — passe juste par
+    // BestiarySystem.discoverAll() comme n'importe quelle découverte normale.
+    const debugTxt = this.add.text(20, 36, t('bestiary.debug_unlock_all'), uiStyle(7, UI.TXT_RED, { bold: true }))
+      .setOrigin(0, 0.5);
+    const debugHit = this.add.rectangle(20 + debugTxt.width / 2, 36, debugTxt.width + 12, 20, 0, 0)
+      .setInteractive({ useHandCursor: true });
+    debugHit.on('pointerover', () => debugTxt.setAlpha(0.75));
+    debugHit.on('pointerout',  () => debugTxt.setAlpha(1));
+    debugHit.on('pointerdown', () => {
+      this.flashAt(20 + debugTxt.width / 2, 36, debugTxt.width + 12, 20);
+      BestiarySystem.discoverAll(this.world);
+      this.rows = [];
+      this.enemyRowIndices = [];
+      this.buildRows();
+      this.maxScrollOffset = this.computeMaxOffset();
+      this.renderList();
+      this.renderDetail();
+    });
 
     // Bouton × (règle inter-écrans §7.1 : rouge, haut-droite, hit ≥ 44 px)
     addCloseButton(this, W - 28, 24, () => this.close());
@@ -755,15 +787,28 @@ export class BestiaryScene extends Phaser.Scene {
     // (jamais de raccourci vers un équipement qu'il n'a pas encore obtenu).
     const canViewInArsenal = !!item && ArsenalSystem.peekEntry(this.world, item.id).discovered;
     if (canViewInArsenal && item) {
-      const linkTxt = this.add.text(padT, ty, t('bestiary.view_in_arsenal'), uiStyle(9, UI.TXT_CYAN, { bold: true }));
-      const linkHit = this.add.rectangle(TW / 2, ty + linkTxt.height / 2, TW - padT * 2, linkTxt.height + 6, 0, 0)
-        .setInteractive({ useHandCursor: true });
-      linkHit.on('pointerdown', () => {
-        this.scene.stop();
-        this.scene.launch('ArsenalScene', { gameScene: this.gameScene, world: this.world, focusItemId: item.id });
-      });
-      parts.push(linkTxt, linkHit);
-      ty += linkTxt.height + padT;
+      const subtitleTxt = this.add.text(padT, ty, t('bestiary.view_in_arsenal'), uiStyle(8, UI.TXT_CYAN));
+      parts.push(subtitleTxt);
+      ty += subtitleTxt.height + 6;
+
+      // Aller (vert, portail arcane teinté or) / Annuler (rouge, referme le tooltip
+      // sans quitter le Bestiaire) — même convention que
+      // InventoryScene.showActionConfirmPopup().
+      const { objects: navBtns, height: navBtnH } = drawConfirmCancelButtons(
+        this, padT, ty, TW - padT * 2,
+        t('nav.go'), t('nav.cancel'),
+        () => {
+          if (this.closing) return;
+          this.closing = true;
+          portalRedirectTransition(this, UI.CORNER, () => {
+            this.scene.stop();
+            this.scene.launch('ArsenalScene', { gameScene: this.gameScene, world: this.world, focusItemId: item.id });
+          });
+        },
+        () => this.destroyTooltip(),
+      );
+      parts.push(...navBtns);
+      ty += navBtnH + padT;
     }
 
     const g = this.add.graphics();
@@ -773,8 +818,9 @@ export class BestiaryScene extends Phaser.Scene {
     const tyPos = Math.max(this.DET_Y + 6, slotY - ty - 8);
     this.tooltip = this.add.container(tx, tyPos, [g, ...parts]).setDepth(30);
 
-    // Le lien vers l'Arsenal a besoin de temps pour être cliqué — pas d'auto-dismiss
-    // dans ce cas (fermeture uniquement via tap en dehors, cf. onDown/tooltipJustOpened).
+    // Les boutons Aller/Annuler ont besoin de temps pour être cliqués — pas
+    // d'auto-dismiss dans ce cas (fermeture uniquement via Annuler ou tap en
+    // dehors, cf. onDown/tooltipJustOpened).
     if (!canViewInArsenal) {
       this.tooltipTimer = this.time.delayedCall(3000, () => this.destroyTooltip());
     }
@@ -864,13 +910,17 @@ export class BestiaryScene extends Phaser.Scene {
   // (resume PauseScene sous-jacente au lieu d'un setPaused(false) qui la
   // laisserait bloquée en pause pour toujours — cf. bug ESC reporté).
   close() {
-    this.scene.stop();
-    // Reprendre PauseScene si elle était en pause (cas nominal : ouvert depuis PauseScene)
-    if (this.scene.isPaused('PauseScene')) {
-      this.scene.resume('PauseScene');
-    } else if (this.gameScene) {
-      this.gameScene.setPaused(false);
-    }
+    if (this.closing) return;
+    this.closing = true;
+    closeScreenTransition(this, () => {
+      this.scene.stop();
+      // Reprendre PauseScene si elle était en pause (cas nominal : ouvert depuis PauseScene)
+      if (this.scene.isPaused('PauseScene')) {
+        this.scene.resume('PauseScene');
+      } else if (this.gameScene) {
+        this.gameScene.setPaused(false);
+      }
+    });
   }
 
   shutdown() {
@@ -880,6 +930,13 @@ export class BestiaryScene extends Phaser.Scene {
     if (this.pointerDownHandler) { this.input.off('pointerdown', this.pointerDownHandler); this.pointerDownHandler = null; }
     if (this.pointerMoveHandler) { this.input.off('pointermove', this.pointerMoveHandler); this.pointerMoveHandler = null; }
     if (this.pointerUpHandler)   { this.input.off('pointerup', this.pointerUpHandler);     this.pointerUpHandler = null; }
+    // Si la scène est stoppée de force (ex: GameScene.goToMainMenu()) pendant un
+    // fondu lancé par portalRedirectTransition(), le listener .once(FADE_OUT_COMPLETE) reste
+    // sinon attaché à cameras.main et pourrait se déclencher au prochain fondu avec
+    // un callback obsolète — no-op si le fondu s'est déjà terminé normalement.
+    // `?.` : au moment où Phaser émet SHUTDOWN, son propre CameraManager.shutdown()
+    // a déjà pu remettre `main` à undefined (crash reporté sans ce garde).
+    this.cameras.main?.off(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE);
     this.destroyTooltip();
     // Détruit explicitement (pas juste vidage de tableau) : le masque de scroll du
     // bloc lore (renderScrollableText) n'est jamais ajouté à la display list —

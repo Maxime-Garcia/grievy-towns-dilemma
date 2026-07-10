@@ -3,7 +3,7 @@ import { GameScene } from './GameScene';
 import { PlayerState, TalentNode, TalentEffectKey } from '../types';
 import { TALENT_MAP } from '../data/talents';
 import { TalentSystem } from '../systems/TalentSystem';
-import { UI, drawGlowPanel, uiStyle } from '../utils/UITheme';
+import { UI, drawGlowPanel, uiStyle, openScreenTransition } from '../utils/UITheme';
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 const TAB_H    = 36;   // height of one tab row (px)
@@ -225,7 +225,7 @@ export class SkillScene extends Phaser.Scene {
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
 
-    this.cameras.main.fadeIn(300, 0, 0, 0);
+    openScreenTransition(this);
 
     // Full-screen dark overlay (0.88 standard — le jeu reste visible derrière)
     this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88);

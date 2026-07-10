@@ -3,7 +3,7 @@ import { ALL_ITEMS } from '../data/items';
 import { LootSystem } from '../systems/LootSystem';
 import { SHOP_INVENTORY, ShopEntry } from '../data/shops';
 import { RARITY_COLORS } from '../types';
-import { UI, drawGlowPanel, drawCard, drawDivider, uiStyle, addCloseButton } from '../utils/UITheme';
+import { UI, drawGlowPanel, drawCard, drawDivider, uiStyle, addCloseButton, openScreenTransition } from '../utils/UITheme';
 import { t } from '../i18n';
 
 export class ShopScene extends Phaser.Scene {
@@ -24,7 +24,7 @@ export class ShopScene extends Phaser.Scene {
   }
 
   create() {
-    this.cameras.main.fadeIn(300, 0, 0, 0);
+    openScreenTransition(this);
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
 

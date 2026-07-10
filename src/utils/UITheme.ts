@@ -425,6 +425,262 @@ export function addCloseButton(
   return { glyph, hit };
 }
 
+// ────────────────────────────────────────────────────────────
+// TRANSITIONS D'ÉCRAN (Arsenal / Bestiaire) — trois langages distincts :
+//   ouverture   = matérialisation (fade + scale-in caméra, cadre énergisé)
+//   fermeture   = dissolution     (la scène recule et s'efface, le jeu réapparaît)
+//   redirection = portail arcane  (anneau runique qui se referme, teinte de la
+//                 destination, puis se rouvre à l'arrivée)
+// Tout est caméra + Graphics/tweens : aucun refactor en Container nécessaire,
+// aucun asset, pixel-art friendly (traits nets, pas de blur/postFX).
+// ────────────────────────────────────────────────────────────
+
+/** Depth des overlays de transition — au-dessus de tout contenu de scène
+ *  (les scènes Arsenal/Bestiaire plafonnent à 50). */
+const TRANSITION_DEPTH = 900;
+
+/** Anneau de portail arcane : cercle principal + fin cercle blanc intérieur +
+ *  ticks runiques en rotation autour. Redessiné à chaque frame du tween. */
+function drawPortalRing(
+  g: Phaser.GameObjects.Graphics,
+  cx: number, cy: number, r: number,
+  tint: number, alpha: number, rot: number,
+): void {
+  g.clear();
+  g.lineStyle(3, tint, alpha);
+  g.strokeCircle(cx, cy, r);
+  g.lineStyle(1, 0xffffff, alpha * 0.55);
+  g.strokeCircle(cx, cy, Math.max(4, r - 7));
+  g.lineStyle(2, tint, alpha * 0.9);
+  const TICKS = 6;
+  for (let i = 0; i < TICKS; i++) {
+    const ang = rot + (i * Math.PI * 2) / TICKS;
+    const cos = Math.cos(ang);
+    const sin = Math.sin(ang);
+    g.lineBetween(
+      cx + cos * (r + 10), cy + sin * (r + 10),
+      cx + cos * (r + 17), cy + sin * (r + 17),
+    );
+  }
+}
+
+export interface OpenScreenOpts {
+  /** Couleur du liseré "énergisé" du cadre (défaut : UI.ACCENT_ARCANE). */
+  accent?: number;
+  /** Arrivée via redirection croisée : joue en plus l'ouverture du portail
+   *  (voile teinté + anneau qui se rouvre depuis le centre) dans cette teinte —
+   *  la même que le fondu de départ, pour la continuité visuelle. */
+  portalTint?: number;
+}
+
+/**
+ * Transition d'OUVERTURE d'un écran plein cadre (Arsenal/Bestiaire) — à appeler
+ * en tête de create(). La scène se matérialise : fondu d'alpha caméra (le jeu
+ * reste visible derrière, pas de flash noir plein écran) + scale-in léger
+ * (zoom 0.96 → 1, Back.easeOut) + liseré accent qui s'éteint sur la géométrie
+ * exacte du cadre drawGlowPanel (6,6,W-12,H-12, r=10).
+ *
+ * Tous les objets créés sont bounded (tween onComplete → destroy) et vivent sur
+ * la display list de la scène : un stop pendant l'animation les détruit avec elle.
+ */
+export function openScreenTransition(scene: Phaser.Scene, opts: OpenScreenOpts = {}): void {
+  const cam = scene.cameras.main;
+  const { width: W, height: H } = cam;
+  const accent = opts.accent ?? UI.ACCENT_ARCANE;
+
+  cam.setZoom(0.96);
+  scene.tweens.add({ targets: cam, zoom: 1, duration: 260, ease: 'Back.easeOut' });
+
+  if (opts.portalTint === undefined) {
+    // Ouverture normale : la scène sous-jacente (PauseScene) est exactement ce
+    // qui était affiché la frame d'avant — le fondu d'alpha caméra part donc
+    // d'une image continue, sans flash.
+    cam.setAlpha(0);
+    scene.tweens.add({ targets: cam, alpha: 1, duration: 160, ease: 'Quad.easeOut' });
+  } else {
+    // Arrivée par portail : la scène de départ s'est terminée sur un écran
+    // ENTIÈREMENT teinté (fadeOut caméra) — la caméra reste opaque et c'est un
+    // voile de la même teinte, pleinement opaque à la frame 1, qui assure la
+    // continuité avant de se dissiper. Surdimensionné : le zoom-settle 0.96
+    // rétrécit aussi le voile, la marge évite d'entrevoir les bords du dessous.
+    const tint = opts.portalTint;
+    const veil = scene.add.rectangle(W / 2, H / 2, W + 80, H + 80, tint, 1)
+      .setDepth(TRANSITION_DEPTH + 1);
+    scene.tweens.add({
+      targets: veil, alpha: 0, duration: 260, ease: 'Quad.easeOut',
+      onComplete: () => veil.destroy(),
+    });
+
+    const ring = scene.add.graphics().setDepth(TRANSITION_DEPTH + 2);
+    const st = { r: 24, a: 0.95, rot: 0.9 };
+    scene.tweens.add({
+      targets: st, r: Math.hypot(W, H) / 2, a: 0, rot: 1.8,
+      duration: 320, ease: 'Cubic.easeOut',
+      onUpdate:   () => drawPortalRing(ring, W / 2, H / 2, st.r, tint, st.a, st.rot),
+      onComplete: () => ring.destroy(),
+    });
+  }
+
+  const frame = scene.add.graphics().setDepth(TRANSITION_DEPTH);
+  frame.lineStyle(2, accent, 1);
+  frame.strokeRoundedRect(6, 6, W - 12, H - 12, 10);
+  frame.setAlpha(0.85);
+  scene.tweens.add({
+    targets: frame, alpha: 0, duration: 340, ease: 'Quad.easeIn',
+    onComplete: () => frame.destroy(),
+  });
+}
+
+/**
+ * Transition de FERMETURE (bouton ×, ESC) : la scène recule (zoom 1 → 0.94) et
+ * se dissout (alpha caméra → 0) en 170 ms, révélant le jeu/PauseScene derrière
+ * au lieu d'un fondu au noir plein écran.
+ *
+ * Le callback tween s'exécute pendant l'update de la scène (pas le cycle de
+ * rendu caméra comme FADE_OUT_COMPLETE), mais on garde le déferrement d'un tick
+ * via time.delayedCall(0, ...) avant toute mutation du scene manager — même
+ * précaution que GameScene.performZoneTransition()/onPlayerDeath()/goToMainMenu()
+ * (écran figé reporté quand stop()/launch() est appelé depuis un callback
+ * d'effet). Cette fonction n'appelle jamais scene.stop() elle-même : c'est
+ * `onClosed` qui décide (stop + resume PauseScene, etc.).
+ */
+export function closeScreenTransition(scene: Phaser.Scene, onClosed: () => void): void {
+  const cam = scene.cameras.main;
+  // Tue un éventuel tween d'ouverture encore en cours sur la caméra (ESC très
+  // tôt) — sinon deux tweens se disputent zoom/alpha.
+  scene.tweens.killTweensOf(cam);
+  scene.tweens.add({
+    targets: cam, zoom: 0.94, alpha: 0, duration: 170, ease: 'Cubic.easeIn',
+    onComplete: () => { scene.time.delayedCall(0, onClosed); },
+  });
+}
+
+/**
+ * Transition de REDIRECTION croisée (Arsenal ⇄ Bestiaire) : portail arcane —
+ * un anneau runique se referme vers le centre de l'écran pendant que la caméra
+ * zoome légèrement (aspiration) et fond vers la teinte de la destination
+ * (cyan arcane → Bestiaire, or → Arsenal). L'écran d'arrivée rejoue l'anneau
+ * en ouverture via openScreenTransition({ portalTint }).
+ *
+ * FADE_OUT_COMPLETE se déclenche depuis le cycle de rendu de la caméra —
+ * appeler scene.stop()/scene.launch() de façon SYNCHRONE dedans casse le
+ * rendu (l'écran reste figé sur la dernière frame, entièrement teintée).
+ * Cf. GameScene.performZoneTransition()/onPlayerDeath()/goToMainMenu() : on
+ * diffère systématiquement d'un tick via time.delayedCall(0, ...). Le listener
+ * résiduel éventuel (stop forcé pendant le fondu) doit être retiré par
+ * shutdown() via cameras.main?.off(FADE_OUT_COMPLETE) — chaînage optionnel
+ * obligatoire, cf. commentaires des scènes appelantes.
+ */
+export function portalRedirectTransition(
+  scene: Phaser.Scene,
+  tint: number,
+  onFadedOut: () => void,
+): void {
+  const cam = scene.cameras.main;
+  const { width: W, height: H } = cam;
+  scene.tweens.killTweensOf(cam);
+  // Un clic très rapide sur "Aller" pendant le tween d'alpha de l'ouverture
+  // (~160ms) figerait cam.alpha à une valeur partielle une fois ce tween tué —
+  // on garantit l'opacité pleine avant d'entamer le fondu de sortie.
+  cam.setAlpha(1);
+
+  const ring = scene.add.graphics().setDepth(TRANSITION_DEPTH + 2);
+  const st = { r: Math.hypot(W, H) / 2, a: 0.12, rot: 0 };
+  scene.tweens.add({
+    targets: st, r: 22, a: 1, rot: 0.9, duration: 300, ease: 'Cubic.easeIn',
+    onUpdate:   () => drawPortalRing(ring, W / 2, H / 2, st.r, tint, st.a, st.rot),
+    onComplete: () => ring.destroy(),
+  });
+  scene.tweens.add({ targets: cam, zoom: 1.06, duration: 300, ease: 'Cubic.easeIn' });
+
+  const r = (tint >> 16) & 0xff;
+  const g = (tint >> 8) & 0xff;
+  const b = tint & 0xff;
+  cam.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+    scene.time.delayedCall(0, onFadedOut);
+  });
+  cam.fadeOut(300, r, g, b);
+}
+
+/** Palette du bouton Confirmer — défaut vert "action positive" générique.
+ *  Un appelant peut passer une teinte différente (ex: bleu arcane) pour que
+ *  le bouton "Aller" d'une redirection annonce visuellement la couleur de la
+ *  destination plutôt qu'un vert neutre. */
+export interface ConfirmButtonAccent {
+  bg: number; border: number; borderHover: number; text: string;
+}
+const DEFAULT_CONFIRM_ACCENT: ConfirmButtonAccent = {
+  bg: 0x0d2010, border: 0x44cc66, borderHover: 0xaaffcc, text: UI.TXT_GREEN,
+};
+/** Variante bleu/cyan arcane — même teinte que le liseré des cadres
+ *  (UI.ACCENT_ARCANE) : utilisée pour le bouton "Aller" qui redirige vers un
+ *  écran dont le cadre/portail est teinté dans cette même couleur. */
+export const ARCANE_CONFIRM_ACCENT: ConfirmButtonAccent = {
+  bg: 0x0a1f24, border: UI.ACCENT_ARCANE, borderHover: 0xa8f5e8, text: UI.TXT_CYAN,
+};
+
+/**
+ * Paire de boutons horizontaux Confirmer (gauche, vert par défaut) / Annuler
+ * (rouge, droite) — même convention visuelle que InventoryScene.showActionConfirmPopup()
+ * (fond sombre teinté, bordure vive, hover plus clair). (x, y) = coin haut-gauche
+ * de la rangée, `w` = largeur totale disponible (les deux boutons + l'espacement
+ * la remplissent exactement). Hauteur par défaut = LAYOUT.TOUCH_MIN (zone
+ * tactile minimale). Retourne les GameObjects créés (à la charge de l'appelant
+ * de les détruire/pousser dans son propre tableau de nettoyage).
+ */
+export function drawConfirmCancelButtons(
+  scene: Phaser.Scene,
+  x: number, y: number, w: number,
+  confirmLabel: string, cancelLabel: string,
+  onConfirm: () => void, onCancel: () => void,
+  height: number = LAYOUT.TOUCH_MIN,
+  confirmAccent: ConfirmButtonAccent = DEFAULT_CONFIRM_ACCENT,
+): { objects: Phaser.GameObjects.GameObject[]; height: number } {
+  const GAP  = 8;
+  const btnW = (w - GAP) / 2;
+  const confirmX = x;
+  const cancelX  = x + btnW + GAP;
+
+  const confirmGfx = scene.add.graphics();
+  confirmGfx.fillStyle(confirmAccent.bg, 1);
+  confirmGfx.fillRoundedRect(confirmX, y, btnW, height, 3);
+  confirmGfx.lineStyle(1, confirmAccent.border, 1);
+  confirmGfx.strokeRoundedRect(confirmX, y, btnW, height, 3);
+  const confirmTxt = scene.add.text(confirmX + btnW / 2, y + height / 2, confirmLabel,
+    uiStyle(10, confirmAccent.text, { bold: true })).setOrigin(0.5);
+  const confirmHit = scene.add.rectangle(confirmX + btnW / 2, y + height / 2, btnW, height, 0, 0)
+    .setInteractive({ useHandCursor: true });
+  confirmHit.on('pointerover', () => {
+    confirmGfx.lineStyle(1, confirmAccent.borderHover, 1); confirmGfx.strokeRoundedRect(confirmX, y, btnW, height, 3);
+  });
+  confirmHit.on('pointerout', () => {
+    confirmGfx.lineStyle(1, confirmAccent.border, 1); confirmGfx.strokeRoundedRect(confirmX, y, btnW, height, 3);
+  });
+  confirmHit.on('pointerdown', onConfirm);
+
+  const cancelGfx = scene.add.graphics();
+  cancelGfx.fillStyle(0x1a0808, 1);
+  cancelGfx.fillRoundedRect(cancelX, y, btnW, height, 3);
+  cancelGfx.lineStyle(1, 0xcc3322, 1);
+  cancelGfx.strokeRoundedRect(cancelX, y, btnW, height, 3);
+  const cancelTxt = scene.add.text(cancelX + btnW / 2, y + height / 2, cancelLabel,
+    uiStyle(10, UI.TXT_RED, { bold: true })).setOrigin(0.5);
+  const cancelHit = scene.add.rectangle(cancelX + btnW / 2, y + height / 2, btnW, height, 0, 0)
+    .setInteractive({ useHandCursor: true });
+  cancelHit.on('pointerover', () => {
+    cancelGfx.lineStyle(1, 0xff6655, 1); cancelGfx.strokeRoundedRect(cancelX, y, btnW, height, 3);
+  });
+  cancelHit.on('pointerout', () => {
+    cancelGfx.lineStyle(1, 0xcc3322, 1); cancelGfx.strokeRoundedRect(cancelX, y, btnW, height, 3);
+  });
+  cancelHit.on('pointerdown', onCancel);
+
+  return {
+    objects: [confirmGfx, confirmTxt, confirmHit, cancelGfx, cancelTxt, cancelHit],
+    height,
+  };
+}
+
 /**
  * Small coloured badge (rarity, element, status): rounded background +
  * centred label, returned as a Container positioned at (x, y) — the

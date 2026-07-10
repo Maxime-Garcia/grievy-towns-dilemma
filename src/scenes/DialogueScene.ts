@@ -1,7 +1,7 @@
 import { NPC, PlayerState, DialogueLine, WorldState } from '../types';
 import { DialogueSystem, DialogueSession } from '../systems/DialogueSystem';
 import { SHOP_INVENTORY } from '../data/shops';
-import { UI, drawGlowPanel, uiStyle } from '../utils/UITheme';
+import { UI, drawGlowPanel, uiStyle, openScreenTransition } from '../utils/UITheme';
 import { t, localizeDialogueLine } from '../i18n';
 
 // ─────────────────────────────────────────────────────────────────
@@ -105,7 +105,7 @@ export class DialogueScene extends Phaser.Scene {
   }
 
   create() {
-    this.cameras.main.fadeIn(300, 0, 0, 0);
+    openScreenTransition(this);
     const { width: W, height: H } = this.cameras.main;
 
     this.role   = npcRole(this.npc);
