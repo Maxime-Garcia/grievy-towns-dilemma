@@ -426,6 +426,90 @@ export function addCloseButton(
 }
 
 /**
+ * Fondu de sortie (camera.fadeOut) puis callback une fois l'effet terminé
+ * (FADE_OUT_COMPLETE) — mutualise le pattern déjà utilisé par MainMenuScene/
+ * NameInputScene/GameScene pour les transitions de scène. `tint` permet de
+ * distinguer visuellement une fermeture normale (noir, défaut) d'une
+ * redirection vers une autre scène (teinte caractéristique de la destination).
+ *
+ * Pure enveloppe autour de l'API caméra Phaser : n'appelle jamais scene.stop()
+ * elle-même, c'est `onFadedOut` qui décide (stop seul, ou stop + launch).
+ */
+export function fadeOutAndClose(
+  scene: Phaser.Scene,
+  onFadedOut: () => void,
+  durationMs = 200,
+  tint = 0x000000,
+): void {
+  const r = (tint >> 16) & 0xff;
+  const g = (tint >> 8) & 0xff;
+  const b = tint & 0xff;
+  scene.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, onFadedOut);
+  scene.cameras.main.fadeOut(durationMs, r, g, b);
+}
+
+/**
+ * Paire de boutons horizontaux Confirmer (vert, gauche) / Annuler (rouge,
+ * droite) — même convention visuelle que InventoryScene.showActionConfirmPopup()
+ * (fond sombre teinté, bordure vive, hover plus clair). (x, y) = coin haut-gauche
+ * de la rangée, `w` = largeur totale disponible (les deux boutons + l'espacement
+ * la remplissent exactement). Hauteur par défaut = LAYOUT.TOUCH_MIN (zone
+ * tactile minimale). Retourne les GameObjects créés (à la charge de l'appelant
+ * de les détruire/pousser dans son propre tableau de nettoyage).
+ */
+export function drawConfirmCancelButtons(
+  scene: Phaser.Scene,
+  x: number, y: number, w: number,
+  confirmLabel: string, cancelLabel: string,
+  onConfirm: () => void, onCancel: () => void,
+  height: number = LAYOUT.TOUCH_MIN,
+): { objects: Phaser.GameObjects.GameObject[]; height: number } {
+  const GAP  = 8;
+  const btnW = (w - GAP) / 2;
+  const confirmX = x;
+  const cancelX  = x + btnW + GAP;
+
+  const confirmGfx = scene.add.graphics();
+  confirmGfx.fillStyle(0x0d2010, 1);
+  confirmGfx.fillRoundedRect(confirmX, y, btnW, height, 3);
+  confirmGfx.lineStyle(1, 0x44cc66, 1);
+  confirmGfx.strokeRoundedRect(confirmX, y, btnW, height, 3);
+  const confirmTxt = scene.add.text(confirmX + btnW / 2, y + height / 2, confirmLabel,
+    uiStyle(10, UI.TXT_GREEN, { bold: true })).setOrigin(0.5);
+  const confirmHit = scene.add.rectangle(confirmX + btnW / 2, y + height / 2, btnW, height, 0, 0)
+    .setInteractive({ useHandCursor: true });
+  confirmHit.on('pointerover', () => {
+    confirmGfx.lineStyle(1, 0xaaffcc, 1); confirmGfx.strokeRoundedRect(confirmX, y, btnW, height, 3);
+  });
+  confirmHit.on('pointerout', () => {
+    confirmGfx.lineStyle(1, 0x44cc66, 1); confirmGfx.strokeRoundedRect(confirmX, y, btnW, height, 3);
+  });
+  confirmHit.on('pointerdown', onConfirm);
+
+  const cancelGfx = scene.add.graphics();
+  cancelGfx.fillStyle(0x1a0808, 1);
+  cancelGfx.fillRoundedRect(cancelX, y, btnW, height, 3);
+  cancelGfx.lineStyle(1, 0xcc3322, 1);
+  cancelGfx.strokeRoundedRect(cancelX, y, btnW, height, 3);
+  const cancelTxt = scene.add.text(cancelX + btnW / 2, y + height / 2, cancelLabel,
+    uiStyle(10, UI.TXT_RED, { bold: true })).setOrigin(0.5);
+  const cancelHit = scene.add.rectangle(cancelX + btnW / 2, y + height / 2, btnW, height, 0, 0)
+    .setInteractive({ useHandCursor: true });
+  cancelHit.on('pointerover', () => {
+    cancelGfx.lineStyle(1, 0xff6655, 1); cancelGfx.strokeRoundedRect(cancelX, y, btnW, height, 3);
+  });
+  cancelHit.on('pointerout', () => {
+    cancelGfx.lineStyle(1, 0xcc3322, 1); cancelGfx.strokeRoundedRect(cancelX, y, btnW, height, 3);
+  });
+  cancelHit.on('pointerdown', onCancel);
+
+  return {
+    objects: [confirmGfx, confirmTxt, confirmHit, cancelGfx, cancelTxt, cancelHit],
+    height,
+  };
+}
+
+/**
  * Small coloured badge (rarity, element, status): rounded background +
  * centred label, returned as a Container positioned at (x, y) — the
  * container's origin is the badge centre.

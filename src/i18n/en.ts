@@ -84,6 +84,11 @@ export const EN: Record<string, string> = {
   'arsenal.loot_unknown': 'Unknown source',
   'arsenal.dropped_by_more': '+{n} more',
   'arsenal.view_in_bestiary': 'View in Bestiary →',
+
+  // ── NAVIGATION (Arsenal ↔ Bestiary cross-link confirmation popups) ──
+  'nav.go':     'Go',
+  'nav.cancel': 'Cancel',
+
   'element.FIRE': 'Fire',
   'element.EARTH': 'Earth',
   'element.WIND': 'Wind',

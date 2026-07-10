@@ -12,7 +12,7 @@
 import { WorldState, ElementType, ItemType, ItemRarity, RARITY_COLORS, Item, Weapon, Armor } from '../types';
 import {
   UI, drawGlowPanel, drawCard, drawBadge, uiStyle, addCloseButton, drawScrollbar,
-  renderScrollableText, formatDropRate,
+  renderScrollableText, formatDropRate, fadeOutAndClose, drawConfirmCancelButtons,
 } from '../utils/UITheme';
 import { ALL_ITEMS } from '../data/items';
 import { getPassiveEffectLabel } from '../data/passiveEffects';
@@ -78,6 +78,17 @@ const DROP_SOURCE_ROW_H = 34;
 /** Nombre max de monstres affichés avant de replier en "+N autres". */
 const DROP_SOURCE_MAX_ROWS = 6;
 
+/**
+ * Réserve verticale (px) sous les stats, avant le titre "Description", pour le
+ * libellé du passif (affiché en gras dans le bloc identité — cf. renderDetail).
+ * Calibrée pour le passif le plus long connu (~100 caractères, ex.
+ * COMBAT_START_ZERO_CD / FIRST_STRIKE_500_PCT dans passiveEffects.ts) sur 2
+ * lignes wrappées à la largeur de la colonne identité. Fixe et indépendante de
+ * l'item sélectionné : LORE_Y doit rester la même géométrie pour tous les items
+ * (panneau uniforme, cf. create()) — un item sans passif laisse juste un blanc.
+ */
+const PASSIVE_RESERVE_PX = 36;
+
 export class ArsenalScene extends Phaser.Scene {
   private gameScene!: GameScene;
   private world!: WorldState;
@@ -104,6 +115,12 @@ export class ArsenalScene extends Phaser.Scene {
   // Mini-card "monstre" ouverte depuis la section "Obtenu auprès de".
   private monsterCard: Phaser.GameObjects.Container | null = null;
   private monsterCardJustOpened = false;
+
+  // Garde anti double-déclenchement : un fondu de sortie (fermeture ou
+  // redirection) est en cours — ignore tout nouvel appel tant qu'il tourne
+  // (évite un scene.stop()/launch() dupliqué si le bouton est tapé deux fois
+  // pendant les ~200ms de fondu).
+  private closing = false;
 
   private keyUp:   Phaser.Input.Keyboard.Key | null = null;
   private keyDown: Phaser.Input.Keyboard.Key | null = null;
@@ -138,6 +155,7 @@ export class ArsenalScene extends Phaser.Scene {
     this.loreMaxScrollPx = 0;
     this.monsterCard = null;
     this.monsterCardJustOpened = false;
+    this.closing = false;
     this.dragging = false;
     this.dragAccum = 0;
   }
@@ -176,8 +194,11 @@ export class ArsenalScene extends Phaser.Scene {
     // Viewport fixe du bloc description/lore — même géométrie pour tous les items
     // (panneau uniforme), le texte défile DEDANS au lieu de faire varier la taille
     // du panneau ou de déborder hors-cadre (cf. renderScrollableText).
+    // +PASSIVE_RESERVE_PX : place réservée au libellé du passif (gras, dans le
+    // bloc identité) entre la fin des stats et le titre "Description" — voir
+    // la constante pour le détail du calibrage.
     this.LORE_X = this.DET_X + this.PAD;
-    this.LORE_Y = this.DET_Y + this.PAD + 96 + 18 + 14;
+    this.LORE_Y = this.DET_Y + this.PAD + 96 + 18 + PASSIVE_RESERVE_PX + 14;
     this.LORE_W = this.DET_W - this.PAD * 2;
 
     const listBg = this.add.graphics();
@@ -479,6 +500,18 @@ export class ArsenalScene extends Phaser.Scene {
         this.detailObjs.push(this.add.text(ix, iy, line, uiStyle(9, UI.TXT_PARCHMENT)));
         iy += 15;
       }
+
+      // Passif : en gras, couleur distincte (or) — sorti du bloc lore pour rester
+      // visible sans avoir à scroller. Budget vertical réservé par
+      // PASSIVE_RESERVE_PX (voir sa doc) entre ici et le titre "Description".
+      const passiveLabel = ('passiveEffect' in item && item.passiveEffect)
+        ? getPassiveEffectLabel(item.passiveEffect)
+        : undefined;
+      if (passiveLabel) {
+        iy += 4;
+        this.detailObjs.push(this.add.text(ix, iy, `${t('arsenal.passive_label')} ${passiveLabel}`,
+          uiStyle(9, UI.TXT_GOLD, { bold: true, wordWrapWidth: iw, lineSpacing: 4 })));
+      }
     }
 
     // ── Description / lore ──────────────────────────────────────
@@ -486,16 +519,11 @@ export class ArsenalScene extends Phaser.Scene {
     // défile DEDANS (molette + scrollbar) au lieu de faire varier la taille du
     // panneau ou de déborder hors-cadre — garantit un panneau UNIFORME pour tous
     // les items tout en gardant tout le lore accessible (cf. renderScrollableText).
-    const descY = this.DET_Y + pad + 96 + 18;
+    const descY = this.DET_Y + pad + 96 + 18 + PASSIVE_RESERVE_PX;
     this.addSectionTitle(t('arsenal.description_title'), descY);
 
-    const passiveLabel = ('passiveEffect' in item && item.passiveEffect)
-      ? getPassiveEffectLabel(item.passiveEffect)
-      : undefined;
     const baseDesc = loc.lore ?? loc.description;
-    const descText = !entry.discovered
-      ? t('arsenal.not_discovered')
-      : (passiveLabel ? `${baseDesc}\n\n${t('arsenal.passive_label')} ${passiveLabel}` : baseDesc);
+    const descText = entry.discovered ? baseDesc : t('arsenal.not_discovered');
     const descColor = entry.discovered ? UI.TXT_PARCHMENT : UI.TXT_MUTED;
 
     const loreResult = renderScrollableText(
@@ -550,7 +578,18 @@ export class ArsenalScene extends Phaser.Scene {
       return;
     }
 
-    const visible = sources.slice(0, DROP_SOURCE_MAX_ROWS);
+    // Nombre de lignes réellement calculé depuis l'espace restant sous contentY
+    // (pas un DROP_SOURCE_MAX_ROWS fixe) : le budget vertical au-dessus de ce
+    // point varie désormais avec PASSIVE_RESERVE_PX (cf. sa doc) — un plafond
+    // fixe déborderait hors du panneau pour un item à 7+ sources de drop non
+    // cachées (ex: ember_core, minor_mana_potion). -18 = marge de sécurité avant
+    // le bord du panneau, -14 = place réservée pour la ligne "+N autres".
+    const bottomLimit = this.DET_Y + this.DET_H - 18;
+    const maxRows = Math.max(1, Math.min(
+      DROP_SOURCE_MAX_ROWS,
+      Math.floor((bottomLimit - contentY - 14) / DROP_SOURCE_ROW_H),
+    ));
+    const visible = sources.slice(0, maxRows);
     visible.forEach((src, i) => this.renderDroppedByRow(
       src.enemyId, src.drop, contentX, contentY + i * DROP_SOURCE_ROW_H, contentW, DROP_SOURCE_ROW_H,
     ));
@@ -601,7 +640,7 @@ export class ArsenalScene extends Phaser.Scene {
     hit.on('pointerdown', () => this.openMonsterCard(enemyId));
   }
 
-  /** Mini-card monstre — nom, habitat, teaser + bouton vers le Bestiaire (focus). */
+  /** Mini-card monstre — nom, habitat, teaser + boutons Aller (Bestiaire, focus)/Annuler. */
   private openMonsterCard(enemyId: string) {
     this.destroyMonsterCard();
     const data = BESTIARY_RECORD[enemyId];
@@ -638,19 +677,29 @@ export class ArsenalScene extends Phaser.Scene {
     parts.push(descTxt);
     cy += descTxt.height + 10;
 
-    const btnH = 26;
-    const btnBg = this.add.rectangle(CW / 2, cy + btnH / 2, CW - padC * 2, btnH, 0x1a2030, 1)
-      .setInteractive({ useHandCursor: true });
-    const btnTxt = this.add.text(CW / 2, cy + btnH / 2, t('arsenal.view_in_bestiary'),
-      uiStyle(9, UI.TXT_CYAN, { bold: true })).setOrigin(0.5);
-    btnBg.on('pointerover', () => btnBg.setFillStyle(0x24304a, 1));
-    btnBg.on('pointerout',  () => btnBg.setFillStyle(0x1a2030, 1));
-    btnBg.on('pointerdown', () => {
-      this.scene.stop();
-      this.scene.launch('BestiaryScene', { gameScene: this.gameScene, world: this.world, focusEnemyId: enemyId });
-    });
-    parts.push(btnBg, btnTxt);
-    cy += btnH + padC;
+    const subtitleTxt = this.add.text(CW / 2, cy, t('arsenal.view_in_bestiary'),
+      uiStyle(8, UI.TXT_CYAN)).setOrigin(0.5, 0);
+    parts.push(subtitleTxt);
+    cy += subtitleTxt.height + 6;
+
+    // Aller (vert, redirection teintée cyan arcane) / Annuler (rouge, referme la
+    // card sans quitter l'Arsenal) — même convention que
+    // InventoryScene.showActionConfirmPopup().
+    const { objects: navBtns, height: navBtnH } = drawConfirmCancelButtons(
+      this, padC, cy, CW - padC * 2,
+      t('nav.go'), t('nav.cancel'),
+      () => {
+        if (this.closing) return;
+        this.closing = true;
+        fadeOutAndClose(this, () => {
+          this.scene.stop();
+          this.scene.launch('BestiaryScene', { gameScene: this.gameScene, world: this.world, focusEnemyId: enemyId });
+        }, 220, UI.ACCENT_ARCANE);
+      },
+      () => this.destroyMonsterCard(),
+    );
+    parts.push(...navBtns);
+    cy += navBtnH + padC;
 
     const g = this.add.graphics();
     drawGlowPanel(g, 0, 0, CW, cy, UI.ACCENT_ARCANE, UI.PANEL_BG, 6, 0.98);
@@ -687,9 +736,9 @@ export class ArsenalScene extends Phaser.Scene {
       lines.push(`${t('stats.def')}: ${a.defense}`);
       lines.push(`${t('stats.mdef')}: ${a.magicDefense}`);
     }
-    // Le passif est affiché dans le bloc description/lore scrollable ci-dessous
-    // (renderDetail), pas ici : cette zone de stats a un budget vertical FIXE
-    // (LORE_Y ne bouge pas selon le nombre de lignes), un passif long y déborderait.
+    // Le passif n'est PAS inclus ici : il est rendu séparément juste après ces
+    // lignes dans renderDetail() (gras + couleur or, distinct du parchemin des
+    // stats), dans l'espace réservé par PASSIVE_RESERVE_PX — cf. sa doc.
     return lines;
   }
 
@@ -781,12 +830,16 @@ export class ArsenalScene extends Phaser.Scene {
   // (resume PauseScene sous-jacente au lieu d'un setPaused(false) qui la
   // laisserait bloquée en pause pour toujours — cf. bug ESC reporté).
   close() {
-    this.scene.stop();
-    if (this.scene.isPaused('PauseScene')) {
-      this.scene.resume('PauseScene');
-    } else if (this.gameScene) {
-      this.gameScene.setPaused(false);
-    }
+    if (this.closing) return;
+    this.closing = true;
+    fadeOutAndClose(this, () => {
+      this.scene.stop();
+      if (this.scene.isPaused('PauseScene')) {
+        this.scene.resume('PauseScene');
+      } else if (this.gameScene) {
+        this.gameScene.setPaused(false);
+      }
+    });
   }
 
   shutdown() {
@@ -796,6 +849,12 @@ export class ArsenalScene extends Phaser.Scene {
     if (this.pointerDownHandler) { this.input.off('pointerdown', this.pointerDownHandler); this.pointerDownHandler = null; }
     if (this.pointerMoveHandler) { this.input.off('pointermove', this.pointerMoveHandler); this.pointerMoveHandler = null; }
     if (this.pointerUpHandler)   { this.input.off('pointerup', this.pointerUpHandler);     this.pointerUpHandler = null; }
+    // Si la scène est stoppée de force (ex: GameScene.goToMainMenu()) pendant un
+    // fondu lancé par fadeOutAndClose(), le listener .once(FADE_OUT_COMPLETE) reste
+    // sinon attaché à cameras.main (qui persiste entre stop/relaunch d'une même
+    // clé de scène) et pourrait se déclencher au prochain fondu avec un callback
+    // obsolète — no-op si le fondu s'est déjà terminé normalement.
+    this.cameras.main.off(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE);
     this.destroyMonsterCard();
     // Détruit explicitement (pas juste vidage de tableau) : le masque de scroll du
     // bloc lore (renderScrollableText) n'est jamais ajouté à la display list —
