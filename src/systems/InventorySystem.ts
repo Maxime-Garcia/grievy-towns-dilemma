@@ -81,15 +81,15 @@ export class InventorySystem {
       }));
   }
 
-  static equip(player: PlayerState, itemId: string): boolean {
+  static equip(player: PlayerState, item: Item): boolean {
     // BLOCKER (loot stat rolls, risque n°1 de docs/design/LOOT_STAT_ROLLS.md) :
-    // lire l'INSTANCE réelle depuis l'inventaire, jamais ALL_ITEMS[itemId] — le
-    // catalogue ne porte que les valeurs centre (cf. StatRollSystem.finalizeCatalogue),
-    // équiper le template écraserait silencieusement les stats rollées à l'obtention
-    // (élément, mainStat/substats, rollQuality) par les valeurs génériques du jeu.
-    const slotIndex = player.inventory.findIndex(s => s.item.id === itemId);
+    // l'appelant transmet désormais l'INSTANCE réelle du slot cliqué, jamais un
+    // itemId seul — deux instances non-stackables du même item peuvent porter
+    // des rolls différents, et un lookup par id ne peut jamais distinguer LA
+    // bonne des deux (cf. LootSystem.removeFromInventory). On résout donc le
+    // slot par IDENTITÉ (===) pour équiper/retirer précisément CET objet.
+    const slotIndex = player.inventory.findIndex(s => s.item === item);
     if (slotIndex === -1) return false;
-    const item = player.inventory[slotIndex].item;
 
     const slot = this.getEquipSlot(item, player);
     if (!slot) return false;
@@ -97,10 +97,9 @@ export class InventorySystem {
     // Le nouvel item doit quitter le sac avant d'occuper le slot — sans ça, il
     // restait dupliqué dans l'inventaire à chaque équipement (bug reporté :
     // rééquiper une arme la faisait réapparaître en plus dans le sac).
-    // removeFromInventory retrouve CE MÊME slot (findIndex par id, rien n'a
-    // muté l'inventaire entre les deux appels) — l'instance capturée ci-dessus
-    // reste valide après la suppression.
-    const removed = LootSystem.removeFromInventory(player, itemId, 1);
+    // removeFromInventory retrouve CE MÊME slot par identité (instance passée
+    // explicitement) plutôt que par id.
+    const removed = LootSystem.removeFromInventory(player, item.id, 1, item);
     if (!removed) return false;
 
     const current = (player.equipment as any)[slot];
@@ -123,12 +122,15 @@ export class InventorySystem {
     return true;
   }
 
-  static useConsumable(player: PlayerState, itemId: string): boolean {
-    const item = ALL_ITEMS[itemId];
-    if (!item || item.type !== ItemType.CONSUMABLE) return false;
+  static useConsumable(player: PlayerState, item: Item): boolean {
+    if (item.type !== ItemType.CONSUMABLE) return false;
 
     const consumable = item as Consumable;
-    const removed = LootSystem.removeFromInventory(player, itemId, 1);
+    // Consommables jamais rollés (docs/design/LOOT_STAT_ROLLS.md §1.3) et
+    // toujours stackables — une seule entrée par id possible, donc l'identité
+    // n'apporte rien de plus qu'un lookup par id ici, mais on la transmet quand
+    // même par cohérence avec equip/sell plutôt que de rouvrir un chemin par id.
+    const removed = LootSystem.removeFromInventory(player, item.id, 1, item);
     if (!removed) return false;
 
     const e = consumable.effect;
@@ -141,12 +143,10 @@ export class InventorySystem {
     return true;
   }
 
-  static sell(player: PlayerState, itemId: string, quantity: number): number {
-    const item = ALL_ITEMS[itemId];
-    if (!item) return 0;
+  static sell(player: PlayerState, item: Item, quantity: number): number {
     if (item.type === ItemType.KEY_ITEM) return 0;
 
-    const removed = LootSystem.removeFromInventory(player, itemId, quantity);
+    const removed = LootSystem.removeFromInventory(player, item.id, quantity, item);
     if (!removed) return 0;
 
     const gold = item.value * quantity;

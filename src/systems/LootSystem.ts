@@ -144,9 +144,19 @@ export class LootSystem {
   static removeFromInventory(
     player: PlayerState,
     itemId: string,
-    quantity: number
+    quantity: number,
+    instance?: Item,
   ): boolean {
-    const idx = player.inventory.findIndex(s => s.item.id === itemId);
+    // `instance`, quand fourni, résout par IDENTITÉ (===) plutôt que par id —
+    // deux armes non-stackables identiques ont chacune leur propre entrée
+    // qty:1 avec des rolls différents (docs/design/LOOT_STAT_ROLLS.md §9 étape
+    // 8) : un findIndex par itemId retomberait toujours sur la PREMIÈRE des
+    // deux, pas forcément celle que l'appelant vise réellement. Sans instance
+    // (cas des matériaux/consommables stackables, où il n'existe jamais qu'une
+    // seule entrée par id), le comportement par itemId reste inchangé.
+    const idx = instance
+      ? player.inventory.findIndex(s => s.item === instance)
+      : player.inventory.findIndex(s => s.item.id === itemId);
     if (idx === -1 || player.inventory[idx].quantity < quantity) return false;
 
     player.inventory[idx].quantity -= quantity;

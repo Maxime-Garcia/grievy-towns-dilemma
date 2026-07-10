@@ -603,7 +603,7 @@ export class InventoryScene extends Phaser.Scene {
 
     if (isEquip) {
       addBtn(t('inventory.equip_hint'), UI.TXT_GREEN, () => {
-        InventorySystem.equip(this.player, item.id);
+        InventorySystem.equip(this.player, item);
         this.selectedItem = null;
         this.refresh();
       });
@@ -622,7 +622,7 @@ export class InventoryScene extends Phaser.Scene {
         t('inventory.sell_hint').replace('{value}', String(item.value)),
         UI.TXT_ORANGE,
         () => {
-          InventorySystem.sell(this.player, item.id, 1);
+          InventorySystem.sell(this.player, item, 1);
           this.selectedItem = null;
           this.refresh();
         },
@@ -1123,9 +1123,13 @@ export class InventoryScene extends Phaser.Scene {
     } else {
       const mainView = this.getMainStatLineView(item);
       if (mainView) {
-        this.consumePopupObjects.push(
-          this.add.text(textX, bodyLineY, mainView.text, uiStyle(10, mainView.color, { bold: true })).setDepth(depth + 1),
-        );
+        const mainTxt = this.add.text(textX, bodyLineY, mainView.text, uiStyle(10, mainView.color, { bold: true })).setDepth(depth + 1);
+        this.consumePopupObjects.push(mainTxt);
+        if (mainView.rangeText) {
+          this.consumePopupObjects.push(
+            this.add.text(textX + mainTxt.width + 4, bodyLineY + 2, mainView.rangeText, uiStyle(7, UI.TXT_MUTED)).setDepth(depth + 1),
+          );
+        }
       }
     }
 
@@ -1138,9 +1142,13 @@ export class InventoryScene extends Phaser.Scene {
     if (isEquip) {
       let bodyY = py + headerH + 6;
       for (const view of this.getSubstatLineViews(item).slice(0, 3)) {
-        this.consumePopupObjects.push(
-          this.add.text(px + MARGIN, bodyY, `• ${view.text}`, uiStyle(9, view.color)).setDepth(depth + 1),
-        );
+        const lineTxt = this.add.text(px + MARGIN, bodyY, `• ${view.text}`, uiStyle(9, view.color)).setDepth(depth + 1);
+        this.consumePopupObjects.push(lineTxt);
+        if (view.rangeText) {
+          this.consumePopupObjects.push(
+            this.add.text(px + MARGIN + lineTxt.width + 4, bodyY + 1, view.rangeText, uiStyle(7, UI.TXT_MUTED)).setDepth(depth + 1),
+          );
+        }
         bodyY += 14;
       }
       bodyY += 4;
@@ -1189,10 +1197,10 @@ export class InventoryScene extends Phaser.Scene {
       .on('pointerdown', () => {
         this.closeConsumePopup();
         if (isConsumable) {
-          InventorySystem.useConsumable(this.player, item.id);
+          InventorySystem.useConsumable(this.player, item);
         } else {
           this.lastFlashSlotKey = this.getSlotKeyForItem(item);
-          InventorySystem.equip(this.player, item.id);
+          InventorySystem.equip(this.player, item);
         }
         this.selectedItem = null;
         this.refresh();
