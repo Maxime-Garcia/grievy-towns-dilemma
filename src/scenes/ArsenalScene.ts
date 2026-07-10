@@ -12,7 +12,8 @@
 import { WorldState, ElementType, ItemType, ItemRarity, RARITY_COLORS, Item, Weapon, Armor } from '../types';
 import {
   UI, drawGlowPanel, drawCard, drawBadge, uiStyle, addCloseButton, drawScrollbar,
-  renderScrollableText, formatDropRate, fadeOutAndClose, drawConfirmCancelButtons,
+  renderScrollableText, formatDropRate, drawConfirmCancelButtons,
+  openScreenTransition, closeScreenTransition, portalRedirectTransition,
 } from '../utils/UITheme';
 import { ALL_ITEMS } from '../data/items';
 import { getPassiveEffectLabel } from '../data/passiveEffects';
@@ -162,7 +163,9 @@ export class ArsenalScene extends Phaser.Scene {
 
   create() {
     const { width: W, height: H } = this.cameras.main;
-    this.cameras.main.fadeIn(300, 0, 0, 0);
+    // focusItemId présent = arrivée via le portail du Bestiaire (teinte or,
+    // même couleur que le fondu de départ) ; sinon ouverture normale.
+    openScreenTransition(this, this.focusItemId !== undefined ? { portalTint: UI.CORNER } : {});
 
     this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88);
     const frame = this.add.graphics();
@@ -682,7 +685,7 @@ export class ArsenalScene extends Phaser.Scene {
     parts.push(subtitleTxt);
     cy += subtitleTxt.height + 6;
 
-    // Aller (vert, redirection teintée cyan arcane) / Annuler (rouge, referme la
+    // Aller (vert, portail arcane teinté cyan) / Annuler (rouge, referme la
     // card sans quitter l'Arsenal) — même convention que
     // InventoryScene.showActionConfirmPopup().
     const { objects: navBtns, height: navBtnH } = drawConfirmCancelButtons(
@@ -691,10 +694,10 @@ export class ArsenalScene extends Phaser.Scene {
       () => {
         if (this.closing) return;
         this.closing = true;
-        fadeOutAndClose(this, () => {
+        portalRedirectTransition(this, UI.ACCENT_ARCANE, () => {
           this.scene.stop();
           this.scene.launch('BestiaryScene', { gameScene: this.gameScene, world: this.world, focusEnemyId: enemyId });
-        }, 220, UI.ACCENT_ARCANE);
+        });
       },
       () => this.destroyMonsterCard(),
     );
@@ -832,7 +835,7 @@ export class ArsenalScene extends Phaser.Scene {
   close() {
     if (this.closing) return;
     this.closing = true;
-    fadeOutAndClose(this, () => {
+    closeScreenTransition(this, () => {
       this.scene.stop();
       if (this.scene.isPaused('PauseScene')) {
         this.scene.resume('PauseScene');
@@ -850,7 +853,7 @@ export class ArsenalScene extends Phaser.Scene {
     if (this.pointerMoveHandler) { this.input.off('pointermove', this.pointerMoveHandler); this.pointerMoveHandler = null; }
     if (this.pointerUpHandler)   { this.input.off('pointerup', this.pointerUpHandler);     this.pointerUpHandler = null; }
     // Si la scène est stoppée de force (ex: GameScene.goToMainMenu()) pendant un
-    // fondu lancé par fadeOutAndClose(), le listener .once(FADE_OUT_COMPLETE) reste
+    // fondu lancé par portalRedirectTransition(), le listener .once(FADE_OUT_COMPLETE) reste
     // sinon attaché à cameras.main et pourrait se déclencher au prochain fondu avec
     // un callback obsolète — no-op si le fondu s'est déjà terminé normalement.
     // `?.` : au moment où Phaser émet SHUTDOWN, son propre CameraManager.shutdown()

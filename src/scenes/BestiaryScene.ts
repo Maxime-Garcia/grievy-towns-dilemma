@@ -4,7 +4,7 @@
 // à droite : portrait, badges, lore, butin avec drops cachés.
 //
 // UX (docs/design/UI_UX_GUIDELINES.md) :
-//  - overlay 0.88 + fade-in 300 ms
+//  - overlay 0.88 + matérialisation openScreenTransition (fade + scale-in)
 //  - tap = action, feedback < 100 ms sur pointerdown
 //  - scroll = molette + drag vertical + flèches + touches ↑↓
 //  - bouton × rouge haut-droite (hit 48×48) + ESC (géré par GameScene)
@@ -19,7 +19,8 @@ import { WorldState, ElementType, ItemRarity, RARITY_COLORS, SpawnRegion } from 
 import {
   UI, drawGlowPanel, drawCard, drawSlot, drawBadge, uiStyle,
   addCloseButton, drawScrollbar, renderScrollableText, formatDropRate,
-  fadeOutAndClose, drawConfirmCancelButtons,
+  drawConfirmCancelButtons,
+  openScreenTransition, closeScreenTransition, portalRedirectTransition,
 } from '../utils/UITheme';
 import { ENEMY_MAP } from '../data/enemies';
 import { BESTIARY_IDS, BESTIARY_RECORD, BestiaryDropData } from '../data/bestiary';
@@ -152,7 +153,9 @@ export class BestiaryScene extends Phaser.Scene {
 
   create() {
     const { width: W, height: H } = this.cameras.main;
-    this.cameras.main.fadeIn(300, 0, 0, 0);
+    // focusEnemyId présent = arrivée via le portail de l'Arsenal (teinte cyan
+    // arcane, même couleur que le fondu de départ) ; sinon ouverture normale.
+    openScreenTransition(this, this.focusEnemyId !== undefined ? { portalTint: UI.ACCENT_ARCANE } : {});
 
     // ── Overlay + cadre ──────────────────────────────────────
     this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88);
@@ -788,7 +791,7 @@ export class BestiaryScene extends Phaser.Scene {
       parts.push(subtitleTxt);
       ty += subtitleTxt.height + 6;
 
-      // Aller (vert, redirection teintée or) / Annuler (rouge, referme le tooltip
+      // Aller (vert, portail arcane teinté or) / Annuler (rouge, referme le tooltip
       // sans quitter le Bestiaire) — même convention que
       // InventoryScene.showActionConfirmPopup().
       const { objects: navBtns, height: navBtnH } = drawConfirmCancelButtons(
@@ -797,10 +800,10 @@ export class BestiaryScene extends Phaser.Scene {
         () => {
           if (this.closing) return;
           this.closing = true;
-          fadeOutAndClose(this, () => {
+          portalRedirectTransition(this, UI.CORNER, () => {
             this.scene.stop();
             this.scene.launch('ArsenalScene', { gameScene: this.gameScene, world: this.world, focusItemId: item.id });
-          }, 220, UI.CORNER);
+          });
         },
         () => this.destroyTooltip(),
       );
@@ -909,7 +912,7 @@ export class BestiaryScene extends Phaser.Scene {
   close() {
     if (this.closing) return;
     this.closing = true;
-    fadeOutAndClose(this, () => {
+    closeScreenTransition(this, () => {
       this.scene.stop();
       // Reprendre PauseScene si elle était en pause (cas nominal : ouvert depuis PauseScene)
       if (this.scene.isPaused('PauseScene')) {
@@ -928,7 +931,7 @@ export class BestiaryScene extends Phaser.Scene {
     if (this.pointerMoveHandler) { this.input.off('pointermove', this.pointerMoveHandler); this.pointerMoveHandler = null; }
     if (this.pointerUpHandler)   { this.input.off('pointerup', this.pointerUpHandler);     this.pointerUpHandler = null; }
     // Si la scène est stoppée de force (ex: GameScene.goToMainMenu()) pendant un
-    // fondu lancé par fadeOutAndClose(), le listener .once(FADE_OUT_COMPLETE) reste
+    // fondu lancé par portalRedirectTransition(), le listener .once(FADE_OUT_COMPLETE) reste
     // sinon attaché à cameras.main et pourrait se déclencher au prochain fondu avec
     // un callback obsolète — no-op si le fondu s'est déjà terminé normalement.
     // `?.` : au moment où Phaser émet SHUTDOWN, son propre CameraManager.shutdown()
