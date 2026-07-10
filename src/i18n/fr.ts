@@ -192,6 +192,13 @@ export const FR: Record<string, string> = {
   'inventory.slot_hint':  'Touchez un slot pour le détail',
   'inventory.tap_hint':   'Tap = action  •  Maintenir = détail',
   'inventory.empty':      'Inventaire vide',
+  'inventory.category_weapon':     'Armes',
+  'inventory.category_armor':      'Armures',
+  'inventory.category_accessory':  'Accessoires',
+  'inventory.category_consumable': 'Consommables',
+  'inventory.category_material':   'Matériaux',
+  'inventory.category_key_item':   'Objets clés',
+  'inventory.category_skin':       'Skins',
 
   // ── PANNEAU DE STATISTIQUES (inventaire) ─────────────────────
   'stats.section_offense': 'OFFENSE',

@@ -191,6 +191,13 @@ export const EN: Record<string, string> = {
   'inventory.slot_hint':  'Tap a slot for details',
   'inventory.tap_hint':   'Tap = action  •  Hold = details',
   'inventory.empty':      'Empty inventory',
+  'inventory.category_weapon':     'Weapons',
+  'inventory.category_armor':      'Armor',
+  'inventory.category_accessory':  'Accessories',
+  'inventory.category_consumable': 'Consumables',
+  'inventory.category_material':   'Materials',
+  'inventory.category_key_item':   'Key Items',
+  'inventory.category_skin':       'Skins',
 
   // ── STATS PANEL (inventory) ──────────────────────────────────
   'stats.section_offense': 'OFFENSE',

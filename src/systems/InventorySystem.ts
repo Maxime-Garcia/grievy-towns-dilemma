@@ -1,9 +1,85 @@
-import { PlayerState, Item, ItemType, Weapon, Armor, Accessory, Consumable, Equipment } from '../types';
+import { PlayerState, Item, ItemType, ItemRarity, Weapon, Armor, Accessory, Consumable, Equipment, InventorySlot } from '../types';
 import { LootSystem } from './LootSystem';
 import { StatsSystem } from './StatsSystem';
 import { ALL_ITEMS } from '../data/items';
 
+// ── Inventory display grouping (bag UI only — never touches equip/sell logic) ──
+
+/** Broader browsing categories than ItemType: armor pieces (HELM..CAPE) are merged
+ *  into one bucket so the bag stays scannable once loot rolls (Dofus-style random
+ *  substats) start multiplying the number of distinct item instances. */
+export type InventoryCategory =
+  | 'WEAPON' | 'ARMOR' | 'ACCESSORY' | 'CONSUMABLE' | 'MATERIAL' | 'KEY_ITEM' | 'SKIN';
+
+/** Fixed display order for bag categories — weapons first, key items/skins last
+ *  (least frequently acted upon while browsing). */
+export const INVENTORY_CATEGORY_ORDER: InventoryCategory[] = [
+  'WEAPON', 'ARMOR', 'ACCESSORY', 'CONSUMABLE', 'MATERIAL', 'KEY_ITEM', 'SKIN',
+];
+
+const CATEGORY_BY_TYPE: Record<ItemType, InventoryCategory> = {
+  [ItemType.WEAPON]:     'WEAPON',
+  [ItemType.HELM]:       'ARMOR',
+  [ItemType.CHEST]:      'ARMOR',
+  [ItemType.LEGS]:       'ARMOR',
+  [ItemType.BOOTS]:      'ARMOR',
+  [ItemType.GLOVES]:     'ARMOR',
+  [ItemType.CAPE]:       'ARMOR',
+  [ItemType.RING]:       'ACCESSORY',
+  [ItemType.AMULET]:     'ACCESSORY',
+  [ItemType.CONSUMABLE]: 'CONSUMABLE',
+  [ItemType.MATERIAL]:   'MATERIAL',
+  [ItemType.KEY_ITEM]:   'KEY_ITEM',
+  [ItemType.SKIN]:       'SKIN',
+};
+
+/** Ascending commonality (COMMON → HIDDEN) — mirrors the ItemRarity declaration
+ *  order and RARITY_DROP_RATES; LootSystem.rarityFromRoll walks the same list
+ *  in reverse. Kept as an explicit map (not enum iteration) so a future reorder
+ *  of the enum can't silently reorder the bag. */
+const RARITY_SORT_INDEX: Record<ItemRarity, number> = {
+  [ItemRarity.COMMON]: 0,
+  [ItemRarity.UNCOMMON]: 1,
+  [ItemRarity.RARE]: 2,
+  [ItemRarity.EPIC]: 3,
+  [ItemRarity.LEGENDARY]: 4,
+  [ItemRarity.MYTHIC]: 5,
+  [ItemRarity.HIDDEN]: 6,
+};
+
+export interface InventoryGroup {
+  category: InventoryCategory;
+  slots: InventorySlot[];
+}
+
 export class InventorySystem {
+
+  /**
+   * Groups+sorts inventory slots for bag display: category first
+   * (INVENTORY_CATEGORY_ORDER), then rarity ascending (common → rare) within a
+   * category, then item name as a stable tie-break. Pure/read-only — returns new
+   * arrays, never mutates `inventory` and never touches equip/sell/use logic.
+   * Empty categories are omitted entirely.
+   */
+  static groupForDisplay(inventory: InventorySlot[]): InventoryGroup[] {
+    const buckets = new Map<InventoryCategory, InventorySlot[]>();
+    for (const slot of inventory) {
+      const category = CATEGORY_BY_TYPE[slot.item.type];
+      const bucket = buckets.get(category);
+      if (bucket) bucket.push(slot); else buckets.set(category, [slot]);
+    }
+
+    return INVENTORY_CATEGORY_ORDER
+      .map((category): InventoryGroup => ({ category, slots: buckets.get(category) ?? [] }))
+      .filter(g => g.slots.length > 0)
+      .map(g => ({
+        category: g.category,
+        slots: [...g.slots].sort((a, b) => {
+          const byRarity = RARITY_SORT_INDEX[a.item.rarity] - RARITY_SORT_INDEX[b.item.rarity];
+          return byRarity !== 0 ? byRarity : a.item.name.localeCompare(b.item.name);
+        }),
+      }));
+  }
 
   static equip(player: PlayerState, itemId: string): boolean {
     const item = ALL_ITEMS[itemId];

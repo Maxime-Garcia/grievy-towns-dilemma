@@ -1,9 +1,9 @@
 import { GameScene } from './GameScene';
 import {
   PlayerState, Item, ItemType, Weapon, Armor, Accessory, Consumable,
-  StatBonus, RARITY_COLORS, EquipStats, ElementType,
+  StatBonus, RARITY_COLORS, EquipStats, ElementType, InventorySlot,
 } from '../types';
-import { InventorySystem } from '../systems/InventorySystem';
+import { InventorySystem, InventoryCategory } from '../systems/InventorySystem';
 import { StatsSystem, BASE_CRIT_PCT, CRIT_PER_AGI_PCT, BASE_CRIT_MULT } from '../systems/StatsSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { ALL_ITEMS } from '../data/items';
@@ -40,6 +40,24 @@ const STAT_PAN_W = 220;   // center panel: stats / item detail
 const EQ_SLOT    = 44;    // equipment slot size
 const INV_SLOT   = 48;    // inventory slot size
 const INV_COLS   = 7;     // inventory grid columns
+const GROUP_HEADER_H = 20; // bag category header band height
+const GROUP_GAP      = 6;  // breathing room after a category's last row
+
+/** Bag category → i18n label key (mirrors ArsenalScene.SECTION_LABEL_KEYS style). */
+const CATEGORY_LABEL_KEYS: Record<InventoryCategory, string> = {
+  WEAPON:     'inventory.category_weapon',
+  ARMOR:      'inventory.category_armor',
+  ACCESSORY:  'inventory.category_accessory',
+  CONSUMABLE: 'inventory.category_consumable',
+  MATERIAL:   'inventory.category_material',
+  KEY_ITEM:   'inventory.category_key_item',
+  SKIN:       'inventory.category_skin',
+};
+
+// Minimal shape shared by every scrollable grid object (Graphics/Text/Image/Rectangle) —
+// hoisted to module scope so both renderGrid() and its per-row helpers can reference it.
+type ScrollableGO = { setY(y: number): unknown; setMask(m: Phaser.Display.Masks.GeometryMask): unknown };
+type RegisterFn = (go: ScrollableGO & Phaser.GameObjects.GameObject, baseY: number) => void;
 
 // Excludes 'skins' which is not a display slot
 type EquipSlotKey = 'helm' | 'cape' | 'chest' | 'gloves' | 'weapon' | 'legs' | 'boots' | 'ring1' | 'ring2' | 'amulet';
@@ -594,9 +612,23 @@ export class InventoryScene extends Phaser.Scene {
     const GRID_X    = PX + GRID_PAD;
     const GRID_Y    = PY + TITLE_H;
     const VISIBLE_H = PH - TITLE_H;
-    const rows      = Math.ceil(this.player.inventory.length / INV_COLS);
-    const contentH  = rows * INV_SLOT;
-    let   scrollY   = 0;
+
+    // Grouped by category (weapons / armor / accessories / ...), rarity-sorted within
+    // each group — see InventorySystem.groupForDisplay. A layout pass computes every
+    // group's header/item pixel offsets up front so contentH (and thus the scroll
+    // mask + max scroll) is known before anything is drawn.
+    const groups = InventorySystem.groupForDisplay(this.player.inventory);
+    interface GroupLayout { category: InventoryCategory; slots: InventorySlot[]; headerY: number; itemsY: number }
+    let cursorY = 0;
+    const layouts: GroupLayout[] = groups.map((g) => {
+      const headerY = cursorY;
+      const itemsY  = headerY + GROUP_HEADER_H;
+      const rows    = Math.ceil(g.slots.length / INV_COLS);
+      cursorY = itemsY + rows * INV_SLOT + GROUP_GAP;
+      return { category: g.category, slots: g.slots, headerY, itemsY };
+    });
+    const contentH = Math.max(0, cursorY - GROUP_GAP);
+    let   scrollY  = 0;
 
     // Geometry mask clips the scrollable grid area
     const maskGfx = this.make.graphics({ x: 0, y: 0 });
@@ -605,10 +637,8 @@ export class InventoryScene extends Phaser.Scene {
     const geomMask = maskGfx.createGeometryMask();
     this.scrollMaskGfx = maskGfx;
 
-    type Settable = { setY(y: number): unknown; setMask(m: Phaser.Display.Masks.GeometryMask): unknown };
-    const scrollables: { obj: Settable; baseY: number }[] = [];
-
-    const reg = (go: Settable & Phaser.GameObjects.GameObject, baseY: number) => {
+    const scrollables: { obj: ScrollableGO; baseY: number }[] = [];
+    const reg: RegisterFn = (go, baseY) => {
       go.setMask(geomMask);
       scrollables.push({ obj: go, baseY });
       this.dynamicObjs.push(go);
@@ -624,78 +654,17 @@ export class InventoryScene extends Phaser.Scene {
       );
     }
 
-    this.player.inventory.forEach((slot, idx) => {
-      const col    = idx % INV_COLS;
-      const row    = Math.floor(idx / INV_COLS);
-      const sx     = GRID_X + col * INV_SLOT;
-      const topY   = GRID_Y  + row * INV_SLOT;
-      const midY   = topY   + INV_SLOT / 2 - 1;
-      const rarHex = parseInt((RARITY_COLORS[slot.item.rarity] ?? '#666666').replace('#', ''), 16);
-
-      // Slot arrondi moderne (drawSlot) — drawn at y=0, positioned via setY
-      const bg = this.add.graphics();
-      drawSlot(bg, sx, 0, INV_SLOT - 2, rarHex, { occupied: true, radius: 4 });
-      bg.setY(topY);
-      reg(bg, topY);
-
-      // Icon (try texture, fallback to colored square)
-      const iconKey = this.resolveIcon(slot.item);
-      if (iconKey) {
-        try {
-          const img = this.add.image(sx + INV_SLOT / 2 - 1, midY, iconKey).setDisplaySize(32, 32);
-          reg(img, midY);
-        } catch { /* fallback below */ }
-      } else {
-        const sqGfx = this.add.graphics();
-        sqGfx.fillStyle(rarHex, 0.5);
-        sqGfx.fillRoundedRect(sx + 6, 6, INV_SLOT - 14, INV_SLOT - 14, 3);
-        sqGfx.setY(topY);
-        reg(sqGfx, topY);
-      }
-
-      // Stack quantity badge — lisible sur n'importe quelle icône (stroke noir)
-      if (slot.quantity > 1) {
-        const qBaseY = topY + INV_SLOT - 4;
-        const qty    = this.add.text(
-          sx + INV_SLOT - 5, qBaseY, `${slot.quantity}`,
-          uiStyle(10, UI.TXT_WHITE, { bold: true, stroke: true }),
-        ).setOrigin(1, 1);
-        reg(qty, qBaseY);
-      }
-
-      // Hit zone (invisible rectangle, interactive)
-      const hit = this.add.rectangle(sx + INV_SLOT / 2 - 1, midY, INV_SLOT - 2, INV_SLOT - 2, 0x000000, 0)
-        .setInteractive({ useHandCursor: true });
-      reg(hit, midY);
-
-      // Tap → immediate action (equip / use / open detail for key items).
-      // Long-press ≥ 500 ms → always open the detail panel.
-      hit.on('pointerdown', () => {
-        this.longPressTimer = setTimeout(() => {
-          this.longPressTimer = null;
-          this.showDetail(slot.item.id);
-        }, 500);
+    const gridW = INV_COLS * INV_SLOT;
+    for (const layout of layouts) {
+      this.renderInventoryGroupHeader(layout.category, layout.slots.length, GRID_X, GRID_Y + layout.headerY, gridW, reg);
+      layout.slots.forEach((slot, idx) => {
+        const col  = idx % INV_COLS;
+        const row  = Math.floor(idx / INV_COLS);
+        const sx   = GRID_X + col * INV_SLOT;
+        const topY = GRID_Y + layout.itemsY + row * INV_SLOT;
+        this.renderInventorySlot(slot, sx, topY, reg);
       });
-      hit.on('pointerup', (p: Phaser.Input.Pointer) => {
-        if (this.longPressTimer !== null) {
-          clearTimeout(this.longPressTimer);
-          this.longPressTimer = null;
-          // Un déplacement > 10 px = scroll tactile, pas un tap → aucune action
-          if (p.getDistance() > 10) return;
-          // Pass screen coords so the popup can anchor near the tapped slot
-          const screenX = sx + INV_SLOT / 2 - 1;
-          const screenY = topY + INV_SLOT / 2 - 1;
-          this.doMainAction(slot.item.id, screenX, screenY);
-        }
-      });
-      // clear() + redraw complet — cf. note équivalente sur le paperdoll plus haut.
-      hit.on('pointerover', () => { bg.clear(); drawSlot(bg, sx, 0, INV_SLOT - 2, 0xffffff, { occupied: true, radius: 4 }); });
-      hit.on('pointerout',  () => {
-        // Cancel long-press if the pointer leaves before 500 ms
-        if (this.longPressTimer !== null) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
-        bg.clear(); drawSlot(bg, sx, 0, INV_SLOT - 2, rarHex, { occupied: true, radius: 4 });
-      });
-    });
+    }
 
     // Scroll : molette (desktop) + drag vertical (tactile — dette D2 résorbée)
     if (contentH > VISIBLE_H) {
@@ -722,6 +691,108 @@ export class InventoryScene extends Phaser.Scene {
         }
       });
     }
+  }
+
+  /**
+   * Draws one bag category header band (accent dot + label + count + divider),
+   * scrolling in lockstep with the grid content below it — same registration
+   * pattern as the slots (drawn at a local y baseline, shifted via setY/reg).
+   */
+  private renderInventoryGroupHeader(
+    category: InventoryCategory, count: number, x: number, headerTopY: number, w: number, reg: RegisterFn,
+  ): void {
+    const localCy = GROUP_HEADER_H / 2;
+    const label = `${t(CATEGORY_LABEL_KEYS[category])} (${count})`;
+
+    const dotG = this.add.graphics();
+    dotG.fillStyle(UI.ACCENT_ARCANE, 0.9);
+    dotG.fillRoundedRect(x + 2, localCy - 3, 6, 6, 1.5);
+    dotG.setY(headerTopY);
+    reg(dotG, headerTopY);
+
+    const txt = this.add.text(x + 12, headerTopY + localCy, label, uiStyle(8, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0.5);
+    reg(txt, headerTopY + localCy);
+
+    const sepG = this.add.graphics();
+    sepG.lineStyle(1, UI.ACCENT_ARCANE, 0.22);
+    sepG.beginPath();
+    sepG.moveTo(x + 16 + txt.width, localCy);
+    sepG.lineTo(x + w, localCy);
+    sepG.strokePath();
+    sepG.setY(headerTopY);
+    reg(sepG, headerTopY);
+  }
+
+  /** Renders a single bag slot (icon, rarity frame, stack badge, hit zone) at the
+   *  given absolute grid coordinates. Extracted from renderGrid() so the grouped
+   *  layout pass can place slots at per-category offsets instead of a flat index. */
+  private renderInventorySlot(slot: InventorySlot, sx: number, topY: number, reg: RegisterFn): void {
+    const midY   = topY + INV_SLOT / 2 - 1;
+    const rarHex = parseInt((RARITY_COLORS[slot.item.rarity] ?? '#666666').replace('#', ''), 16);
+
+    // Slot arrondi moderne (drawSlot) — drawn at y=0, positioned via setY
+    const bg = this.add.graphics();
+    drawSlot(bg, sx, 0, INV_SLOT - 2, rarHex, { occupied: true, radius: 4 });
+    bg.setY(topY);
+    reg(bg, topY);
+
+    // Icon (try texture, fallback to colored square)
+    const iconKey = this.resolveIcon(slot.item);
+    if (iconKey) {
+      try {
+        const img = this.add.image(sx + INV_SLOT / 2 - 1, midY, iconKey).setDisplaySize(32, 32);
+        reg(img, midY);
+      } catch { /* fallback below */ }
+    } else {
+      const sqGfx = this.add.graphics();
+      sqGfx.fillStyle(rarHex, 0.5);
+      sqGfx.fillRoundedRect(sx + 6, 6, INV_SLOT - 14, INV_SLOT - 14, 3);
+      sqGfx.setY(topY);
+      reg(sqGfx, topY);
+    }
+
+    // Stack quantity badge — lisible sur n'importe quelle icône (stroke noir)
+    if (slot.quantity > 1) {
+      const qBaseY = topY + INV_SLOT - 4;
+      const qty    = this.add.text(
+        sx + INV_SLOT - 5, qBaseY, `${slot.quantity}`,
+        uiStyle(10, UI.TXT_WHITE, { bold: true, stroke: true }),
+      ).setOrigin(1, 1);
+      reg(qty, qBaseY);
+    }
+
+    // Hit zone (invisible rectangle, interactive)
+    const hit = this.add.rectangle(sx + INV_SLOT / 2 - 1, midY, INV_SLOT - 2, INV_SLOT - 2, 0x000000, 0)
+      .setInteractive({ useHandCursor: true });
+    reg(hit, midY);
+
+    // Tap → immediate action (equip / use / open detail for key items).
+    // Long-press ≥ 500 ms → always open the detail panel.
+    hit.on('pointerdown', () => {
+      this.longPressTimer = setTimeout(() => {
+        this.longPressTimer = null;
+        this.showDetail(slot.item.id);
+      }, 500);
+    });
+    hit.on('pointerup', (p: Phaser.Input.Pointer) => {
+      if (this.longPressTimer !== null) {
+        clearTimeout(this.longPressTimer);
+        this.longPressTimer = null;
+        // Un déplacement > 10 px = scroll tactile, pas un tap → aucune action
+        if (p.getDistance() > 10) return;
+        // Pass screen coords so the popup can anchor near the tapped slot
+        const screenX = sx + INV_SLOT / 2 - 1;
+        const screenY = topY + INV_SLOT / 2 - 1;
+        this.doMainAction(slot.item.id, screenX, screenY);
+      }
+    });
+    // clear() + redraw complet — cf. note équivalente sur le paperdoll plus haut.
+    hit.on('pointerover', () => { bg.clear(); drawSlot(bg, sx, 0, INV_SLOT - 2, 0xffffff, { occupied: true, radius: 4 }); });
+    hit.on('pointerout',  () => {
+      // Cancel long-press if the pointer leaves before 500 ms
+      if (this.longPressTimer !== null) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
+      bg.clear(); drawSlot(bg, sx, 0, INV_SLOT - 2, rarHex, { occupied: true, radius: 4 });
+    });
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
