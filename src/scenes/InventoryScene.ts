@@ -10,7 +10,7 @@ import { ALL_ITEMS } from '../data/items';
 import { getPassiveEffectLabel } from '../data/passiveEffects';
 import {
   UI, drawGlowPanel, drawCard, drawSlot,
-  drawDivider, addCloseButton, uiStyle,
+  drawDivider, addCloseButton, uiStyle, openScreenTransition,
 } from '../utils/UITheme';
 import { itemTextureKey } from '../utils/ItemAssets';
 import { t, localizeItem } from '../i18n';
@@ -110,7 +110,7 @@ export class InventoryScene extends Phaser.Scene {
 
   create() {
     this.dynamicObjs = [];
-    this.cameras.main.fadeIn(300, 0, 0, 0);
+    openScreenTransition(this);
 
     const W      = this.cameras.main.width;
     const H      = this.cameras.main.height;

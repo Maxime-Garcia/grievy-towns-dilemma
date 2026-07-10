@@ -1,7 +1,7 @@
 import { SaveSystem }  from '../systems/SaveSystem';
 import { GameScene }   from './GameScene';
 import { KeyBindings, DEFAULT_BINDINGS, loadBindings, saveBindings } from '../data/keybindings';
-import { UI, drawGlowPanel, drawDivider, uiStyle, addCloseButton } from '../utils/UITheme';
+import { UI, drawGlowPanel, drawDivider, uiStyle, addCloseButton, openScreenTransition } from '../utils/UITheme';
 import { t, getLang, setLang, type Lang } from '../i18n';
 
 export type { KeyBindings };
@@ -25,7 +25,7 @@ export class PauseScene extends Phaser.Scene {
   }
 
   create() {
-    this.cameras.main.fadeIn(300, 0, 0, 0);
+    openScreenTransition(this);
     this.renderUI();
   }
 

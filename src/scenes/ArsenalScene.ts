@@ -12,7 +12,7 @@
 import { WorldState, ElementType, ItemType, ItemRarity, RARITY_COLORS, Item, Weapon, Armor } from '../types';
 import {
   UI, drawGlowPanel, drawCard, drawBadge, uiStyle, addCloseButton, drawScrollbar,
-  renderScrollableText, formatDropRate, drawConfirmCancelButtons,
+  renderScrollableText, formatDropRate, drawConfirmCancelButtons, ARCANE_CONFIRM_ACCENT,
   openScreenTransition, closeScreenTransition, portalRedirectTransition,
 } from '../utils/UITheme';
 import { ALL_ITEMS } from '../data/items';
@@ -685,8 +685,9 @@ export class ArsenalScene extends Phaser.Scene {
     parts.push(subtitleTxt);
     cy += subtitleTxt.height + 6;
 
-    // Aller (vert, portail arcane teinté cyan) / Annuler (rouge, referme la
-    // card sans quitter l'Arsenal) — même convention que
+    // Aller (bleu/cyan arcane — même teinte que le liseré du cadre et le
+    // portail de destination, plutôt qu'un vert générique) / Annuler (rouge,
+    // referme la card sans quitter l'Arsenal) — même convention que
     // InventoryScene.showActionConfirmPopup().
     const { objects: navBtns, height: navBtnH } = drawConfirmCancelButtons(
       this, padC, cy, CW - padC * 2,
@@ -700,6 +701,8 @@ export class ArsenalScene extends Phaser.Scene {
         });
       },
       () => this.destroyMonsterCard(),
+      undefined,
+      ARCANE_CONFIRM_ACCENT,
     );
     parts.push(...navBtns);
     cy += navBtnH + padC;

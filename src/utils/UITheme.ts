@@ -602,9 +602,26 @@ export function portalRedirectTransition(
   cam.fadeOut(300, r, g, b);
 }
 
+/** Palette du bouton Confirmer — défaut vert "action positive" générique.
+ *  Un appelant peut passer une teinte différente (ex: bleu arcane) pour que
+ *  le bouton "Aller" d'une redirection annonce visuellement la couleur de la
+ *  destination plutôt qu'un vert neutre. */
+export interface ConfirmButtonAccent {
+  bg: number; border: number; borderHover: number; text: string;
+}
+const DEFAULT_CONFIRM_ACCENT: ConfirmButtonAccent = {
+  bg: 0x0d2010, border: 0x44cc66, borderHover: 0xaaffcc, text: UI.TXT_GREEN,
+};
+/** Variante bleu/cyan arcane — même teinte que le liseré des cadres
+ *  (UI.ACCENT_ARCANE) : utilisée pour le bouton "Aller" qui redirige vers un
+ *  écran dont le cadre/portail est teinté dans cette même couleur. */
+export const ARCANE_CONFIRM_ACCENT: ConfirmButtonAccent = {
+  bg: 0x0a1f24, border: UI.ACCENT_ARCANE, borderHover: 0xa8f5e8, text: UI.TXT_CYAN,
+};
+
 /**
- * Paire de boutons horizontaux Confirmer (vert, gauche) / Annuler (rouge,
- * droite) — même convention visuelle que InventoryScene.showActionConfirmPopup()
+ * Paire de boutons horizontaux Confirmer (gauche, vert par défaut) / Annuler
+ * (rouge, droite) — même convention visuelle que InventoryScene.showActionConfirmPopup()
  * (fond sombre teinté, bordure vive, hover plus clair). (x, y) = coin haut-gauche
  * de la rangée, `w` = largeur totale disponible (les deux boutons + l'espacement
  * la remplissent exactement). Hauteur par défaut = LAYOUT.TOUCH_MIN (zone
@@ -617,6 +634,7 @@ export function drawConfirmCancelButtons(
   confirmLabel: string, cancelLabel: string,
   onConfirm: () => void, onCancel: () => void,
   height: number = LAYOUT.TOUCH_MIN,
+  confirmAccent: ConfirmButtonAccent = DEFAULT_CONFIRM_ACCENT,
 ): { objects: Phaser.GameObjects.GameObject[]; height: number } {
   const GAP  = 8;
   const btnW = (w - GAP) / 2;
@@ -624,19 +642,19 @@ export function drawConfirmCancelButtons(
   const cancelX  = x + btnW + GAP;
 
   const confirmGfx = scene.add.graphics();
-  confirmGfx.fillStyle(0x0d2010, 1);
+  confirmGfx.fillStyle(confirmAccent.bg, 1);
   confirmGfx.fillRoundedRect(confirmX, y, btnW, height, 3);
-  confirmGfx.lineStyle(1, 0x44cc66, 1);
+  confirmGfx.lineStyle(1, confirmAccent.border, 1);
   confirmGfx.strokeRoundedRect(confirmX, y, btnW, height, 3);
   const confirmTxt = scene.add.text(confirmX + btnW / 2, y + height / 2, confirmLabel,
-    uiStyle(10, UI.TXT_GREEN, { bold: true })).setOrigin(0.5);
+    uiStyle(10, confirmAccent.text, { bold: true })).setOrigin(0.5);
   const confirmHit = scene.add.rectangle(confirmX + btnW / 2, y + height / 2, btnW, height, 0, 0)
     .setInteractive({ useHandCursor: true });
   confirmHit.on('pointerover', () => {
-    confirmGfx.lineStyle(1, 0xaaffcc, 1); confirmGfx.strokeRoundedRect(confirmX, y, btnW, height, 3);
+    confirmGfx.lineStyle(1, confirmAccent.borderHover, 1); confirmGfx.strokeRoundedRect(confirmX, y, btnW, height, 3);
   });
   confirmHit.on('pointerout', () => {
-    confirmGfx.lineStyle(1, 0x44cc66, 1); confirmGfx.strokeRoundedRect(confirmX, y, btnW, height, 3);
+    confirmGfx.lineStyle(1, confirmAccent.border, 1); confirmGfx.strokeRoundedRect(confirmX, y, btnW, height, 3);
   });
   confirmHit.on('pointerdown', onConfirm);
 

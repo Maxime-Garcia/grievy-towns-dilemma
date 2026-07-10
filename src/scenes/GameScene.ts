@@ -27,6 +27,7 @@ import { keyIconFrame, keyCodeLabel } from '../utils/KeyIcons';
 import { uiStyle } from '../utils/UITheme';
 import { t, localizeItem } from '../i18n';
 import { BestiarySystem } from '../systems/BestiarySystem';
+import { ArsenalSystem, ARSENAL_ITEM_TYPES } from '../systems/ArsenalSystem';
 import { getBestiaryEntry } from '../data/bestiary';
 import type { BestiaryScene } from './BestiaryScene';
 import type { ArsenalScene } from './ArsenalScene';
@@ -436,7 +437,7 @@ export class GameScene extends Phaser.Scene {
     this.handleSkillInput();
     this.updateArrowProjectiles(dt);
 
-    // Debug: press G to add one of every weapon to the inventory (asset-review aid)
+    // Debug: press G to add one of every gear item (weapon/armor/accessory) to the inventory (asset-review aid)
     if (Phaser.Input.Keyboard.JustDown(this.giveAllWeaponsKey)) this.debugGiveAllWeapons();
 
     // ── IFRAMES : clignotement du joueur pendant l'invincibilité post-hit ──
@@ -521,19 +522,25 @@ export class GameScene extends Phaser.Scene {
     this.events.emit('player_update', this.gameState.player);
   }
 
-  /** Debug aid (press G): adds one of every weapon in the game to the inventory,
-   * so newly-integrated weapon icons/stats can be reviewed in-game without grinding. */
+  /** Debug aid (press G): adds one of every piece of gear (weapons/armors/
+   * accessories) in the game to the inventory, so newly-integrated icons/stats
+   * can be reviewed in-game without grinding. Bypass volontaire du cap de 60
+   * slots de LootSystem.addToInventory() : ~110+ items d'équipement au total,
+   * ce n'est pas une mécanique de jeu normale — le but est de tout avoir sous
+   * la main, y compris pour que l'Arsenal marque bien CHAQUE item comme
+   * découvert (ArsenalSystem.discover), armures/accessoires inclus (avant ce
+   * fix, seules les armes étaient données → les armures restaient jamais
+   * "découvertes" côté Arsenal, d'où des stats masquées et le cross-link
+   * Bestiaire → Arsenal absent pour elles, cf. bug reporté). */
   private debugGiveAllWeapons(): void {
-    // Vide le sac avant de le remplir uniquement d'armes (demande joueur) —
-    // ne touche pas à l'équipement déjà porté, seulement au contenu du sac.
     this.gameState.player.inventory = [];
-    const weapons = Object.values(ALL_ITEMS).filter(item => 'weaponType' in item && item.weaponType);
-    let added = 0;
-    for (const weapon of weapons) {
-      if (LootSystem.addToInventory(this.gameState.player, weapon, 1, this.gameState.world)) added++;
+    const gear = Object.values(ALL_ITEMS).filter(item => ARSENAL_ITEM_TYPES.has(item.type));
+    for (const item of gear) {
+      this.gameState.player.inventory.push({ item, quantity: 1 });
+      ArsenalSystem.discover(this.gameState.world, item.id);
     }
     this.events.emit('player_update', this.gameState.player);
-    this.events.emit('show_notification', `[DEBUG] Sac vidé — ${added}/${weapons.length} armes ajoutées`);
+    this.events.emit('show_notification', `[DEBUG] Sac vidé — ${gear.length} équipements ajoutés (armes+armures+accessoires)`);
   }
 
   // ── MOVEMENT ─────────────────────────────────────────────────
@@ -3828,7 +3835,7 @@ export class GameScene extends Phaser.Scene {
     });
     // Debug: hold B to move at 5× speed
     this.speedBoostKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.B);
-    // Debug: press G to add one of every weapon to the inventory (asset-review aid)
+    // Debug: press G to add one of every gear item (weapon/armor/accessory) to the inventory (asset-review aid)
     this.giveAllWeaponsKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.G);
     // Remaining keys (attack, dash, inventory, skill menu, skill slots)
     // are all wired by applyKeyBindings() called right after setupInput().
