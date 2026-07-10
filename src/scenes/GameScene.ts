@@ -6,6 +6,7 @@ import { PassiveSystem } from '../systems/PassiveSystem';
 import { COMBO_CONFIGS, ComboConfig } from '../data/combos';
 import { TalentSystem, TalentModifiers } from '../systems/TalentSystem';
 import { LootSystem } from '../systems/LootSystem';
+import { StatRollSystem } from '../systems/StatRollSystem';
 import { QuestSystem } from '../systems/QuestSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { SkillSystem } from '../systems/SkillSystem';
@@ -4017,8 +4018,11 @@ export class GameScene extends Phaser.Scene {
 
     // Item reward (1 random from pool)
     if (lo.itemPool.length > 0) {
-      const itemId = lo.itemPool[Math.floor(Math.random() * lo.itemPool.length)];
-      const item   = ALL_ITEMS[itemId];
+      const itemId  = lo.itemPool[Math.floor(Math.random() * lo.itemPool.length)];
+      const template = ALL_ITEMS[itemId];
+      // StatRollSystem.rollItem est un no-op sûr pour les items non équipables/sans
+      // equipRanges — sûr à appeler inconditionnellement (cf. LootSystem.rollLoot).
+      const item = template ? StatRollSystem.rollItem(template, 0) : undefined;
       if (item) {
         LootSystem.addToInventory(this.gameState.player, item, 1, this.gameState.world);
         this.events.emit('item_looted', { item, quantity: 1 });
