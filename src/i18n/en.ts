@@ -60,6 +60,7 @@ export const EN: Record<string, string> = {
   'bestiary.hidden_drop_desc': 'Defeat more of this creature type to reveal its identity.',
   'bestiary.drop_rate': 'Rate: {rate}',
   'bestiary.hint': '[↑↓] navigate · scroll/drag · [Esc] close',
+  'bestiary.debug_unlock_all': '[DEBUG] Unlock all',
   'bestiary.view_in_arsenal': 'View in Arsenal →',
   'bestiary.location_approx': 'Approximate location',
   'pause.arsenal': 'Arsenal',

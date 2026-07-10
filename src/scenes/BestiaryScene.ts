@@ -169,6 +169,27 @@ export class BestiaryScene extends Phaser.Scene {
       .replace('{total}', String(counts.total));
     this.add.text(20, 24, progressLabel, uiStyle(8, UI.TXT_MUTED)).setOrigin(0, 0.5);
 
+    // [DEBUG] Tout débloquer — outil de review de contenu (lore/drops), pas une
+    // mécanique de jeu : couleur d'alerte distincte pour ne jamais le confondre
+    // avec un bouton normal. Ne persiste rien de spécifique — passe juste par
+    // BestiarySystem.discoverAll() comme n'importe quelle découverte normale.
+    const debugTxt = this.add.text(20, 36, t('bestiary.debug_unlock_all'), uiStyle(7, UI.TXT_RED, { bold: true }))
+      .setOrigin(0, 0.5);
+    const debugHit = this.add.rectangle(20 + debugTxt.width / 2, 36, debugTxt.width + 12, 20, 0, 0)
+      .setInteractive({ useHandCursor: true });
+    debugHit.on('pointerover', () => debugTxt.setAlpha(0.75));
+    debugHit.on('pointerout',  () => debugTxt.setAlpha(1));
+    debugHit.on('pointerdown', () => {
+      this.flashAt(20 + debugTxt.width / 2, 36, debugTxt.width + 12, 20);
+      BestiarySystem.discoverAll(this.world);
+      this.rows = [];
+      this.enemyRowIndices = [];
+      this.buildRows();
+      this.maxScrollOffset = this.computeMaxOffset();
+      this.renderList();
+      this.renderDetail();
+    });
+
     // Bouton × (règle inter-écrans §7.1 : rouge, haut-droite, hit ≥ 44 px)
     addCloseButton(this, W - 28, 24, () => this.close());
 

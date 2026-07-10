@@ -70,4 +70,21 @@ export class BestiarySystem {
     const entry = world.bestiary?.[enemyId];
     return entry?.revealedDrops.includes(itemId) ?? false;
   }
+
+  /** [DEBUG] Débloque instantanément toutes les entrées (vu + tué + tous les drops
+   *  cachés révélés) — outil de review de contenu, pas une mécanique de jeu normale. */
+  static discoverAll(world: WorldState): void {
+    for (const id of BESTIARY_IDS) {
+      const entry = this.getOrCreate(world, id);
+      entry.discovered = true;
+      entry.killed = true;
+      const data = getBestiaryEntry(id);
+      if (!data) continue;
+      for (const drop of data.drops) {
+        if (drop.isHidden && !entry.revealedDrops.includes(drop.itemId)) {
+          entry.revealedDrops.push(drop.itemId);
+        }
+      }
+    }
+  }
 }
