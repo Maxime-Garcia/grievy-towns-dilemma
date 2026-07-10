@@ -72,7 +72,7 @@ export class UIScene extends Phaser.Scene {
 
     // ── DEV: build badge (top-left) — retirer avant release ─────────
     // Version discrète : petite pastille verte + texte 8px sur fond translucide.
-    const BUILD_LABEL = 'fix: equilibrage passifs + i18n EN (aeef0e5)';
+    const BUILD_LABEL = 'fix: descriptions items obsoletes (57e2ad3)';
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '8px', color: '#7dffa8', fontFamily: 'monospace',
