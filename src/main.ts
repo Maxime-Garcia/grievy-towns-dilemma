@@ -39,7 +39,15 @@ Phaser.GameObjects.GameObjectFactory.prototype.text = function (
   ...args: Parameters<typeof originalTextFactory>
 ) {
   const textObj = originalTextFactory.apply(this, args);
-  textObj.texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
+  // `texture` n'est pas exposé dans les types publics de Phaser.GameObjects.Text
+  // (champ interne, cf. Text.js) — garde runtime pour ne pas planter tout le
+  // rendu texte si une future version de Phaser renomme/retire ce champ.
+  const tex = (textObj as unknown as { texture?: Phaser.Textures.Texture }).texture;
+  if (tex) {
+    tex.setFilter(Phaser.Textures.FilterMode.LINEAR);
+  } else {
+    console.warn('[main.ts] Text.texture introuvable — filtre LINEAR non appliqué (Phaser a changé ?)');
+  }
   return textObj;
 };
 
