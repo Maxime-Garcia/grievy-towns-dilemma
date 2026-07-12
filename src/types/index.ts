@@ -234,6 +234,12 @@ export interface BaseItem {
   value: number;
   element?: ElementType;
   lore?: string;
+  /**
+   * Résonance de l'instance (0–100) — cache dérivé, recomputable depuis
+   * equipRanges du catalogue. Présent uniquement sur les instances rollées
+   * (cf. docs/design/LOOT_STAT_ROLLS.md §1.1, §4).
+   */
+  rollQuality?: number;
 }
 
 export interface Weapon extends BaseItem {
@@ -244,7 +250,8 @@ export interface Weapon extends BaseItem {
   bonusStats: StatBonus;
   attackSpeed: number;
   passiveEffect?: string;
-  equipStats?: EquipStats;
+  equipStats?: EquipStats;        // INSTANCE : valeurs rollées (ou centre pour le catalogue, cf. LOOT_STAT_ROLLS §1.2)
+  equipRanges?: EquipStatRanges;  // CATALOGUE : fourchettes de roll
 }
 
 export interface Armor extends BaseItem {
@@ -254,6 +261,7 @@ export interface Armor extends BaseItem {
   bonusStats: StatBonus;
   passiveEffect?: string;
   equipStats?: EquipStats;
+  equipRanges?: EquipStatRanges;
 }
 
 export interface Accessory extends BaseItem {
@@ -261,6 +269,7 @@ export interface Accessory extends BaseItem {
   bonusStats: StatBonus;
   passiveEffect?: string;
   equipStats?: EquipStats;
+  equipRanges?: EquipStatRanges;
 }
 
 export interface ConsumableEffect {
@@ -709,6 +718,8 @@ export interface DamageResult {
   element?: ElementType;
   isKill: boolean;
   statusApplied?: StatusEffect;
+  /** true si l'attaque a été totalement esquivée (DODGE_PCT) — dégâts = 0, cf. CombatSystem.enemyAttack. */
+  wasDodged?: boolean;
 }
 
 export interface CombatLog {
@@ -766,7 +777,10 @@ export type SubstatKey =
   | 'ATK_FLAT' | 'ATK_PCT' | 'MATK_FLAT' | 'MATK_PCT'
   | 'DEF_FLAT' | 'DEF_PCT' | 'HP_FLAT'   | 'HP_PCT'
   | 'CRIT_RATE' | 'CRIT_DMG' | 'ASPD_PCT' | 'SPD_FLAT'
-  | 'ELEM_BONUS_PCT' | 'MANA_FLAT' | 'LIFESTEAL_PCT';
+  | 'ELEM_BONUS_PCT' | 'MANA_FLAT' | 'LIFESTEAL_PCT'
+  // ── Nouvelles clés (docs/design/LOOT_STAT_ROLLS.md §3) ──────────────────────
+  | 'MDEF_FLAT' | 'CDR_PCT' | 'DODGE_PCT' | 'BOSS_DMG_PCT'
+  | 'HP_ON_KILL_FLAT' | 'MANA_ON_KILL_FLAT';
 
 export interface ItemSubstat {
   key: SubstatKey;
@@ -794,16 +808,50 @@ export interface EquipStats {
   substats: ItemSubstat[];
 }
 
-/** Nombre de substats attendu par rareté (validation data + futurs rolls). */
+/**
+ * Nombre de SUBSTATS attendu par rareté (mainStat non comptée ici — cf.
+ * docs/design/LOOT_STAT_ROLLS.md §2.1 : la table du design donne le TOTAL de
+ * lignes [mainStat + substats], ces valeurs-ci sont le total moins 1).
+ * Les HIDDEN portent désormais 7 substats au budget EPIC malgré leur passif
+ * unique game-breaking — cf. §2.3 pour la justification et les exclusions.
+ */
 export const SUBSTAT_COUNT_BY_RARITY: Record<ItemRarity, number> = {
   [ItemRarity.COMMON]: 1,
   [ItemRarity.UNCOMMON]: 2,
   [ItemRarity.RARE]: 3,
   [ItemRarity.EPIC]: 4,
-  [ItemRarity.LEGENDARY]: 4,
-  [ItemRarity.MYTHIC]: 4,
-  [ItemRarity.HIDDEN]: 0, // les HIDDEN portent un passif unique, pas de substats
+  [ItemRarity.LEGENDARY]: 5,
+  [ItemRarity.MYTHIC]: 6,
+  [ItemRarity.HIDDEN]: 7,
 };
+
+// ============================================================
+// LOOT STAT ROLLS — fourchettes de roll (docs/design/LOOT_STAT_ROLLS.md)
+// ============================================================
+
+/** Fourchette de roll pour une ligne de stat (catalogue uniquement). */
+export interface RangedStat {
+  key: SubstatKey;
+  min: number;            // borne incluse, entier
+  max: number;            // borne incluse, entier — max >= min ; si max === min la ligne est fixe
+  isPercentage?: boolean; // même sémantique que ItemSubstat.isPercentage
+}
+
+/**
+ * Fourchettes de stats d'un item équipable — SOURCE DE VÉRITÉ du catalogue.
+ * Portées par la définition dans src/data/items.ts. Les instances lootées
+ * portent, elles, un `equipStats` classique avec les valeurs tirées.
+ */
+export interface EquipStatRanges {
+  mainStat: RangedStat;
+  substats: RangedStat[];   // longueur imposée par SUBSTAT_COUNT_BY_RARITY[rarity]
+  /**
+   * Demi-largeur relative appliquée aux stats implicites d'armure
+   * (defense / magicDefense) autour de leur valeur catalogue. Défaut : 0.10.
+   * Les armes n'en ont pas besoin : damage/magicDamage sont le MIROIR du mainStat rollé.
+   */
+  implicitWidth?: number;
+}
 
 // ============================================================
 // ELEMENTAL AFFINITY (weakness/resistance table)

@@ -1,6 +1,7 @@
 import { PlayerState, Skill, ElementType, EquippedSkills } from '../types';
 import { SKILL_MAP } from '../data/skills';
 import { PassiveSystem } from './PassiveSystem';
+import { StatsSystem } from './StatsSystem';
 
 const SKILL_SLOTS: (keyof EquippedSkills)[] = ['slot1', 'slot2', 'slot3', 'slot4'];
 
@@ -82,8 +83,11 @@ export class SkillSystem {
   /**
    * Démarre le cooldown d'un skill, modulé par les passifs d'objet dépendant de
    * l'élément (ex: FIRE_SKILL_CD_15_PCT) ou globaux (SKILL_DMG_15_CD_10_PCT, qui
-   * AUGMENTE le cooldown — trade-off de l'Anneau du Délié). `player` optionnel
-   * pour ne pas casser les appels existants qui n'ont pas de passif à appliquer.
+   * AUGMENTE le cooldown — trade-off de l'Anneau du Délié), puis par CDR_PCT
+   * (loot stat rolls, cap 30 — cf. StatsSystem.computeAll().cdr), COMPOSÉ
+   * multiplicativement avec les passifs ci-dessus plutôt que dupliqué.
+   * `player` optionnel pour ne pas casser les appels existants qui n'ont pas
+   * de passif/stat à appliquer.
    */
   static startCooldown(cooldowns: Record<string, number>, skillId: string, player?: PlayerState): void {
     const skill = SKILL_MAP[skillId];
@@ -94,6 +98,8 @@ export class SkillSystem {
         cd *= 1 - PassiveSystem.getFireSkillCdReductionPct(player.equipment) / 100;
       }
       cd *= 1 + PassiveSystem.getUnboundSkillDmgCdPct(player.equipment).cdPct / 100;
+      const cdr = StatsSystem.computeAll(player).cdr;
+      if (cdr > 0) cd *= 1 - cdr / 100;
     }
     cooldowns[skillId] = Math.max(0, cd);
   }

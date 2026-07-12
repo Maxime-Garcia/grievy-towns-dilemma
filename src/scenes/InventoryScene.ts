@@ -5,12 +5,13 @@ import {
 } from '../types';
 import { InventorySystem, InventoryCategory } from '../systems/InventorySystem';
 import { StatsSystem, BASE_CRIT_PCT, CRIT_PER_AGI_PCT, BASE_CRIT_MULT } from '../systems/StatsSystem';
+import { StatRollSystem, isEquipableItem } from '../systems/StatRollSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
-import { ALL_ITEMS } from '../data/items';
 import { getPassiveEffectLabel } from '../data/passiveEffects';
 import {
   UI, drawGlowPanel, drawCard, drawSlot,
   drawDivider, addCloseButton, uiStyle, openScreenTransition,
+  resonanceColor, formatRangedStatBounds, lineQuality,
 } from '../utils/UITheme';
 import { itemTextureKey } from '../utils/ItemAssets';
 import { t, localizeItem } from '../i18n';
@@ -99,8 +100,12 @@ export class InventoryScene extends Phaser.Scene {
   private stBounds!: PanelBounds;   // center — stats / detail
   private bagBounds!: PanelBounds;  // right  — inventory grid
 
-  // Which item is currently shown in the detail panel (null → show stats)
-  private selectedItemId: string | null = null;
+  // Which item INSTANCE is currently shown in the detail panel (null → show
+  // stats). Holds the real object reference (inventory slot / equipment slot),
+  // never just an id — two non-stackable instances of the same item id can
+  // coexist with different rolls, and an id alone can't disambiguate them
+  // (cf. docs/design/LOOT_STAT_ROLLS.md §9 step 8 audit).
+  private selectedItem: Item | null = null;
 
   private keyEsc?: Phaser.Input.Keyboard.Key;
   private keyZ?: Phaser.Input.Keyboard.Key;
@@ -121,9 +126,9 @@ export class InventoryScene extends Phaser.Scene {
 
   init(data?: { gameScene?: GameScene }) {
     if (!data?.gameScene) { this.scene.stop(); return; }
-    this.gameScene      = data.gameScene;
-    this.player         = data.gameScene.gameState.player;
-    this.selectedItemId = null;
+    this.gameScene   = data.gameScene;
+    this.player      = data.gameScene.gameState.player;
+    this.selectedItem = null;
   }
 
   create() {
@@ -217,7 +222,7 @@ export class InventoryScene extends Phaser.Scene {
     // the ZQSD movement poll never runs while the inventory is open.
     this.keyZ = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
     this.keyZ.on('down', () => {
-      if (this.selectedItemId !== null) this.doMainAction(this.selectedItemId);
+      if (this.selectedItem !== null) this.doMainAction(this.selectedItem);
     });
 
     // ── Dynamic content ───────────────────────────────────────────────────
@@ -307,7 +312,7 @@ export class InventoryScene extends Phaser.Scene {
         // survol empile une nouvelle commande de tracé sur le même Graphics (fuite).
         hit.on('pointerover', () => { bg.clear(); drawSlot(bg, sx, sy, EQ_SLOT, 0xffffff, { occupied: true }); });
         hit.on('pointerout',  () => { bg.clear(); drawSlot(bg, sx, sy, EQ_SLOT, rarHex,    { occupied: true }); });
-        hit.on('pointerdown', () => this.showDetail(item.id));
+        hit.on('pointerdown', () => this.showDetail(item));
 
         // White flash overlay — confirmation visuelle après un tap-equip.
         if (this.lastFlashSlotKey === key) {
@@ -349,8 +354,8 @@ export class InventoryScene extends Phaser.Scene {
   // ── Center panel dispatcher ───────────────────────────────────────────────
 
   private renderCenter() {
-    if (this.selectedItemId !== null) {
-      this.renderItemDetail(this.selectedItemId);
+    if (this.selectedItem !== null) {
+      this.renderItemDetail(this.selectedItem);
     } else {
       this.renderStats();
     }
@@ -464,10 +469,11 @@ export class InventoryScene extends Phaser.Scene {
 
   // ── Item detail view (center panel, when item selected) ───────────────────
 
-  private renderItemDetail(itemId: string) {
-    const item = ALL_ITEMS[itemId];
-    if (!item) { this.selectedItemId = null; this.renderStats(); return; }
-
+  // `item` is always the actual instance (inventory slot / equipment slot) the
+  // player tapped — NEVER `ALL_ITEMS[id]` (catalogue centre values). See
+  // docs/design/LOOT_STAT_ROLLS.md §9 step 8 : the whole Résonance/roll-value
+  // display is meaningless if this reads the wrong object.
+  private renderItemDetail(item: Item) {
     const { x: PX, y: PY, w: PW, h: PH } = this.stBounds;
     const locItem  = localizeItem(item);
     const rarColor = RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT;
@@ -477,7 +483,7 @@ export class InventoryScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true })
       .on('pointerover', () => back.setColor(UI.TXT_GOLD))
       .on('pointerout',  () => back.setColor(UI.TXT_BLUE))
-      .on('pointerdown', () => { this.selectedItemId = null; this.refresh(); });
+      .on('pointerdown', () => { this.selectedItem = null; this.refresh(); });
     this.dynamicObjs.push(back);
 
     this.dynamicObjs.push(
@@ -502,13 +508,36 @@ export class InventoryScene extends Phaser.Scene {
     this.dynamicObjs.push(nameTxt);
     curY += nameTxt.height + 10;
 
-    // ── Main stat ─────────────────────────────────────────────────────────
-    const mainLine = this.getItemMainStat(item);
-    if (mainLine) {
-      this.dynamicObjs.push(
-        this.add.text(PX + PW / 2, curY, mainLine, uiStyle(12, UI.TXT_GOLD, { bold: true, stroke: true })).setOrigin(0.5, 0),
-      );
-      curY += 24;
+    // ── Résonance globale (§4/§7.2) — instance réellement possédée uniquement,
+    // absente si l'item n'a pas d'equipRanges calculables (skip silencieux). ──
+    const resonance = this.getResonance(item);
+    if (resonance !== null) {
+      const resTxt = this.add.text(
+        PX + PW / 2, curY, `Résonance ${resonance}% — ${StatRollSystem.getResonanceLabel(resonance)}`,
+        uiStyle(9, resonanceColor(resonance), { bold: true }),
+      ).setOrigin(0.5, 0);
+      this.dynamicObjs.push(resTxt);
+      curY += resTxt.height + 6;
+    }
+
+    // ── Main stat (valeur rollée en gras/doré + teinte de qualité locale,
+    // fourchette catalogue en petit gris juste après — §7.2) ───────────────
+    const mainView = this.getMainStatLineView(item);
+    if (mainView) {
+      const valueTxt = this.add.text(0, curY, mainView.text, uiStyle(12, mainView.color, { bold: true, stroke: true }));
+      let pairW = valueTxt.width;
+      let rangeTxt: Phaser.GameObjects.Text | undefined;
+      if (mainView.rangeText) {
+        rangeTxt = this.add.text(0, curY + 4, mainView.rangeText, uiStyle(8, UI.TXT_MUTED));
+        pairW += 4 + rangeTxt.width;
+      }
+      let lx = PX + PW / 2 - pairW / 2;
+      valueTxt.setPosition(lx, curY);
+      lx += valueTxt.width + 4;
+      if (rangeTxt) rangeTxt.setPosition(lx, curY + 4);
+      this.dynamicObjs.push(valueTxt);
+      if (rangeTxt) this.dynamicObjs.push(rangeTxt);
+      curY += valueTxt.height + 10;
     }
 
     const sepMid = this.add.graphics();
@@ -516,11 +545,16 @@ export class InventoryScene extends Phaser.Scene {
     this.dynamicObjs.push(sepMid);
     curY += 10;
 
-    // ── Substats ──────────────────────────────────────────────────────────
-    for (const line of this.getItemSubstats(item)) {
-      this.dynamicObjs.push(
-        this.add.text(PX + 14, curY, `• ${line}`, uiStyle(10, UI.TXT_PARCHMENT)),
-      );
+    // ── Substats (teinte de qualité locale par ligne + fourchette en petit
+    // gris — §7.2) ──────────────────────────────────────────────────────────
+    for (const view of this.getSubstatLineViews(item)) {
+      const bulletTxt = this.add.text(PX + 14, curY, `• ${view.text}`, uiStyle(10, view.color));
+      this.dynamicObjs.push(bulletTxt);
+      if (view.rangeText) {
+        this.dynamicObjs.push(
+          this.add.text(PX + 14 + bulletTxt.width + 4, curY + 2, view.rangeText, uiStyle(7, UI.TXT_MUTED)),
+        );
+      }
       curY += 17;
     }
     curY += 6;
@@ -569,8 +603,8 @@ export class InventoryScene extends Phaser.Scene {
 
     if (isEquip) {
       addBtn(t('inventory.equip_hint'), UI.TXT_GREEN, () => {
-        InventorySystem.equip(this.player, itemId);
-        this.selectedItemId = null;
+        InventorySystem.equip(this.player, item);
+        this.selectedItem = null;
         this.refresh();
       });
     }
@@ -588,14 +622,14 @@ export class InventoryScene extends Phaser.Scene {
         t('inventory.sell_hint').replace('{value}', String(item.value)),
         UI.TXT_ORANGE,
         () => {
-          InventorySystem.sell(this.player, itemId, 1);
-          this.selectedItemId = null;
+          InventorySystem.sell(this.player, item, 1);
+          this.selectedItem = null;
           this.refresh();
         },
       );
     }
     addBtn(t('inventory.close_hint'), UI.TXT_MUTED, () => {
-      this.selectedItemId = null;
+      this.selectedItem = null;
       this.refresh();
     });
   }
@@ -771,7 +805,7 @@ export class InventoryScene extends Phaser.Scene {
     hit.on('pointerdown', () => {
       this.longPressTimer = setTimeout(() => {
         this.longPressTimer = null;
-        this.showDetail(slot.item.id);
+        this.showDetail(slot.item);
       }, 500);
     });
     hit.on('pointerup', (p: Phaser.Input.Pointer) => {
@@ -783,7 +817,7 @@ export class InventoryScene extends Phaser.Scene {
         // Pass screen coords so the popup can anchor near the tapped slot
         const screenX = sx + INV_SLOT / 2 - 1;
         const screenY = topY + INV_SLOT / 2 - 1;
-        this.doMainAction(slot.item.id, screenX, screenY);
+        this.doMainAction(slot.item, screenX, screenY);
       }
     });
     // clear() + redraw complet — cf. note équivalente sur le paperdoll plus haut.
@@ -827,33 +861,58 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   /**
-   * Returns the main stat line for the detail panel.
-   * Checks for the optional `equipStats` field (future SubstatKey agent) first,
-   * then falls back to the raw weapon damage / armor defense.
+   * Résonance globale (0–100) de l'INSTANCE, si calculable (docs/design/
+   * LOOT_STAT_ROLLS.md §4/§7.2). Priorité au cache `rollQuality` (posé par
+   * `StatRollSystem.rollItem` à l'acquisition — évite un recalcul dans les
+   * listes) ; recalcule via `computeQuality` sinon. `null` — et donc AUCUNE
+   * ligne Résonance affichée — si l'item n'a pas d'`equipRanges`/`equipStats`
+   * exploitables (catalogue incomplet, item non équipable).
    */
-  private getItemMainStat(item: Item): string | null {
+  private getResonance(item: Item): number | null {
+    if (typeof item.rollQuality === 'number') return item.rollQuality;
+    if (!isEquipableItem(item) || !item.equipStats || !item.equipRanges) return null;
+    return StatRollSystem.computeQuality(item.equipStats, item.equipRanges);
+  }
+
+  /**
+   * Returns the main stat line for the detail panel, as the INSTANCE's rolled
+   * value (never the catalogue centre — caller must pass the real object).
+   * Colored by local roll quality (§7.2) when `equipRanges` is available on
+   * the instance ; `rangeText` is the catalogue fourchette suffix, e.g. "(91–150)".
+   */
+  private getMainStatLineView(item: Item): { text: string; color: string; rangeText?: string } | null {
     const es = (item as { equipStats?: EquipStats }).equipStats;
     if (es) {
-      return StatsSystem.formatStat(es.mainStat.key, es.mainStat.value, es.mainStat.isPercentage);
+      const range = isEquipableItem(item) ? item.equipRanges?.mainStat : undefined;
+      const text  = StatsSystem.formatStat(es.mainStat.key, es.mainStat.value, es.mainStat.isPercentage);
+      const color = range ? resonanceColor(lineQuality(es.mainStat.value, range.min, range.max) * 100) : UI.TXT_GOLD;
+      return { text, color, rangeText: range ? formatRangedStatBounds(range) : undefined };
     }
-    if ('damage'  in item) return `ATK : ${(item as Weapon).damage}`;
-    if ('defense' in item) return `DEF : ${(item as Armor).defense}`;
+    if ('damage'  in item) return { text: `ATK : ${(item as Weapon).damage}`, color: UI.TXT_GOLD };
+    if ('defense' in item) return { text: `DEF : ${(item as Armor).defense}`, color: UI.TXT_GOLD };
     if (item.type === ItemType.CONSUMABLE) {
       const e = (item as Consumable).effect;
-      if (e.hpRestore)   return `HP + ${e.hpRestore}`;
-      if (e.manaRestore) return `MP + ${e.manaRestore}`;
+      if (e.hpRestore)   return { text: `HP + ${e.hpRestore}`, color: UI.TXT_GOLD };
+      if (e.manaRestore) return { text: `MP + ${e.manaRestore}`, color: UI.TXT_GOLD };
     }
     return null;
   }
 
   /**
-   * Returns sub-stat lines for the detail panel.
-   * Prefers `equipStats.substats` (future system), falls back to `bonusStats`.
+   * Returns sub-stat line views for the detail panel (instance values — same
+   * caveat as `getMainStatLineView`). Prefers `equipStats.substats`, falls
+   * back to legacy `bonusStats` (fixed, never rolled — §1.3 of the design doc).
    */
-  private getItemSubstats(item: Item): string[] {
+  private getSubstatLineViews(item: Item): { text: string; color: string; rangeText?: string }[] {
     const es = (item as { equipStats?: EquipStats }).equipStats;
     if (es && es.substats.length > 0) {
-      return es.substats.map(s => StatsSystem.formatStat(s.key, s.value, s.isPercentage));
+      const ranges = isEquipableItem(item) ? item.equipRanges?.substats : undefined;
+      return es.substats.map((s, i) => {
+        const range = ranges?.[i];
+        const text  = StatsSystem.formatStat(s.key, s.value, s.isPercentage);
+        const color = range ? resonanceColor(lineQuality(s.value, range.min, range.max) * 100) : UI.TXT_PARCHMENT;
+        return { text, color, rangeText: range ? formatRangedStatBounds(range) : undefined };
+      });
     }
 
     if (!('bonusStats' in item)) return [];
@@ -863,10 +922,10 @@ export class InventoryScene extends Phaser.Scene {
       magicAtk: 'MATK', magicDef: 'MDEF',
       str: 'FOR', int: 'INT', agi: 'AGI', vit: 'VIT', end: 'END',
     };
-    const lines: string[] = [];
+    const lines: { text: string; color: string }[] = [];
     for (const [k, v] of Object.entries(bonus as StatBonus)) {
       if (v == null || v === 0) continue;
-      lines.push(`${NAMES[k] ?? k} : ${v > 0 ? '+' : ''}${v}`);
+      lines.push({ text: `${NAMES[k] ?? k} : ${v > 0 ? '+' : ''}${v}`, color: UI.TXT_PARCHMENT });
     }
     return lines;
   }
@@ -906,17 +965,14 @@ export class InventoryScene extends Phaser.Scene {
    *
    * Called on quick tap in the grid and by the Z key shortcut in detail view.
    */
-  private doMainAction(itemId: string, slotScreenX?: number, slotScreenY?: number): void {
-    const item = ALL_ITEMS[itemId];
-    if (!item) return;
-
+  private doMainAction(item: Item, slotScreenX?: number, slotScreenY?: number): void {
     if (EQUIP_TYPES.includes(item.type) || item.type === ItemType.CONSUMABLE) {
       // Show confirmation popup instead of equipping/using immediately —
       // also shows stats/lore for gear, since a stray tap shouldn't swap weapons.
       this.showActionConfirmPopup(item, slotScreenX ?? this.cameras.main.width / 2, slotScreenY ?? this.cameras.main.height / 2);
     } else {
       // Key items, materials, skins: open the detail panel
-      this.showDetail(itemId);
+      this.showDetail(item);
     }
   }
 
@@ -955,7 +1011,7 @@ export class InventoryScene extends Phaser.Scene {
     // décider PH, puis on le détruit — le vrai texte est recréé plus bas une fois
     // la position finale connue.
     const locItem    = localizeItem(item);
-    const substatCount = isEquip ? this.getItemSubstats(item).slice(0, 3).length : 0;
+    const substatCount = isEquip ? this.getSubstatLineViews(item).slice(0, 3).length : 0;
     const passiveLabel = ('passiveEffect' in item && item.passiveEffect)
       ? getPassiveEffectLabel(item.passiveEffect)
       : undefined;
@@ -969,7 +1025,11 @@ export class InventoryScene extends Phaser.Scene {
       descHeight = probe.height;
       probe.destroy();
     }
-    const headerH = MARGIN + ICON_SIZE + MARGIN; // icône + marges
+    // Résonance (instance réellement possédée) : une ligne compacte sous le nom,
+    // seulement pour les équipements et si calculable — décale le header de 14px.
+    const resonance = isEquip ? this.getResonance(item) : null;
+    const hasResonanceLine = resonance !== null;
+    const headerH = MARGIN + ICON_SIZE + MARGIN + (hasResonanceLine ? 14 : 0); // icône + marges (+ Résonance)
     const contentH = isEquip
       ? headerH + substatCount * 14 + 4 + descHeight + 10 + BTN_H + MARGIN * 2
       : 116;
@@ -1046,18 +1106,30 @@ export class InventoryScene extends Phaser.Scene {
       ).setDepth(depth + 1),
     );
 
+    if (hasResonanceLine && resonance !== null) {
+      this.consumePopupObjects.push(
+        this.add.text(textX, py + MARGIN + 16, `Résonance ${resonance}% — ${StatRollSystem.getResonanceLabel(resonance)}`,
+          uiStyle(8, resonanceColor(resonance), { bold: true })).setDepth(depth + 1),
+      );
+    }
+
     // ── Body: effect line (consumable) or stats + description (equip) ─────
+    const bodyLineY = py + MARGIN + 18 + (hasResonanceLine ? 14 : 0);
     if (isConsumable) {
       const effectLine = this.getConsumableEffectLine(item as Consumable);
       this.consumePopupObjects.push(
-        this.add.text(textX, py + MARGIN + 18, effectLine, uiStyle(10, UI.TXT_GREEN)).setDepth(depth + 1),
+        this.add.text(textX, bodyLineY, effectLine, uiStyle(10, UI.TXT_GREEN)).setDepth(depth + 1),
       );
     } else {
-      const mainLine = this.getItemMainStat(item);
-      if (mainLine) {
-        this.consumePopupObjects.push(
-          this.add.text(textX, py + MARGIN + 18, mainLine, uiStyle(10, UI.TXT_GOLD, { bold: true })).setDepth(depth + 1),
-        );
+      const mainView = this.getMainStatLineView(item);
+      if (mainView) {
+        const mainTxt = this.add.text(textX, bodyLineY, mainView.text, uiStyle(10, mainView.color, { bold: true })).setDepth(depth + 1);
+        this.consumePopupObjects.push(mainTxt);
+        if (mainView.rangeText) {
+          this.consumePopupObjects.push(
+            this.add.text(textX + mainTxt.width + 4, bodyLineY + 2, mainView.rangeText, uiStyle(7, UI.TXT_MUTED)).setDepth(depth + 1),
+          );
+        }
       }
     }
 
@@ -1069,10 +1141,14 @@ export class InventoryScene extends Phaser.Scene {
     // ── Equip-only: substats + description (the "lore etc." the popup lacked) ──
     if (isEquip) {
       let bodyY = py + headerH + 6;
-      for (const line of this.getItemSubstats(item).slice(0, 3)) {
-        this.consumePopupObjects.push(
-          this.add.text(px + MARGIN, bodyY, `• ${line}`, uiStyle(9, UI.TXT_PARCHMENT)).setDepth(depth + 1),
-        );
+      for (const view of this.getSubstatLineViews(item).slice(0, 3)) {
+        const lineTxt = this.add.text(px + MARGIN, bodyY, `• ${view.text}`, uiStyle(9, view.color)).setDepth(depth + 1);
+        this.consumePopupObjects.push(lineTxt);
+        if (view.rangeText) {
+          this.consumePopupObjects.push(
+            this.add.text(px + MARGIN + lineTxt.width + 4, bodyY + 1, view.rangeText, uiStyle(7, UI.TXT_MUTED)).setDepth(depth + 1),
+          );
+        }
         bodyY += 14;
       }
       bodyY += 4;
@@ -1121,12 +1197,12 @@ export class InventoryScene extends Phaser.Scene {
       .on('pointerdown', () => {
         this.closeConsumePopup();
         if (isConsumable) {
-          InventorySystem.useConsumable(this.player, item.id);
+          InventorySystem.useConsumable(this.player, item);
         } else {
           this.lastFlashSlotKey = this.getSlotKeyForItem(item);
-          InventorySystem.equip(this.player, item.id);
+          InventorySystem.equip(this.player, item);
         }
-        this.selectedItemId = null;
+        this.selectedItem = null;
         this.refresh();
       });
 
@@ -1235,8 +1311,8 @@ export class InventoryScene extends Phaser.Scene {
 
   // ── State transitions ──────────────────────────────────────────────────────
 
-  private showDetail(itemId: string): void {
-    this.selectedItemId = itemId;
+  private showDetail(item: Item): void {
+    this.selectedItem = item;
     this.refresh();
   }
 

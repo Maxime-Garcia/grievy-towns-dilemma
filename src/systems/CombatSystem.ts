@@ -78,9 +78,11 @@ export class CombatSystem {
       ? 1 + PassiveSystem.getWaterDmgBonusPct(player.equipment) / 100
       : 1;
     const killStackMult = PassiveSystem.getKillStackDamageMultiplier(player);
+    // BOSS_DMG_PCT (loot stat rolls) — dégâts bonus contre boss ET élites (cap 40, cf. StatsSystem).
+    const bossDmgMult = (target.isBoss || target.isElite) ? 1 + cs.bossDmg / 100 : 1;
     const damage = Math.max(1, Math.floor(
       reduced * mult * elemMult * elemBonusMult * (0.9 + Math.random() * 0.2)
-      * soulBonus * waterDmgMult * killStackMult * firstStrikeMult,
+      * soulBonus * waterDmgMult * killStackMult * firstStrikeMult * bossDmgMult,
     ));
 
     target.currentHp = Math.max(0, target.currentHp - damage);
@@ -143,7 +145,9 @@ export class CombatSystem {
       : 1;
     const unboundDmgMult = 1 + PassiveSystem.getUnboundSkillDmgCdPct(player.equipment).dmgPct / 100;
     const killStackMult = PassiveSystem.getKillStackDamageMultiplier(player);
-    const passiveMult = lightningStunnedMult * waterDmgMult * unboundDmgMult * killStackMult * firstStrikeMult;
+    // BOSS_DMG_PCT (loot stat rolls) — dégâts bonus contre boss ET élites (cap 40, cf. StatsSystem).
+    const bossDmgMult = (target.isBoss || target.isElite) ? 1 + cs.bossDmg / 100 : 1;
+    const passiveMult = lightningStunnedMult * waterDmgMult * unboundDmgMult * killStackMult * firstStrikeMult * bossDmgMult;
 
     const magicDmg = Math.floor(rawMagic * (100 / (100 + target.stats.baseMagicDef)) * mult * elemMult * elemBonusMult * soulBonus * passiveMult);
     const physDmg  = Math.floor(rawPhys  * (100 / (100 + target.stats.baseDef))      * mult * soulBonus * passiveMult);
@@ -186,11 +190,18 @@ export class CombatSystem {
 
   // Enemy attacks player
   static enemyAttack(enemy: ActiveEnemy, player: PlayerState): DamageResult {
-    const rawDmg = enemy.stats.baseAtk;
-    const reduced = rawDmg * (100 / (100 + player.stats.def));
     const isStunned = enemy.statusEffects.some(e => e.type === 'STUN' || e.type === 'FREEZE');
     if (isStunned) return { damage: 0, isCrit: false, isKill: false };
 
+    // DODGE_PCT (loot stat rolls) — chance d'esquiver totalement l'attaque, cap 20
+    // (cf. StatsSystem.computeAll().dodge). Roll AVANT le calcul de dégâts.
+    const dodge = StatsSystem.computeAll(player).dodge;
+    if (dodge > 0 && Math.random() * 100 < dodge) {
+      return { damage: 0, isCrit: false, isKill: false, wasDodged: true };
+    }
+
+    const rawDmg = enemy.stats.baseAtk;
+    const reduced = rawDmg * (100 / (100 + player.stats.def));
     const damage = Math.max(1, Math.floor(reduced * (0.85 + Math.random() * 0.3)));
     player.stats.hp = Math.max(0, player.stats.hp - damage);
     return { damage, isCrit: false, isKill: player.stats.hp <= 0 };

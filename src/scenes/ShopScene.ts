@@ -1,6 +1,7 @@
 import { GameScene } from './GameScene';
 import { ALL_ITEMS } from '../data/items';
 import { LootSystem } from '../systems/LootSystem';
+import { StatRollSystem } from '../systems/StatRollSystem';
 import { SHOP_INVENTORY, ShopEntry } from '../data/shops';
 import { RARITY_COLORS } from '../types';
 import { UI, drawGlowPanel, drawCard, drawDivider, uiStyle, addCloseButton, openScreenTransition } from '../utils/UITheme';
@@ -132,10 +133,13 @@ export class ShopScene extends Phaser.Scene {
   private buyItem(entry: ShopEntry) {
     const player = this.gameScene.gameState.player;
     if (player.gold < entry.price) return;
-    const item = ALL_ITEMS[entry.itemId];
-    if (!item) return;
+    const template = ALL_ITEMS[entry.itemId];
+    if (!template) return;
 
     player.gold -= entry.price;
+    // Chaque achat est un tirage propre (qFloor 0) — les marchands de zone
+    // deviennent un gold sink de re-roll (docs/design/LOOT_STAT_ROLLS.md §5).
+    const item = StatRollSystem.rollItem(template, 0);
     LootSystem.addToInventory(player, item, 1, this.gameScene.gameState.world);
     this.gameScene.events.emit('item_looted',       { item, quantity: 1 });
     this.gameScene.events.emit('player_update',     player);

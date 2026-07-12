@@ -2,6 +2,7 @@ import { LootEntry, Item, ItemRarity, ItemType, ElementType, PlayerState, Weapon
 import { ALL_ITEMS } from '../data/items';
 import { RARITY_DROP_RATES } from '../types';
 import { ArsenalSystem } from './ArsenalSystem';
+import { StatRollSystem } from './StatRollSystem';
 
 // Elements that can be assigned randomly at drop (excludes NEUTRAL which is the baseline)
 const RANDOM_ELEMENTS: ElementType[] = [
@@ -50,12 +51,19 @@ export interface LootResult {
 }
 
 export class LootSystem {
+  /**
+   * `qFloor` (0–1, défaut 0) : plancher de Résonance transmis à
+   * StatRollSystem.rollItem() pour chaque équipable droppé — 0.5 pour un drop
+   * garanti de boss (première mort, cf. GameScene.onEnemyKilled), 0 sinon
+   * (docs/design/LOOT_STAT_ROLLS.md §5).
+   */
   static rollLoot(
     entries: LootEntry[],
     goldRange: { min: number; max: number },
     baseXp: number,
     enemyLevel: number,
-    player: PlayerState
+    player: PlayerState,
+    qFloor = 0,
   ): LootResult {
     const items: { item: Item; quantity: number }[] = [];
     const scaledXp = Math.floor(baseXp * (1 + (enemyLevel - player.level) * 0.05));
@@ -88,7 +96,11 @@ export class LootSystem {
       if (roll <= entry.dropRate) {
         const qty = Math.floor(Math.random() * (entry.maxQty - entry.minQty + 1)) + entry.minQty;
         const droppedItem = applyRandomElement(item);
-        items.push({ item: droppedItem, quantity: qty });
+        // StatRollSystem.rollItem est un no-op sûr (clone superficiel) pour tout
+        // item non équipable ou sans equipRanges authoré — safe à appeler ici
+        // inconditionnellement pour chaque type de drop.
+        const rolledItem = StatRollSystem.rollItem(droppedItem, qFloor);
+        items.push({ item: rolledItem, quantity: qty });
 
         if ([ItemRarity.EPIC, ItemRarity.LEGENDARY, ItemRarity.MYTHIC, ItemRarity.HIDDEN].includes(item.rarity)) {
           player.killsWithoutEpic = 0;
@@ -132,9 +144,19 @@ export class LootSystem {
   static removeFromInventory(
     player: PlayerState,
     itemId: string,
-    quantity: number
+    quantity: number,
+    instance?: Item,
   ): boolean {
-    const idx = player.inventory.findIndex(s => s.item.id === itemId);
+    // `instance`, quand fourni, résout par IDENTITÉ (===) plutôt que par id —
+    // deux armes non-stackables identiques ont chacune leur propre entrée
+    // qty:1 avec des rolls différents (docs/design/LOOT_STAT_ROLLS.md §9 étape
+    // 8) : un findIndex par itemId retomberait toujours sur la PREMIÈRE des
+    // deux, pas forcément celle que l'appelant vise réellement. Sans instance
+    // (cas des matériaux/consommables stackables, où il n'existe jamais qu'une
+    // seule entrée par id), le comportement par itemId reste inchangé.
+    const idx = instance
+      ? player.inventory.findIndex(s => s.item === instance)
+      : player.inventory.findIndex(s => s.item.id === itemId);
     if (idx === -1 || player.inventory[idx].quantity < quantity) return false;
 
     player.inventory[idx].quantity -= quantity;

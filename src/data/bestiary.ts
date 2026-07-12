@@ -753,6 +753,32 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'hidden_world_eater_staff', dropRatePct: 1.5, isHidden: true },
     ],
   },
+
+  // ── GRIEVY TOWN — MANNEQUINS DE KELVAR ───────────────────────
+  // ⚠ DEV TOOL (LOOT_STAT_ROLLS.md §10) : visibles uniquement si
+  // player.flags['dev_training_dummies'] === true. À retirer avant
+  // tout milestone public. Ton des lore : Kelvar, laconique.
+
+  {
+    enemyId: 'training_dummy_straw',
+    name: 'Mannequin de Kelvar',
+    habitat: 'Cour de la caserne, Grievy Town',
+    shortDesc: 'Paille, toile, et trente ans de coups encaissés sans se plaindre.',
+    lore: 'Kelvar le répare lui-même, chaque hiver. « Un garde qui n\'entretient pas son mannequin n\'entretiendra pas un mur. » C\'est tout ce qu\'il dit à ce sujet.',
+    drops: [
+      { itemId: 'titan_greatsword', dropRatePct: 100, isHidden: false },
+    ],
+  },
+  {
+    enemyId: 'training_dummy_gilded',
+    name: 'Mannequin Doré',
+    habitat: 'Cour de la caserne, Grievy Town',
+    shortDesc: 'Kelvar l\'a fait dorer le jour de sa promotion. Il le regrette.',
+    lore: 'La dorure s\'écaille un peu plus à chaque coup. Kelvar n\'a jamais demandé à personne d\'arrêter.',
+    drops: [
+      { itemId: 'echo_blade', dropRatePct: 100, isHidden: false },
+    ],
+  },
 ];
 
 export function getBestiaryEntry(enemyId: string): BestiaryEnemyData | undefined {

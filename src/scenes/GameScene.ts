@@ -1,11 +1,12 @@
 import Phaser from 'phaser';
-import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType } from '../types';
+import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType, ItemRarity } from '../types';
 import { CombatSystem } from '../systems/CombatSystem';
 import { StatsSystem } from '../systems/StatsSystem';
 import { PassiveSystem } from '../systems/PassiveSystem';
 import { COMBO_CONFIGS, ComboConfig } from '../data/combos';
 import { TalentSystem, TalentModifiers } from '../systems/TalentSystem';
 import { LootSystem } from '../systems/LootSystem';
+import { StatRollSystem } from '../systems/StatRollSystem';
 import { QuestSystem } from '../systems/QuestSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { SkillSystem } from '../systems/SkillSystem';
@@ -199,6 +200,7 @@ export class GameScene extends Phaser.Scene {
   private speedBoostKey!: Phaser.Input.Keyboard.Key;
   private debugSpeedMult = 1;
   private giveAllWeaponsKey!: Phaser.Input.Keyboard.Key;
+  private toggleDummiesKey!: Phaser.Input.Keyboard.Key;
 
   private xpOrbs!: Phaser.Physics.Arcade.Group;
   private readonly XP_ATTRACT_RANGE = 96;
@@ -439,6 +441,8 @@ export class GameScene extends Phaser.Scene {
 
     // Debug: press G to add one of every gear item (weapon/armor/accessory) to the inventory (asset-review aid)
     if (Phaser.Input.Keyboard.JustDown(this.giveAllWeaponsKey)) this.debugGiveAllWeapons();
+    // Debug: press T to toggle the training dummies flag (loot stat rolls test aid, cf. LOOT_STAT_ROLLS.md §10)
+    if (Phaser.Input.Keyboard.JustDown(this.toggleDummiesKey)) this.debugToggleTrainingDummies();
 
     // ── IFRAMES : clignotement du joueur pendant l'invincibilité post-hit ──
     // Alterne alpha 0.25 / 1 toutes les 80ms ; alpha restauré à la fin de la fenêtre.
@@ -541,6 +545,19 @@ export class GameScene extends Phaser.Scene {
     }
     this.events.emit('player_update', this.gameState.player);
     this.events.emit('show_notification', `[DEBUG] Sac vidé — ${gear.length} équipements ajoutés (armes+armures+accessoires)`);
+  }
+
+  /** Debug aid (press T) : bascule player.flags['dev_training_dummies'] pour tester
+   * les rolls de stats (mannequins de Kelvar, cf. docs/design/LOOT_STAT_ROLLS.md §10).
+   * Sans point d'entrée en jeu sinon (flag jamais posé par aucun autre chemin) —
+   * createEnemiesForZone() ne relit layout.fixedEnemies qu'à l'entrée en zone, donc
+   * il faut changer de zone (ou recharger) après bascule pour voir les mannequins. */
+  private debugToggleTrainingDummies(): void {
+    const flags = this.gameState.player.flags;
+    const next = !flags['dev_training_dummies'];
+    flags['dev_training_dummies'] = next;
+    this.events.emit('show_notification',
+      `[DEBUG] Mannequins de Kelvar ${next ? 'activés' : 'désactivés'} — changez de zone pour voir l'effet`);
   }
 
   // ── MOVEMENT ─────────────────────────────────────────────────
@@ -2077,6 +2094,12 @@ export class GameScene extends Phaser.Scene {
     const guardActive = this.time.now < this.guardUntil;
     const hpBeforeHit = this.gameState.player.stats.hp;
     const result = CombatSystem.enemyAttack(ae, this.gameState.player);
+    // DODGE_PCT (loot stat rolls) — feedback dédié ("no mechanic without feedback"),
+    // distinct du silence d'un ennemi stun/freeze ci-dessous.
+    if (result.wasDodged) {
+      this.showDodgeText(this.player.x, this.player.y - 20);
+      return;
+    }
     if (result.damage <= 0) return; // stunned enemy — no hit landed
 
     let finalDmg = Math.round(result.damage * damageMult);
@@ -2323,6 +2346,21 @@ export class GameScene extends Phaser.Scene {
         this.gameState.player.stats.hp + heal,
       );
     }
+    // HP_ON_KILL_FLAT / MANA_ON_KILL_FLAT (loot stat rolls) — additif avec
+    // KILL_HEAL_15_PCT / MANA_ON_KILL_PCT (ABYSSAL), même point de branchement.
+    const csOnKill = StatsSystem.computeAll(this.gameState.player);
+    if (csOnKill.hpOnKill > 0) {
+      this.gameState.player.stats.hp = Math.min(
+        this.gameState.player.stats.maxHp,
+        this.gameState.player.stats.hp + csOnKill.hpOnKill,
+      );
+    }
+    if (csOnKill.manaOnKill > 0) {
+      this.gameState.player.stats.mana = Math.min(
+        this.gameState.player.stats.maxMana,
+        this.gameState.player.stats.mana + csOnKill.manaOnKill,
+      );
+    }
     // KILL_STACK_DAMAGE (hidden_soul_bow) — stack permanent, ne se réinitialise jamais.
     PassiveSystem.incrementKillStackIfEquipped(this.gameState.player);
 
@@ -2352,6 +2390,11 @@ export class GameScene extends Phaser.Scene {
     const deathY   = sprite.y;
     const isBoss   = enemyDef.isBoss;
 
+    // Bestiaire — premier kill (capturé AVANT le roll de loot : sert de qFloor
+    // de Résonance boss ci-dessous — pas de notion distincte de "drop garanti"
+    // ailleurs dans le code, recordKill() est le seul signal "premier kill").
+    const isFirstKill = BestiarySystem.recordKill(this.gameState.world, activeEnemy.enemyId);
+
     // Remove from physics immediately so it no longer blocks or attacks
     sprite.disableBody(true, false);
 
@@ -2361,13 +2404,14 @@ export class GameScene extends Phaser.Scene {
       this.playEnemyDeathSequence(sprite);
     }
 
+    // Drop garanti de boss (première mort) : Résonance plancher 0.5
+    // (docs/design/LOOT_STAT_ROLLS.md §5 — "la mort d'une divinité ne récompense
+    // jamais par une insulte"). Standard sinon (qFloor 0).
+    const lootQFloor = (isBoss && isFirstKill) ? 0.5 : 0;
     const loot = LootSystem.rollLoot(
       enemyDef.loot, enemyDef.baseGold, enemyDef.baseXp,
-      activeEnemy.level, this.gameState.player,
+      activeEnemy.level, this.gameState.player, lootQFloor,
     );
-
-    // Bestiaire — premier kill
-    BestiarySystem.recordKill(this.gameState.world, activeEnemy.enemyId);
 
     this.gameState.player.gold += loot.gold;
     for (const { item, quantity } of loot.items) {
@@ -3308,6 +3352,23 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /** Feedback flottant DODGE_PCT (loot stat rolls) — même style que showDamageNumber. */
+  private showDodgeText(x: number, y: number) {
+    const txt = this.add.text(x + Phaser.Math.Between(-6, 6), y, 'Esquive !', {
+      fontSize: '13px', color: '#88ddff', fontFamily: 'monospace',
+      stroke: '#000000', strokeThickness: 2,
+    }).setDepth(100).setOrigin(0.5, 1);
+
+    this.tweens.add({
+      targets: txt,
+      y: y - 40,
+      alpha: 0,
+      duration: 900,
+      ease: 'Quad.easeOut',
+      onComplete: () => txt.destroy(),
+    });
+  }
+
   private showHealNumber(x: number, y: number, amount: number) {
     const txt = this.add.text(x, y, `+${amount}`, {
       fontSize: '14px', color: '#44ff88', fontFamily: 'monospace',
@@ -3670,6 +3731,61 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // Ennemis placés à la main (spawnWeight 0, ignorés par la boucle aléatoire
+    // ci-dessus) — DEV TOOL, cf. docs/design/LOOT_STAT_ROLLS.md §10. Chacun ne
+    // spawn que si son requiresFlag est vrai sur le joueur (même convention que
+    // DialogueSystem.checkCondition). Position fixe, jamais élite.
+    for (const placement of this.layout.fixedEnemies ?? []) {
+      if (placement.requiresFlag && !this.gameState.player.flags[placement.requiresFlag]) continue;
+      const def = ENEMY_MAP[placement.id];
+      if (!def || def.isBoss) continue;
+
+      const texKey        = `enemy_${placement.id}`;
+      const texKeyElite    = `enemy_${placement.id}_elite`;
+      const hasRealSprite = this.textures.exists(`enemy_${placement.id}_idle`);
+      if (!hasRealSprite) {
+        this.ensureTexture(texKey, enemyColor);
+        this.ensureTexture(texKeyElite, eliteColor, 44, 44);
+      }
+
+      const ex = placement.x;
+      const ey = placement.y;
+      const enemyBbox = ENEMY_SPRITE_BBOX[placement.id];
+      const enemyFit  = hasRealSprite && enemyBbox ? fitSpriteToContent(enemyBbox, 36) : null;
+      const dispSize  = enemyFit ? enemyFit.dispSize : 28;
+      const sprite = hasRealSprite
+        ? this.physics.add.sprite(ex, ey, `enemy_${placement.id}_idle`)
+        : this.physics.add.sprite(ex, ey, texKey);
+      sprite.setDisplaySize(dispSize, dispSize);
+      const body = sprite.body as Phaser.Physics.Arcade.Body;
+      if (enemyFit && enemyBbox) {
+        body.setSize(enemyBbox.w, enemyBbox.h);
+        body.setOffset(enemyBbox.x, enemyBbox.y);
+      } else {
+        body.setSize(dispSize - 8, dispSize - 8);
+      }
+      sprite.setDepth(4);
+      sprite.setData('baseScale', sprite.scale);
+      if (hasRealSprite) {
+        sprite.setData('hasRealSprite', true);
+        sprite.play(`enemy_${placement.id}_idle`);
+      }
+
+      const active = CombatSystem.spawnEnemy(def, this.gameState.player.level);
+      active.x = ex;
+      active.y = ey;
+      sprite.name = active.instanceId;
+      this.activeEnemies.set(active.instanceId, active);
+      this.enemies.add(sprite);
+
+      const contentTopGap = enemyFit ? dispSize / 2 - enemyFit.offsetY : dispSize / 2;
+      const barY  = ey - contentTopGap - 8;
+      const barW  = (enemyFit ? enemyFit.bodyW : dispSize) + 4;
+      const barBg = this.add.rectangle(ex, barY, barW, 6, 0x220000).setDepth(8);
+      const barFg = this.add.rectangle(ex - barW / 2, barY, barW, 4, 0xff2222).setDepth(9).setOrigin(0, 0.5);
+      this.enemyHpBars.set(active.instanceId, { bg: barBg, bar: barFg, baseW: barW });
+    }
+
     // Boss spawn — only if zone has a boss and it hasn't been cleared yet
     if (zone.bossId && !this.gameState.player.clearedZones.includes(zone.element as ElementType)) {
       const bossDef = ENEMY_MAP[zone.bossId];
@@ -3837,6 +3953,8 @@ export class GameScene extends Phaser.Scene {
     this.speedBoostKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.B);
     // Debug: press G to add one of every gear item (weapon/armor/accessory) to the inventory (asset-review aid)
     this.giveAllWeaponsKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.G);
+    // Debug: press T to toggle the training dummies flag (loot stat rolls test aid)
+    this.toggleDummiesKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.T);
     // Remaining keys (attack, dash, inventory, skill menu, skill slots)
     // are all wired by applyKeyBindings() called right after setupInput().
   }
@@ -3980,13 +4098,23 @@ export class GameScene extends Phaser.Scene {
 
     // Item reward (1 random from pool)
     if (lo.itemPool.length > 0) {
-      const itemId = lo.itemPool[Math.floor(Math.random() * lo.itemPool.length)];
-      const item   = ALL_ITEMS[itemId];
+      const itemId  = lo.itemPool[Math.floor(Math.random() * lo.itemPool.length)];
+      const template = ALL_ITEMS[itemId];
+      // StatRollSystem.rollItem est un no-op sûr pour les items non équipables/sans
+      // equipRanges — sûr à appeler inconditionnellement (cf. LootSystem.rollLoot).
+      const item = template ? StatRollSystem.rollItem(template, 0) : undefined;
       if (item) {
         LootSystem.addToInventory(this.gameState.player, item, 1, this.gameState.world);
         this.events.emit('item_looted', { item, quantity: 1 });
         const typeKey = `notif.loot_${lo.type}` as const;
-        this.events.emit('show_notification', `${t(typeKey)} ${localizeItem(item).name}${gold > 0 ? ` +${gold}G` : ''}`);
+        // Un Common à Résonance notable (Vibrante+) déclenche déjà sa propre
+        // notification enrichie via item_looted (nom + % + scintillement) —
+        // répéter le nom ici empilerait deux popups pour un seul ramassage.
+        // On garde uniquement la mention d'or, s'il y en a.
+        const skipItemName = item.rarity === ItemRarity.COMMON
+          && typeof item.rollQuality === 'number' && StatRollSystem.isNotableResonance(item.rollQuality);
+        const itemPart = skipItemName ? '' : ` ${localizeItem(item).name}`;
+        this.events.emit('show_notification', `${t(typeKey)}${itemPart}${gold > 0 ? ` +${gold}G` : ''}`);
       } else if (gold > 0) {
         this.events.emit('show_notification', t('notif.gold').replace('{gold}', String(gold)));
       }
