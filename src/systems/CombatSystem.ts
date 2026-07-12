@@ -61,9 +61,14 @@ export class CombatSystem {
     const mult = critRoll ? cs.critDmg : 1.0;
     // BUG2 fix: EXPOSE status reduces effective DEF before damage calculation
     const expose = target.statusEffects.find(e => e.type === 'EXPOSE');
-    const effectiveDef = expose
-      ? Math.max(0, target.stats.baseDef * (1 - expose.strength / 100))
-      : target.stats.baseDef;
+    // DEF_IGNORE_100_PCT (hidden_stoneheart_maul) — traite la DEF cible comme 0,
+    // prioritaire sur EXPOSE (qui ne fait de toute façon que la réduire davantage).
+    const defIgnore = PassiveSystem.hasDefIgnore(player.equipment);
+    const effectiveDef = defIgnore
+      ? 0
+      : expose
+        ? Math.max(0, target.stats.baseDef * (1 - expose.strength / 100))
+        : target.stats.baseDef;
     const reduced = rawDamage * (100 / (100 + effectiveDef));
     const weaponElement = weapon?.element;
     const elemMult = CombatSystem.elementalMultiplier(weaponElement, target);
@@ -89,6 +94,12 @@ export class CombatSystem {
     if (cs.lifesteal > 0) {
       player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + Math.floor(damage * cs.lifesteal / 100));
     }
+    // OMNIVAMP_25_PCT (hidden_abyssal_talons) — distinct de cs.lifesteal (stat rolls),
+    // s'additionne dessus : "25% de TOUS les dégâts infligés" par le porteur.
+    const omnivampPct = PassiveSystem.getOmnivampPct(player.equipment);
+    if (omnivampPct > 0) {
+      player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + Math.floor(damage * omnivampPct / 100));
+    }
     return { damage, isCrit: critRoll, element: weaponElement, isKill: target.currentHp <= 0 };
   }
 
@@ -110,7 +121,9 @@ export class CombatSystem {
       const amt = skill.effect.heal
         ? Math.round(skill.effect.heal * healSkillMult)
         : Math.round(player.stats.maxHp * (skill.effect.healPercent ?? 0) * healSkillMult);
-      player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + amt);
+      // PassiveSystem.applyHeal (au lieu d'un clamp manuel) — convertit le surplus
+      // au-delà de maxHp en bouclier si OVERHEAL_SHIELD_50_PCT est équipé.
+      PassiveSystem.applyHeal(player, amt);
       return { damage: 0, isCrit: false, isKill: false };
     }
 
