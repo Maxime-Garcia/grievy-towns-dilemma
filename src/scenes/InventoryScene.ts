@@ -9,7 +9,7 @@ import { StatRollSystem, isEquipableItem } from '../systems/StatRollSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { getPassiveEffectLabel } from '../data/passiveEffects';
 import {
-  UI, drawGlowPanel, drawCard, drawSlot,
+  UI, TYPE, drawGlowPanel, drawCard, drawSlot,
   drawDivider, addCloseButton, uiStyle, openScreenTransition,
   resonanceColor, formatRangedStatBounds, lineQuality,
 } from '../utils/UITheme';
@@ -528,7 +528,7 @@ export class InventoryScene extends Phaser.Scene {
       let pairW = valueTxt.width;
       let rangeTxt: Phaser.GameObjects.Text | undefined;
       if (mainView.rangeText) {
-        rangeTxt = this.add.text(0, curY + 4, mainView.rangeText, uiStyle(8, UI.TXT_MUTED));
+        rangeTxt = this.add.text(0, curY + 3, mainView.rangeText, uiStyle(TYPE.SMALL, UI.TXT_MUTED));
         pairW += 4 + rangeTxt.width;
       }
       let lx = PX + PW / 2 - pairW / 2;
@@ -552,7 +552,7 @@ export class InventoryScene extends Phaser.Scene {
       this.dynamicObjs.push(bulletTxt);
       if (view.rangeText) {
         this.dynamicObjs.push(
-          this.add.text(PX + 14 + bulletTxt.width + 4, curY + 2, view.rangeText, uiStyle(7, UI.TXT_MUTED)),
+          this.add.text(PX + 14 + bulletTxt.width + 4, curY + 1, view.rangeText, uiStyle(TYPE.SMALL, UI.TXT_MUTED)),
         );
       }
       curY += 17;
@@ -744,7 +744,7 @@ export class InventoryScene extends Phaser.Scene {
     dotG.setY(headerTopY);
     reg(dotG, headerTopY);
 
-    const txt = this.add.text(x + 12, headerTopY + localCy, label, uiStyle(8, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0.5);
+    const txt = this.add.text(x + 12, headerTopY + localCy, label, uiStyle(TYPE.SMALL, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0.5);
     reg(txt, headerTopY + localCy);
 
     const sepG = this.add.graphics();
@@ -1109,7 +1109,7 @@ export class InventoryScene extends Phaser.Scene {
     if (hasResonanceLine && resonance !== null) {
       this.consumePopupObjects.push(
         this.add.text(textX, py + MARGIN + 16, `Résonance ${resonance}% — ${StatRollSystem.getResonanceLabel(resonance)}`,
-          uiStyle(8, resonanceColor(resonance), { bold: true })).setDepth(depth + 1),
+          uiStyle(TYPE.SMALL, resonanceColor(resonance), { bold: true })).setDepth(depth + 1),
       );
     }
 
@@ -1127,7 +1127,7 @@ export class InventoryScene extends Phaser.Scene {
         this.consumePopupObjects.push(mainTxt);
         if (mainView.rangeText) {
           this.consumePopupObjects.push(
-            this.add.text(textX + mainTxt.width + 4, bodyLineY + 2, mainView.rangeText, uiStyle(7, UI.TXT_MUTED)).setDepth(depth + 1),
+            this.add.text(textX + mainTxt.width + 4, bodyLineY + 1, mainView.rangeText, uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setDepth(depth + 1),
           );
         }
       }
@@ -1146,7 +1146,7 @@ export class InventoryScene extends Phaser.Scene {
         this.consumePopupObjects.push(lineTxt);
         if (view.rangeText) {
           this.consumePopupObjects.push(
-            this.add.text(px + MARGIN + lineTxt.width + 4, bodyY + 1, view.rangeText, uiStyle(7, UI.TXT_MUTED)).setDepth(depth + 1),
+            this.add.text(px + MARGIN + lineTxt.width + 4, bodyY, view.rangeText, uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setDepth(depth + 1),
           );
         }
         bodyY += 14;

@@ -14,8 +14,14 @@ export const UI = {
   // Text colours (string form for Phaser text objects)
   TXT_PARCHMENT: '#f5edd0',
   TXT_GOLD:      '#c8a030',
-  TXT_MUTED:     '#88776a',
-  TXT_HINT:      '#443322',
+  // TXT_MUTED remonté de #88776a (≈4.5:1, borderline) à ≈5.8:1 sur PANEL_BG —
+  // même ton brun-gris chaud, juste assez de luminance pour rester lisible à
+  // 9px (TYPE.SMALL), la taille plancher des fourchettes/badges/hints.
+  TXT_MUTED:     '#9a8a7a',
+  // TXT_HINT remonté de #443322 (≈1.6:1 — indéchiffrable à 9px) à ≈2.9:1 :
+  // toujours nettement tertiaire/fantôme face à TXT_MUTED, mais déchiffrable.
+  // Jamais d'info critique dans cette couleur (règle guidelines §2.1).
+  TXT_HINT:      '#6b5a48',
   TXT_BLUE:      '#88aaff',
   TXT_GREEN:     '#55dd66',
   TXT_RED:       '#dd4433',
@@ -92,7 +98,16 @@ let TEXT_RESOLUTION = 4;
 /** À appeler une seule fois au boot (`main.ts`), après `new Phaser.Game()`,
  *  une fois que `game.scale.zoom` reflète la valeur réellement choisie. */
 export function setTextResolution(zoom: number): void {
-  TEXT_RESOLUTION = Math.max(4, Math.ceil(zoom * 3));
+  // Plafond à 10 : la texture de texte est affichée sous filtrage NEAREST
+  // (pixelArt:true) — quand sa densité dépasse largement le zoom réel, la
+  // minification ne retient qu'une fraction des pixels rasterisés et les
+  // micro-glyphes (9-10px) ressortent "grignotés" (bruit de sous-échantillonnage,
+  // aggravé par le hinting du navigateur aux toutes petites tailles de police).
+  // 10 couvre les zooms réels desktop (FIT plafonne en pratique vers 2-4 →
+  // marge ≥ 2.5× au pire) : assez de détail source pour garder les gros textes
+  // nets (l'acquis de cette passe), sans sur-échantillonner à l'excès ni faire
+  // exploser la taille des canvas de texte.
+  TEXT_RESOLUTION = Math.min(10, Math.max(4, Math.ceil(zoom * 3)));
 }
 
 /**

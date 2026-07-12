@@ -1,7 +1,7 @@
 import { NPC, PlayerState, DialogueLine, WorldState } from '../types';
 import { DialogueSystem, DialogueSession } from '../systems/DialogueSystem';
 import { SHOP_INVENTORY } from '../data/shops';
-import { UI, drawGlowPanel, uiStyle, openScreenTransition } from '../utils/UITheme';
+import { UI, TYPE, drawGlowPanel, uiStyle, openScreenTransition } from '../utils/UITheme';
 import { t, localizeDialogueLine } from '../i18n';
 
 // ─────────────────────────────────────────────────────────────────
@@ -242,7 +242,7 @@ export class DialogueScene extends Phaser.Scene {
     tapZone.on('pointerdown', () => this.onAdvanceInput());
 
     // Hint clavier (bonus desktop)
-    const hint = this.add.text(PX + 12, H - 10, t('dialogue.advance_hint'), uiStyle(8, UI.TXT_HINT))
+    const hint = this.add.text(PX + 12, H - 10, t('dialogue.advance_hint'), uiStyle(TYPE.SMALL, UI.TXT_HINT))
       .setOrigin(0, 1);
 
     // ── Animation d'entrée : le panneau monte + fade (200 ms) ──
