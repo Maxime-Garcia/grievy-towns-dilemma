@@ -68,6 +68,34 @@ export const UI = {
 export const FONT = "'Press Start 2P', monospace";
 
 /**
+ * Résolution de rendu du texte (cf. `uiStyle`/`pxStyle`). Valeur par défaut
+ * sûre pour SSR/tests ; `setTextResolution()` la recalibre une seule fois au
+ * boot (`main.ts`) d'après le zoom RÉEL choisi par le Scale Manager.
+ *
+ * Pourquoi ce n'est pas un `3` fixe : le jeu tourne en `pixelArt:true` +
+ * `image-rendering: pixelated` (index.html) — indispensable pour que les
+ * sprites restent nets en gros pixels. Mais `Scale.FIT` + `zoom: MAX_ZOOM`
+ * ne change QUE la taille CSS du canvas ; le canvas lui-même reste rendu à
+ * 800×600 (cf. ScaleManager.resize — `canvas.width/height` = baseSize, jamais
+ * multiplié par le zoom). Le navigateur agrandit donc tout le canvas déjà
+ * rendu — texte compris — via un filtrage "plus proche voisin" d'un facteur
+ * ÉGAL AU ZOOM. Un texte fin (8-10px) survit mal à ça, même généré à une
+ * résolution interne fixe de 3× : sur un grand écran (zoom 3-4+), l'agrandissement
+ * final blockifie quand même les glyphes. Fournir plus de détail source
+ * (résolution ≥ zoom × un facteur confortable) neutralise l'essentiel de cet
+ * effet sans toucher au Scale Manager ni au mapping des coordonnées d'input —
+ * seule la police en profite, tout le reste du jeu (sprites, caméra, clics)
+ * est inchangé.
+ */
+let TEXT_RESOLUTION = 4;
+
+/** À appeler une seule fois au boot (`main.ts`), après `new Phaser.Game()`,
+ *  une fois que `game.scale.zoom` reflète la valeur réellement choisie. */
+export function setTextResolution(zoom: number): void {
+  TEXT_RESOLUTION = Math.max(4, Math.ceil(zoom * 3));
+}
+
+/**
  * Police UI moderne — lisible sans zoom, même après le downscale Scale.FIT
  * sur mobile (×0.47 à 375 CSS px). Verdana est large et très lisible aux
  * petites tailles, disponible partout sans chargement externe.
@@ -125,7 +153,9 @@ export function uiStyle(
     // ce texte "moderne" (Verdana) hérite du même rendu blocky que les sprites au lieu
     // d'un rendu net. `resolution` fait générer le canvas de texte en interne à une
     // densité plus élevée avant le zoom du jeu, ce qui le garde net même sous NEAREST.
-    resolution: 3,
+    // Valeur calibrée sur le zoom réel par setTextResolution() (voir sa doc) — un `3`
+    // fixe ne suffit pas sur un grand écran où le Scale Manager choisit un zoom élevé.
+    resolution: TEXT_RESOLUTION,
   };
   const styleParts: string[] = [];
   if (opts.bold)   styleParts.push('bold');
@@ -758,6 +788,10 @@ export function pxStyle(
     fontSize: `${size}px`,
     color,
     fontFamily: FONT,
+    // Même raison que dans uiStyle() (voir sa doc) — "Press Start 2P" a des
+    // courbes/diagonales qui aliasent tout autant sous le zoom NEAREST du jeu ;
+    // ça ne rend pas la police moins "8-bit", juste ses bords moins déchiquetés.
+    resolution: TEXT_RESOLUTION,
   };
   if (stroke) {
     s.stroke = '#000000';

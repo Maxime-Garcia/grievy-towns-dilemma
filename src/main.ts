@@ -14,6 +14,7 @@ import { ShopScene }      from './scenes/ShopScene';
 import { PauseScene }     from './scenes/PauseScene';
 import { BestiaryScene }  from './scenes/BestiaryScene';
 import { ArsenalScene }   from './scenes/ArsenalScene';
+import { setTextResolution } from './utils/UITheme';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -59,4 +60,14 @@ const config: Phaser.Types.Core.GameConfig = {
   ],
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+
+// Calibre la résolution de rendu du texte (uiStyle/pxStyle, cf. UITheme.ts)
+// sur le zoom RÉEL choisi par le Scale Manager pour cet écran — un `3` fixe
+// ne suffit pas sur un grand moniteur où Scale.MAX_ZOOM choisit un zoom élevé
+// (le canvas 800×600 est alors très agrandi par le navigateur en NEAREST,
+// ce qui blockifie le texte si sa résolution interne ne suit pas). `READY`
+// fire une fois le Scale Manager initialisé, avant la première scène.
+game.events.once(Phaser.Core.Events.READY, () => {
+  setTextResolution(game.scale.zoom);
+});
