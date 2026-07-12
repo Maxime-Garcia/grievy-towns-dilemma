@@ -11,7 +11,7 @@
 
 import { WorldState, ElementType, ItemType, ItemRarity, RARITY_COLORS, Item, Weapon, Armor } from '../types';
 import {
-  UI, drawGlowPanel, drawCard, drawBadge, uiStyle, addCloseButton, drawScrollbar,
+  UI, TYPE, drawGlowPanel, drawCard, drawBadge, uiStyle, addCloseButton, drawScrollbar,
   renderScrollableText, formatDropRate, drawConfirmCancelButtons, ARCANE_CONFIRM_ACCENT,
   openScreenTransition, closeScreenTransition, portalRedirectTransition,
   formatRangedStatLine,
@@ -187,7 +187,7 @@ export class ArsenalScene extends Phaser.Scene {
     const progressLabel = t('arsenal.progress')
       .replace('{seen}',  String(counts.seen))
       .replace('{total}', String(counts.total));
-    this.add.text(20, 24, progressLabel, uiStyle(8, UI.TXT_MUTED)).setOrigin(0, 0.5);
+    this.add.text(20, 24, progressLabel, uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setOrigin(0, 0.5);
 
     addCloseButton(this, W - 28, 24, () => this.close());
 
@@ -221,7 +221,7 @@ export class ArsenalScene extends Phaser.Scene {
     // plus tard dans la display list et passent PAR-DESSUS la scrollbar (bug reporté).
     this.scrollbarGfx = this.add.graphics().setDepth(5);
 
-    this.add.text(W / 2, H - 16, t('arsenal.hint'), uiStyle(8, UI.TXT_HINT)).setOrigin(0.5);
+    this.add.text(W / 2, H - 16, t('arsenal.hint'), uiStyle(TYPE.SMALL, UI.TXT_HINT)).setOrigin(0.5);
 
     this.buildRows();
     this.maxScrollOffset = this.computeMaxOffset();
@@ -372,7 +372,7 @@ export class ArsenalScene extends Phaser.Scene {
     const g = this.add.graphics();
     g.fillStyle(UI.ACCENT_ARCANE, 0.9);
     g.fillRoundedRect(x + 6, cy - 3, 6, 6, 1.5);
-    const txt = this.add.text(x + 18, cy, label, uiStyle(8, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0.5);
+    const txt = this.add.text(x + 18, cy, label, uiStyle(TYPE.SMALL, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0.5);
     g.lineStyle(1, UI.ACCENT_ARCANE, 0.25);
     g.beginPath();
     g.moveTo(x + 22 + txt.width, cy);
@@ -426,7 +426,7 @@ export class ArsenalScene extends Phaser.Scene {
     );
     this.listObjs.push(
       this.add.text(x + 44, y + 26, entry.discovered ? t(`rarity.${item.rarity}`) : t('arsenal.locked'),
-        uiStyle(7, UI.TXT_MUTED)),
+        uiStyle(TYPE.SMALL, UI.TXT_MUTED)),
     );
 
     bg.on('pointerover', () => { if (id !== this.selectedId) bg.setFillStyle(0x181628, 1); });
@@ -552,7 +552,7 @@ export class ArsenalScene extends Phaser.Scene {
       const rangesTxt = this.add.text(
         this.LORE_X, this.LORE_Y - this.loreScrollPx,
         `${RANGES_SUBTITLE}\n${rangeLines.join('\n')}`,
-        uiStyle(8, UI.TXT_MUTED, { italic: true, lineSpacing: 4, wordWrapWidth: this.LORE_W }),
+        uiStyle(TYPE.SMALL, UI.TXT_MUTED, { italic: true, lineSpacing: 4, wordWrapWidth: this.LORE_W }),
       );
       const gapY = 8;
       const loreTxt = this.add.text(
@@ -648,7 +648,7 @@ export class ArsenalScene extends Phaser.Scene {
       this.detailObjs.push(
         this.add.text(contentX, contentY + visible.length * DROP_SOURCE_ROW_H + 2,
           t('arsenal.dropped_by_more').replace('{n}', String(sources.length - visible.length)),
-          uiStyle(8, UI.TXT_HINT)),
+          uiStyle(TYPE.SMALL, UI.TXT_HINT)),
       );
     }
   }
@@ -674,7 +674,7 @@ export class ArsenalScene extends Phaser.Scene {
       ph.fillCircle(pcx, cy, 14);
       const glyph = discovered ? data.name.split(' ').map(wd => wd[0] ?? '').join('').slice(0, 2).toUpperCase() : '?';
       this.detailObjs.push(ph,
-        this.add.text(pcx, cy, glyph, uiStyle(discovered ? 7 : 10, UI.TXT_WHITE, { bold: true })).setOrigin(0.5),
+        this.add.text(pcx, cy, glyph, uiStyle(discovered ? TYPE.SMALL : 10, UI.TXT_WHITE, { bold: true })).setOrigin(0.5),
       );
     }
 
@@ -683,7 +683,7 @@ export class ArsenalScene extends Phaser.Scene {
     const rate = drop.dropRatePct / 100;
     this.detailObjs.push(
       this.add.text(x + 34, y + 17, t('bestiary.drop_rate').replace('{rate}', formatDropRate(rate)),
-        uiStyle(8, UI.TXT_MUTED)),
+        uiStyle(TYPE.SMALL, UI.TXT_MUTED)),
     );
 
     hit.on('pointerover', () => hit.setFillStyle(0xffffff, 0.05));
@@ -719,7 +719,7 @@ export class ArsenalScene extends Phaser.Scene {
     const zoneKey = enemyDef ? ZONE_HABITAT_KEYS[enemyDef.element] : undefined;
     const habitatStr = zoneKey ? t(zoneKey) : data.habitat;
     const habitatTxt = this.add.text(padC, cy, habitatStr,
-      uiStyle(8, UI.TXT_MUTED, { wordWrapWidth: CW - padC * 2 }));
+      uiStyle(TYPE.SMALL, UI.TXT_MUTED, { wordWrapWidth: CW - padC * 2 }));
     parts.push(habitatTxt);
     cy += habitatTxt.height + 6;
 
@@ -729,7 +729,7 @@ export class ArsenalScene extends Phaser.Scene {
     cy += descTxt.height + 10;
 
     const subtitleTxt = this.add.text(CW / 2, cy, t('arsenal.view_in_bestiary'),
-      uiStyle(8, UI.TXT_CYAN)).setOrigin(0.5, 0);
+      uiStyle(TYPE.SMALL, UI.TXT_CYAN)).setOrigin(0.5, 0);
     parts.push(subtitleTxt);
     cy += subtitleTxt.height + 6;
 

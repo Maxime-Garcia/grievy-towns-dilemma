@@ -91,11 +91,14 @@ export class UIScene extends Phaser.Scene {
     const { width: W, height: H } = this.cameras.main;
 
     // ── DEV: build badge (top-left) — retirer avant release ─────────
-    // Version discrète : petite pastille verte + texte 8px sur fond translucide.
-    const BUILD_LABEL = 'MERGE: Arsenal/Bestiaire + stat rolls Dofus (5431f4c)';
+    // Version discrète : petite pastille verte + texte 9px (plancher TYPE.SMALL)
+    // sur fond translucide. Exclue volontairement de la règle "toujours uiStyle()" :
+    // c'est un badge de debug monospace (lisibilité console), pas un texte de jeu —
+    // uiStyle() impose FONT_UI (Verdana), incompatible avec l'esthétique recherchée ici.
+    const BUILD_LABEL = 'FIX: filtre LINEAR texte (fin du flou) (7e24a7c)';
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
-      fontSize: '8px', color: '#7dffa8', fontFamily: 'monospace',
+      fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',
     }).setDepth(200).setAlpha(0.85);
     const bw = badgeText.width + 16;
     const bh = badgeText.height + 6;

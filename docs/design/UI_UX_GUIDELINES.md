@@ -6,8 +6,11 @@
 > Les tokens de ce document sont extraits du code réel (`src/utils/UITheme.ts`, `src/types/index.ts`,
 > `src/main.ts`) — si le code et ce doc divergent, corriger l'un ou l'autre, jamais ignorer.
 
-**Dernière synchro avec le code :** refonte « UI moderne lisible » (2026-07-06) —
-double système typographique, paperdoll Dofus, helpers `uiStyle`/`drawCard`/`drawDivider`/`addCloseButton`.
+**Dernière synchro avec le code :** passe « lisibilité micro-textes » (2026-07-12) —
+plus aucun `uiStyle` < 9 px dans les scènes (les tailles plancher référencent `TYPE.SMALL`),
+`TXT_MUTED`/`TXT_HINT` remontés, résolution de rendu du texte plafonnée à 10 (`setTextResolution`).
+Précédente : refonte « UI moderne lisible » (2026-07-06) — double système typographique,
+paperdoll Dofus, helpers `uiStyle`/`drawCard`/`drawDivider`/`addCloseButton`.
 
 ---
 
@@ -56,6 +59,10 @@ Un élément de 44 px logiques ne fait donc que ~21 px physiques à l'écran. C'
   gestes système iOS/Android mangent les 20 derniers px du bas).
 - C'est aussi pourquoi la police UI moderne est indispensable : Verdana 10 px logiques reste
   lisible à ×0.47 ; Press Start 2P 5–7 px ne l'était pas.
+- **Résolution de rendu du texte** : `setTextResolution(zoom)` (UITheme.ts, appelée au boot dans
+  `main.ts`) calibre la densité interne des canvas de texte sur le zoom réel — **plafonnée à 10** :
+  au-delà, la minification NEAREST (pixelArt) décime les pixels rendus et transforme les
+  micro-textes (9 px) en bruit. Ne jamais retirer ni déplafonner sans re-tester sur grand écran.
 
 Toujours calculer les positions à partir de la caméra, jamais en dur :
 
@@ -122,8 +129,8 @@ séparateur `drawDivider`.
 |-------|-----|-------|-----------|
 | `UI.TXT_PARCHMENT` | `#f5edd0` | Texte primaire par défaut | ≥ 12:1 |
 | `UI.TXT_GOLD` | `#c8a030` | Titres, valeurs importantes, or, nom du joueur | ≥ 6:1 |
-| `UI.TXT_MUTED` | `#88776a` | Texte secondaire, labels, descriptions | ≥ 4.5:1 |
-| `UI.TXT_HINT` | `#443322` | Hints clavier, texte tertiaire quasi-invisible (jamais d'info critique) | — |
+| `UI.TXT_MUTED` | `#9a8a7a` | Texte secondaire, labels, descriptions, fourchettes de stats | ≥ 5.8:1 |
+| `UI.TXT_HINT` | `#6b5a48` | Hints clavier, texte tertiaire discret (jamais d'info critique) | ≈ 2.9:1 |
 | `UI.TXT_BLUE` | `#88aaff` | MP, choix de dialogue, liens, skills | ≥ 7:1 |
 | `UI.TXT_GREEN` | `#55dd66` | HP, confirmations, actions positives (équiper) | ≥ 8:1 |
 | `UI.TXT_RED` | `#dd4433` | Danger, bouton ×, erreurs | ≥ 4.5:1 |
@@ -177,6 +184,8 @@ Validé `0xf0e8d8` · Restant `0x444444` · Finisher prêt `0xffb347` (ambre) ·
 
 Règles :
 - **Toujours passer par `uiStyle(size, color, opts)`** — jamais de style inline.
+- **Jamais de taille < 9 px** : tout texte au plancher référence **`TYPE.SMALL`** (pas un `9` en
+  dur) — purge complète des 7–8 px effectuée le 2026-07-12 (Arsenal, Bestiaire, Inventaire, Dialogue).
 - Texte superposé à une barre, un sprite ou une icône → `{ stroke: true }` (contour noir épaisseur 3).
 - Texte long → `{ wordWrapWidth: ... }`, jamais de débordement.
 - Chiffres/valeurs à droite : `.setOrigin(1, 0)` ; titres centrés : `.setOrigin(0.5, 0)`.

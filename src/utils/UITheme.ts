@@ -14,8 +14,14 @@ export const UI = {
   // Text colours (string form for Phaser text objects)
   TXT_PARCHMENT: '#f5edd0',
   TXT_GOLD:      '#c8a030',
-  TXT_MUTED:     '#88776a',
-  TXT_HINT:      '#443322',
+  // TXT_MUTED remonté de #88776a (≈4.5:1, borderline) à ≈5.8:1 sur PANEL_BG —
+  // même ton brun-gris chaud, juste assez de luminance pour rester lisible à
+  // 9px (TYPE.SMALL), la taille plancher des fourchettes/badges/hints.
+  TXT_MUTED:     '#9a8a7a',
+  // TXT_HINT remonté de #443322 (≈1.6:1 — indéchiffrable à 9px) à ≈2.9:1 :
+  // toujours nettement tertiaire/fantôme face à TXT_MUTED, mais déchiffrable.
+  // Jamais d'info critique dans cette couleur (règle guidelines §2.1).
+  TXT_HINT:      '#6b5a48',
   TXT_BLUE:      '#88aaff',
   TXT_GREEN:     '#55dd66',
   TXT_RED:       '#dd4433',
@@ -66,6 +72,43 @@ export const UI = {
 } as const;
 
 export const FONT = "'Press Start 2P', monospace";
+
+/**
+ * Résolution de rendu du texte (cf. `uiStyle`/`pxStyle`). Valeur par défaut
+ * sûre pour SSR/tests ; `setTextResolution()` la recalibre une seule fois au
+ * boot (`main.ts`) d'après le zoom RÉEL choisi par le Scale Manager.
+ *
+ * Pourquoi ce n'est pas un `3` fixe : le jeu tourne en `pixelArt:true` +
+ * `image-rendering: pixelated` (index.html) — indispensable pour que les
+ * sprites restent nets en gros pixels. Mais `Scale.FIT` + `zoom: MAX_ZOOM`
+ * ne change QUE la taille CSS du canvas ; le canvas lui-même reste rendu à
+ * 800×600 (cf. ScaleManager.resize — `canvas.width/height` = baseSize, jamais
+ * multiplié par le zoom). Le navigateur agrandit donc tout le canvas déjà
+ * rendu — texte compris — via un filtrage "plus proche voisin" d'un facteur
+ * ÉGAL AU ZOOM. Un texte fin (8-10px) survit mal à ça, même généré à une
+ * résolution interne fixe de 3× : sur un grand écran (zoom 3-4+), l'agrandissement
+ * final blockifie quand même les glyphes. Fournir plus de détail source
+ * (résolution ≥ zoom × un facteur confortable) neutralise l'essentiel de cet
+ * effet sans toucher au Scale Manager ni au mapping des coordonnées d'input —
+ * seule la police en profite, tout le reste du jeu (sprites, caméra, clics)
+ * est inchangé.
+ */
+let TEXT_RESOLUTION = 4;
+
+/** À appeler une seule fois au boot (`main.ts`), après `new Phaser.Game()`,
+ *  une fois que `game.scale.zoom` reflète la valeur réellement choisie. */
+export function setTextResolution(zoom: number): void {
+  // Plafond à 10 : la texture de texte est affichée sous filtrage NEAREST
+  // (pixelArt:true) — quand sa densité dépasse largement le zoom réel, la
+  // minification ne retient qu'une fraction des pixels rasterisés et les
+  // micro-glyphes (9-10px) ressortent "grignotés" (bruit de sous-échantillonnage,
+  // aggravé par le hinting du navigateur aux toutes petites tailles de police).
+  // 10 couvre les zooms réels desktop (FIT plafonne en pratique vers 2-4 →
+  // marge ≥ 2.5× au pire) : assez de détail source pour garder les gros textes
+  // nets (l'acquis de cette passe), sans sur-échantillonner à l'excès ni faire
+  // exploser la taille des canvas de texte.
+  TEXT_RESOLUTION = Math.min(10, Math.max(4, Math.ceil(zoom * 3)));
+}
 
 /**
  * Police UI moderne — lisible sans zoom, même après le downscale Scale.FIT
@@ -125,7 +168,9 @@ export function uiStyle(
     // ce texte "moderne" (Verdana) hérite du même rendu blocky que les sprites au lieu
     // d'un rendu net. `resolution` fait générer le canvas de texte en interne à une
     // densité plus élevée avant le zoom du jeu, ce qui le garde net même sous NEAREST.
-    resolution: 3,
+    // Valeur calibrée sur le zoom réel par setTextResolution() (voir sa doc) — un `3`
+    // fixe ne suffit pas sur un grand écran où le Scale Manager choisit un zoom élevé.
+    resolution: TEXT_RESOLUTION,
   };
   const styleParts: string[] = [];
   if (opts.bold)   styleParts.push('bold');
@@ -758,6 +803,10 @@ export function pxStyle(
     fontSize: `${size}px`,
     color,
     fontFamily: FONT,
+    // Même raison que dans uiStyle() (voir sa doc) — "Press Start 2P" a des
+    // courbes/diagonales qui aliasent tout autant sous le zoom NEAREST du jeu ;
+    // ça ne rend pas la police moins "8-bit", juste ses bords moins déchiquetés.
+    resolution: TEXT_RESOLUTION,
   };
   if (stroke) {
     s.stroke = '#000000';

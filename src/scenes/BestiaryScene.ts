@@ -17,7 +17,7 @@
 
 import { WorldState, ElementType, ItemRarity, RARITY_COLORS, SpawnRegion } from '../types';
 import {
-  UI, drawGlowPanel, drawCard, drawSlot, drawBadge, uiStyle,
+  UI, TYPE, drawGlowPanel, drawCard, drawSlot, drawBadge, uiStyle,
   addCloseButton, drawScrollbar, renderScrollableText, formatDropRate,
   drawConfirmCancelButtons,
   openScreenTransition, closeScreenTransition, portalRedirectTransition,
@@ -170,13 +170,13 @@ export class BestiaryScene extends Phaser.Scene {
       .replace('{seen}',  String(counts.seen))
       .replace('{slain}', String(counts.slain))
       .replace('{total}', String(counts.total));
-    this.add.text(20, 24, progressLabel, uiStyle(8, UI.TXT_MUTED)).setOrigin(0, 0.5);
+    this.add.text(20, 24, progressLabel, uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setOrigin(0, 0.5);
 
     // [DEBUG] Tout débloquer — outil de review de contenu (lore/drops), pas une
     // mécanique de jeu : couleur d'alerte distincte pour ne jamais le confondre
     // avec un bouton normal. Ne persiste rien de spécifique — passe juste par
     // BestiarySystem.discoverAll() comme n'importe quelle découverte normale.
-    const debugTxt = this.add.text(20, 36, t('bestiary.debug_unlock_all'), uiStyle(7, UI.TXT_RED, { bold: true }))
+    const debugTxt = this.add.text(20, 36, t('bestiary.debug_unlock_all'), uiStyle(TYPE.SMALL, UI.TXT_RED, { bold: true }))
       .setOrigin(0, 0.5);
     const debugHit = this.add.rectangle(20 + debugTxt.width / 2, 36, debugTxt.width + 12, 20, 0, 0)
       .setInteractive({ useHandCursor: true });
@@ -225,7 +225,7 @@ export class BestiaryScene extends Phaser.Scene {
     this.scrollbarGfx = this.add.graphics().setDepth(5);
 
     // Hint navigation (bas d'écran, hors des panneaux)
-    this.add.text(W / 2, H - 16, t('bestiary.hint'), uiStyle(8, UI.TXT_HINT)).setOrigin(0.5);
+    this.add.text(W / 2, H - 16, t('bestiary.hint'), uiStyle(TYPE.SMALL, UI.TXT_HINT)).setOrigin(0.5);
 
     // ── Construction des lignes (groupées par zone) ──────────
     this.buildRows();
@@ -389,7 +389,7 @@ export class BestiaryScene extends Phaser.Scene {
     // Pastille = couleur élémentaire de la zone (info), filet = structure arcane
     g.fillStyle(row.color, 0.9);
     g.fillRoundedRect(x + 6, cy - 3, 6, 6, 1.5);
-    const txt = this.add.text(x + 18, cy, row.label, uiStyle(8, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0.5);
+    const txt = this.add.text(x + 18, cy, row.label, uiStyle(TYPE.SMALL, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0.5);
     g.lineStyle(1, UI.ACCENT_ARCANE, 0.25);
     g.beginPath();
     g.moveTo(x + 22 + txt.width, cy);
@@ -450,15 +450,15 @@ export class BestiaryScene extends Phaser.Scene {
       ? t('bestiary.level').replace('{lvl}', String(def.baseLevel))
       : t('bestiary.level_unknown');
     this.listObjs.push(
-      this.add.text(x + 36, y + 28, lvlLabel, uiStyle(7, UI.TXT_MUTED)),
+      this.add.text(x + 36, y + 28, lvlLabel, uiStyle(TYPE.SMALL, UI.TXT_MUTED)),
     );
     if (entry.killed) {
       this.listObjs.push(
-        this.add.text(x + w - 8, y + 28, t('bestiary.slain'), uiStyle(7, UI.TXT_RED, { bold: true })).setOrigin(1, 0),
+        this.add.text(x + w - 8, y + 28, t('bestiary.slain'), uiStyle(TYPE.SMALL, UI.TXT_RED, { bold: true })).setOrigin(1, 0),
       );
     } else if (entry.discovered) {
       this.listObjs.push(
-        this.add.text(x + w - 8, y + 28, t('bestiary.seen'), uiStyle(7, UI.TXT_GREEN)).setOrigin(1, 0),
+        this.add.text(x + w - 8, y + 28, t('bestiary.seen'), uiStyle(TYPE.SMALL, UI.TXT_GREEN)).setOrigin(1, 0),
       );
     }
 
@@ -694,7 +694,7 @@ export class BestiaryScene extends Phaser.Scene {
 
     this.detailObjs.push(
       this.add.text(mapX + LOCATION_MAP_W / 2, mapY + LOCATION_MAP_H + 8, t('bestiary.location_approx'),
-        uiStyle(7, UI.TXT_HINT)).setOrigin(0.5, 0),
+        uiStyle(TYPE.SMALL, UI.TXT_HINT)).setOrigin(0.5, 0),
     );
   }
 
@@ -734,7 +734,7 @@ export class BestiaryScene extends Phaser.Scene {
     const rate = drop.dropRatePct / 100;
     this.detailObjs.push(
       this.add.text(sx + size / 2, sy + size + 10, formatDropRate(rate),
-        uiStyle(8, revealed ? UI.TXT_MUTED : UI.TXT_HINT)).setOrigin(0.5),
+        uiStyle(TYPE.SMALL, revealed ? UI.TXT_MUTED : UI.TXT_HINT)).setOrigin(0.5),
     );
 
     // Hit zone élargie : tap = tooltip détaillé
@@ -779,7 +779,7 @@ export class BestiaryScene extends Phaser.Scene {
     const descRaw = item ? localizeItem(item).description : t('bestiary.hidden_drop_desc');
     const desc = descRaw.length > 110 ? descRaw.slice(0, 108) + '..' : descRaw;
     const descTxt = this.add.text(padT, ty, desc,
-      uiStyle(8, UI.TXT_MUTED, { wordWrapWidth: TW - padT * 2, lineSpacing: 3 }));
+      uiStyle(TYPE.SMALL, UI.TXT_MUTED, { wordWrapWidth: TW - padT * 2, lineSpacing: 3 }));
     parts.push(descTxt);
     ty += descTxt.height + padT;
 
@@ -787,7 +787,7 @@ export class BestiaryScene extends Phaser.Scene {
     // (jamais de raccourci vers un équipement qu'il n'a pas encore obtenu).
     const canViewInArsenal = !!item && ArsenalSystem.peekEntry(this.world, item.id).discovered;
     if (canViewInArsenal && item) {
-      const subtitleTxt = this.add.text(padT, ty, t('bestiary.view_in_arsenal'), uiStyle(8, UI.TXT_CYAN));
+      const subtitleTxt = this.add.text(padT, ty, t('bestiary.view_in_arsenal'), uiStyle(TYPE.SMALL, UI.TXT_CYAN));
       parts.push(subtitleTxt);
       ty += subtitleTxt.height + 6;
 
