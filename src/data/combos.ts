@@ -130,4 +130,17 @@ export const COMBO_CONFIGS: Partial<Record<WeaponType, ComboConfig>> = {
       cooldownMult: 1.2,
     },
   },
+
+  [WeaponType.SPEAR]: {
+    // Chaîne longue (4) : la lance récompense le poke répété à distance de sécurité.
+    // Le finisher est une BROCHE — allonge maximale du jeu, cône minimal, transperce
+    // toute la file (pierceCount 99, comme le bâton) : la ligne est sa zone à elle.
+    chainLength: 4,
+    graceMs: 320,
+    finisher: {
+      hits: [{ delay: 0, range: 280, halfArc: Math.PI / 14, damageMultiplier: 2.6 }],
+      effect: { pierceCount: 99, knockback: 200 },
+      cooldownMult: 1.25,
+    },
+  },
 };

@@ -142,6 +142,18 @@ const ATTACK_PATTERNS: Partial<Record<WeaponType, AttackPattern>> = {
     windupMs: 200,
     isProjectile: true,
   },
+  [WeaponType.SPEAR]: {
+    // ESTOC — l'identité de la lance est l'ALLONGE, pas la zone : la portée la plus
+    // longue de toute la mêlée (175, devant le greatsword à 155), mais le cône le plus
+    // étroit du jeu (20°, contre 60° pour l'épée). On perce une cible alignée, on ne
+    // fauche pas une foule. Double coup (piqué-retrait) pour le rythme de l'estoc.
+    hits: [
+      { delay: 0,   range: 175, halfArc: Math.PI / 9, damageMultiplier: 0.85 },
+      { delay: 130, range: 175, halfArc: Math.PI / 9, damageMultiplier: 0.65 },
+    ],
+    cooldown: 750,
+    windupMs: 100,
+  },
 };
 
 const FISTS_PATTERN: AttackPattern = {
@@ -170,6 +182,7 @@ const ALT_ATTACK_CONFIGS: Partial<Record<WeaponType, AltAttackConfig>> = {
   [WeaponType.HAMMER]:      { cooldownMs: 1400, windupMs: 400 },
   [WeaponType.STAFF]:       { cooldownMs: 1200, windupMs: 300 },
   [WeaponType.BOW]:         { cooldownMs: 700 },
+  [WeaponType.SPEAR]:       { cooldownMs: 850,  windupMs: 180 },
 };
 
 const FISTS_ALT_CONFIG: AltAttackConfig = { cooldownMs: 500 };
@@ -3090,6 +3103,16 @@ export class GameScene extends Phaser.Scene {
         break;
       }
 
+      case WeaponType.SPEAR:
+        // Estoc : pas d'arc — un trait qui JAILLIT vers l'avant puis se rétracte.
+        // Le 2e coup (retrait) est plus court et plus pâle : on lit le piqué-retrait.
+        this.spawnSpearThrustVfx(
+          fromX, fromY, angle,
+          hitIndex === 0 ? 175 : 140,
+          hitIndex === 0 ? 0xdff2ff : 0x8fb8cc,
+        );
+        break;
+
       case WeaponType.AXE:
         this.spawnAxeVfx(fromX, fromY, toX, toY, angle, 0xff6600);
         break;
@@ -3141,6 +3164,49 @@ export class GameScene extends Phaser.Scene {
       duration,
       ease: 'Cubic.easeOut',
       onComplete: () => g.destroy(),
+    });
+  }
+
+  /**
+   * LANCE — estoc : un trait fin qui jaillit du joueur jusqu'à `range` puis se
+   * rétracte, avec un éclat à la pointe. Volontairement à contre-courant des autres
+   * armes : pas d'arc de cercle (spawnSlashArcVfx), parce que l'identité lisible de
+   * la lance est la LIGNE, pas la zone (cf. gamefeel : chaque arme doit se sentir
+   * différente au premier coup d'œil).
+   */
+  private spawnSpearThrustVfx(fromX: number, fromY: number, angle: number, range: number, color: number) {
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+
+    // Hampe : rectangle fin, ancré au joueur, dont on étire la longueur (scaleX).
+    const shaft = this.add.rectangle(fromX, fromY, range, 4, color, 0.9)
+      .setOrigin(0, 0.5).setRotation(angle).setDepth(32).setScale(0.15, 1);
+    // Pointe : petit éclat qui file jusqu'au bout de l'allonge.
+    const tip = this.add.circle(fromX, fromY, 6, 0xffffff, 0.95).setDepth(33);
+
+    this.tweens.add({
+      targets: shaft,
+      scaleX: 1,
+      duration: 90,
+      ease: 'Expo.easeOut',
+      // Rétraction : la hampe revient au joueur, on lit le retrait de l'arme.
+      yoyo: true,
+      hold: 40,
+      onComplete: () => shaft.destroy(),
+    });
+    this.tweens.add({
+      targets: tip,
+      x: fromX + cos * range,
+      y: fromY + sin * range,
+      duration: 90,
+      ease: 'Expo.easeOut',
+      onComplete: () => {
+        this.tweens.add({
+          targets: tip,
+          scale: 0, alpha: 0,
+          duration: 110,
+          onComplete: () => tip.destroy(),
+        });
+      },
     });
   }
 
@@ -4853,8 +4919,38 @@ export class GameScene extends Phaser.Scene {
       case WeaponType.HAMMER:      this.performAltHammer(config);     break;
       case WeaponType.STAFF:       this.performAltStaff(config);      break;
       case WeaponType.BOW:         this.performAltBow(config);        break;
+      case WeaponType.SPEAR:       this.performAltSpear(config);      break;
       default:                      this.performAltFists(config);      break;
     }
+  }
+
+  // SPEAR — Percée : charge en avant, embroche TOUT ce qui est aligné (cône très
+  // étroit mais très long) et repousse. C'est le pendant offensif de l'allonge :
+  // la lance ne contrôle pas une zone, elle contrôle une LIGNE.
+  private performAltSpear(config: AltAttackConfig) {
+    const windupMs = config.windupMs ?? 0;
+    this.inWindup = true;
+    this.player.setTint(0x99ddff); // liseré glacé — telegraph distinct du windup lourd
+    this.time.delayedCall(windupMs, () => {
+      this.inWindup = false;
+      if (this.player.active) this.player.clearTint();
+      if (this.isTraveling) return;
+
+      const angle = this.facingAngle;
+      const range = 240; // allonge encore accrue sur la percée
+      this.spawnSpearThrustVfx(this.player.x, this.player.y, angle, range, 0xaaddff);
+      this.executeHitInCone(range, Math.PI / 10, 1.6);
+      for (const sprite of this.findEnemiesInCone(range, Math.PI / 10)) {
+        this.applyKnockback(sprite, 220);
+      }
+
+      // Petit bond en avant : la charge se SENT (cf. gamefeel — le dash a de la personnalité).
+      const body = this.player.body as Phaser.Physics.Arcade.Body;
+      body.setVelocity(Math.cos(angle) * 320, Math.sin(angle) * 320);
+      this.time.delayedCall(120, () => {
+        if (this.player.active && !this.isDashing) body.setVelocity(0, 0);
+      });
+    });
   }
 
   // SWORD — Estoc : narrow cone (PI/12), range x1.8, dmgMult=0.85, rapid, 350ms cd.

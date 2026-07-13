@@ -50,6 +50,8 @@ export enum WeaponType {
   HAMMER = 'HAMMER',
   STAFF = 'STAFF',
   BOW = 'BOW',
+  /** Estoc : allonge maximale en mêlée, cône très étroit — on pique, on ne fauche pas. */
+  SPEAR = 'SPEAR',
 }
 
 export enum SkillType {
