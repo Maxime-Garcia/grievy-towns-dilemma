@@ -4103,7 +4103,13 @@ export class GameScene extends Phaser.Scene {
       const aspectRatio = Math.max(mapWidth, mapHeight) / Math.min(mapWidth, mapHeight);
       const regionsUsable = aspectRatio <= 1.5;
       for (let i = 0; i < count; i++) {
-        const isElite = Math.random() < 0.20;
+        // Une créature peut être élite de DEUX façons : parce que sa data le dit
+        // (def.isElite — les 44 créatures montées en élites, dont les stats sont déjà
+        // ×2.4 dans la data), ou par promotion aléatoire d'un mob banal. Avant, seul
+        // le tirage comptait : une élite de data n'avait que 20% de chances d'être
+        // traitée comme telle (couronne, XP ×2.5, bonus de world drop…).
+        const rolledElite = Math.random() < 0.20;
+        const isElite = def.isElite || rolledElite;
         // Provisoire/approximatif : biaise le spawn vers un quadrant plausible de la zone
         // (ENEMY_SPAWN_REGIONS, cf. heatmap Bestiaire) au lieu d'un tirage uniforme sur
         // toute la map — à remplacer une fois les maps de zone finalisées.
@@ -4155,7 +4161,10 @@ export class GameScene extends Phaser.Scene {
         active.x       = ex;
         active.y       = ey;
         active.isElite = isElite;
-        if (isElite) {
+        // Le boost ne s'applique QU'À la promotion aléatoire : les élites de data
+        // portent déjà leurs stats renforcées (×2.4 dans genEnemies.mjs). Les
+        // re-multiplier ici en ferait des murs de 3.6×.
+        if (rolledElite && !def.isElite) {
           active.currentHp = Math.floor(active.currentHp * 1.5);
           active.maxHp     = Math.floor(active.maxHp     * 1.5);
           active.stats     = { ...active.stats, baseAtk: Math.floor(active.stats.baseAtk * 1.4) };

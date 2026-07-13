@@ -131,10 +131,15 @@ const assign = (sheet, zone, isElite, idx) => {
   const name = isElite
     ? `${pick(ELITE_NOUN[el])}`
     : `${pick(BEAST_NOUN[el])} ${pick(EPITHET)}`;
+  // Lore tiré UNE SEULE FOIS : il alimente à la fois la fiche d'ennemi et l'entrée
+  // de Bestiaire. Le tirer deux fois donnait deux lores différents pour la même
+  // créature, ce qui se voyait immédiatement en jeu.
+  const lore = isElite ? pick(LORE_ELITE[el]) : pick(LORE_BEAST[el]);
 
   return {
     id: sheet.id,
     name,
+    lore,
     zone: zone.id,
     element: el,
     level: lvl,
@@ -192,7 +197,7 @@ for (const item of orphans) {
 // ── Émission ───────────────────────────────────────────────────────
 const esc = (s) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 const defs = enemies.map(e => {
-  const lore = e.isElite ? pick(LORE_ELITE[e.element]) : pick(LORE_BEAST[e.element]);
+  const lore = e.lore;
   const loot = e.loot.map(l => `{ itemId: '${l.itemId}', dropRate: ${l.dropRate}, minQty: 1, maxQty: 1 }`).join(', ');
   return `  {
     id: '${e.id}',
@@ -209,7 +214,12 @@ const defs = enemies.map(e => {
     baseGold: { min: ${e.gold.min}, max: ${e.gold.max} },
     isBoss: false,
     isElite: ${e.isElite},
-    spawnWeight: ${e.isElite ? 0.4 : 1.2},
+    // createEnemiesForZone fait Math.floor(spawnWeight * 4) : 0.5 → 2 exemplaires,
+    // 0.25 → 1. À 1.2 (4 exemplaires) les zones montaient à ~135 ennemis simultanés,
+    // soit ~540 GameObjects et autant de corps physiques en overlap permanent — le
+    // plus gros coût runtime de toute cette passe. On reste au-dessus de l'existant
+    // sans transformer chaque zone en foire.
+    spawnWeight: ${e.isElite ? 0.25 : 0.5},
     aggroRange: ${e.isElite ? 260 : 220},
     attackRange: ${e.isElite ? 60 : 48},
     moveSpeed: ${e.isElite ? 75 : 90},
@@ -220,7 +230,7 @@ const defs = enemies.map(e => {
 
 const bestiary = enemies.map(e => {
   const drops = e.loot.map(l => `{ itemId: '${l.itemId}', dropRatePct: ${Math.round(l.dropRate * 100)}, isHidden: ${byId.get(l.itemId)?.rarity === 'HIDDEN'} }`).join(', ');
-  return `  { enemyId: '${e.id}', name: '${esc(e.name)}', habitat: '${e.zone}', shortDesc: '${esc(e.isElite ? 'Rencontre d\\\'élite' : 'Faune hostile')} — niveau ${e.level}.', lore: '${esc(e.isElite ? pick(LORE_ELITE[e.element]) : pick(LORE_BEAST[e.element]))}', drops: [${drops}] },`;
+  return `  { enemyId: '${e.id}', name: '${esc(e.name)}', habitat: '${e.zone}', shortDesc: '${esc(e.isElite ? 'Rencontre d\\\'élite' : 'Faune hostile')} — niveau ${e.level}.', lore: '${esc(e.lore)}', drops: [${drops}] },`;
 }).join('\n');
 
 // Répartition par zone, pour injection dans zones.ts

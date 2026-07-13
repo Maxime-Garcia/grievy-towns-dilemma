@@ -30,6 +30,14 @@ function rollRandomElement(): ElementType {
 }
 
 function applyRandomElement(item: Item): Item {
+  // Un élément AUTHORÉ est intouchable. Le nom et le lore en dépendent : un
+  // « Braquemart de Foudre » dont le lore parle de la foudre de Volterra ne doit pas
+  // sortir en glace. Ça annulait aussi l'accord élément↔zone du générateur d'ennemis
+  // (une lame de givre n'est attachée qu'aux monstres de Glaciem — pour rien, si le
+  // drop la relookait au hasard) et faisait mentir ses substats ELEM_BONUS_PCT.
+  // Le tirage ne concerne donc QUE les pièces sans élément propre.
+  if (item.element && item.element !== ElementType.NEUTRAL) return item;
+
   if (item.type !== ItemType.WEAPON && item.type !== ItemType.HELM &&
       item.type !== ItemType.CHEST && item.type !== ItemType.LEGS &&
       item.type !== ItemType.BOOTS && item.type !== ItemType.GLOVES &&
@@ -67,13 +75,18 @@ const WORLD_DROP_BOSS_MULT  = 4.0;
  * progression du butin n'aurait plus aucun sens et le early game serait résolu
  * au premier coup de chance.
  */
-const WORLD_DROP_MIN_LEVEL: Partial<Record<ItemRarity, number>> = {
+const WORLD_DROP_MIN_LEVEL: Record<ItemRarity, number> = {
   [ItemRarity.COMMON]: 1,
   [ItemRarity.UNCOMMON]: 3,
   [ItemRarity.RARE]: 6,
   [ItemRarity.EPIC]: 11,
   [ItemRarity.LEGENDARY]: 17,
   [ItemRarity.MYTHIC]: 24,
+  // HIDDEN manquait : les deux filtres rejettent `min === undefined`, donc un item
+  // HIDDEN ne pouvait JAMAIS tomber en world drop et son entrée dans le plancher de
+  // rareté était du code mort. Sans effet aujourd'hui (le générateur n'en produit
+  // plus aucun), mais un Hidden versé au pool plus tard serait resté inatteignable.
+  [ItemRarity.HIDDEN]: 30,
 };
 
 /**
@@ -127,6 +140,9 @@ export class LootSystem {
     let chance = WORLD_DROP_CHANCE;
     if (isBoss) chance *= WORLD_DROP_BOSS_MULT;
     else if (isElite) chance *= WORLD_DROP_ELITE_MULT;
+    // Clamp : sans lui, monter WORLD_DROP_CHANCE au-dessus de 0.25 rendrait le world
+    // drop de boss silencieusement GARANTI (0.25 × 4 = 1.0), sans que rien ne le dise.
+    chance = Math.min(1, chance);
     if (Math.random() > chance) return null;
 
     const pool = getWorldPool();
@@ -245,12 +261,22 @@ export class LootSystem {
   }
 
   /**
-   * Taille du sac. Relevé de 60 à 150 : l'inventaire de départ contient déjà ~59
-   * armes (ProgressionSystem.createNewPlayer), ce qui ne laissait littéralement
-   * QU'UN slot libre pour tout le loot de la partie — chaque drop suivant était
-   * refusé par addToInventory et silencieusement perdu.
+   * Taille du sac.
+   *
+   * Historique : 60, alors que l'inventaire de départ contient déjà ~59 armes
+   * (ProgressionSystem.createNewPlayer) — il ne restait littéralement QU'UN slot
+   * libre pour tout le loot de la partie.
+   *
+   * Puis 150 : encore insuffisant. Le jeu lâche désormais ~0,78 item/kill (table
+   * fixe ~0,60 + world drop ~0,18), soit un sac plein en ~117 kills — avant même
+   * d'avoir nettoyé la première zone. « Tout est lootable » se serait auto-saboté :
+   * le joueur aurait passé la partie à voir ses drops refusés.
+   *
+   * 400 laisse de quoi jouer plusieurs zones avant d'avoir à faire le tri. La
+   * grille d'inventaire est virtualisée (cf. InventoryScene.renderGrid), donc un
+   * gros sac ne coûte plus rien à l'affichage — c'est ce qui rend ce cap tenable.
    */
-  static readonly MAX_SLOTS = 150;
+  static readonly MAX_SLOTS = 400;
 
   /**
    * @param ignoreCap Contourne le cap de slots. Réservé aux transferts NEUTRES en

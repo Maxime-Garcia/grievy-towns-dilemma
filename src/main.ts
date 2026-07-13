@@ -16,40 +16,12 @@ import { BestiaryScene }  from './scenes/BestiaryScene';
 import { ArsenalScene }   from './scenes/ArsenalScene';
 import { setTextResolution } from './utils/UITheme';
 
-// ── Texte net sous pixelArt:true — LE fix (pas un pansement de résolution) ──
-// Le jeu tourne en pixelArt:true + image-rendering:pixelated (index.html) :
-// indispensable pour que les sprites restent nets en gros pixels. Mais tout
-// Phaser.GameObjects.Text est un Canvas 2D "normal" (police lisse, anti-
-// aliasée) transformé en texture — sous filtrage NEAREST global, cette
-// texture lisse est échantillonnée comme un sprite pixel-art, ce qui la fait
-// ressortir grignotée/floue (essayé et insuffisant : sur-échantillonner la
-// résolution du texte pour "survivre" au NEAREST, cf. anciens commentaires
-// dans UITheme.ts — un texte lisse n'est simplement pas fait pour ce
-// filtrage, peu importe sa densité source).
-// Le vrai fix : chaque Texture Phaser peut avoir SON PROPRE filtre, indépendant
-// du réglage global pixelArt. On intercepte donc la factory `add.text()` une
-// seule fois ici (avant toute scène) pour forcer LINEAR (bilinéaire, lisse)
-// sur la texture de CHAQUE Text créé dans le jeu — les sprites, eux, gardent
-// NEAREST (chunky, voulu) puisqu'on ne touche à rien d'autre que Text.
-// Aucune scène n'a besoin d'être modifiée : this.add.text() reste l'API
-// normale partout, ce correctif est invisible pour le reste du code.
-const originalTextFactory = Phaser.GameObjects.GameObjectFactory.prototype.text;
-Phaser.GameObjects.GameObjectFactory.prototype.text = function (
-  this: Phaser.GameObjects.GameObjectFactory,
-  ...args: Parameters<typeof originalTextFactory>
-) {
-  const textObj = originalTextFactory.apply(this, args);
-  // `texture` n'est pas exposé dans les types publics de Phaser.GameObjects.Text
-  // (champ interne, cf. Text.js) — garde runtime pour ne pas planter tout le
-  // rendu texte si une future version de Phaser renomme/retire ce champ.
-  const tex = (textObj as unknown as { texture?: Phaser.Textures.Texture }).texture;
-  if (tex) {
-    tex.setFilter(Phaser.Textures.FilterMode.LINEAR);
-  } else {
-    console.warn('[main.ts] Text.texture introuvable — filtre LINEAR non appliqué (Phaser a changé ?)');
-  }
-  return textObj;
-};
+// Le monkeypatch qui forçait LINEAR sur la texture de chaque `add.text()` a été
+// RETIRÉ : il n'existait que pour sauver le texte du filtrage NEAREST imposé par
+// `pixelArt: true`. Depuis le retrait du filtre pixel art (ci-dessous), LINEAR est
+// le filtre global — le patch ne faisait plus que coûter un setFilter par Text créé.
+// S'il fallait revenir à `pixelArt: true`, il faudrait le restaurer (cf. historique
+// git : commit d3c10e6 « filtre LINEAR sur les textures de texte »).
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
