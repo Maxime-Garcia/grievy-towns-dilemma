@@ -247,6 +247,19 @@ export class CombatSystem {
     return 1.0;
   }
 
+  /**
+   * PERMA_BURN_STACK_3_PCT (hidden_magma_cleaver) — dégâts d'un tick (1s) de la
+   * Marque de Magma : 3% de l'ATK du porteur par stack (max 10 stacks gérés côté
+   * GameScene). Lit cs.atk (main stat d'arme incluse) comme toutes les autres
+   * formules de dégâts — jamais weapon.damage directement. Minimum 1 pour qu'un
+   * stack se voie toujours (cohérent avec le Math.max(1, …) des autres formules).
+   */
+  static getMagmaBurnTickDamage(player: PlayerState, stacks: number): number {
+    if (stacks <= 0) return 0;
+    const atk = StatsSystem.computeAll(player).atk;
+    return Math.max(1, Math.round(atk * PassiveSystem.MAGMA_BURN_PCT_PER_STACK / 100 * stacks));
+  }
+
   // Soul Echo bonus (passive hidden skill)
   static getSoulEchoBonus(player: PlayerState): number {
     if (!player.unlockedSkills.includes('soul_echo')) return 1.0;
@@ -260,7 +273,10 @@ export class CombatSystem {
       : 0;
     const manaRegen = Math.floor(player.stats.maxMana * 0.02);
 
-    player.stats.hp   = Math.min(player.stats.maxHp,   player.stats.hp   + hpRegen);
+    // PassiveSystem.applyHeal (au lieu d'un clamp manuel) — convertit le surplus HP
+    // au-delà de maxHp en bouclier si OVERHEAL_SHIELD_50_PCT est équipé (cohérent
+    // avec playerSkill et les soins de GameScene).
+    PassiveSystem.applyHeal(player, hpRegen);
     player.stats.mana = Math.min(player.stats.maxMana, player.stats.mana + manaRegen);
   }
 }

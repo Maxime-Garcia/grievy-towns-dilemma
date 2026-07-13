@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType, ItemRarity } from '../types';
 import { CombatSystem } from '../systems/CombatSystem';
 import { StatsSystem } from '../systems/StatsSystem';
-import { PassiveSystem } from '../systems/PassiveSystem';
+import { PassiveSystem, SameTargetStackState, CritCdResetState } from '../systems/PassiveSystem';
 import { COMBO_CONFIGS, ComboConfig } from '../data/combos';
 import { TalentSystem, TalentModifiers } from '../systems/TalentSystem';
 import { LootSystem } from '../systems/LootSystem';
@@ -270,6 +270,32 @@ export class GameScene extends Phaser.Scene {
   // dashCooldown/iframeUntil) : pas persisté en save, se reconstitue en jeu.
   private playerShieldHp = 0;
   private lowHpShieldCooldownUntil = 0;
+  // ── État transitoire HIDDEN — VAGUE 2 (non persisté, même principe que
+  // playerShieldHp/dashCooldown : reconstruit en jeu, remis à zéro dans init()
+  // pour ne pas hériter de l'état d'une partie précédente sur Continuer) ──
+  // PERMA_BURN_STACK_3_PCT : stacks de Marque de Magma par instance ennemie (hors
+  // PlayerState car lié à la cible). Tické 1s dans tickEnemyAI comme le BLEED.
+  private magmaBurnStacks: Map<string, number> = new Map();
+  // SAME_TARGET_STACK_10_PCT : cible courante + stacks consécutifs.
+  private sameTargetStackState: SameTargetStackState = { targetId: null, stacks: 0, lastHitAt: 0 };
+  // CRIT_CD_RESET_1S : fenêtre glissante anti-spam (4 max/s).
+  private critCdResetState: CritCdResetState = { windowStart: 0, count: 0 };
+  // FREEZE_RETALIATION_1_5S : cooldown 5s propre à la riposte de gel.
+  private freezeRetaliationCooldownUntil = 0;
+  // MOVE_25_DASH_ASPD_50_PCT : fin du buff d'ASPD post-dash.
+  private dashAspdBuffUntil = 0;
+  // BURNING_AURA_5_PCT_ATK : dernier tick d'aura (cadence 500ms).
+  private lastBurningAuraTime = 0;
+  // AUTO_BOLT_150_PCT_MATK : dernier tir automatique (cadence 5s).
+  private lastAutoBoltTime = 0;
+  // FROZEN_SANCTUARY_30_PCT : fin de la fenêtre d'invulnérabilité/soin (3s) +
+  // flag "déjà déclenchée ce combat" (reset quand activeEnemies repasse à 0).
+  private frozenSanctuaryUntil = 0;
+  private frozenSanctuaryUsedThisCombat = false;
+  private lastFrozenSanctuaryHealTime = 0;
+  // DAMAGE_DEFERRAL_50_PCT : file des moitiés de dégâts différées (5 ticks 1s).
+  private deferredDamageQueue: Array<{ amountPerTick: number; ticksLeft: number }> = [];
+  private lastDeferredTickTime = 0;
   // "En combat" = this.activeEnemies.size > 0 (même définition que le hors-combat
   // de outOfCombatRegen ci-dessus) — sert de point de transition pour les passifs
   // FIRST_STRIKE_500_PCT/COMBAT_START_ZERO_CD (cf. PassiveSystem).
@@ -339,6 +365,22 @@ export class GameScene extends Phaser.Scene {
     this.lowHpShieldCooldownUntil = 0;
     this.wasInCombat             = false;
     this.lastPermanentRegenTime  = 0;
+    // HIDDEN — VAGUE 2 : même reset que playerShieldHp (état de combat transitoire).
+    this.magmaBurnStacks              = new Map();
+    this.sameTargetStackState         = { targetId: null, stacks: 0, lastHitAt: 0 };
+    this.critCdResetState             = { windowStart: 0, count: 0 };
+    this.freezeRetaliationCooldownUntil = 0;
+    this.dashAspdBuffUntil            = 0;
+    this.lastBurningAuraTime          = 0;
+    this.lastAutoBoltTime             = 0;
+    this.frozenSanctuaryUntil         = 0;
+    this.frozenSanctuaryUsedThisCombat = false;
+    this.lastFrozenSanctuaryHealTime  = 0;
+    this.deferredDamageQueue          = [];
+    this.lastDeferredTickTime         = 0;
+    // Bouclier de surplus (OVERHEAL_SHIELD) : état de combat transitoire — ne pas
+    // hériter d'un reliquat de la session précédente (Continuer) ou de la save.
+    if (this.gameState.player.passiveStacks) this.gameState.player.passiveStacks['OVERHEAL_SHIELD_50_PCT'] = 0;
     // Reset zone-scoped refs on each scene start (full Phaser restart)
     this.zoneGraphics       = null;
     this.zoneTileSprites    = [];
@@ -503,9 +545,17 @@ export class GameScene extends Phaser.Scene {
       this.lastPermanentRegenTime = time;
       const p = this.gameState.player;
       const regenFrac = permanentRegenPct / 100 * 2; // 1%/s × 2s d'intervalle
-      p.stats.hp   = Math.min(p.stats.maxHp,   p.stats.hp   + Math.floor(p.stats.maxHp   * regenFrac));
+      // applyHeal pour convertir le surplus en bouclier si OVERHEAL_SHIELD équipé
+      // (cf. §3.11) ; le mana n'a pas d'équivalent bouclier → clamp manuel.
+      PassiveSystem.applyHeal(p, Math.floor(p.stats.maxHp * regenFrac));
       p.stats.mana = Math.min(p.stats.maxMana, p.stats.mana + Math.floor(p.stats.maxMana * regenFrac));
     }
+
+    // HIDDEN — VAGUE 2 : effets périodiques globaux (mêmes cadences internes).
+    this.tickBurningAura(time);
+    this.tickAutoBolt(time);
+    this.tickDeferredDamage(time);
+    this.tickFrozenSanctuaryHeal(time);
 
     // Transition hors-combat → en-combat : reset des passifs "premier coup"/"cooldowns
     // à zéro au début du combat" (FIRST_STRIKE_500_PCT, COMBAT_START_ZERO_CD).
@@ -516,6 +566,9 @@ export class GameScene extends Phaser.Scene {
         for (const id of Object.keys(this.cooldowns)) this.cooldowns[id] = 0;
       }
     }
+    // FROZEN_SANCTUARY_30_PCT : la stase est « une fois par combat » — le flag se
+    // réarme dès la sortie de combat (même transition que firstStrikeReady).
+    if (!inCombatNow) this.frozenSanctuaryUsedThisCombat = false;
     this.wasInCombat = inCombatNow;
 
     if (this.playtimeAccumulator - this.lastAutoSave > 180) {
@@ -568,8 +621,11 @@ export class GameScene extends Phaser.Scene {
     this.debugSpeedMult = this.speedBoostKey?.isDown ? 5 : 1;
 
     const player = this.gameState.player;
-    // WATER_DMG_15_SPEED_10_PCT (sailor_ghost_ring) — bonus de vitesse permanent.
-    const passiveSpeedMult = 1 + PassiveSystem.getMoveSpeedBonusPct(player.equipment) / 100;
+    // WATER_DMG_15_SPEED_10_PCT (sailor_ghost_ring) + MOVE_25_DASH_ASPD_50_PCT
+    // (hidden_skyward_mantle) — bonus de vitesse de déplacement permanents, cumulés.
+    const passiveSpeedMult = 1
+      + PassiveSystem.getMoveSpeedBonusPct(player.equipment) / 100
+      + PassiveSystem.getSkywardMoveSpeedPct(player.equipment) / 100;
     const speed  = (90 + player.stats.spd * 4) * this.playerModifiers.moveSpeedMult * passiveSpeedMult * this.debugSpeedMult;
     const body   = this.player.body as Phaser.Physics.Arcade.Body;
 
@@ -668,9 +724,20 @@ export class GameScene extends Phaser.Scene {
     const nx = (dx / len) * 300 * dashSpeedMult;
     const ny = (dy / len) * 300 * dashSpeedMult;
 
-    this.dashCooldown = 1.5;
+    // NO_DASH_COOLDOWN (hidden_zephyr_fang) — plancher anti-exploit à
+    // NO_DASH_COOLDOWN_FLOOR_S (pas 0 : un dash-spam serait des iframes wallhack),
+    // même garde-fou que NO_ATTACK_COOLDOWN sur l'attaque de base.
+    const dashCd = PassiveSystem.hasNoDashCooldown(this.gameState.player.equipment)
+      ? PassiveSystem.NO_DASH_COOLDOWN_FLOOR_S : 1.5;
+    this.dashCooldown = dashCd;
     this.isDashing = true;
     body.setVelocity(nx, ny);
+
+    // MOVE_25_DASH_ASPD_50_PCT (hidden_skyward_mantle) — un dash réussi octroie un
+    // buff d'ASPD temporaire (lu dans performBasicAttack).
+    if (PassiveSystem.hasDashAspdBuff(this.gameState.player.equipment)) {
+      this.dashAspdBuffUntil = this.time.now + PassiveSystem.DASH_ASPD_BUFF_DURATION_MS;
+    }
 
     // BUG5 fix: dashPreservesCombo gèle le timer de grace pendant 350ms
     if (this.playerModifiers.dashPreservesCombo) {
@@ -693,7 +760,7 @@ export class GameScene extends Phaser.Scene {
       },
     });
 
-    this.cooldowns['dash'] = 1.5;
+    this.cooldowns['dash'] = dashCd;
   }
 
   // ── SKILLS & ATTACK ──────────────────────────────────────────
@@ -767,7 +834,10 @@ export class GameScene extends Phaser.Scene {
     this.comboCount++;
 
     // ASPD_PCT (equipStats) accélère le cooldown d'attaque de base — cf. StatsSystem.
-    const aspd = StatsSystem.computeAll(this.gameState.player).aspd;
+    // MOVE_25_DASH_ASPD_50_PCT (hidden_skyward_mantle) : +50% d'ASPD pendant la
+    // fenêtre post-dash (dashAspdBuffUntil, posée dans handleDash).
+    let aspd = StatsSystem.computeAll(this.gameState.player).aspd;
+    if (now < this.dashAspdBuffUntil) aspd *= 1 + PassiveSystem.DASH_ASPD_BUFF_PCT / 100;
     // NO_ATTACK_COOLDOWN (hidden_temporal_blade) : les attaques basiques n'ont
     // plus le cooldown propre à l'arme — plancher à NO_ATTACK_COOLDOWN_FLOOR_MS
     // (pas 0 : qa-agent BLOCKER, un cooldown nul rendait le DPS quasi-infini,
@@ -864,8 +934,13 @@ export class GameScene extends Phaser.Scene {
       const hpBeforeHit = activeEnemy.currentHp;
       const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy, cs);
 
-      // Combiné : multiplicateur du pattern + talents mêlée + bonus de chaîne.
-      const finalDamage = Math.round(result.damage * damageMultiplier * appliedMeleeMult * stackBonus);
+      // SAME_TARGET_STACK_10_PCT (hidden_serpentgrip_gauntlets) — +10%/coup
+      // consécutif sur la même cible (état muté en place, reset si la cible change).
+      const sameTargetMult = PassiveSystem.getSameTargetStackMultiplier(
+        this.gameState.player.equipment, this.sameTargetStackState, activeEnemy.instanceId, this.time.now,
+      );
+      // Combiné : multiplicateur du pattern + talents mêlée + bonus de chaîne + stack cible.
+      const finalDamage = Math.round(result.damage * damageMultiplier * appliedMeleeMult * stackBonus * sameTargetMult);
       activeEnemy.currentHp = Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - finalDamage));
       const isKill = activeEnemy.currentHp <= 0;
 
@@ -873,9 +948,11 @@ export class GameScene extends Phaser.Scene {
       this.spawnHitParticles(sprite.x, sprite.y, result.element);
       this.applyHitFeedback(sprite, activeEnemy, finalDamage);
       if (result.isCrit) anyCrit = true;
+      this.tryCritCdReset(result.isCrit);
       if (isKill) {
         this.onEnemyKilled(activeEnemy, sprite);
       } else {
+        this.addMagmaStackIfEquipped(activeEnemy.instanceId);
         this.checkStagger(sprite, activeEnemy, finalDamage);
       }
     }
@@ -974,8 +1051,12 @@ export class GameScene extends Phaser.Scene {
         // (unmultiplied) clamped subtraction rather than patch a delta onto it.
         const hpBeforeHit = activeEnemy.currentHp;
         const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy, cs);
+        // SAME_TARGET_STACK_10_PCT (hidden_serpentgrip_gauntlets) — cf. executeHitInCone.
+        const sameTargetMult = PassiveSystem.getSameTargetStackMultiplier(
+          this.gameState.player.equipment, this.sameTargetStackState, activeEnemy.instanceId, this.time.now,
+        );
         // BUG4 fix: apply the dmgMult from the finisher (or 1.0 for normal shots)
-        const arrowFinalDmg = Math.round(result.damage * arrow.dmgMult);
+        const arrowFinalDmg = Math.round(result.damage * arrow.dmgMult * sameTargetMult);
         activeEnemy.currentHp = Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - arrowFinalDmg));
         const arrowIsKill = activeEnemy.currentHp <= 0;
         this.showDamageNumber(sprite.x, sprite.y - 20, arrowFinalDmg, result.isCrit, result.element);
@@ -983,8 +1064,12 @@ export class GameScene extends Phaser.Scene {
         this.applyHitFeedback(sprite, activeEnemy, arrowFinalDmg);
         if (result.isCrit) this.cameras.main.shake(120, 0.007);
         else               this.cameras.main.shake(40, 0.002);
+        this.tryCritCdReset(result.isCrit);
         if (arrowIsKill) this.onEnemyKilled(activeEnemy, sprite);
-        else             this.checkStagger(sprite, activeEnemy, arrowFinalDmg);
+        else {
+          this.addMagmaStackIfEquipped(activeEnemy.instanceId);
+          this.checkStagger(sprite, activeEnemy, arrowFinalDmg);
+        }
         break;
       }
     }
@@ -1012,10 +1097,34 @@ export class GameScene extends Phaser.Scene {
           this.cameras.main.shake(50, 0.003);
         }
         this.applyHitFeedback(nearest, activeEnemy!, result.damage);
+        this.tryCritCdReset(result.isCrit);
         if (result.isKill) {
           this.onEnemyKilled(activeEnemy!, nearest);
         } else {
+          this.addMagmaStackIfEquipped(activeEnemy!.instanceId);
           this.checkStagger(nearest, activeEnemy!, result.damage);
+        }
+
+        // SKILL_ECHO_50_PCT (hidden_stormheart_staff) — rejoue la compétence à 50%
+        // des dégâts après un court délai sur la MÊME cible (si toujours en vie),
+        // sans reconsommer de mana ni relancer le cooldown (coup "gratuit").
+        if (PassiveSystem.hasSkillEcho(this.gameState.player.equipment) && result.damage > 0) {
+          const echoTargetId = activeEnemy!.instanceId;
+          const echoElement = skill.element;
+          const echoDmg = Math.round(result.damage * PassiveSystem.SKILL_ECHO_PCT / 100);
+          this.time.delayedCall(PassiveSystem.SKILL_ECHO_DELAY_MS, () => {
+            if (this.isTraveling) return;
+            const echoTarget = this.activeEnemies.get(echoTargetId);
+            if (!echoTarget || echoTarget.currentHp <= 0) return;
+            const echoSprite = this.enemies.getChildren().find(
+              (c) => (c as Phaser.Physics.Arcade.Sprite).name === echoTargetId,
+            ) as Phaser.Physics.Arcade.Sprite | undefined;
+            if (echoSprite?.active) {
+              this.showDamageNumber(echoSprite.x, echoSprite.y - 20, echoDmg, false, echoElement);
+              this.spawnHitParticles(echoSprite.x, echoSprite.y, echoElement);
+            }
+            this.applyPassiveDamageToEnemy(echoTargetId, echoDmg);
+          });
         }
       }
       if (result.damage === 0 && skill.effect?.healPercent) {
@@ -1236,14 +1345,29 @@ export class GameScene extends Phaser.Scene {
       if (!def) return;
 
       const aggroRange  = def.aggroRange ?? 220;
-      const moveSpeed   = def.moveSpeed  ?? 90;
 
-      // ── STUN check ──────────────────────────────────────────
-      const stunEffect = ae.statusEffects.find(e => e.type === 'STUN');
-      if (stunEffect && stunEffect.duration > 0) {
-        stunEffect.duration -= dt;
-        if (stunEffect.duration <= 0) {
-          ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'STUN');
+      // ── SLOW tick ───────────────────────────────────────────
+      // Décrémenté ICI (aucun autre chemin ne le faisait auparavant — un SLOW posé
+      // par une compétence Glace ou par FREEZE_RETALIATION contre un boss ne doit
+      // pas rester permanent) et appliqué au déplacement effectif (strength = fraction
+      // de vitesse retirée, ex. 0.3 = -30%).
+      const slowEffect = ae.statusEffects.find(e => e.type === 'SLOW');
+      if (slowEffect) {
+        slowEffect.duration -= dt;
+        if (slowEffect.duration <= 0) ae.statusEffects = ae.statusEffects.filter(e => e !== slowEffect);
+      }
+      const slowMult = slowEffect && slowEffect.duration > 0 ? Math.max(0, 1 - slowEffect.strength) : 1;
+      const moveSpeed = (def.moveSpeed ?? 90) * slowMult;
+
+      // ── STUN / FREEZE check ─────────────────────────────────
+      // FREEZE immobilise exactement comme STUN (CombatSystem.enemyAttack empêche
+      // déjà l'attaque d'un ennemi gelé ; ici on stoppe aussi son déplacement — sinon
+      // FREEZE_RETALIATION ne ferait que le rendre inoffensif tout en le laissant courir).
+      const immobilize = ae.statusEffects.find(e => e.type === 'STUN' || e.type === 'FREEZE');
+      if (immobilize && immobilize.duration > 0) {
+        immobilize.duration -= dt;
+        if (immobilize.duration <= 0) {
+          ae.statusEffects = ae.statusEffects.filter(e => e !== immobilize);
         }
         body.setVelocity(0, 0);
         this.updateEnemyUiPositions(instanceId, sprite, ae);
@@ -1265,6 +1389,32 @@ export class GameScene extends Phaser.Scene {
         }
         if (bleedEffect.duration <= 0) {
           ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'BLEED');
+        }
+      }
+
+      // ── Marque de Magma tick (PERMA_BURN_STACK_3_PCT / hidden_magma_cleaver) ──
+      // Même minuteur 1s par instance que le BLEED. Les stacks ne tickent que tant
+      // que l'arme reste équipée ; démarquée, on purge les stacks résiduels.
+      const magmaStacks = this.magmaBurnStacks.get(instanceId) ?? 0;
+      if (magmaStacks > 0) {
+        if (PassiveSystem.hasMagmaBurn(this.gameState.player.equipment)) {
+          const magmaKey = `magma_${instanceId}`;
+          if (!this.cooldowns[magmaKey] || this.cooldowns[magmaKey] <= 0) {
+            const tickDmg = CombatSystem.getMagmaBurnTickDamage(this.gameState.player, magmaStacks);
+            ae.currentHp = Math.max(0, ae.currentHp - tickDmg);
+            this.cooldowns[magmaKey] = 1.0;
+            const omnivampPct = PassiveSystem.getOmnivampPct(this.gameState.player.equipment);
+            if (omnivampPct > 0) {
+              PassiveSystem.applyHeal(this.gameState.player, Math.floor(tickDmg * omnivampPct / 100));
+            }
+            this.showDamageNumber(sprite.x, sprite.y - 12, tickDmg, false, ElementType.FIRE);
+            if (ae.currentHp <= 0) {
+              this.onEnemyKilled(ae, sprite);
+              return;
+            }
+          }
+        } else {
+          this.magmaBurnStacks.delete(instanceId);
         }
       }
 
@@ -2057,8 +2207,35 @@ export class GameScene extends Phaser.Scene {
       dmg -= absorbed;
     }
 
+    // OVERHEAL_SHIELD_50_PCT (hidden_tideheart_ring) — bouclier de surplus de soin,
+    // consommé juste APRÈS LOW_HP_SHIELD (ordre fixé par le docstring de
+    // PassiveSystem.applyHeal). Gate hasOverhealShield (même précaution que
+    // getKillStackDamageMultiplier) : le bouclier est banké dans passiveStacks (donc
+    // sérialisé) — sans la garde, il absorberait encore après avoir déséquipé l'anneau.
+    const overhealShield = this.gameState.player.passiveStacks['OVERHEAL_SHIELD_50_PCT'] ?? 0;
+    if (overhealShield > 0 && dmg > 0 && PassiveSystem.hasOverhealShield(equipment)) {
+      const absorbed = Math.min(overhealShield, dmg);
+      this.gameState.player.passiveStacks['OVERHEAL_SHIELD_50_PCT'] = overhealShield - absorbed;
+      dmg -= absorbed;
+    }
+
     const reductionPct = PassiveSystem.getDamageReductionPct(equipment);
     dmg = reductionPct > 0 ? Math.round(dmg * (1 - reductionPct / 100)) : dmg;
+
+    // DAMAGE_DEFERRAL_50_PCT (hidden_runebound_amulet) — n'encaisse immédiatement
+    // que 50% ; les 50% restants sont étalés sur 5 ticks 1s (tickDeferredDamage).
+    if (PassiveSystem.hasDamageDeferral(equipment) && dmg > 0) {
+      const deferred = Math.round(dmg * PassiveSystem.DAMAGE_DEFERRAL_PCT / 100);
+      if (deferred > 0) {
+        dmg -= deferred;
+        if (this.deferredDamageQueue.length === 0) this.lastDeferredTickTime = this.time.now;
+        this.deferredDamageQueue.push({
+          amountPerTick: deferred / PassiveSystem.DAMAGE_DEFERRAL_TICKS,
+          ticksLeft: PassiveSystem.DAMAGE_DEFERRAL_TICKS,
+        });
+      }
+    }
+
     if (hpBefore - dmg <= 0) {
       const resistChance = PassiveSystem.getDeathResistChance(equipment);
       if (resistChance > 0 && Math.random() < resistChance) {
@@ -2067,7 +2244,22 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.maybeTriggerLowHpShield(hpBefore - dmg);
+    this.maybeTriggerFrozenSanctuary(hpBefore - dmg);
     return dmg;
+  }
+
+  /** FROZEN_SANCTUARY_30_PCT — déclenche la stase (invulnérabilité + soin 10%/s
+   *  pendant 3s) si les HP passent sous 25% et qu'elle n'a pas déjà servi ce combat. */
+  private maybeTriggerFrozenSanctuary(hpAfter: number): void {
+    const p = this.gameState.player;
+    if (!PassiveSystem.shouldTriggerFrozenSanctuary(
+      p.equipment, this.frozenSanctuaryUsedThisCombat, hpAfter, p.stats.maxHp,
+    )) return;
+    this.frozenSanctuaryUsedThisCombat = true;
+    this.frozenSanctuaryUntil = this.time.now + PassiveSystem.FROZEN_SANCTUARY_DURATION_MS;
+    this.lastFrozenSanctuaryHealTime = this.time.now; // premier soin ~1s plus tard
+    this.cameras.main.flash(220, 150, 220, 255);
+    this.events.emit('show_notification', 'Sanctuaire de Glace — invulnérable 3s !');
   }
 
   /** Déclenche le bouclier de ring_of_preservation si HP < 20% et pas en cooldown. */
@@ -2086,6 +2278,15 @@ export class GameScene extends Phaser.Scene {
   private applyEnemyMeleeDamage(ae: ActiveEnemy, damageMult: number) {
     if (this.inWindup && this.playerModifiers.windupArmor) return;
     if (damageMult <= 0) return; // summon pattern has damageMult 0
+
+    // FROZEN_SANCTUARY_30_PCT — invulnérabilité totale pendant la fenêtre de stase.
+    if (this.time.now < this.frozenSanctuaryUntil) return;
+    // TRUE_DODGE_25_PCT (hidden_voidwalker_boots) — jet d'esquive INDÉPENDANT du
+    // DODGE_PCT (loot rolls), avant tout calcul de dégâts (cf. spec : jet séparé).
+    if (PassiveSystem.rollTrueDodge(this.gameState.player.equipment)) {
+      this.showDodgeText(this.player.x, this.player.y - 20);
+      return;
+    }
 
     // Snapshot BEFORE CombatSystem applies its own (unmultiplied) clamped damage — same
     // reason as executeHitInCone()/updateArrowProjectiles(): patching a delta onto HP
@@ -2120,6 +2321,10 @@ export class GameScene extends Phaser.Scene {
     ));
     const isKill = this.gameState.player.stats.hp <= 0;
 
+    // FREEZE_RETALIATION_1_5S (hidden_permafrost_greaves) — riposte de gel sur
+    // l'attaquant (seul point où l'ennemi source est disponible), gouvernée par son cd 5s.
+    this.maybeFreezeRetaliation(ae);
+
     if (finalDmg > 0) {
       this.showDamageNumber(this.player.x, this.player.y - 20, finalDmg, false, undefined, true);
       this.cameras.main.shake(100, 0.005);
@@ -2128,11 +2333,36 @@ export class GameScene extends Phaser.Scene {
     if (isKill) this.onPlayerDeath();
   }
 
+  /** FREEZE_RETALIATION_1_5S — gèle l'attaquant (ou le ralentit s'il est boss :
+   *  pas de stun-lock), une fois toutes les FREEZE_RETALIATION_COOLDOWN_S. */
+  private maybeFreezeRetaliation(ae: ActiveEnemy): void {
+    if (!PassiveSystem.hasFreezeRetaliation(this.gameState.player.equipment)) return;
+    if (this.time.now < this.freezeRetaliationCooldownUntil) return;
+    this.freezeRetaliationCooldownUntil = this.time.now + PassiveSystem.FREEZE_RETALIATION_COOLDOWN_S * 1000;
+    if (ae.isBoss) {
+      ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'SLOW');
+      ae.statusEffects.push({
+        type: 'SLOW', duration: PassiveSystem.FREEZE_RETALIATION_DURATION_S,
+        strength: PassiveSystem.FREEZE_RETALIATION_BOSS_SLOW_PCT / 100,
+      });
+    } else {
+      ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'FREEZE');
+      ae.statusEffects.push({ type: 'FREEZE', duration: PassiveSystem.FREEZE_RETALIATION_DURATION_S, strength: 1 });
+    }
+  }
+
   /** Apply direct damage to the player (from homing projectile, AoE, etc.). */
   private applyDamageToPlayer(damage: number) {
     if (damage <= 0) return;
     if (this.isDashing) return;
     if (this.time.now < this.iframeUntil) return; // iframes post-hit
+    // FROZEN_SANCTUARY_30_PCT — invulnérabilité totale pendant la stase.
+    if (this.time.now < this.frozenSanctuaryUntil) return;
+    // TRUE_DODGE_25_PCT (hidden_voidwalker_boots) — jet indépendant du DODGE_PCT.
+    if (PassiveSystem.rollTrueDodge(this.gameState.player.equipment)) {
+      this.showDodgeText(this.player.x, this.player.y - 20);
+      return;
+    }
 
     if (this.time.now < this.guardUntil) {
       const refund = Math.round(damage * 0.3);
@@ -2199,6 +2429,122 @@ export class GameScene extends Phaser.Scene {
     if (ae.currentHp <= 0 && sprite?.active) {
       this.onEnemyKilled(ae, sprite);
     }
+  }
+
+  // ── HIDDEN — VAGUE 2 : helpers ───────────────────────────────
+
+  /** Applique des dégâts « passifs » (Marque de Magma, aura, auto-bolt, écho de
+   *  compétence) à un ennemi, en drainant l'OMNIVAMP_25_PCT au passage — le passif
+   *  soigne sur « TOUS les dégâts infligés », pas seulement les attaques directes. */
+  private applyPassiveDamageToEnemy(instanceId: string, damage: number): void {
+    if (damage <= 0) return;
+    // Cible réelle uniquement — sans ça, l'omnivol pourrait soigner sur un ennemi
+    // déjà retiré (mannequin/sprite en cours de destruction) qui n'a rien encaissé.
+    if (!this.activeEnemies.has(instanceId)) return;
+    this.applyDamageToEnemy(instanceId, damage);
+    const omnivampPct = PassiveSystem.getOmnivampPct(this.gameState.player.equipment);
+    if (omnivampPct > 0) {
+      PassiveSystem.applyHeal(this.gameState.player, Math.floor(damage * omnivampPct / 100));
+    }
+  }
+
+  /** PERMA_BURN_STACK_3_PCT — pose/incrémente un stack de Marque de Magma sur une
+   *  cible (plafonné), no-op si hidden_magma_cleaver n'est pas équipé. */
+  private addMagmaStackIfEquipped(instanceId: string): void {
+    if (!PassiveSystem.hasMagmaBurn(this.gameState.player.equipment)) return;
+    const cur = this.magmaBurnStacks.get(instanceId) ?? 0;
+    this.magmaBurnStacks.set(instanceId, Math.min(PassiveSystem.MAGMA_BURN_STACK_MAX, cur + 1));
+  }
+
+  /** CRIT_CD_RESET_1S — sur un critique, réduit d'1s les cooldowns des SEULES
+   *  compétences équipées (jamais les clés internes atkcd_/bleed_/magma_/dash de
+   *  this.cooldowns : les réduire fausserait le timing des ennemis). */
+  private tryCritCdReset(isCrit: boolean): void {
+    if (!isCrit) return;
+    if (!PassiveSystem.tryTriggerCritCdReset(this.gameState.player.equipment, this.critCdResetState, this.time.now)) return;
+    const slots = this.gameState.player.equippedSkills;
+    for (const skillId of [slots.slot1, slots.slot2, slots.slot3, slots.slot4]) {
+      if (skillId && this.cooldowns[skillId] > 0) {
+        this.cooldowns[skillId] = Math.max(0, this.cooldowns[skillId] - PassiveSystem.CRIT_CD_RESET_S);
+      }
+    }
+  }
+
+  /** BURNING_AURA_5_PCT_ATK (hidden_emberheart_carapace) — tick périodique (500ms)
+   *  infligeant 5%/s d'ATK aux ennemis dans le rayon (part au prorata de l'intervalle). */
+  private tickBurningAura(time: number): void {
+    if (!PassiveSystem.hasBurningAura(this.gameState.player.equipment)) return;
+    if (time - this.lastBurningAuraTime < PassiveSystem.BURNING_AURA_TICK_INTERVAL_MS) return;
+    this.lastBurningAuraTime = time;
+    const atk = StatsSystem.computeAll(this.gameState.player).atk;
+    const perTick = Math.max(1, Math.round(
+      atk * PassiveSystem.BURNING_AURA_PCT_PER_SEC / 100
+      * PassiveSystem.BURNING_AURA_TICK_INTERVAL_MS / 1000,
+    ));
+    const px = this.player.x, py = this.player.y;
+    // Snapshot des ids : applyPassiveDamageToEnemy peut tuer (mutation de la Map).
+    const ids = Array.from(this.activeEnemies.keys());
+    for (const id of ids) {
+      const sprite = this.enemies.getChildren().find(
+        (c) => (c as Phaser.Physics.Arcade.Sprite).name === id,
+      ) as Phaser.Physics.Arcade.Sprite | undefined;
+      if (!sprite?.active) continue;
+      if (Phaser.Math.Distance.Between(px, py, sprite.x, sprite.y) > PassiveSystem.BURNING_AURA_RADIUS_PX) continue;
+      this.showDamageNumber(sprite.x, sprite.y - 12, perTick, false, ElementType.FIRE);
+      this.applyPassiveDamageToEnemy(id, perTick);
+    }
+  }
+
+  /** AUTO_BOLT_150_PCT_MATK (hidden_tempest_amulet) — toutes les 5s, foudroie
+   *  l'ennemi le plus proche dans la portée pour 150% MATK. */
+  private tickAutoBolt(time: number): void {
+    if (!PassiveSystem.hasAutoBolt(this.gameState.player.equipment)) return;
+    if (time - this.lastAutoBoltTime < PassiveSystem.AUTO_BOLT_INTERVAL_MS) return;
+    const target = this.findNearestEnemy(PassiveSystem.AUTO_BOLT_RANGE_PX);
+    if (!target) return; // pas de cible : on retente au prochain tick, sans reset du timer
+    this.lastAutoBoltTime = time;
+    const matk = StatsSystem.computeAll(this.gameState.player).matk;
+    const dmg = Math.max(1, Math.round(matk * PassiveSystem.AUTO_BOLT_MATK_PCT / 100));
+    this.spawnCosmeticProjectile(this.player.x, this.player.y, target.x, target.y, ElementType.LIGHTNING);
+    this.showDamageNumber(target.x, target.y - 20, dmg, false, ElementType.LIGHTNING);
+    this.spawnHitParticles(target.x, target.y, ElementType.LIGHTNING);
+    this.applyPassiveDamageToEnemy(target.name, dmg);
+  }
+
+  /** DAMAGE_DEFERRAL_50_PCT (hidden_runebound_amulet) — tick 1s de la file différée.
+   *  Appliqué DIRECTEMENT sur les HP (jamais via mitigatePlayerDamage : re-router un
+   *  dégât différé le re-diviserait → boucle infinie de report). La stase le met en pause. */
+  private tickDeferredDamage(time: number): void {
+    if (this.deferredDamageQueue.length === 0) return;
+    if (time < this.frozenSanctuaryUntil) return;
+    if (time - this.lastDeferredTickTime < PassiveSystem.DAMAGE_DEFERRAL_INTERVAL_MS) return;
+    this.lastDeferredTickTime = time;
+    let total = 0;
+    for (const entry of this.deferredDamageQueue) {
+      total += Math.round(entry.amountPerTick);
+      entry.ticksLeft--;
+    }
+    this.deferredDamageQueue = this.deferredDamageQueue.filter(e => e.ticksLeft > 0);
+    if (total <= 0) return;
+    const p = this.gameState.player;
+    p.stats.hp = Math.max(0, p.stats.hp - total);
+    this.showDamageNumber(this.player.x, this.player.y - 20, total, false, undefined, true);
+    this.events.emit('player_update', p);
+    if (p.stats.hp <= 0) this.onPlayerDeath();
+  }
+
+  /** FROZEN_SANCTUARY_30_PCT — soin de 10%/s pendant la fenêtre de stase
+   *  (l'invulnérabilité est gérée aux points d'entrée des dégâts). */
+  private tickFrozenSanctuaryHeal(time: number): void {
+    if (time >= this.frozenSanctuaryUntil) return;
+    if (time - this.lastFrozenSanctuaryHealTime < 1000) return;
+    this.lastFrozenSanctuaryHealTime = time;
+    const p = this.gameState.player;
+    const heal = Math.round(p.stats.maxHp * PassiveSystem.FROZEN_SANCTUARY_HEAL_PCT_PER_SEC / 100);
+    if (heal <= 0) return;
+    PassiveSystem.applyHeal(p, heal);
+    this.showHealNumber(this.player.x, this.player.y - 20, heal);
+    this.events.emit('player_update', p);
   }
 
   // ── PROJECTILES ──────────────────────────────────────────────
@@ -2340,20 +2686,15 @@ export class GameScene extends Phaser.Scene {
     // + bonus KILL_HEAL_15_PCT (hidden_void_reaper), cumulé au même % (même effet).
     const killHealPct = this.playerModifiers.killHealPct + PassiveSystem.getKillHealBonusPct(this.gameState.player.equipment);
     if (killHealPct > 0) {
-      const heal = Math.round(this.gameState.player.stats.maxHp * killHealPct / 100);
-      this.gameState.player.stats.hp = Math.min(
-        this.gameState.player.stats.maxHp,
-        this.gameState.player.stats.hp + heal,
-      );
+      // PassiveSystem.applyHeal : convertit le surplus en bouclier si OVERHEAL_SHIELD
+      // est équipé, au lieu d'un clamp manuel qui le perdrait.
+      PassiveSystem.applyHeal(this.gameState.player, Math.round(this.gameState.player.stats.maxHp * killHealPct / 100));
     }
     // HP_ON_KILL_FLAT / MANA_ON_KILL_FLAT (loot stat rolls) — additif avec
     // KILL_HEAL_15_PCT / MANA_ON_KILL_PCT (ABYSSAL), même point de branchement.
     const csOnKill = StatsSystem.computeAll(this.gameState.player);
     if (csOnKill.hpOnKill > 0) {
-      this.gameState.player.stats.hp = Math.min(
-        this.gameState.player.stats.maxHp,
-        this.gameState.player.stats.hp + csOnKill.hpOnKill,
-      );
+      PassiveSystem.applyHeal(this.gameState.player, csOnKill.hpOnKill);
     }
     if (csOnKill.manaOnKill > 0) {
       this.gameState.player.stats.mana = Math.min(
@@ -2377,6 +2718,8 @@ export class GameScene extends Phaser.Scene {
     delete this.cooldowns[`atkcd_${iid}`];
     delete this.cooldowns[`melee_${iid}`];
     delete this.cooldowns[`bleed_${iid}`];
+    delete this.cooldowns[`magma_${iid}`];
+    this.magmaBurnStacks.delete(iid);
 
     this.activeEnemies.delete(activeEnemy.instanceId);
 
@@ -2526,6 +2869,15 @@ export class GameScene extends Phaser.Scene {
     this.isTraveling = true;
     this.gameState.player.deaths++;
     this.gameState.player.stats.hp = Math.floor(this.gameState.player.stats.maxHp * 0.5);
+    // DAMAGE_DEFERRAL_50_PCT : purger la file différée à la mort — sinon les moitiés
+    // restantes continueraient de frapper stats.hp après le respawn à 50% (dégât
+    // fantôme post-mortem, voire re-kill en chaîne). init() n'est pas rappelé au respawn.
+    this.deferredDamageQueue = [];
+    this.lastDeferredTickTime = 0;
+    // La stase de glace et le bouclier de surplus sont de l'état de combat, mort avec
+    // le joueur — repartir « propre » évite qu'un reliquat traverse le respawn.
+    this.frozenSanctuaryUntil = 0;
+    this.gameState.player.passiveStacks['OVERHEAL_SHIELD_50_PCT'] = 0;
 
     this.physics.world.pause();
     this.cameras.main.once(
@@ -4217,11 +4569,15 @@ export class GameScene extends Phaser.Scene {
     this.enemyCrowns.forEach(crown => crown.destroy());
     this.enemyCrowns.clear();
     this.activeEnemies.clear();
+    // Marque de Magma : les stacks sont indexés par instance ennemie — les vider avec
+    // les ennemis (sinon fuite d'une entrée par ennemi vivant à chaque transition).
+    this.magmaBurnStacks.clear();
     this.enemies.destroy(true);
 
     // BUG 4 fix: purge orphaned enemy cooldown keys to prevent unbounded dict growth
+    // (inclut magma_${id}, ajouté avec la Marque de Magma — même garde-fou).
     for (const key of Object.keys(this.cooldowns)) {
-      if (key.startsWith('atkcd_') || key.startsWith('melee_') || key.startsWith('bleed_')) {
+      if (key.startsWith('atkcd_') || key.startsWith('melee_') || key.startsWith('bleed_') || key.startsWith('magma_')) {
         delete this.cooldowns[key];
       }
     }
