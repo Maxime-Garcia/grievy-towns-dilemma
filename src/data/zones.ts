@@ -1,3 +1,4 @@
+import { GENERATED_ZONE_ENEMIES } from './enemiesGenerated';
 import { Zone, ElementType, ZoneStatus, Divine } from '../types';
 
 export const DIVINES: Record<string, Divine> = {
@@ -596,5 +597,14 @@ export const ZONES: Zone[] = [
     worldPosition: { x: 290, y: 260 }
   },
 ];
+
+// Les 139 créatures générées (scripts/genEnemies.mjs) sont versées dans la liste
+// d'ennemis de leur zone. Sans ça elles existeraient dans ENEMY_MAP et dans le
+// Bestiaire, mais ne spawneraient JAMAIS — et les 541 items qu'elles portent
+// resteraient inatteignables, ce qui était tout le problème à résoudre.
+for (const zone of ZONES) {
+  const extra = GENERATED_ZONE_ENEMIES[zone.id];
+  if (extra?.length) zone.enemies = [...zone.enemies, ...extra];
+}
 
 export const ZONE_MAP: Record<string, Zone> = Object.fromEntries(ZONES.map(z => [z.id, z]));

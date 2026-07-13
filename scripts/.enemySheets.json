@@ -1,0 +1,836 @@
+[
+  {
+    "id": "fd_beast_01",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_001.png"
+  },
+  {
+    "id": "fd_beast_02",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_002.png"
+  },
+  {
+    "id": "fd_beast_03",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_003.png"
+  },
+  {
+    "id": "fd_beast_04",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_004.png"
+  },
+  {
+    "id": "fd_beast_05",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_005.png"
+  },
+  {
+    "id": "fd_beast_06",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_006.png"
+  },
+  {
+    "id": "fd_beast_07",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_007.png"
+  },
+  {
+    "id": "fd_beast_08",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_008.png"
+  },
+  {
+    "id": "fd_beast_09",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_009.png"
+  },
+  {
+    "id": "fd_beast_10",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_010.png"
+  },
+  {
+    "id": "fd_beast_11",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_011.png"
+  },
+  {
+    "id": "fd_beast_12",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_012.png"
+  },
+  {
+    "id": "fd_beast_13",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_013.png"
+  },
+  {
+    "id": "fd_beast_14",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_014.png"
+  },
+  {
+    "id": "fd_beast_15",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_015.png"
+  },
+  {
+    "id": "fd_beast_16",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_016.png"
+  },
+  {
+    "id": "fd_beast_17",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_017.png"
+  },
+  {
+    "id": "fd_beast_18",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_018.png"
+  },
+  {
+    "id": "fd_beast_19",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_019.png"
+  },
+  {
+    "id": "fd_beast_20",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_020.png"
+  },
+  {
+    "id": "fd_beast_21",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_021.png"
+  },
+  {
+    "id": "fd_beast_22",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_022.png"
+  },
+  {
+    "id": "fd_beast_23",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_023.png"
+  },
+  {
+    "id": "fd_beast_24",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_024.png"
+  },
+  {
+    "id": "fd_beast_25",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_043.png"
+  },
+  {
+    "id": "fd_beast_26",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_044.png"
+  },
+  {
+    "id": "fd_beast_27",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_045.png"
+  },
+  {
+    "id": "fd_beast_28",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_046.png"
+  },
+  {
+    "id": "fd_beast_29",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_047.png"
+  },
+  {
+    "id": "fd_beast_30",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_048.png"
+  },
+  {
+    "id": "fd_beast_31",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_049.png"
+  },
+  {
+    "id": "fd_beast_32",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_050.png"
+  },
+  {
+    "id": "fd_beast_33",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_051.png"
+  },
+  {
+    "id": "fd_beast_34",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_052.png"
+  },
+  {
+    "id": "fd_beast_35",
+    "boss": false,
+    "layout": "states",
+    "source": "Enemies Sprites 1 - Fantasy Dreamland/Enemy_053.png"
+  },
+  {
+    "id": "fd_swarm_01",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_25.png"
+  },
+  {
+    "id": "fd_swarm_02",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_25_dead.png"
+  },
+  {
+    "id": "fd_swarm_03",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_26.png"
+  },
+  {
+    "id": "fd_swarm_04",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_26_dead.png"
+  },
+  {
+    "id": "fd_swarm_05",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_27.png"
+  },
+  {
+    "id": "fd_swarm_06",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_27_dead.png"
+  },
+  {
+    "id": "fd_swarm_07",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_28.png"
+  },
+  {
+    "id": "fd_swarm_08",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_28_dead.png"
+  },
+  {
+    "id": "fd_swarm_09",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_29.png"
+  },
+  {
+    "id": "fd_swarm_10",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_29_dead.png"
+  },
+  {
+    "id": "fd_swarm_11",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_30.png"
+  },
+  {
+    "id": "fd_swarm_12",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_30_dead.png"
+  },
+  {
+    "id": "fd_swarm_13",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_31.png"
+  },
+  {
+    "id": "fd_swarm_14",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_31_dead.png"
+  },
+  {
+    "id": "fd_swarm_15",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_32.png"
+  },
+  {
+    "id": "fd_swarm_16",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_32_dead.png"
+  },
+  {
+    "id": "fd_swarm_17",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_33.png"
+  },
+  {
+    "id": "fd_swarm_18",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_33_dead.png"
+  },
+  {
+    "id": "fd_swarm_19",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_34.png"
+  },
+  {
+    "id": "fd_swarm_20",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_34_dead.png"
+  },
+  {
+    "id": "fd_swarm_21",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_35.png"
+  },
+  {
+    "id": "fd_swarm_22",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_35_dead.png"
+  },
+  {
+    "id": "fd_swarm_23",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_36.png"
+  },
+  {
+    "id": "fd_swarm_24",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_36_dead.png"
+  },
+  {
+    "id": "fd_swarm_25",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_37.png"
+  },
+  {
+    "id": "fd_swarm_26",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_37_dead.png"
+  },
+  {
+    "id": "fd_swarm_27",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_38.png"
+  },
+  {
+    "id": "fd_swarm_28",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_38_dead.png"
+  },
+  {
+    "id": "fd_swarm_29",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_39.png"
+  },
+  {
+    "id": "fd_swarm_30",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_39_dead.png"
+  },
+  {
+    "id": "fd_swarm_31",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_40.png"
+  },
+  {
+    "id": "fd_swarm_32",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_40_dead.png"
+  },
+  {
+    "id": "fd_swarm_33",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_41.png"
+  },
+  {
+    "id": "fd_swarm_34",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_41_dead.png"
+  },
+  {
+    "id": "fd_swarm_35",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_42.png"
+  },
+  {
+    "id": "fd_swarm_36",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_42_dead.png"
+  },
+  {
+    "id": "fd_swarm_37",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_13.png"
+  },
+  {
+    "id": "fd_swarm_38",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_13_dead.png"
+  },
+  {
+    "id": "fd_swarm_39",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_14.png"
+  },
+  {
+    "id": "fd_swarm_40",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_14_dead.png"
+  },
+  {
+    "id": "fd_swarm_41",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_15.png"
+  },
+  {
+    "id": "fd_swarm_42",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_15_dead.png"
+  },
+  {
+    "id": "fd_swarm_43",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_16.png"
+  },
+  {
+    "id": "fd_swarm_44",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_16_dead.png"
+  },
+  {
+    "id": "fd_swarm_45",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_17.png"
+  },
+  {
+    "id": "fd_swarm_46",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_17_dead.png"
+  },
+  {
+    "id": "fd_swarm_47",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_18.png"
+  },
+  {
+    "id": "fd_swarm_48",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_18_dead.png"
+  },
+  {
+    "id": "fd_swarm_49",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_19.png"
+  },
+  {
+    "id": "fd_swarm_50",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_19_dead.png"
+  },
+  {
+    "id": "fd_swarm_51",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_20.png"
+  },
+  {
+    "id": "fd_swarm_52",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_20_dead.png"
+  },
+  {
+    "id": "fd_swarm_53",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_21.png"
+  },
+  {
+    "id": "fd_swarm_54",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_21_dead.png"
+  },
+  {
+    "id": "fd_swarm_55",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_22.png"
+  },
+  {
+    "id": "fd_swarm_56",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_22_dead.png"
+  },
+  {
+    "id": "fd_swarm_57",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_23.png"
+  },
+  {
+    "id": "fd_swarm_58",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_23_dead.png"
+  },
+  {
+    "id": "fd_swarm_59",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_24.png"
+  },
+  {
+    "id": "fd_swarm_60",
+    "boss": false,
+    "layout": "dirs",
+    "source": "Enemies Sprites 2 - Fantasy Dreamland/Enemy_Big_24_dead.png"
+  },
+  {
+    "id": "fd_lord_01",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_001.png"
+  },
+  {
+    "id": "fd_lord_02",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_002.png"
+  },
+  {
+    "id": "fd_lord_03",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_003.png"
+  },
+  {
+    "id": "fd_lord_04",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_004.png"
+  },
+  {
+    "id": "fd_lord_05",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_005.png"
+  },
+  {
+    "id": "fd_lord_06",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_006.png"
+  },
+  {
+    "id": "fd_lord_07",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_007.png"
+  },
+  {
+    "id": "fd_lord_08",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_008.png"
+  },
+  {
+    "id": "fd_lord_09",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_009.png"
+  },
+  {
+    "id": "fd_lord_10",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_010.png"
+  },
+  {
+    "id": "fd_lord_11",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_011.png"
+  },
+  {
+    "id": "fd_lord_12",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_012.png"
+  },
+  {
+    "id": "fd_lord_13",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_013.png"
+  },
+  {
+    "id": "fd_lord_14",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_014.png"
+  },
+  {
+    "id": "fd_lord_15",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_015.png"
+  },
+  {
+    "id": "fd_lord_16",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_016.png"
+  },
+  {
+    "id": "fd_lord_17",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_017.png"
+  },
+  {
+    "id": "fd_lord_18",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_018.png"
+  },
+  {
+    "id": "fd_lord_19",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_019.png"
+  },
+  {
+    "id": "fd_lord_20",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_020.png"
+  },
+  {
+    "id": "fd_lord_21",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_021.png"
+  },
+  {
+    "id": "fd_lord_22",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_022.png"
+  },
+  {
+    "id": "fd_lord_23",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_023.png"
+  },
+  {
+    "id": "fd_lord_24",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 1 - Fantasy Dreamland/Boss_024.png"
+  },
+  {
+    "id": "fd_tyrant_01",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_025.png"
+  },
+  {
+    "id": "fd_tyrant_02",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_026.png"
+  },
+  {
+    "id": "fd_tyrant_03",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_027.png"
+  },
+  {
+    "id": "fd_tyrant_04",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_028.png"
+  },
+  {
+    "id": "fd_tyrant_05",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_029.png"
+  },
+  {
+    "id": "fd_tyrant_06",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_030.png"
+  },
+  {
+    "id": "fd_tyrant_07",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_031.png"
+  },
+  {
+    "id": "fd_tyrant_08",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_032.png"
+  },
+  {
+    "id": "fd_tyrant_09",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_033.png"
+  },
+  {
+    "id": "fd_tyrant_10",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_034.png"
+  },
+  {
+    "id": "fd_tyrant_11",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_035.png"
+  },
+  {
+    "id": "fd_tyrant_12",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_036.png"
+  },
+  {
+    "id": "fd_tyrant_13",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_037.png"
+  },
+  {
+    "id": "fd_tyrant_14",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_038.png"
+  },
+  {
+    "id": "fd_tyrant_15",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_039.png"
+  },
+  {
+    "id": "fd_tyrant_16",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_040.png"
+  },
+  {
+    "id": "fd_tyrant_17",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_041.png"
+  },
+  {
+    "id": "fd_tyrant_18",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_042.png"
+  },
+  {
+    "id": "fd_tyrant_19",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_043.png"
+  },
+  {
+    "id": "fd_tyrant_20",
+    "boss": true,
+    "layout": "states",
+    "source": "Bosses Sprites 2 - Fantasy Dreamland/Boss_044.png"
+  }
+]

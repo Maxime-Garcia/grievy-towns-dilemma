@@ -1,3 +1,4 @@
+import { GENERATED_BESTIARY } from './enemiesGenerated';
 // ─────────────────────────────────────────────────────────────────
 // BESTIAIRE — Grievy Town's Dilemma
 //
@@ -790,14 +791,17 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
   },
 ];
 
+/** Bestiaire complet : entrées écrites à la main + les 139 créatures générées. */
+export const ALL_BESTIARY: BestiaryEnemyData[] = [...BESTIARY_DATA, ...GENERATED_BESTIARY];
+
 export function getBestiaryEntry(enemyId: string): BestiaryEnemyData | undefined {
-  return BESTIARY_DATA.find(e => e.enemyId === enemyId);
+  return ALL_BESTIARY.find(e => e.enemyId === enemyId);
 }
 
 /** IDs dans l'ordre canonique du bestiaire (même ordre que BESTIARY_DATA). */
-export const BESTIARY_IDS: string[] = BESTIARY_DATA.map(e => e.enemyId);
+export const BESTIARY_IDS: string[] = ALL_BESTIARY.map(e => e.enemyId);
 
 /** Lookup rapide par enemyId — même données que BESTIARY_DATA. */
 export const BESTIARY_RECORD: Record<string, BestiaryEnemyData> = Object.fromEntries(
-  BESTIARY_DATA.map(e => [e.enemyId, e]),
+  ALL_BESTIARY.map(e => [e.enemyId, e]),
 );

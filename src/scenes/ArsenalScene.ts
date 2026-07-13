@@ -51,6 +51,17 @@ const SECTION_ORDER: ItemType[] = [
   ItemType.BOOTS, ItemType.GLOVES, ItemType.CAPE, ItemType.RING, ItemType.AMULET,
 ];
 
+/** Rang de rareté pour le tri (le plus haut = le plus prestigieux). */
+const RARITY_RANK: Record<ItemRarity, number> = {
+  [ItemRarity.COMMON]: 0,
+  [ItemRarity.UNCOMMON]: 1,
+  [ItemRarity.RARE]: 2,
+  [ItemRarity.EPIC]: 3,
+  [ItemRarity.LEGENDARY]: 4,
+  [ItemRarity.MYTHIC]: 5,
+  [ItemRarity.HIDDEN]: 6,
+};
+
 const SECTION_LABEL_KEYS: Partial<Record<ItemType, string>> = {
   [ItemType.WEAPON]: 'arsenal.section_weapon',
   [ItemType.HELM]:   'arsenal.section_helm',
@@ -252,7 +263,18 @@ export class ArsenalScene extends Phaser.Scene {
 
   private buildRows() {
     for (const sectionType of SECTION_ORDER) {
-      const items = Object.values(ALL_ITEMS).filter(i => i.type === sectionType);
+      // Tri à DEUX niveaux : la section donne la catégorie (armes, casques…), et à
+      // l'intérieur on classe par RARETÉ DÉCROISSANTE — les pièces d'exception en
+      // tête, le tout-venant en fin de section. Avec ~540 entrées au catalogue,
+      // l'ordre d'insertion de ALL_ITEMS ne voulait plus rien dire : on scrollait
+      // au hasard. À rareté égale, ordre alphabétique pour que la liste soit stable
+      // et qu'un item se retrouve à l'œil.
+      const items = Object.values(ALL_ITEMS)
+        .filter(i => i.type === sectionType)
+        .sort((a, b) => {
+          const dr = RARITY_RANK[b.rarity] - RARITY_RANK[a.rarity];
+          return dr !== 0 ? dr : a.name.localeCompare(b.name, 'fr');
+        });
       if (items.length === 0) continue;
       this.rows.push({ kind: 'header', label: t(SECTION_LABEL_KEYS[sectionType] ?? '').toUpperCase() });
       for (const item of items) {

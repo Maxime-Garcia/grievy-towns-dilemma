@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { parseTMXtoTiledJSON } from '../utils/TMXParser';
 import { RARITY_COLORS, ItemRarity, ElementType, ItemType } from '../types';
 import { ALL_ITEMS } from '../data/items';
+import { ENEMY_MAP } from '../data/enemies';
 import { SKILLS } from '../data/skills';
 import { TALENT_MAP } from '../data/talents';
 
@@ -36,8 +37,26 @@ export class PreloaderScene extends Phaser.Scene {
     malachar_boss: 48,
     // 80×80 (Titan Guard boss)
     gorvun_boss: 80, thalymor_boss: 80, crysthea_boss: 80,
+
+    // ── 139 créatures Fantasy Dreamland (scripts/sliceEnemySheets.mjs) ──
+    // Toutes en 48×48. Ajoutées DYNAMIQUEMENT plus bas (`fd_*`) plutôt qu'une à
+    // une : lister 139 ids à la main serait exactement le genre d'oubli qui a déjà
+    // laissé des dizaines d'items sans skin.
   };
   private static readonly ENEMY_STATES = ['idle', 'walk', 'attack', 'damage', 'dead'] as const;
+
+  /**
+   * Toutes les tailles de frame, y compris les créatures générées (préfixe `fd_`,
+   * toutes en 48×48). Dérivé de ENEMY_MAP : une créature ajoutée au catalogue
+   * charge automatiquement ses sprites.
+   */
+  private static enemyFrameSizes(): Record<string, number> {
+    const sizes: Record<string, number> = { ...PreloaderScene.ENEMY_FRAME_SIZE };
+    for (const id of Object.keys(ENEMY_MAP)) {
+      if (id.startsWith('fd_')) sizes[id] = 48;
+    }
+    return sizes;
+  }
 
   // Les anciennes listes WEAPON_ICON_KEYS / ARMOR_ICON_KEYS (ecrites a la main, et
   // qui ne couvraient que 54 armes + 10 casques) ont disparu : les icones ditems
@@ -144,7 +163,7 @@ export class PreloaderScene extends Phaser.Scene {
 
     // ── Ennemis — Rogue Adventure Enemy Pack recoloré par élément (voir ASSET_SOURCES.md) ──
     // Strip horizontal 6 frames, une seule direction (pas de flip directionnel pour les ennemis).
-    for (const [enemyId, size] of Object.entries(PreloaderScene.ENEMY_FRAME_SIZE)) {
+    for (const [enemyId, size] of Object.entries(PreloaderScene.enemyFrameSizes())) {
       for (const state of PreloaderScene.ENEMY_STATES) {
         this.load.spritesheet(
           `enemy_${enemyId}_${state}`,
@@ -322,15 +341,21 @@ export class PreloaderScene extends Phaser.Scene {
       dead:   { frameRate: 8,  repeat: 0 },
     };
 
-    for (const enemyId of Object.keys(PreloaderScene.ENEMY_FRAME_SIZE)) {
+    for (const enemyId of Object.keys(PreloaderScene.enemyFrameSizes())) {
       for (const state of PreloaderScene.ENEMY_STATES) {
         const textureKey = `enemy_${enemyId}_${state}`;
         if (!this.textures.exists(textureKey)) continue;
         if (this.anims.exists(textureKey)) continue;
         const { frameRate, repeat } = STATE_CONFIG[state];
+        // Le nombre de frames est DÉRIVÉ de la texture, plus codé en dur à 6 :
+        // les strips historiques ont 6 frames, ceux découpés des packs Fantasy
+        // Dreamland (scripts/sliceEnemySheets.mjs) en ont 4. Un `end: 5` fixe
+        // aurait produit des frames fantômes sur ces derniers.
+        const frameCount = this.textures.get(textureKey).getFrameNames().length;
+        if (frameCount === 0) continue;
         this.anims.create({
           key: textureKey,
-          frames: this.anims.generateFrameNumbers(textureKey, { start: 0, end: 5 }),
+          frames: this.anims.generateFrameNumbers(textureKey, { start: 0, end: frameCount - 1 }),
           frameRate,
           repeat,
         });

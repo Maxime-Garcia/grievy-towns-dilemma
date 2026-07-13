@@ -1,3 +1,4 @@
+import { GENERATED_ENEMIES } from './enemiesGenerated';
 import { Enemy, ElementType } from '../types';
 
 // Base stat scaling formula applied at runtime: stat * (1 + (level - baseLevel) * 0.08)
@@ -1767,4 +1768,12 @@ export const ENEMIES: Enemy[] = [
   }
 ];
 
-export const ENEMY_MAP: Record<string, Enemy> = Object.fromEntries(ENEMIES.map(e => [e.id, e]));
+/**
+ * Toute la faune du jeu : les ennemis écrits à la main (ci-dessus) + les 139
+ * créatures générées depuis les packs Fantasy Dreamland (cf. scripts/genEnemies.mjs).
+ * Ce sont ces dernières qui portent la répartition du catalogue : avant elles, 541
+ * items sur 649 ne tombaient de nulle part.
+ */
+export const ALL_ENEMIES: Enemy[] = [...ENEMIES, ...GENERATED_ENEMIES];
+
+export const ENEMY_MAP: Record<string, Enemy> = Object.fromEntries(ALL_ENEMIES.map(e => [e.id, e]));
