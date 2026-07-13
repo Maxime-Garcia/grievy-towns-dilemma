@@ -937,7 +937,8 @@ export class InventoryScene extends Phaser.Scene {
         this.dynamicObjs.push(
           this.add.text(
             PX + PW / 2, GRID_Y + VISIBLE_H / 2 + 14,
-            t('search.no_results_hint').replace('{q}', this.searchQuery),
+            // Texte TEL QUE TAPÉ (« Épée »), pas la forme normalisée (« epee »).
+            t('search.no_results_hint').replace('{q}', this.search?.text ?? this.searchQuery),
             uiStyle(TYPE.SMALL, UI.TXT_HINT, { align: 'center', wordWrapWidth: PW - 20 }),
           ).setOrigin(0.5),
         );
@@ -1381,6 +1382,13 @@ export class InventoryScene extends Phaser.Scene {
     // Only one popup at a time — dismiss any existing one first
     this.closeConsumePopup();
 
+    // Le popup est ancré sur le slot touché : il peut remonter jusque sur la bande
+    // du champ de recherche. Or la surface de capture du champ est un élément DOM,
+    // qui flotte AU-DESSUS du canvas quelle que soit la profondeur Phaser du popup
+    // — elle avalerait les taps sur les boutons du popup. On la neutralise tant que
+    // le popup est ouvert (la requête, elle, est conservée).
+    this.search?.setEnabled(false);
+
     const isConsumable = item.type === ItemType.CONSUMABLE;
     const isEquip       = EQUIP_TYPES.includes(item.type);
 
@@ -1752,6 +1760,9 @@ export class InventoryScene extends Phaser.Scene {
     }
     this.consumePopupObjects = [];
     this.consumePopupDismissHit = null;
+    // Le champ redevient saisissable (cf. showActionConfirmPopup). Appelé aussi
+    // depuis shutdown() via clearDynamic() : `search` y est déjà null → no-op.
+    this.search?.setEnabled(true);
   }
 
   // ── State transitions ──────────────────────────────────────────────────────

@@ -488,7 +488,9 @@ export class ArsenalScene extends Phaser.Scene {
       this.add.text(cx, cy - 12, t('search.no_results'),
         uiStyle(TYPE.BODY, UI.TXT_MUTED, { bold: true })).setOrigin(0.5),
       this.add.text(cx, cy + 12,
-        t('search.no_results_hint').replace('{q}', this.searchQuery),
+        // Texte TEL QUE TAPÉ (« Épée »), pas la forme normalisée (« epee ») :
+        // c'est ce que le joueur reconnaît.
+        t('search.no_results_hint').replace('{q}', this.search?.text ?? this.searchQuery),
         hintStyle).setOrigin(0.5),
     );
   }

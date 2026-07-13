@@ -256,6 +256,11 @@ export class SearchField {
     return this.norm;
   }
 
+  /** Texte TEL QUE TAPÉ — à afficher au joueur (« Épée », pas « epee »). */
+  get text(): string {
+    return this.raw;
+  }
+
   hasQuery(): boolean {
     return this.norm.length > 0;
   }
@@ -274,6 +279,23 @@ export class SearchField {
 
   focus(): void {
     this.input.focus();
+  }
+
+  /**
+   * Active/désactive la CAPTURE du champ, sans le détruire ni vider la requête.
+   *
+   * Indispensable dès qu'un modal s'ouvre PAR-DESSUS le champ : la surface de
+   * capture est un élément DOM, elle flotte donc au-dessus du canvas quelle que
+   * soit la profondeur Phaser du modal. Sans ça, un popup dont un bouton tombe
+   * dans le rectangle du champ verrait ses taps avalés par l'input.
+   * (Cas réel : le popup Équiper/Utiliser de l'inventaire, ancré sur le slot
+   * touché, peut remonter jusqu'à la bande du champ.)
+   */
+  setEnabled(enabled: boolean): void {
+    this.input.style.pointerEvents = enabled ? 'auto' : 'none';
+    if (!enabled) this.input.blur();
+    if (enabled) this.clearHit.setInteractive({ useHandCursor: true });
+    else         this.clearHit.disableInteractive();
   }
 
   destroy(): void {

@@ -405,6 +405,37 @@ branche** (talents). Upscale ×2 entier (32×32), teinte à plat `source-in`.
 Un vrai PNG dédié dans `assets/sprites/skills/` reste prioritaire sur le bake.
 Ne plus créer d'icône de skill en Graphics procédural.
 
+### 3.14bis `SearchField` (`src/utils/SearchField.ts`) — champ de recherche des grandes listes
+Composant partagé **Arsenal (542 équipements) · Bestiaire (196 monstres) · Sac (jusqu'à 400 objets)**.
+Il possède la **saisie**, l'**état** et le **rendu** du champ ; il ne sait rien des listes —
+chaque scène lui passe un `onChange(query)` et applique **son propre prédicat** sur sa propre
+structure (rangées groupées, ou grille virtualisée + onglets).
+
+- **Saisie = `<input>` DOM invisible** (`opacity: 0`) superposé au cadre, **rendu = Phaser**.
+  Le DOM est requis pour le **clavier système mobile**, les **accents/IME** et le collage
+  (précédent : `NameInputScene`) ; le rendu reste Phaser pour rester sur la grille typographique
+  et sous les profondeurs (un input DOM *visible* passerait au-dessus des popups).
+- **Isolation clavier** : tant que l'input a le focus, `keydown`/`keyup` sont `stopPropagation()`-és
+  avant Phaser (sinon taper « **z**weihander » déclencherait le raccourci Z de l'inventaire).
+  Seules ↑/↓ passent (navigation de liste) ; **Échap vide la recherche avant de fermer l'écran**.
+- **Recherche insensible casse + accents** (`normalizeSearch` : NFD + `\p{M}`) sur le nom
+  **LOCALISÉ** (`localizeItem`/`localizeEnemy`), jamais sur la data brute.
+- Croix d'effacement (hit 44), état vide « Aucun résultat » + rappel de la requête.
+- `setEnabled(false)` quand un modal s'ouvre **par-dessus** le champ (le DOM flotte au-dessus du
+  canvas quelle que soit la profondeur Phaser du modal — cf. popup d'équipement de l'inventaire).
+- **`destroy()` obligatoire dans `shutdown()`** : il retire l'`<input>` du `<body>` ET le listener
+  de resize du Scale Manager. Phaser n'en sait rien.
+
+> ⚠ **`Phaser n'appelle PAS `scene.shutdown()` automatiquement`** (il se contente d'émettre
+> l'événement) : toute scène qui possède un `<input>` DOM **doit** faire
+> `this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this)` dans `create()`.
+> C'est ce qui manquait à `InventoryScene` (son `shutdown()` n'était jamais appelé — corrigé).
+
+**ESC des overlays : GameScene.escKey est propriétaire UNIQUE.** Il appelle `handleEscape()` sur
+l'écran (Inventaire/Arsenal/Bestiaire), qui retourne `true` s'il a **consommé** l'appui (popup
+fermé, recherche vidée). Deux handlers ESC concurrents (scène + GameScene) rendaient tout
+comportement « vider avant de fermer » impossible.
+
 ### 3.13 Tooltip
 Panneau depth 30, nom doré 13 px bold + description muted 10 px wrapped. Position clampée dans
 l'écran. **Attention :** le tooltip SkillScene historique est hover-only — tout nouveau tooltip
