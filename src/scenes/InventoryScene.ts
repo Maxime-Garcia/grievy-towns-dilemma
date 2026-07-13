@@ -1189,7 +1189,9 @@ export class InventoryScene extends Phaser.Scene {
 
     const W       = this.cameras.main.width;
     const H       = this.cameras.main.height;
-    const PW      = isEquip ? 240 : 210;
+    // Élargi (240 → 280) : la police calée sur la grille de 7 px est plus large que
+    // l'ancienne à taille équivalente, et les noms d'items wrappaient systématiquement.
+    const PW      = isEquip ? 280 : 230;
     const MARGIN  = 6;
     const ICON_SIZE = 32; // seule source de vérité — réutilisé pour la mesure ET le rendu
     const BTN_H     = 44; // idem — ≥44px touch target (Apple HIG)
@@ -1220,10 +1222,27 @@ export class InventoryScene extends Phaser.Scene {
       probe.destroy();
     }
     // Résonance (instance réellement possédée) : une ligne compacte sous le nom,
-    // seulement pour les équipements et si calculable — décale le header de 14px.
+    // seulement pour les équipements et si calculable.
     const resonance = isEquip ? this.getResonance(item) : null;
     const hasResonanceLine = resonance !== null;
-    const headerH = MARGIN + ICON_SIZE + MARGIN + (hasResonanceLine ? 14 : 0); // icône + marges (+ Résonance)
+
+    // ── Hauteur du bandeau d'en-tête — MESURÉE, plus supposée ──
+    // L'ancien calcul postulait que le nom tenait sur UNE ligne à côté de l'icône
+    // (`headerH = MARGIN + ICON_SIZE + MARGIN`). Depuis que la police est calée sur
+    // la grille de 7 px, le nom est rendu en 14 px : un nom long passe sur deux
+    // lignes, écrase la ligne de Résonance, et décale tout le corps vers le bas —
+    // au point de faire sortir le passif du panneau. On mesure donc le nom pour de
+    // vrai, exactement comme on mesure déjà la description.
+    const nameWrapW = PW - (MARGIN * 2 + ICON_SIZE + 2) - MARGIN - (item.element ? 17 : 0);
+    const nameProbe = this.add.text(0, 0, locItem.name,
+      uiStyle(TYPE.HEADING, '#ffffff', { bold: true, wordWrapWidth: Math.max(40, nameWrapW) }));
+    const nameH = nameProbe.height;
+    nameProbe.destroy();
+
+    // Colonne de droite : nom (1-2 lignes) + Résonance + ligne de stat principale.
+    const rightColH = nameH + (hasResonanceLine ? 14 : 0) + (isEquip || isConsumable ? 16 : 0);
+    const headerH = MARGIN + Math.max(ICON_SIZE, rightColH) + MARGIN;
+
     const contentH = isEquip
       ? headerH + substatCount * 14 + 4 + descHeight + 10 + BTN_H + MARGIN * 2
       : 116;
@@ -1290,25 +1309,30 @@ export class InventoryScene extends Phaser.Scene {
       );
       nameX += 17;
     }
-    const rawName = locItem.name;
-    const name    = rawName.length > 22 ? `${rawName.slice(0, 20)}..` : rawName;
+    // Plus de troncature à 22 caractères : elle datait d'une police plus étroite et
+    // amputait les noms (« Faucheur du Néa.. »). Le nom wrappe sur deux lignes si
+    // besoin — la hauteur du panneau en tient compte (cf. nameProbe plus haut).
     this.consumePopupObjects.push(
-      this.add.text(nameX, py + MARGIN + 2, name,
-        uiStyle(11, rarHexStr, {
+      this.add.text(nameX, py + MARGIN, locItem.name,
+        uiStyle(TYPE.HEADING, rarHexStr, {
           bold: true, wordWrapWidth: px + PW - MARGIN - nameX,
         }),
       ).setDepth(depth + 1),
     );
 
+    // Les lignes suivantes se posent SOUS le nom réellement mesuré, plus à un offset
+    // fixe : c'est ce qui les faisait se chevaucher dès que le nom passait sur 2 lignes.
+    let headerCursorY = py + MARGIN + nameH;
     if (hasResonanceLine && resonance !== null) {
       this.consumePopupObjects.push(
-        this.add.text(textX, py + MARGIN + 16, `Résonance ${resonance}% — ${StatRollSystem.getResonanceLabel(resonance)}`,
+        this.add.text(textX, headerCursorY, `Résonance ${resonance}% — ${StatRollSystem.getResonanceLabel(resonance)}`,
           uiStyle(TYPE.SMALL, resonanceColor(resonance), { bold: true })).setDepth(depth + 1),
       );
+      headerCursorY += 14;
     }
 
     // ── Body: effect line (consumable) or stats + description (equip) ─────
-    const bodyLineY = py + MARGIN + 18 + (hasResonanceLine ? 14 : 0);
+    const bodyLineY = headerCursorY;
     if (isConsumable) {
       const effectLine = this.getConsumableEffectLine(item as Consumable);
       this.consumePopupObjects.push(
