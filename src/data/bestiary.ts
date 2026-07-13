@@ -779,6 +779,15 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'echo_blade', dropRatePct: 100, isHidden: false },
     ],
   },
+  {
+    enemyId: 'training_dummy_arsenal',
+    name: 'Mannequin d\'Essai',
+    habitat: 'Cour de la caserne, Grievy Town',
+    shortDesc: 'Rend un exemplaire neuf de l\'arme que vous portez.',
+    lore: 'Deux épées sorties de la même forge ne se valent jamais tout à fait. Kelvar le sait depuis qu\'il a survécu grâce à la meilleure des deux, un matin, sans savoir pourquoi.',
+    // Drop dynamique (l'arme équipée) — aucune table figée à annoncer.
+    drops: [],
+  },
 ];
 
 export function getBestiaryEntry(enemyId: string): BestiaryEnemyData | undefined {

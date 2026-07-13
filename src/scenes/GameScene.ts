@@ -606,11 +606,16 @@ export class GameScene extends Phaser.Scene {
    * createEnemiesForZone() ne relit layout.fixedEnemies qu'à l'entrée en zone, donc
    * il faut changer de zone (ou recharger) après bascule pour voir les mannequins. */
   private debugToggleTrainingDummies(): void {
+    if (this.isTraveling) return;
     const flags = this.gameState.player.flags;
     const next = !flags['dev_training_dummies'];
     flags['dev_training_dummies'] = next;
     this.events.emit('show_notification',
-      `[DEBUG] Mannequins de Kelvar ${next ? 'activés' : 'désactivés'} — changez de zone pour voir l'effet`);
+      `[DEBUG] Mannequins de Kelvar ${next ? 'activés' : 'désactivés'}`);
+    // createEnemiesForZone() ne relit layout.fixedEnemies qu'à l'entrée en zone :
+    // on rejoue la transition sur place (même zone, position courante) pour que la
+    // bascule soit visible immédiatement, sans avoir à sortir puis revenir.
+    this.performZoneTransition(this.gameState.player.currentZone, this.player.x, this.player.y);
   }
 
   // ── MOVEMENT ─────────────────────────────────────────────────
@@ -2762,6 +2767,23 @@ export class GameScene extends Phaser.Scene {
       this.events.emit('item_looted', { item, quantity });
       // Bestiaire — révéler les drops hidden au premier loot
       BestiarySystem.revealDrop(this.gameState.world, activeEnemy.enemyId, item.id);
+    }
+
+    // ⚠ DEV TOOL — Mannequin d'Essai (training_dummy_arsenal) : au lieu d'une table
+    // de loot figée, il redonne un TIRAGE NEUF de l'arme actuellement équipée. C'est
+    // ce qui permet de tester les fourchettes de n'importe quel item : équiper la
+    // pièce à observer, taper le mannequin en boucle, comparer les rolls obtenus au
+    // range du catalogue. Gaté par le flag dev comme le spawn du mannequin lui-même.
+    if (activeEnemy.enemyId === 'training_dummy_arsenal') {
+      const equipped = this.gameState.player.equipment.weapon;
+      const template = equipped ? ALL_ITEMS[equipped.id] : undefined;
+      if (template) {
+        const rolled = StatRollSystem.rollItem(template, 0);
+        LootSystem.addToInventory(this.gameState.player, rolled, 1, this.gameState.world);
+        this.events.emit('item_looted', { item: rolled, quantity: 1 });
+      } else {
+        this.events.emit('show_notification', '[DEBUG] Équipez une arme : le Mannequin d\'Essai en rejoue le tirage.');
+      }
     }
 
     this.spawnXpOrbs(deathX, deathY, Math.floor(loot.xp * xpMult));

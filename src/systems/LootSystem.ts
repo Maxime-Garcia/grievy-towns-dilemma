@@ -118,13 +118,22 @@ export class LootSystem {
     return { items, gold, xp: Math.max(1, scaledXp) };
   }
 
+  /**
+   * @param ignoreCap Contourne le cap de 60 slots. Réservé aux transferts NEUTRES en
+   *   taille de sac — typiquement le retour en sac d'un équipement lors d'un swap
+   *   (InventorySystem.equip retire d'abord le nouvel item du sac, donc rendre
+   *   l'ancien ne fait pas grossir l'inventaire). Sans cette échappatoire, un sac
+   *   plein faisait échouer le retour et l'ancien équipement était DÉTRUIT.
+   */
   static addToInventory(
     player: PlayerState,
     item: Item,
     quantity: number,
-    world?: WorldState
+    world?: WorldState,
+    ignoreCap = false
   ): boolean {
-    if (player.inventory.length >= 60 && !('stackable' in item && (item as any).stackable)) {
+    const atCap = !ignoreCap && player.inventory.length >= 60;
+    if (atCap && !('stackable' in item && (item as any).stackable)) {
       return false;
     }
 
@@ -135,7 +144,7 @@ export class LootSystem {
       return true;
     }
 
-    if (player.inventory.length >= 60) return false;
+    if (atCap) return false;
     player.inventory.push({ item, quantity });
     if (world) ArsenalSystem.discover(world, item.id);
     return true;

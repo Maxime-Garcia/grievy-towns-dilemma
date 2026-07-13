@@ -1735,6 +1735,35 @@ export const ENEMIES: Enemy[] = [
     behavior: 'patrol',
     patrolRadius: 0,
     lore: 'The gold leaf flakes a little more with every strike. Kelvar has never once asked anyone to stop.'
+  },
+
+  // Creature concept: the dummy Kelvar keeps for testing a *specific* blade. Its loot
+  // table is empty on purpose — GameScene.onEnemyKilled special-cases this id and
+  // instead re-rolls a fresh instance of the weapon the player currently has equipped.
+  // C'est LE mannequin utile : équiper l'item à observer, le frapper en boucle, et
+  // comparer les valeurs obtenues à la fourchette du catalogue (LOOT_STAT_ROLLS §10).
+  {
+    id: 'training_dummy_arsenal',
+    name: 'Mannequin d\'Essai',
+    description: 'Rend un exemplaire neuf de l\'arme que vous portez. Kelvar s\'en sert pour comparer deux lames identiques.',
+    sprite: 'enemy_training_dummy_arsenal',
+    zone: 'NEUTRAL',
+    baseLevel: 1,
+    stats: { baseHp: 1, baseMana: 0, baseAtk: 1, baseDef: 0, baseSpd: 0, baseMagicAtk: 0, baseMagicDef: 0 },
+    element: ElementType.NEUTRAL,
+    skills: [],
+    loot: [], // volontairement vide — cf. le cas spécial dans GameScene.onEnemyKilled
+    baseXp: 1,
+    baseGold: { min: 0, max: 0 },
+    isBoss: false,
+    isElite: false,
+    spawnWeight: 0,
+    aggroRange: 0,
+    attackRange: 0,
+    moveSpeed: 0,
+    behavior: 'patrol',
+    patrolRadius: 0,
+    lore: 'Deux épées sorties de la même forge ne se valent jamais tout à fait. Kelvar le sait depuis qu\'il a survécu grâce à la meilleure des deux, un matin, sans savoir pourquoi.'
   }
 ];
 

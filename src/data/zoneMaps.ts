@@ -133,6 +133,8 @@ export const ZONE_LAYOUTS: Record<string, ZoneLayout> = {
     fixedEnemies: [
       { id: 'training_dummy_straw',  x: 1150, y: 260, requiresFlag: 'dev_training_dummies' },
       { id: 'training_dummy_gilded', x: 1214, y: 260, requiresFlag: 'dev_training_dummies' }, // 2 tiles à droite du premier
+      // Mannequin d'Essai : rejoue le tirage de l'arme ÉQUIPÉE (cf. GameScene.onEnemyKilled)
+      { id: 'training_dummy_arsenal', x: 1278, y: 260, requiresFlag: 'dev_training_dummies' },
     ],
 
     spawnX: 1180, spawnY: 920,
