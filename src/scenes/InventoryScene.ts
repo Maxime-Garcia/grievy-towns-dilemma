@@ -10,7 +10,7 @@ import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { getPassiveEffectLabel } from '../data/passiveEffects';
 import {
   UI, TYPE, drawGlowPanel, drawCard, drawSlot, addUiFrame,
-  drawDivider, addCloseButton, uiStyle, openScreenTransition,
+  drawDivider, addCloseButton, uiStyle, titleStyle, fitText, openScreenTransition,
   resonanceColor, formatRangedStatBounds, lineQuality,
 } from '../utils/UITheme';
 import { itemTextureKey } from '../utils/ItemAssets';
@@ -32,13 +32,14 @@ const ELEMENT_GLYPHS: Partial<Record<ElementType, string>> = {
 };
 
 // ── Layout constants ──────────────────────────────────────────────────────────
+// Les LARGEURS de panneaux ne sont plus des constantes : elles sont dérivées de
+// la largeur caméra dans create() (seule la grille du sac, 7 col × 48 px, est
+// une contrainte rigide — cf. renderGrid).
 const MARGIN     = 8;
-const HEADER_H   = 36;
+const HEADER_H   = 40;    // titre d'écran en police Boss (18 px) + respiration
 const FOOTER_H   = 20;
 const GAP        = 6;
-const EQ_PAN_W   = 180;   // left panel: equipment paperdoll
-const STAT_PAN_W = 220;   // center panel: stats / item detail
-const EQ_SLOT    = 44;    // equipment slot size
+const EQ_SLOT    = 48;    // slot d'équipement — aligné sur la grille du sac (48 px)
 const INV_SLOT   = 48;    // inventory slot size
 const INV_COLS   = 7;     // inventory grid columns
 const GROUP_HEADER_H = 20; // bag category header band height
@@ -161,15 +162,22 @@ export class InventoryScene extends Phaser.Scene {
     const CONT_Y = HEADER_H + 4;
     const CONT_H = H - CONT_Y - FOOTER_H - MARGIN;
 
-    // Compute the three panel bounds once
+    // ── Largeurs de panneaux DÉRIVÉES de l'écran (plus aucune largeur en dur) ──
+    // Le sac est dimensionné sur sa grille FIXE (INV_COLS × INV_SLOT, + 8 px de
+    // marge de chaque côté, cf. GRID_PAD dans renderGrid) : c'est la seule
+    // contrainte rigide. Équipement et stats se partagent le reste — le panneau
+    // de LECTURE (stats/détail) reçoit la plus grande part.
+    const bagW  = INV_COLS * INV_SLOT + 16;
+    const sideW = W - (MARGIN + 2) * 2 - bagW - GAP * 2;
+    const eqW   = Math.round(sideW * 0.42);
+    const stW   = sideW - eqW;
     const eqX   = MARGIN + 2;
-    const stX   = eqX  + EQ_PAN_W   + GAP;
-    const bagX  = stX  + STAT_PAN_W + GAP;
-    const bagW  = W - MARGIN - 2 - bagX;
+    const stX   = eqX + eqW + GAP;
+    const bagX  = stX + stW + GAP;
 
-    this.eqBounds  = { x: eqX,  y: CONT_Y, w: EQ_PAN_W,   h: CONT_H };
-    this.stBounds  = { x: stX,  y: CONT_Y, w: STAT_PAN_W, h: CONT_H };
-    this.bagBounds = { x: bagX, y: CONT_Y, w: bagW,        h: CONT_H };
+    this.eqBounds  = { x: eqX,  y: CONT_Y, w: eqW,  h: CONT_H };
+    this.stBounds  = { x: stX,  y: CONT_Y, w: stW,  h: CONT_H };
+    this.bagBounds = { x: bagX, y: CONT_Y, w: bagW, h: CONT_H };
 
     // ── Background overlay (0.88 standard — le jeu reste visible derrière) ─
     this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88);
@@ -178,8 +186,8 @@ export class InventoryScene extends Phaser.Scene {
     const frameGfx = this.add.graphics();
     drawGlowPanel(frameGfx, MARGIN, MARGIN, W - MARGIN * 2, H - MARGIN * 2, UI.ACCENT_ARCANE, UI.BG_DEEP, 10, 0.92);
 
-    // ── Header title ──────────────────────────────────────────────────────
-    this.add.text(W / 2, MARGIN + 8, t('inventory.title'), uiStyle(15, UI.TXT_GOLD, { bold: true, stroke: true }))
+    // ── Header title — police Boss (titre d'écran, cf. TYPE.TITLE) ────────
+    this.add.text(W / 2, MARGIN + 6, t('inventory.title'), titleStyle(UI.TXT_GOLD, { stroke: true }))
       .setOrigin(0.5, 0);
 
     // ── Header separator ──────────────────────────────────────────────────
@@ -187,15 +195,21 @@ export class InventoryScene extends Phaser.Scene {
     drawDivider(sepGfx, MARGIN + 4, HEADER_H, W - (MARGIN + 4) * 2, UI.ACCENT_ARCANE, 0.35);
 
     // ── Close button × (haut-droite, hit 48×48) ───────────────────────────
-    addCloseButton(this, W - MARGIN - 20, MARGIN + 14, () => this.close());
+    addCloseButton(this, W - MARGIN - 20, MARGIN + 16, () => this.close());
 
     // ── Gold display (pilule arrondie, à gauche du bouton ×) ──────────────
+    // 26 px de haut pour un texte de 14 px — l'ancienne pilule 130×24 écrasait
+    // la valeur. Posée à gauche de la hit zone 48 px du bouton ×.
+    const PILL_W = 150;
+    const PILL_H = 26;
+    const pillX  = W - MARGIN - 52 - PILL_W;
+    const pillY  = MARGIN + 5;
     const goldBg = this.add.graphics();
-    drawCard(goldBg, W - MARGIN - 178, MARGIN + 4, 130, 24, { bg: UI.BG_MID, radius: 12, shadow: false });
+    drawCard(goldBg, pillX, pillY, PILL_W, PILL_H, { bg: UI.BG_MID, radius: 13, shadow: false });
     this.goldText = this.add.text(
-      W - MARGIN - 113, MARGIN + 16,
+      pillX + PILL_W / 2, pillY + PILL_H / 2,
       `${this.player.gold} ${t('inventory.gold')}`,
-      uiStyle(11, UI.TXT_GOLD, { bold: true }),
+      uiStyle(TYPE.BODY, UI.TXT_GOLD, { bold: true }),
     ).setOrigin(0.5);
 
     // ── Footer close hint ─────────────────────────────────────────────────
@@ -216,20 +230,25 @@ export class InventoryScene extends Phaser.Scene {
 
     // ── Static panel titles (cyan arcane = structure ; l'or reste réservé
     //    à l'identité et à la valeur — titre d'écran, monnaie, raretés) ─────
+    // Titres de panneaux en TYPE.BODY (14) cyan gras : un cran net sous le
+    // titre d'écran (Boss 18) et un cran au-dessus des libellés muted — la
+    // hiérarchie se lit à la taille ET à la couleur.
     this.add.text(
       this.eqBounds.x  + this.eqBounds.w  / 2, this.eqBounds.y  + 6,
-      t('inventory.equipment'), uiStyle(11, UI.TXT_CYAN, { bold: true }),
+      t('inventory.equipment'), uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true }),
     ).setOrigin(0.5, 0);
 
+    // Le titre SAC est calé plus haut : les onglets de filtrage (renderBagTabs,
+    // posés à y + 22 par renderGrid) servent eux-mêmes de séparateur visuel —
+    // pas de filet supplémentaire qui doublerait leur bordure.
     this.add.text(
-      this.bagBounds.x + this.bagBounds.w / 2, this.bagBounds.y + 6,
-      t('inventory.bag'), uiStyle(11, UI.TXT_CYAN, { bold: true }),
+      this.bagBounds.x + this.bagBounds.w / 2, this.bagBounds.y + 4,
+      t('inventory.bag'), uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true }),
     ).setOrigin(0.5, 0);
 
-    // Filets discrets sous les titres ÉQUIPEMENT et SAC (cohérence §7.7)
+    // Filet discret sous le titre ÉQUIPEMENT (cohérence §7.7)
     const titleSepGfx = this.add.graphics();
-    drawDivider(titleSepGfx, this.eqBounds.x  + 10, this.eqBounds.y  + 20, this.eqBounds.w  - 20, UI.ACCENT_ARCANE, 0.22);
-    drawDivider(titleSepGfx, this.bagBounds.x + 10, this.bagBounds.y + 20, this.bagBounds.w - 20, UI.ACCENT_ARCANE, 0.22);
+    drawDivider(titleSepGfx, this.eqBounds.x + 10, this.eqBounds.y + 26, this.eqBounds.w - 20, UI.ACCENT_ARCANE, 0.22);
 
     // ── Keyboard ──────────────────────────────────────────────────────────
     this.keyEsc = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
@@ -260,12 +279,12 @@ export class InventoryScene extends Phaser.Scene {
   //            | bottes  |
   private renderEquipment() {
     const { x: PX, y: PY, w: PW, h: PH } = this.eqBounds;
-    const TITLE_H = 24;
-    const GAP_Y   = 14;
+    const TITLE_H = 28;   // titre 14 px + filet à y + 26
+    const GAP_Y   = 16;   // respiration verticale (le canvas 720 la permet)
     const colX: [number, number, number] = [
-      PX + 10,                       // gauche
+      PX + 12,                       // gauche
       PX + (PW - EQ_SLOT) / 2,       // centre (sur la silhouette)
-      PX + PW - 10 - EQ_SLOT,        // droite
+      PX + PW - 12 - EQ_SLOT,        // droite
     ];
     const rowY = (r: number) => PY + TITLE_H + 10 + r * (EQ_SLOT + GAP_Y);
 
@@ -330,11 +349,17 @@ export class InventoryScene extends Phaser.Scene {
           this.addColorSquare(sx + 4, sy + 4, EQ_SLOT - 8, rarHex);
         }
       } else {
-        // Slot vide : abréviation lisible centrée à l'intérieur (ghost label)
-        const abbr = t(`inventory.slot.${key}`).slice(0, 4).toUpperCase();
+        // Slot vide : libellé fantôme clampé en PIXELS (fitText) — l'ancien
+        // slice(0, 4) rendait « Bague 1 » et « Bague 2 » identiques (BAGU/BAGU).
+        // Les slots numérotés passent sur deux lignes : le numéro survit toujours.
+        const style    = uiStyle(TYPE.SMALL, UI.TXT_HINT, { bold: true, align: 'center' });
+        const full     = t(`inventory.slot.${key}`).toUpperCase();
+        const numbered = full.match(/^(.*\S)\s+(\d+)$/);
+        const label    = numbered
+          ? `${fitText(this, numbered[1]!, style, EQ_SLOT - 6)}\n${numbered[2]}`
+          : fitText(this, full, style, EQ_SLOT - 6);
         this.dynamicObjs.push(
-          this.add.text(sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, abbr, uiStyle(9, UI.TXT_HINT, { bold: true }))
-            .setOrigin(0.5),
+          this.add.text(sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, label, style).setOrigin(0.5),
         );
       }
 
@@ -374,15 +399,18 @@ export class InventoryScene extends Phaser.Scene {
     drawDivider(sepG, PX + 10, infoY, PW - 20, UI.ACCENT_ARCANE, 0.22);
     this.dynamicObjs.push(sepG);
 
+    const nameStyle = uiStyle(TYPE.BODY, UI.TXT_GOLD, { bold: true });
     this.dynamicObjs.push(
-      this.add.text(PX + PW / 2, infoY + 10, this.player.name, uiStyle(12, UI.TXT_GOLD, { bold: true }))
+      this.add.text(PX + PW / 2, infoY + 12,
+        fitText(this, this.player.name, nameStyle, PW - 24), nameStyle)
         .setOrigin(0.5, 0),
       this.add.text(
-        PX + PW / 2, infoY + 28,
+        PX + PW / 2, infoY + 32,
         t('inventory.level').replace('{level}', String(this.player.level)),
-        uiStyle(10, UI.TXT_PARCHMENT),
+        uiStyle(TYPE.SMALL, UI.TXT_PARCHMENT),
       ).setOrigin(0.5, 0),
-      this.add.text(PX + PW / 2, PY + PH - 10, t('inventory.slot_hint'), uiStyle(9, UI.TXT_HINT))
+      this.add.text(PX + PW / 2, PY + PH - 10, t('inventory.slot_hint'),
+        uiStyle(TYPE.SMALL, UI.TXT_HINT, { wordWrapWidth: PW - 20, align: 'center' }))
         .setOrigin(0.5, 1),
     );
   }
@@ -403,11 +431,11 @@ export class InventoryScene extends Phaser.Scene {
     const { x: PX, y: PY, w: PW, h: PH } = this.stBounds;
 
     this.dynamicObjs.push(
-      this.add.text(PX + PW / 2, PY + 6, t('inventory.stats'), uiStyle(11, UI.TXT_CYAN, { bold: true })).setOrigin(0.5, 0),
+      this.add.text(PX + PW / 2, PY + 6, t('inventory.stats'), uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true })).setOrigin(0.5, 0),
     );
 
     const sepTop = this.add.graphics();
-    drawDivider(sepTop, PX + 8, PY + 20, PW - 16, UI.ACCENT_ARCANE, 0.22);
+    drawDivider(sepTop, PX + 8, PY + 26, PW - 16, UI.ACCENT_ARCANE, 0.22);
     this.dynamicObjs.push(sepTop);
 
     // TOUTES les valeurs viennent de StatsSystem.computeAll (source de vérité) :
@@ -459,47 +487,51 @@ export class InventoryScene extends Phaser.Scene {
       },
     ];
 
-    const COL1  = PX + 14;
-    const COL2  = PX + PW - 14;
-    const ROW_H = 22;
-    let   y     = PY + 30;
+    const COL1  = PX + 16;
+    const COL2  = PX + PW - 16;
+    // 26 px de ligne pour un texte de 14 px : 12 px d'air. L'ancien ROW_H = 22
+    // datait d'un texte de 10/11 px et collait les lignes les unes aux autres.
+    const ROW_H = 26;
+    let   y     = PY + 36;
 
     for (const sec of sections) {
       // En-tête de section : pastille d'accent + label coloré + filet
       const hdrGfx = this.add.graphics();
       hdrGfx.fillStyle(sec.accent, 0.9);
-      hdrGfx.fillRoundedRect(PX + 10, y + 2, 3, 10, 1.5);
+      hdrGfx.fillRoundedRect(PX + 10, y + 1, 3, 10, 1.5);
       this.dynamicObjs.push(hdrGfx);
 
-      const title = this.add.text(PX + 18, y, sec.title, uiStyle(9, sec.titleColor, { bold: true }));
+      const title = this.add.text(PX + 18, y, sec.title, uiStyle(TYPE.SMALL, sec.titleColor, { bold: true }));
       this.dynamicObjs.push(title);
-      drawDivider(hdrGfx, PX + 24 + title.width, y + 7, COL2 - (PX + 24 + title.width), sec.accent, 0.18);
+      drawDivider(hdrGfx, PX + 24 + title.width, y + 6, COL2 - (PX + 24 + title.width), sec.accent, 0.18);
 
-      y += 20;
+      y += 22;
 
       sec.rows.forEach((row, i) => {
         // Zébrage discret une ligne sur deux — lecture rapide en colonne
         if (i % 2 === 0) {
           const zebra = this.add.graphics();
           zebra.fillStyle(0xffffff, 0.02);
-          zebra.fillRoundedRect(PX + 8, y - 3, PW - 16, ROW_H - 2, 3);
+          zebra.fillRoundedRect(PX + 8, y - 4, PW - 16, ROW_H - 2, 3);
           this.dynamicObjs.push(zebra);
         }
-        // Une stat réellement boostée par l'équipement (vs. la baseline sans
-        // gear) ressort en gras doré — sinon poids normal, couleur parchemin.
+        // Libellé et valeur à la MÊME taille (TYPE.LABEL/BODY = 14 : la grille
+        // de 7 px n'offre pas de palier entre 10 et 14) — la hiérarchie passe
+        // par la couleur et la graisse : libellé muted maigre, valeur grasse
+        // (or si un équipement la booste réellement, parchemin sinon).
         this.dynamicObjs.push(
-          this.add.text(COL1, y, row.label, uiStyle(10, UI.TXT_MUTED)),
-          this.add.text(COL2, y, row.value, uiStyle(11, row.boosted ? UI.TXT_GOLD : UI.TXT_PARCHMENT, { bold: row.boosted }))
+          this.add.text(COL1, y, row.label, uiStyle(TYPE.LABEL, UI.TXT_MUTED)),
+          this.add.text(COL2, y, row.value, uiStyle(TYPE.BODY, row.boosted ? UI.TXT_GOLD : UI.TXT_PARCHMENT, { bold: true }))
             .setOrigin(1, 0),
         );
         y += ROW_H;
       });
 
-      y += 10; // respiration entre sections
+      y += 12; // respiration entre sections
     }
 
     this.dynamicObjs.push(
-      this.add.text(PX + PW / 2, PY + PH - 12, t('inventory.tap_hint'), uiStyle(9, UI.TXT_HINT)).setOrigin(0.5, 1),
+      this.add.text(PX + PW / 2, PY + PH - 12, t('inventory.tap_hint'), uiStyle(TYPE.SMALL, UI.TXT_HINT)).setOrigin(0.5, 1),
     );
   }
 
@@ -515,31 +547,39 @@ export class InventoryScene extends Phaser.Scene {
     const rarColor = RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT;
 
     // ── Header ───────────────────────────────────────────────────────────
-    const back = this.add.text(PX + 10, PY + 6, t('inventory.back_stats'), uiStyle(10, UI.TXT_BLUE, { bold: true }))
+    // Lien retour avec hit zone élargie à 44 px de haut — le texte seul
+    // (10 px) était très en dessous de la norme tactile.
+    const back = this.add.text(PX + 12, PY + 8, t('inventory.back_stats'), uiStyle(TYPE.SMALL, UI.TXT_BLUE, { bold: true }));
+    const backHit = this.add.rectangle(
+      PX + 12 + back.width / 2, PY + 8 + back.height / 2,
+      back.width + 24, 44, 0x000000, 0,
+    )
       .setInteractive({ useHandCursor: true })
       .on('pointerover', () => back.setColor(UI.TXT_GOLD))
       .on('pointerout',  () => back.setColor(UI.TXT_BLUE))
       .on('pointerdown', () => { this.selectedItem = null; this.refresh(); });
-    this.dynamicObjs.push(back);
+    this.dynamicObjs.push(back, backHit);
 
     this.dynamicObjs.push(
-      this.add.text(PX + PW / 2, PY + 6, t('inventory.detail'), uiStyle(11, UI.TXT_CYAN, { bold: true })).setOrigin(0.5, 0),
+      this.add.text(PX + PW / 2, PY + 6, t('inventory.detail'), uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true })).setOrigin(0.5, 0),
     );
 
     const sepTop = this.add.graphics();
-    drawDivider(sepTop, PX + 8, PY + 22, PW - 16, UI.ACCENT_ARCANE, 0.22);
+    drawDivider(sepTop, PX + 8, PY + 26, PW - 16, UI.ACCENT_ARCANE, 0.22);
     this.dynamicObjs.push(sepTop);
 
     // ── Item identity ─────────────────────────────────────────────────────
-    let curY = PY + 32;
+    let curY = PY + 38;
 
     this.dynamicObjs.push(
-      this.add.text(PX + PW / 2, curY, `[${t(`rarity.${item.rarity}`)}]`, uiStyle(9, rarColor, { bold: true })).setOrigin(0.5, 0),
+      this.add.text(PX + PW / 2, curY, `[${t(`rarity.${item.rarity}`)}]`, uiStyle(TYPE.SMALL, rarColor, { bold: true })).setOrigin(0.5, 0),
     );
-    curY += 16;
+    curY += 18;
 
-    const nameTxt = this.add.text(PX + PW / 2, curY, locItem.name, uiStyle(13, rarColor, {
-      bold: true, stroke: true, wordWrapWidth: PW - 20, align: 'center',
+    // Le NOM est le héros du panneau : TYPE.HEADING (21), couleur de rareté —
+    // un vrai cran au-dessus des stats (14) et de la description (10).
+    const nameTxt = this.add.text(PX + PW / 2, curY, locItem.name, uiStyle(TYPE.HEADING, rarColor, {
+      bold: true, stroke: true, wordWrapWidth: PW - 24, align: 'center',
     })).setOrigin(0.5, 0);
     this.dynamicObjs.push(nameTxt);
     curY += nameTxt.height + 10;
@@ -560,7 +600,7 @@ export class InventoryScene extends Phaser.Scene {
     // fourchette catalogue en petit gris juste après — §7.2) ───────────────
     const mainView = this.getMainStatLineView(item);
     if (mainView) {
-      const valueTxt = this.add.text(0, curY, mainView.text, uiStyle(12, mainView.color, { bold: true, stroke: true }));
+      const valueTxt = this.add.text(0, curY, mainView.text, uiStyle(TYPE.BODY, mainView.color, { bold: true, stroke: true }));
       let pairW = valueTxt.width;
       let rangeTxt: Phaser.GameObjects.Text | undefined;
       if (mainView.rangeText) {
@@ -584,20 +624,20 @@ export class InventoryScene extends Phaser.Scene {
     // ── Substats (teinte de qualité locale par ligne + fourchette en petit
     // gris — §7.2) ──────────────────────────────────────────────────────────
     for (const view of this.getSubstatLineViews(item)) {
-      const bulletTxt = this.add.text(PX + 14, curY, `• ${view.text}`, uiStyle(10, view.color));
+      const bulletTxt = this.add.text(PX + 16, curY, `• ${view.text}`, uiStyle(TYPE.BODY, view.color));
       this.dynamicObjs.push(bulletTxt);
       if (view.rangeText) {
         this.dynamicObjs.push(
-          this.add.text(PX + 14 + bulletTxt.width + 4, curY + 1, view.rangeText, uiStyle(TYPE.SMALL, UI.TXT_MUTED)),
+          this.add.text(PX + 16 + bulletTxt.width + 6, curY + 3, view.rangeText, uiStyle(TYPE.SMALL, UI.TXT_MUTED)),
         );
       }
-      curY += 17;
+      curY += 20;   // 14 px de texte + 6 d'air — l'ancien 17 collait les puces
     }
-    curY += 6;
+    curY += 8;
 
     // ── Description ───────────────────────────────────────────────────────
-    const descTxt = this.add.text(PX + 12, curY, locItem.description, uiStyle(10, UI.TXT_MUTED, {
-      italic: true, wordWrapWidth: PW - 24, lineSpacing: 3,
+    const descTxt = this.add.text(PX + 14, curY, locItem.description, uiStyle(TYPE.SMALL, UI.TXT_MUTED, {
+      italic: true, wordWrapWidth: PW - 28, lineSpacing: 4,
     }));
     this.dynamicObjs.push(descTxt);
 
@@ -606,11 +646,11 @@ export class InventoryScene extends Phaser.Scene {
     const isUse    = item.type === ItemType.CONSUMABLE;
     const isSell   = item.type !== ItemType.KEY_ITEM;
     const btnCount = (isEquip || isUse ? 1 : 0) + (isSell ? 1 : 0) + 1; // +1 for close
-    const BTN_H    = 32;   // visuel 32 px, hit zone 44 px (norme tactile)
-    const BTN_GAP  = 8;
-    const BTN_W    = PW - 20;
-    const BTN_X    = PX + 10;
-    let   btnY     = PY + PH - btnCount * (BTN_H + BTN_GAP) - 4;
+    const BTN_H    = 36;   // visuel 36 px (label 14 px), hit zone ≥ 44 px (norme tactile)
+    const BTN_GAP  = 10;
+    const BTN_W    = PW - 24;
+    const BTN_X    = PX + 12;
+    let   btnY     = PY + PH - btnCount * (BTN_H + BTN_GAP) - 6;
 
     const addBtn = (label: string, color: string, onClick: () => void) => {
       const y       = btnY;
@@ -619,7 +659,7 @@ export class InventoryScene extends Phaser.Scene {
       bgGfx.fillRoundedRect(BTN_X, y, BTN_W, BTN_H, 4);
       bgGfx.lineStyle(1, UI.BTN_BORDER, 1);
       bgGfx.strokeRoundedRect(BTN_X, y, BTN_W, BTN_H, 4);
-      const txt = this.add.text(BTN_X + BTN_W / 2, y + BTN_H / 2, label, uiStyle(11, color, { bold: true })).setOrigin(0.5);
+      const txt = this.add.text(BTN_X + BTN_W / 2, y + BTN_H / 2, label, uiStyle(TYPE.BODY, color, { bold: true })).setOrigin(0.5);
       const hit = this.add.rectangle(BTN_X + BTN_W / 2, y + BTN_H / 2, BTN_W + 6, Math.max(44, BTN_H + BTN_GAP), 0x000000, 0)
         .setInteractive({ useHandCursor: true })
         .on('pointerover', () => {
