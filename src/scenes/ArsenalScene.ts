@@ -21,7 +21,9 @@ import { getPassiveEffectLabel } from '../data/passiveEffects';
 import { ArsenalSystem } from '../systems/ArsenalSystem';
 import { StatsSystem } from '../systems/StatsSystem';
 import { isEquipableItem } from '../systems/StatRollSystem';
-import { BESTIARY_DATA, BESTIARY_RECORD, BestiaryDropData } from '../data/bestiary';
+import { SHOP_INVENTORY } from '../data/shops';
+import { NPC_MAP } from '../data/npcs';
+import { ALL_BESTIARY, BESTIARY_RECORD, BestiaryDropData } from '../data/bestiary';
 import { BestiarySystem } from '../systems/BestiarySystem';
 import { ENEMY_MAP } from '../data/enemies';
 import { itemTextureKey } from '../utils/ItemAssets';
@@ -109,7 +111,10 @@ const PASSIVE_RESERVE_PX = 36;
  * catégorie de contenu equipStats/equipRanges n'est pas encore localisée
  * ailleurs dans ce fichier (cf. StatsSystem.STAT_LABELS, même convention).
  */
-const RANGES_SUBTITLE = 'Fourchettes à l\'obtention';
+// « Fourchettes à l'obtention » sonnait comme une note de spécification. Ce bloc
+// annonce ce que l'objet PEUT rouler quand il tombe — c'est une promesse de butin,
+// pas une plage de tolérance industrielle.
+const RANGES_SUBTITLE = 'Jets possibles au butin';
 
 export class ArsenalScene extends Phaser.Scene {
   private gameScene!: GameScene;
@@ -264,15 +269,15 @@ export class ArsenalScene extends Phaser.Scene {
   private buildRows() {
     for (const sectionType of SECTION_ORDER) {
       // Tri à DEUX niveaux : la section donne la catégorie (armes, casques…), et à
-      // l'intérieur on classe par RARETÉ DÉCROISSANTE — les pièces d'exception en
-      // tête, le tout-venant en fin de section. Avec ~540 entrées au catalogue,
-      // l'ordre d'insertion de ALL_ITEMS ne voulait plus rien dire : on scrollait
-      // au hasard. À rareté égale, ordre alphabétique pour que la liste soit stable
-      // et qu'un item se retrouve à l'œil.
+      // l'intérieur on classe par RARETÉ CROISSANTE — Commun en tête, Hidden en fin
+      // de section. La liste se lit donc comme une progression : on descend vers les
+      // pièces d'exception, et le bas de chaque section est la récompense du scroll.
+      // À rareté égale, ordre alphabétique pour que la liste soit stable et qu'un
+      // item se retrouve à l'œil.
       const items = Object.values(ALL_ITEMS)
         .filter(i => i.type === sectionType)
         .sort((a, b) => {
-          const dr = RARITY_RANK[b.rarity] - RARITY_RANK[a.rarity];
+          const dr = RARITY_RANK[a.rarity] - RARITY_RANK[b.rarity];
           return dr !== 0 ? dr : a.name.localeCompare(b.name, 'fr');
         });
       if (items.length === 0) continue;
@@ -628,7 +633,34 @@ export class ArsenalScene extends Phaser.Scene {
   // OBTENU AUPRÈS DE (cross-link Bestiaire)
   // ════════════════════════════════════════════════════════════
 
-  /** Scanne BESTIARY_DATA pour lister les monstres qui peuvent dropper `itemId` —
+  /**
+   * Marchands qui VENDENT cet objet, avec leur ville et le prix affiché.
+   * Beaucoup d'objets (consommables, matériaux, équipement de base) ne tombent
+   * d'aucun monstre : sans ça l'Arsenal affichait « Source inconnue » pour un objet
+   * en vente à deux pas, ce qui est une impasse pour le joueur.
+   */
+  private findVendors(itemId: string): { name: string; location: string; price: number }[] {
+    const out: { name: string; location: string; price: number }[] = [];
+    for (const [npcId, entries] of Object.entries(SHOP_INVENTORY)) {
+      const entry = entries.find(e => e.itemId === itemId);
+      if (!entry) continue;
+      const npc = NPC_MAP[npcId];
+      // `t()` renvoie la clé elle-même si elle est absente — on retombe donc sur le
+      // nom brut de la zone plutôt que d'afficher « zone.grievy_town » au joueur.
+      const locKey = npc?.location ? `zone.${npc.location}` : '';
+      const locLabel = locKey ? t(locKey) : '';
+      out.push({
+        name: npc?.name ?? npcId,
+        location: locLabel === locKey ? (npc?.location ?? '') : locLabel,
+        price: entry.price,
+      });
+    }
+    return out;
+  }
+
+  /** Scanne ALL_BESTIARY (les 196 monstres, generes compris — BESTIARY_DATA seul
+   *  ne couvrait que les 57 ecrits a la main, d'ou les "Source inconnue" sur tout
+   *  item ne tombant que des monstres generes) pour lister ses sources —
    *  respecte isHidden/isDropRevealed (jamais de spoil d'un drop caché non révélé). */
   private renderDroppedBySection(itemId: string, titleY: number) {
     this.addSectionTitle(t('arsenal.dropped_by_title'), titleY);
@@ -637,7 +669,7 @@ export class ArsenalScene extends Phaser.Scene {
     const contentW = this.DET_W - this.PAD * 2;
 
     const sources: { enemyId: string; drop: BestiaryDropData }[] = [];
-    for (const data of BESTIARY_DATA) {
+    for (const data of ALL_BESTIARY) {
       const drop = data.drops.find(d => d.itemId === itemId);
       if (!drop) continue;
       if (drop.isHidden && !BestiarySystem.isDropRevealed(this.world, data.enemyId, itemId)) continue;
@@ -645,9 +677,26 @@ export class ArsenalScene extends Phaser.Scene {
     }
 
     if (sources.length === 0) {
-      this.detailObjs.push(
-        this.add.text(contentX, contentY, t('arsenal.loot_unknown'), uiStyle(9, UI.TXT_MUTED)),
-      );
+      // Aucun monstre ne le lâche : c'est probablement un article de boutique
+      // (consommables, matériaux, équipement de base). Dire « Source inconnue » là où
+      // l'objet est en vente à deux pas était une impasse pour le joueur — on nomme
+      // le marchand et sa ville.
+      const vendors = this.findVendors(itemId);
+      if (vendors.length === 0) {
+        this.detailObjs.push(
+          this.add.text(contentX, contentY, t('arsenal.loot_unknown'), uiStyle(9, UI.TXT_MUTED)),
+        );
+        return;
+      }
+      vendors.slice(0, 4).forEach((v, i) => {
+        this.detailObjs.push(
+          this.add.text(
+            contentX, contentY + i * 14,
+            `${v.name}${v.location ? ` — ${v.location}` : ''}   ${v.price} or`,
+            uiStyle(TYPE.SMALL, UI.TXT_GOLD),
+          ),
+        );
+      });
       return;
     }
 

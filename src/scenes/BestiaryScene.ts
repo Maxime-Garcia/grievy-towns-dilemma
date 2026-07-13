@@ -617,7 +617,29 @@ export class BestiaryScene extends Phaser.Scene {
     this.renderLocationMap(def.id, this.LORE_Y + this.LORE_H + 10);
 
     // ── Section Butin (zone basse = zone de pouce) ───────────
-    const dropsY = this.DET_Y + this.DET_H - 130;
+    // Grille ADAPTATIVE (les tables de loot vont de 1 à ~17 drops) :
+    //  - cas nominal (tient sur une rangée) : vignettes 48 px, layout historique ;
+    //  - sinon : vignettes 40 px sur 2 rangées (capacité 22 à 800 px de large),
+    //    hit zone size+6 = 46 px ≥ LAYOUT.TOUCH_MIN. La section grandit vers le
+    //    HAUT (dropsY recule) — jamais de débordement sous le panneau.
+    //  - filet de sécurité : au-delà de 2 rangées, la dernière case devient un
+    //    slot « +N » (tap = tooltip listant le reste) — aucune vignette coupée,
+    //    quel que soit le futur volume de loot.
+    // Tri (sortDrops) : drops révélés d'abord (rareté desc, puis taux desc),
+    // drops cachés non révélés (???) groupés en fin — on scanne du plus précieux
+    // au plus commun, les mystères ferment la marche.
+    const drops = entry.discovered ? this.sortDrops(data.drops, entry.revealedDrops) : [];
+    const availW = this.DET_W - pad * 2;
+    let slot = 48;
+    let gap  = 10;
+    let perRow = Math.floor((availW + gap) / (slot + gap));
+    if (drops.length > perRow) {
+      slot = 40; gap = 8;
+      perRow = Math.floor((availW + gap) / (slot + gap));
+    }
+    const rowPitch = slot + 18; // vignette + taux de drop affiché dessous
+    const rowCount = drops.length > perRow ? 2 : 1;
+    const dropsY = this.DET_Y + this.DET_H - (rowCount === 2 ? 22 + rowPitch * 2 + 6 : 130);
     this.addSectionTitle(t('bestiary.loot_title'), dropsY);
 
     if (!entry.discovered) {
@@ -627,12 +649,55 @@ export class BestiaryScene extends Phaser.Scene {
       return;
     }
 
-    const SLOT = 48;
-    const GAP  = 10;
-    data.drops.forEach((drop, idx) => {
-      const sx = this.DET_X + pad + idx * (SLOT + GAP);
-      const sy = dropsY + 22;
-      this.renderDropSlot(drop, entry.revealedDrops, sx, sy, SLOT);
+    const capacity = perRow * 2;
+    const hasOverflow = drops.length > capacity;
+    const visible = hasOverflow ? drops.slice(0, capacity - 1) : drops;
+    visible.forEach((drop, idx) => {
+      const sx = this.DET_X + pad + (idx % perRow) * (slot + gap);
+      const sy = dropsY + 22 + Math.floor(idx / perRow) * rowPitch;
+      this.renderDropSlot(drop, entry.revealedDrops, sx, sy, slot);
+    });
+    if (hasOverflow) {
+      const idx = capacity - 1;
+      this.renderOverflowSlot(
+        drops.slice(capacity - 1), entry.revealedDrops,
+        this.DET_X + pad + (idx % perRow) * (slot + gap),
+        dropsY + 22 + Math.floor(idx / perRow) * rowPitch,
+        slot,
+      );
+    }
+  }
+
+  /** Rang numérique des raretés pour le tri du butin (HIDDEN = plus précieux). */
+  private static readonly RARITY_RANK: Record<ItemRarity, number> = {
+    [ItemRarity.HIDDEN]:    6,
+    [ItemRarity.MYTHIC]:    5,
+    [ItemRarity.LEGENDARY]: 4,
+    [ItemRarity.EPIC]:      3,
+    [ItemRarity.RARE]:      2,
+    [ItemRarity.UNCOMMON]:  1,
+    [ItemRarity.COMMON]:    0,
+  };
+
+  /**
+   * Tri du butin : révélés d'abord (rareté décroissante, puis taux décroissant,
+   * pour scanner du plus précieux au plus commun) ; drops cachés non révélés
+   * (vignettes « ??? ») groupés à la fin — les trier par rareté au milieu des
+   * autres divulguerait leur valeur par leur position.
+   */
+  private sortDrops(drops: BestiaryDropData[], revealedDrops: string[]): BestiaryDropData[] {
+    const isRevealed = (d: BestiaryDropData) => !d.isHidden || revealedDrops.includes(d.itemId);
+    const rank = (d: BestiaryDropData): number => {
+      const item = ALL_ITEMS[d.itemId];
+      return item ? BestiaryScene.RARITY_RANK[item.rarity] ?? 0 : 0;
+    };
+    return [...drops].sort((a, b) => {
+      const ga = isRevealed(a) ? 0 : 1;
+      const gb = isRevealed(b) ? 0 : 1;
+      if (ga !== gb) return ga - gb;            // mystères en fin de grille
+      const qa = rank(a), qb = rank(b);
+      if (qa !== qb) return qb - qa;            // rareté décroissante
+      return b.dropRatePct - a.dropRatePct;     // à rareté égale : taux décroissant
     });
   }
 
@@ -715,8 +780,10 @@ export class BestiaryScene extends Phaser.Scene {
 
     if (revealed && item) {
       if (this.textures.exists(item.icon)) {
+        // Icône proportionnée au slot (32 dans 48, 28 dans 40 — mode compact)
+        const iconSz = size >= 48 ? 32 : 28;
         this.detailObjs.push(
-          this.add.image(sx + size / 2, sy + size / 2, item.icon).setDisplaySize(32, 32),
+          this.add.image(sx + size / 2, sy + size / 2, item.icon).setDisplaySize(iconSz, iconSz),
         );
       } else {
         const sq = this.add.graphics();
@@ -745,6 +812,57 @@ export class BestiaryScene extends Phaser.Scene {
       this.showDropTooltip(drop, revealed, sx, sy);
     });
     this.detailObjs.push(hit);
+  }
+
+  /**
+   * Slot de repli « +N » — filet de sécurité si un monstre dépasse la capacité
+   * de la grille (2 rangées pleines). Tap = tooltip listant les drops restants
+   * (nom + taux), rien n'est jamais inaccessible. Hit zone size+6 ≥ 44 px.
+   */
+  private renderOverflowSlot(rest: BestiaryDropData[], revealedDrops: string[], sx: number, sy: number, size: number) {
+    const g = this.add.graphics();
+    drawSlot(g, sx, sy, size, UI.ACCENT_ARCANE, { occupied: false, borderAlpha: 0.7 });
+    this.detailObjs.push(g);
+    this.detailObjs.push(
+      this.add.text(sx + size / 2, sy + size / 2, `+${rest.length}`,
+        uiStyle(11, UI.TXT_CYAN, { bold: true })).setOrigin(0.5),
+    );
+    const hit = this.add.rectangle(sx + size / 2, sy + size / 2, size + 6, size + 6, 0, 0)
+      .setInteractive({ useHandCursor: true });
+    hit.on('pointerdown', () => {
+      this.flashAt(sx + size / 2, sy + size / 2, size, size);
+      this.showOverflowTooltip(rest, revealedDrops, sx, sy);
+    });
+    this.detailObjs.push(hit);
+  }
+
+  /** Tooltip du slot « +N » : liste compacte des drops restants (nom + taux). */
+  private showOverflowTooltip(rest: BestiaryDropData[], revealedDrops: string[], slotX: number, slotY: number) {
+    this.destroyTooltip();
+    this.tooltipJustOpened = true;
+
+    const TW = 208;
+    const padT = 10;
+    const MAX_LINES = 9;
+    const lines = rest.slice(0, MAX_LINES).map(d => {
+      const revealed = !d.isHidden || revealedDrops.includes(d.itemId);
+      const item = revealed ? ALL_ITEMS[d.itemId] : undefined;
+      const name = item ? localizeItem(item).name : t('bestiary.hidden_drop_name');
+      return `• ${name} — ${formatDropRate(d.dropRatePct / 100)}`;
+    });
+    if (rest.length > MAX_LINES) lines.push('…');
+
+    const txt = this.add.text(padT, padT, lines.join('\n'),
+      uiStyle(TYPE.SMALL, UI.TXT_PARCHMENT, { wordWrapWidth: TW - padT * 2, lineSpacing: 4 }));
+    const th = txt.height + padT * 2;
+
+    const g = this.add.graphics();
+    drawGlowPanel(g, 0, 0, TW, th, UI.ACCENT_ARCANE, UI.PANEL_BG, 4, 0.97);
+
+    const tx = Phaser.Math.Clamp(slotX + 24 - TW / 2, this.DET_X + 6, this.DET_X + this.DET_W - TW - 6);
+    const tyPos = Math.max(this.DET_Y + 6, slotY - th - 8);
+    this.tooltip = this.add.container(tx, tyPos, [g, txt]).setDepth(30);
+    this.tooltipTimer = this.time.delayedCall(4000, () => this.destroyTooltip());
   }
 
   // ════════════════════════════════════════════════════════════
