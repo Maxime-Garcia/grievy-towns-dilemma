@@ -56,7 +56,10 @@ const RARITY = {
   EPIC:      { substats: 4, dmg: 46,  value: 1200,  spread: 0.25, weight: 14 },
   LEGENDARY: { substats: 5, dmg: 66,  value: 5000,  spread: 0.30, weight: 9  },
   MYTHIC:    { substats: 6, dmg: 88,  value: 12000, spread: 0.35, weight: 5  },
-  HIDDEN:    { substats: 7, dmg: 112, value: 99999, spread: 0.30, weight: 2  },
+  // Pas de HIDDEN ici, volontairement : dans ce projet HIDDEN ne veut pas dire
+  // « très rare », il veut dire « porte un passif unique game-breaking » (cf.
+  // src/data/passiveEffects.ts). Générer des HIDDEN sans passif diluerait le sens
+  // du palier rouge — les Hidden restent écrits à la main, un par un.
 };
 const RARITY_KEYS = Object.keys(RARITY);
 const rollRarity = () => {
@@ -232,12 +235,33 @@ for (const [wt, prof] of Object.entries(WEAPON_PROFILES)) {
       const lo = Math.max(1, Math.round(mainVal * (1 - R.spread)));
       const hi = Math.round(mainVal * (1 + R.spread));
 
-      // substats : offensives, + au plus 1 défensive
+      // Substats : offensives, + au plus 1 défensive.
+      // JAMAIS la clé de la mainStat, ni deux fois la même clé : StatsSystem
+      // additionne mainStat ET substats dans le même total (collectEquipTotals),
+      // donc une clé dupliquée sort l'item de la fourchette annoncée (double-dip)
+      // et StatRollSystem.validateItemRanges la signale comme une erreur de data.
       const subs = [];
-      const off = [...WEAPON_SUBS].sort(() => rnd() - 0.5);
+      const taken = new Set([mainKey]);
+      const takeFrom = (poolArr) => {
+        const cands = poolArr.filter(s => !taken.has(s[0]));
+        if (cands.length === 0) return null;
+        const s = cands[Math.floor(rnd() * cands.length)];
+        taken.add(s[0]);
+        return s;
+      };
       const nDef = R.substats >= 4 && rnd() < 0.6 ? 1 : 0;
-      for (const s of off.slice(0, R.substats - nDef)) subs.push(s);
-      if (nDef) subs.push(pick(WEAPON_DEF_SUBS));
+      for (let k = 0; k < R.substats - nDef; k++) {
+        const s = takeFrom(WEAPON_SUBS);
+        if (s) subs.push(s);
+      }
+      if (nDef) { const s = takeFrom(WEAPON_DEF_SUBS); if (s) subs.push(s); }
+      // Si le pool s'est épuisé (rareté haute), on complète pour tenir le compte
+      // exigé par SUBSTAT_COUNT_BY_RARITY.
+      while (subs.length < R.substats) {
+        const s = takeFrom([...WEAPON_SUBS, ...WEAPON_DEF_SUBS]);
+        if (!s) break;
+        subs.push(s);
+      }
 
       const bonus = {};
       for (const s of prof.stats) bonus[s] = Math.max(1, Math.round(R.dmg / 12));
@@ -272,18 +296,37 @@ for (const [slot, prof] of Object.entries(ARMOR_PROFILES)) {
     const lo = Math.max(1, Math.round(mainVal * (1 - R.spread)));
     const hi = Math.round(mainVal * (1 + R.spread));
 
+    // Même règle que pour les armes : jamais la clé de la mainStat (DEF_FLAT ici),
+    // jamais deux fois la même clé — sinon double-dip dans collectEquipTotals.
     const subs = [];
-    const dfs = [...ARMOR_SUBS].sort(() => rnd() - 0.5);
+    const taken = new Set(['DEF_FLAT']);
+    const takeFrom = (poolArr) => {
+      const cands = poolArr.filter(s => !taken.has(s[0]));
+      if (cands.length === 0) return null;
+      const s = cands[Math.floor(rnd() * cands.length)];
+      taken.add(s[0]);
+      return s;
+    };
     const nOff = R.substats >= 4 && rnd() < 0.5 ? 1 : 0;
-    for (const s of dfs.slice(0, R.substats - nOff)) subs.push(s);
-    if (nOff) subs.push(pick(ARMOR_OFF_SUBS));
+    for (let k = 0; k < R.substats - nOff; k++) {
+      const s = takeFrom(ARMOR_SUBS);
+      if (s) subs.push(s);
+    }
+    if (nOff) { const s = takeFrom(ARMOR_OFF_SUBS); if (s) subs.push(s); }
+    while (subs.length < R.substats) {
+      const s = takeFrom([...ARMOR_SUBS, ...ARMOR_OFF_SUBS]);
+      if (!s) break;
+      subs.push(s);
+    }
 
     const bonus = {};
     for (const s of prof.stats) bonus[s] = Math.max(1, Math.round(R.dmg / 14));
 
     const lore = `${pick(LORE_ORIGIN[rarity]).replace(/%Z%/g, EL_ZONE[element])} ${pick(LORE_TWIST[element])}`;
 
-    armors.push(`  { id: '${id}', name: '${esc(name)}', description: '${esc(noun)} de facture ${rarity === 'COMMON' ? 'ordinaire' : 'soignée'}.', rarity: ItemRarity.${rarity}, type: ItemType.${slot}, icon: '${iconKey}', value: ${R.value}, defense: ${def}, magicDefense: ${mdef}, bonusStats: ${JSON.stringify(bonus)}, lore: '${esc(lore)}', equipRanges: { mainStat: { key: 'DEF_FLAT', min: ${lo}, max: ${hi} }, substats: [${subs.map(([k, a, b, p]) => `{ key: '${k}', min: ${ri(a, Math.round((a + b) / 2))}, max: ${ri(Math.round((a + b) / 2), b)}${p ? ', isPercentage: true' : ''} }`).join(', ')}] } },`);
+    // `element` était tiré mais jamais émis : le nom annonçait « de Givre » et l'item
+    // sortait NEUTRAL (l'ELEM_BONUS_PCT ne se rattachait à rien de lisible).
+    armors.push(`  { id: '${id}', name: '${esc(name)}', description: '${esc(noun)} de facture ${rarity === 'COMMON' ? 'ordinaire' : 'soignée'}.', rarity: ItemRarity.${rarity}, type: ItemType.${slot}, icon: '${iconKey}', value: ${R.value}, ${element !== 'NEUTRAL' ? `element: ElementType.${element}, ` : ''}defense: ${def}, magicDefense: ${mdef}, bonusStats: ${JSON.stringify(bonus)}, lore: '${esc(lore)}', equipRanges: { mainStat: { key: 'DEF_FLAT', min: ${lo}, max: ${hi} }, substats: [${subs.map(([k, a, b, p]) => `{ key: '${k}', min: ${ri(a, Math.round((a + b) / 2))}, max: ${ri(Math.round((a + b) / 2), b)}${p ? ', isPercentage: true' : ''} }`).join(', ')}] } },`);
   }
 }
 

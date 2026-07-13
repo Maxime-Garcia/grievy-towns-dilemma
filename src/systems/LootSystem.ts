@@ -119,7 +119,15 @@ export class LootSystem {
   }
 
   /**
-   * @param ignoreCap Contourne le cap de 60 slots. Réservé aux transferts NEUTRES en
+   * Taille du sac. Relevé de 60 à 150 : l'inventaire de départ contient déjà ~59
+   * armes (ProgressionSystem.createNewPlayer), ce qui ne laissait littéralement
+   * QU'UN slot libre pour tout le loot de la partie — chaque drop suivant était
+   * refusé par addToInventory et silencieusement perdu.
+   */
+  static readonly MAX_SLOTS = 150;
+
+  /**
+   * @param ignoreCap Contourne le cap de slots. Réservé aux transferts NEUTRES en
    *   taille de sac — typiquement le retour en sac d'un équipement lors d'un swap
    *   (InventorySystem.equip retire d'abord le nouvel item du sac, donc rendre
    *   l'ancien ne fait pas grossir l'inventaire). Sans cette échappatoire, un sac
@@ -132,7 +140,7 @@ export class LootSystem {
     world?: WorldState,
     ignoreCap = false
   ): boolean {
-    const atCap = !ignoreCap && player.inventory.length >= 60;
+    const atCap = !ignoreCap && player.inventory.length >= LootSystem.MAX_SLOTS;
     if (atCap && !('stackable' in item && (item as any).stackable)) {
       return false;
     }
@@ -145,6 +153,7 @@ export class LootSystem {
     }
 
     if (atCap) return false;
+    if (!ignoreCap && player.inventory.length >= LootSystem.MAX_SLOTS) return false;
     player.inventory.push({ item, quantity });
     if (world) ArsenalSystem.discover(world, item.id);
     return true;

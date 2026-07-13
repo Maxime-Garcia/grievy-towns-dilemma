@@ -2776,7 +2776,14 @@ export class GameScene extends Phaser.Scene {
 
     this.gameState.player.gold += loot.gold;
     for (const { item, quantity } of loot.items) {
-      LootSystem.addToInventory(this.gameState.player, item, quantity, this.gameState.world);
+      // Le retour d'addToInventory était ignoré : sac plein → l'item était jeté,
+      // MAIS la notification de loot s'affichait quand même. Le joueur voyait un
+      // drop qu'il ne recevait jamais. On ne notifie que ce qui est réellement pris.
+      const added = LootSystem.addToInventory(this.gameState.player, item, quantity, this.gameState.world);
+      if (!added) {
+        this.events.emit('show_notification', `Sac plein — ${item.name} laissé au sol !`);
+        continue;
+      }
       this.events.emit('item_looted', { item, quantity });
       // Bestiaire — révéler les drops hidden au premier loot
       BestiarySystem.revealDrop(this.gameState.world, activeEnemy.enemyId, item.id);
@@ -2790,12 +2797,13 @@ export class GameScene extends Phaser.Scene {
     if (activeEnemy.enemyId === 'training_dummy_arsenal') {
       const equipped = this.gameState.player.equipment.weapon;
       const template = equipped ? ALL_ITEMS[equipped.id] : undefined;
-      if (template) {
-        const rolled = StatRollSystem.rollItem(template, 0);
-        LootSystem.addToInventory(this.gameState.player, rolled, 1, this.gameState.world);
-        this.events.emit('item_looted', { item: rolled, quantity: 1 });
-      } else {
+      if (!template) {
         this.events.emit('show_notification', '[DEBUG] Équipez une arme : le Mannequin d\'Essai en rejoue le tirage.');
+      } else {
+        const rolled = StatRollSystem.rollItem(template, 0);
+        const added = LootSystem.addToInventory(this.gameState.player, rolled, 1, this.gameState.world);
+        if (added) this.events.emit('item_looted', { item: rolled, quantity: 1 });
+        else this.events.emit('show_notification', '[DEBUG] Sac plein — tirage perdu.');
       }
     }
 
@@ -3424,6 +3432,10 @@ export class GameScene extends Phaser.Scene {
       case WeaponType.HAMMER:      this.spawnHammerFinisherVfx(px, py);           break;
       case WeaponType.STAFF:       this.spawnStaffFinisherVfx(px, py, angle);     break;
       case WeaponType.BOW:         this.spawnBowFinisherVfx(px, py, angle);       break;
+      // SPEAR — « Broche » : même trait que l'estoc, mais à l'allonge du finisher
+      // (280, cf. COMBO_CONFIGS) et en blanc glacé. Sans ce case, le finisher
+      // infligeait ses dégâts, sa percée et son knockback SANS AUCUN VFX.
+      case WeaponType.SPEAR:       this.spawnSpearThrustVfx(px, py, angle, 280, 0xeaffff); break;
       default: break; // FISTS : pas de combo, pas de finisher
     }
   }

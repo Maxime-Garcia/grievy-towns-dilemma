@@ -95,6 +95,33 @@ const config: Phaser.Types.Core.GameConfig = {
   ],
 };
 
+/**
+ * Attendre les polices AVANT de démarrer Phaser.
+ *
+ * Un `Phaser.GameObjects.Text` est rasterisé dans un canvas 2D puis baké en
+ * texture UNE SEULE FOIS, à sa création. Si la TTF Neatpixels n'est pas encore
+ * chargée à ce moment-là, le glyphe est baké en `monospace` — et il ne sera
+ * JAMAIS re-rendu (sauf appel explicite à setText()). Les écrans les plus
+ * exposés sont justement les premiers : Boot, menu principal, HUD initial.
+ * `font-display: block` ne protège que le DOM, pas le canvas : c'est à nous
+ * d'attendre.
+ *
+ * En cas d'échec (police absente, navigateur exotique) on démarre quand même —
+ * un jeu en police de repli reste jouable, un jeu qui ne démarre pas, non.
+ */
+const FONTS = ["'Neatpixels'", "'Neatpixels Boss'", "'Neatpixels Minimal'", "'Neatpixels Blocks'"];
+async function bootFonts(): Promise<void> {
+  if (!document.fonts?.load) return;
+  try {
+    await Promise.all(FONTS.map(f => document.fonts.load(`16px ${f}`)));
+    await document.fonts.ready;
+  } catch {
+    /* police indisponible — on démarre en repli plutôt que de bloquer le boot */
+  }
+}
+
+await bootFonts();
+
 const game = new Phaser.Game(config);
 
 // Calibre la résolution de rendu du texte (uiStyle/pxStyle, cf. UITheme.ts)

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { parseTMXtoTiledJSON } from '../utils/TMXParser';
-import { RARITY_COLORS, ItemRarity, ElementType } from '../types';
+import { RARITY_COLORS, ItemRarity, ElementType, ItemType } from '../types';
 import { ALL_ITEMS } from '../data/items';
 import { SKILLS } from '../data/skills';
 import { TALENT_MAP } from '../data/talents';
@@ -160,12 +160,25 @@ export class PreloaderScene extends Phaser.Scene {
     // a son PNG 32×32 (scripts/fillMissingIcons.mjs garantit qu'aucune clé `icon`
     // ne reste sans fichier). Maintenir la liste à la main était intenable et c'est
     // exactement ce qui laissait des items sans skin.
+    // Les SKIN sont exclus : ils n'ont pas de PNG (leur visuel est procédural, cf.
+    // generateItemIcons) — les charger produisait 10 `loaderror` 404 au boot.
     const itemIconKeys = new Set<string>();
     for (const item of Object.values(ALL_ITEMS)) {
-      if (item.icon) itemIconKeys.add(item.icon);
+      if (item.icon && item.type !== ItemType.SKIN) itemIconKeys.add(item.icon);
     }
     for (const key of itemIconKeys) {
       this.load.image(key, `assets/sprites/items/${key}.png`);
+    }
+
+    // ── Icônes de REPLI par type d'arme (`wpn_*`) ──
+    // Filet de sécurité de InventoryScene.resolveIcon : toute arme sans PNG dédié
+    // retombe sur `wpn_${weaponType}`. Ce sont de VRAIS assets 32×32 tirés des packs
+    // (variante « Normal », neutre), et non plus des formes dessinées à la main dans
+    // generateWeaponIcons() — puisque les packs fournissent l'art, autant s'en servir.
+    // Le PNG réel prime sur le tracé procédural (garde `textures.exists` dans mk()).
+    for (const wt of ['sword', 'greatsword', 'dual_sword', 'dagger', 'dual_dagger',
+                      'axe', 'hammer', 'staff', 'bow', 'spear']) {
+      this.load.image(`wpn_${wt}`, `assets/sprites/items/wpn_${wt}.png`);
     }
 
     // ── Touches clavier réelles (Keyboard UI asset pack, thème sombre) ──
@@ -392,9 +405,18 @@ export class PreloaderScene extends Phaser.Scene {
     this.textures.addCanvas(key, canvas);
   }
 
+  /**
+   * Tracés procéduraux de repli par type d'arme (`wpn_*`).
+   *
+   * Ne s'exécutent plus que si le PNG réel correspondant est absent : les icônes
+   * `wpn_*` sont désormais de vrais assets 32×32 issus des packs (chargés dans
+   * preload()). Ces tracés restent comme dernier filet — si un asset venait à
+   * manquer, on affiche une silhouette lisible plutôt qu'une texture absente.
+   */
   private generateWeaponIcons(): void {
     const S = 32;
     const mk = (key: string, fn: (g: Phaser.GameObjects.Graphics) => void) => {
+      if (this.textures.exists(key)) return; // le vrai asset prime sur le tracé
       const g = this.make.graphics();
       fn(g);
       g.generateTexture(key, S, S);
@@ -476,6 +498,14 @@ export class PreloaderScene extends Phaser.Scene {
       g.strokePoints(pts, false, false);
       g.lineStyle(1, 0xddcc88, 1);
       g.lineBetween(22, 2, 22, 30);
+    });
+
+    // SPEAR — dernier repli seulement (l'asset réel wpn_spear.png prime, cf. mk()).
+    mk('wpn_spear', g => {
+      g.lineStyle(2, 0x9a7b4f, 1);       // hampe
+      g.lineBetween(5, 28, 25, 6);
+      g.fillStyle(0xd8e4ee, 1);          // fer
+      g.fillTriangle(24, 8, 30, 2, 28, 11);
     });
   }
 
