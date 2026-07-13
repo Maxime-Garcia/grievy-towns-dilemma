@@ -1,11 +1,11 @@
 import { PlayerState, Item, ItemRarity, RARITY_COLORS } from '../types';
 import { GameScene } from './GameScene';
 import { SKILL_MAP } from '../data/skills';
-import { UI, drawGlowPanel, drawSlot, drawBar, addUiFrame, uiStyle, resonanceColor } from '../utils/UITheme';
+import { UI, drawGlowPanel, drawSlot, drawBar, addUiFrame, uiStyle, resonanceColor, TYPE, fitText } from '../utils/UITheme';
 import { StatRollSystem } from '../systems/StatRollSystem';
 import { t, localizeItem, localizeSkill } from '../i18n';
 
-const BAR_W = 178;
+const BAR_W = 210;
 const HP_H  = 16;
 const MP_H  = 11;
 const BAR_X = 42;
@@ -41,6 +41,10 @@ export class UIScene extends Phaser.Scene {
   private levelText!: Phaser.GameObjects.Text;
   private xpBar!: Phaser.GameObjects.Graphics;
   private playerNameText!: Phaser.GameObjects.Text;
+  /** Largeur max du nom du joueur (px) — calculee dans create(), appliquee via fitText. */
+  private nameMaxW = 160;
+  /** Style du nom, conserve pour que fitText mesure avec EXACTEMENT la meme police. */
+  private nameStyle!: Phaser.Types.GameObjects.Text.TextStyle;
 
   private HP_Y!: number;
   private MP_Y!: number;
@@ -95,7 +99,7 @@ export class UIScene extends Phaser.Scene {
     // sur fond translucide. Exclue volontairement de la règle "toujours uiStyle()" :
     // c'est un badge de debug monospace (lisibilité console), pas un texte de jeu —
     // uiStyle() impose FONT_UI (Verdana), incompatible avec l'esthétique recherchée ici.
-    const BUILD_LABEL = 'Popup inventaire recale (e4cc594)';
+    const BUILD_LABEL = 'UI: 960x720 + hierarchie typo (671b908)';
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',
@@ -109,11 +113,21 @@ export class UIScene extends Phaser.Scene {
     badgeText.setPosition(badgePad + 10, badgePad + 3);
 
     // ── Player stat panel (bottom-left) ─────────
-    const PANEL_H   = 66;
-    const PANEL_W   = BAR_X + BAR_W + 8;
-    const PANEL_TOP = H - PANEL_H - 4;
-    this.HP_Y = PANEL_TOP + 22;
-    this.MP_Y = PANEL_TOP + 44;
+    // Le panneau est reconstruit sur une BANDE DE TITRE dimensionnée pour le texte
+    // réel. Avant : le nom démarrait à PANEL_TOP+5 et, rendu en 14 px, descendait
+    // jusqu'à +24 — alors que la barre HP commençait à +22. Le nom mordait la barre.
+    // Le budget de la bande n'était que de 17 px pour un texte qui en fait 18.
+    const TITLE_BAND = 24;                 // nom + niveau (14 px) + respiration
+    const BAR_GAP    = 6;
+    const PANEL_H    = TITLE_BAND + HP_H + BAR_GAP + MP_H + 12;
+    const PANEL_W    = BAR_X + BAR_W + 12;
+    const PANEL_TOP  = H - PANEL_H - 4;
+    this.HP_Y = PANEL_TOP + TITLE_BAND;
+    this.MP_Y = this.HP_Y + HP_H + BAR_GAP;
+    // Largeur disponible pour le nom : tout ce qui reste à gauche du « Nv.XX ».
+    // Mesurée, pas devinée — c'est ce qui manquait (aucun clamp : un nom de 16
+    // caractères, le maximum autorisé par NameInputScene, entrait dans le niveau).
+    this.nameMaxW = PANEL_W - 10 - 44;
 
     // Glow panel : accent vert (vie) sur le cadre, ticks colorés par barre
     const panelGfx = this.add.graphics();
@@ -128,11 +142,12 @@ export class UIScene extends Phaser.Scene {
     this.add.text(10, this.HP_Y + 3, t('ui.hp'), uiStyle(10, UI.TXT_GREEN, { bold: true }));
     this.add.text(10, this.MP_Y + 1, t('ui.mp'), uiStyle(10, UI.TXT_BLUE, { bold: true }));
 
-    // Player name (top of panel)
-    this.playerNameText = this.add.text(10, PANEL_TOP + 5, '', uiStyle(11, UI.TXT_GOLD, { bold: true }));
+    // Player name (top of panel) — tronqué à la largeur réelle dans updateStats()
+    this.nameStyle = uiStyle(TYPE.BODY, UI.TXT_GOLD, { bold: true });
+    this.playerNameText = this.add.text(10, PANEL_TOP + 4, '', this.nameStyle);
 
     // Level (top-right of panel)
-    this.levelText = this.add.text(PANEL_W, PANEL_TOP + 5, '', uiStyle(11, UI.TXT_PARCHMENT))
+    this.levelText = this.add.text(PANEL_W - 4, PANEL_TOP + 5, '', uiStyle(TYPE.SMALL, UI.TXT_PARCHMENT))
       .setOrigin(1, 0);
 
     // HP bar + centred text
@@ -543,7 +558,10 @@ export class UIScene extends Phaser.Scene {
     if (!this.sys.isActive()) return;
     const { width: W, height: H } = this.cameras.main;
 
-    this.playerNameText.setText(player.name);
+    // Nom tronqué à la LARGEUR RÉELLE disponible (fitText mesure en pixels), plus à
+    // un nombre de caractères. Un nom de 16 lettres — le maximum autorisé à la
+    // création — entrait sinon dans le « Nv.XX » ancré à droite.
+    this.playerNameText.setText(fitText(this, player.name, this.nameStyle, this.nameMaxW));
     this.levelText.setText(`${t('ui.level')}${player.level}`);
 
     this.targetHp    = Math.max(0, player.stats.hp / player.stats.maxHp);

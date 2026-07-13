@@ -67,6 +67,14 @@ const ZONE_ENEMY_COLORS: Record<string, number> = {
   malachars_spire:0x6622aa,
 };
 
+/**
+ * Zoom de la caméra du MONDE. Compense l'agrandissement du canvas (800×600 → 960×720,
+ * soit ×1,2) pour que la zone de monde visible et la taille apparente des sprites
+ * restent identiques à ce qu'elles étaient — le gamefeel est validé, il ne doit pas
+ * bouger parce que l'UI avait besoin de place. Cf. setupCamera().
+ */
+const WORLD_CAMERA_ZOOM = 1.2;
+
 // ── ATTACK PATTERNS ──────────────────────────────────────────────────────────
 // Pure data — each weapon has a sequence of hits (timing, range, arc, dmg mult)
 // and an overall cooldown. windupMs delays all hits so heavy weapons "charge".
@@ -4425,6 +4433,16 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setupCamera() {
+    // Le canvas est passé de 800×600 à 960×720 pour donner de l'air à l'UI (le texte
+    // pixel est en 14 px et n'avait plus d'exutoire — cf. main.ts). Sans compensation,
+    // la caméra montrerait 20 % de monde en plus et les sprites paraîtraient plus
+    // petits : le gamefeel (inertie, dash, portée des armes, lisibilité des ennemis)
+    // aurait changé alors qu'il est validé.
+    //
+    // 960/800 = 1,2 exactement. À ce zoom, la caméra recadre sur 800×600 unités de
+    // monde : zone visible et taille apparente des sprites RIGOUREUSEMENT identiques
+    // à avant. Seules les scènes d'UI (caméra à zoom 1) profitent des pixels gagnés.
+    this.cameras.main.setZoom(WORLD_CAMERA_ZOOM);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
     // Bounds already set in drawZoneMap
   }

@@ -51,8 +51,18 @@ const config: Phaser.Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: 800,
-    height: 600,
+    // ── 960×720 : exactement 1,2 × l'ancien 800×600, même ratio 4:3 ──
+    // Motif : depuis le passage à une police pixel, le corps de texte est à 14 px
+    // (contre 11-12 avant). Dans un canvas de 800×600 aux panneaux calés en dur,
+    // il n'avait plus aucun exutoire — d'où l'UI illisible et « pas assez aérée ».
+    //
+    // Le gamefeel, lui, ne bouge PAS : GameScene passe sa caméra à zoom 1,2 (cf.
+    // WORLD_CAMERA_ZOOM là-bas). À 1,2 sur un canvas 960×720, la caméra montre
+    // exactement la même zone de monde qu'avant (800×600 unités) et les sprites ont
+    // la même taille apparente. Seules les scènes d'UI (caméra à zoom 1) profitent
+    // des 20 % de pixels supplémentaires.
+    width: 960,
+    height: 720,
     zoom: Phaser.Scale.MAX_ZOOM,
     // Second facteur du flou : Scale.FIT étire le canvas 800×600 pour remplir la
     // fenêtre, d'un facteur qui n'a aucune raison d'être ENTIER (ex. ×2,37). Même

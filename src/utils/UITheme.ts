@@ -150,11 +150,20 @@ export const FONT_UI = FONT;
  * à grille de 8 px donnerait 8/16/24) ou passer les textes en BitmapText.
  */
 export const TYPE = {
-  TITLE:   21,  // titre d'écran (INVENTAIRE, SKILLS…)     — 3 × grille
-  HEADING: 14,  // nom d'item / de talent / speaker         — 2 × grille
-  BODY:    14,  // corps de texte, dialogue, valeurs        — 2 × grille
-  LABEL:    7,  // labels de stats, texte secondaire        — 1 × grille
-  SMALL:    7,  // badges, hints, micro-texte               — 1 × grille (plancher)
+  /** Titres d'écran — rendus en police BOSS (cf. titleStyle), grille 18. */
+  TITLE:   18,
+  /** Titres de section, noms d'items — Standard, 3 × grille. */
+  HEADING: 21,
+  /** Corps de texte, dialogues, valeurs — Standard, 2 × grille. */
+  BODY:    14,
+  /** Libellés secondaires — MÊME taille que BODY : on les distingue par la COULEUR
+   *  (UI.TXT_MUTED) et non par la taille. Une police à grille de 7 n'offre pas de
+   *  palier intermédiaire entre 7 et 14, et 7 serait illisible pour un libellé. */
+  LABEL:   14,
+  /** Micro-texte, HUD dense, badges — rendus en police MINIMAL (cf. hudStyle),
+   *  grille 10. C'est le seul moyen d'avoir un palier lisible sous 14 px : Standard
+   *  n'offre que 7, trop petit. Minimal est justement dessinée pour ça. */
+  SMALL:   10,
 } as const;
 
 /** Constantes de layout réutilisables */
@@ -184,13 +193,38 @@ export interface UiStyleOpts {
  * scènes non migrées).
  */
 /**
- * Grille de dessin de Neatpixels, en pixels (cf. la doc de TYPE).
- * Toute taille de police DOIT être un multiple de cette valeur pour être nette.
+ * Grille de dessin de CHAQUE variante Neatpixels, en pixels — mesurée dans les TTF
+ * (toutes les avances de glyphe sont des multiples de `unitsPerEm / grille`).
+ *
+ * C'est le point qu'on avait manqué : les quatre polices n'ont PAS la même grille.
+ * Une police pixel n'est nette qu'à sa taille de grille ou à un multiple entier ;
+ * arrondir Boss au multiple de 7 le plus proche (18 → 21) la rendrait floue, alors
+ * même qu'on l'utilise pour les titres. C'est aussi ce qui débloque la hiérarchie
+ * typographique : trois polices, trois grilles, donc plus de paliers nets
+ * disponibles qu'avec une seule.
  */
+const FONT_GRIDS: { match: string; grid: number }[] = [
+  { match: 'Neatpixels Boss',    grid: 18 }, // titres — 18 / 36
+  { match: 'Neatpixels Minimal', grid: 10 }, // HUD dense — 10 / 20 / 30
+  { match: 'Neatpixels Blocks',  grid: 7  },
+  { match: 'Neatpixels',         grid: 7  }, // Standard (corps) — 7 / 14 / 21 / 28
+];
+
+/** Grille par défaut (Neatpixels Standard). */
 export const FONT_GRID_PX = 7;
 
+/** Grille de dessin de la famille de police donnée. */
+export function fontGrid(fontFamily: string): number {
+  // Ordre important : 'Neatpixels Boss' contient 'Neatpixels', donc on teste du plus
+  // spécifique au plus générique.
+  for (const { match, grid } of FONT_GRIDS) {
+    if (fontFamily.includes(match)) return grid;
+  }
+  return FONT_GRID_PX;
+}
+
 /**
- * Recale une taille de police sur la grille de la police.
+ * Recale une taille de police sur la grille de SA police.
  *
  * C'est LE verrou du rendu net, et il est ici plutôt que dans TYPE parce que ~160
  * appels dans les scènes passent une taille LITTÉRALE (`uiStyle(9, …)`,
@@ -201,8 +235,31 @@ export const FONT_GRID_PX = 7;
  *
  * Plancher à une case de grille : jamais de texte à 0.
  */
-export function snapFontSize(size: number): number {
-  return Math.max(FONT_GRID_PX, Math.round(size / FONT_GRID_PX) * FONT_GRID_PX);
+export function snapFontSize(size: number, fontFamily: string = FONT): number {
+  const grid = fontGrid(fontFamily);
+  return Math.max(grid, Math.round(size / grid) * grid);
+}
+
+/**
+ * Choisit la POLICE et la TAILLE nette les plus proches de la taille demandée.
+ *
+ * C'est le cœur du système. Standard (grille 7) n'offre que 7, 14, 21, 28 : entre
+ * 7 (illisible pour un libellé) et 14, il n'y a rien. Or ~87 appels dans les scènes
+ * demandent 9 ou 10 px — du micro-texte parfaitement légitime (badges, hints,
+ * valeurs de HUD). Les rabattre sur 7 px les aurait rendus minuscules ; les monter à
+ * 14 px aurait fait exploser tous les layouts denses.
+ *
+ * La réponse est dans le pack lui-même : Neatpixels Minimal est dessinée sur une
+ * grille de 10 px, précisément pour ce registre. On route donc les petites tailles
+ * vers Minimal (10 px, net) et les autres vers Standard (14/21/28, net).
+ *
+ * Faire ce choix ICI plutôt que dans chaque scène, c'est ce qui permet de corriger
+ * les 87 appels sans en toucher un seul — et de garantir que tout texte écrit demain
+ * tombera lui aussi sur une grille.
+ */
+export function resolveFont(size: number): { family: string; size: number } {
+  if (size <= 11) return { family: FONT_HUD, size: 10 };            // Minimal — micro-texte
+  return { family: FONT, size: snapFontSize(size, FONT) };          // Standard — 14 / 21 / 28
 }
 
 export function uiStyle(
@@ -210,13 +267,14 @@ export function uiStyle(
   color: string = UI.TXT_PARCHMENT,
   opts: UiStyleOpts = {},
 ): Phaser.Types.GameObjects.Text.TextStyle {
+  const { family, size: px } = resolveFont(size);
   const s: Phaser.Types.GameObjects.Text.TextStyle = {
-    // Recalé sur la grille de 7 px de Neatpixels : hors grille, le rastériseur du
-    // navigateur anti-aliase le glyphe et le flou est cuit dans le canvas avant que
-    // Phaser ne le voie (cf. doc de TYPE).
-    fontSize:   `${snapFontSize(size)}px`,
+    // Taille ET police choisies ensemble : hors grille, le rastériseur du navigateur
+    // anti-aliase le glyphe, et ce flou est cuit dans le canvas avant même que Phaser
+    // ne le voie — aucun filtrage ne le rattrape après coup (cf. doc de TYPE).
+    fontSize:   `${px}px`,
     color,
-    fontFamily: FONT_UI,
+    fontFamily: family,
     // resolution 1 : la police est déjà nette à l'échelle 1:1 ; sur-échantillonner
     // puis ré-échantillonner en NEAREST la dégraderait (cf. doc de TEXT_RESOLUTION).
     resolution: TEXT_RESOLUTION,
@@ -233,6 +291,63 @@ export function uiStyle(
   if (opts.align !== undefined)         s.align = opts.align;
   if (opts.lineSpacing !== undefined)   s.lineSpacing = opts.lineSpacing;
   return s;
+}
+
+/**
+ * Style de TITRE D'ÉCRAN — police Neatpixels Boss (grille 18).
+ *
+ * Une police différente, plus lourde, plutôt qu'un simple palier de taille au-dessus :
+ * c'est ce qui redonne au titre sa domination. Depuis le recalage sur grille, un titre
+ * en Standard tombait à la même taille que le corps de texte — la hiérarchie avait
+ * purement et simplement disparu.
+ */
+export function titleStyle(
+  color: string = UI.TXT_GOLD,
+  opts: UiStyleOpts = {},
+): Phaser.Types.GameObjects.Text.TextStyle {
+  const s: Phaser.Types.GameObjects.Text.TextStyle = {
+    fontSize:   `${snapFontSize(TYPE.TITLE, FONT_TITLE)}px`,
+    color,
+    fontFamily: FONT_TITLE,
+    resolution: TEXT_RESOLUTION,
+  };
+  if (opts.bold)   s.fontStyle = 'bold';
+  if (opts.stroke) { s.stroke = '#000000'; s.strokeThickness = 3; }
+  if (opts.wordWrapWidth !== undefined) s.wordWrap = { width: opts.wordWrapWidth };
+  if (opts.align !== undefined)         s.align = opts.align;
+  return s;
+}
+
+/**
+ * Tronque un texte pour qu'il tienne dans `maxWidth` PIXELS, avec une ellipse.
+ *
+ * Remplace les troncatures au nombre de CARACTÈRES (`slice(0, 4)`, `slice(0, 15)`…)
+ * qui parsèment les scènes. Une troncature au caractère ne veut rien dire : « MMMM »
+ * et « iiii » n'ont pas la même largeur, et surtout elle ne sait rien de la police ni
+ * de sa taille. C'est la cause structurelle des débordements — chaque changement de
+ * typo les faisait tous réapparaître ailleurs.
+ *
+ * Mesure réelle via un Text jetable (même coût que ce que font déjà `drawBadge` et le
+ * calcul de hauteur du popup d'inventaire).
+ */
+export function fitText(
+  scene: Phaser.Scene,
+  text: string,
+  style: Phaser.Types.GameObjects.Text.TextStyle,
+  maxWidth: number,
+): string {
+  const probe = scene.make.text({ text, style }, false);
+  if (probe.width <= maxWidth) { probe.destroy(); return text; }
+
+  // Recherche du plus long préfixe qui tient, ellipse comprise.
+  let lo = 0, hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    probe.setText(`${text.slice(0, mid)}…`);
+    if (probe.width <= maxWidth) lo = mid; else hi = mid - 1;
+  }
+  probe.destroy();
+  return lo <= 0 ? '' : `${text.slice(0, lo)}…`;
 }
 
 /**
@@ -883,7 +998,7 @@ export function pxStyle(
   const s: Phaser.Types.GameObjects.Text.TextStyle = {
     // Même verrou que uiStyle() : taille recalée sur la grille de 7 px de Neatpixels,
     // sans quoi le glyphe est anti-aliasé à la rastérisation (cf. doc de TYPE).
-    fontSize: `${snapFontSize(size)}px`,
+    fontSize: `${snapFontSize(size, FONT)}px`,
     color,
     fontFamily: FONT,
     resolution: TEXT_RESOLUTION,

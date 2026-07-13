@@ -1189,12 +1189,17 @@ export class InventoryScene extends Phaser.Scene {
 
     const W       = this.cameras.main.width;
     const H       = this.cameras.main.height;
-    // Élargi (240 → 280) : la police calée sur la grille de 7 px est plus large que
-    // l'ancienne à taille équivalente, et les noms d'items wrappaient systématiquement.
-    const PW      = isEquip ? 280 : 230;
-    const MARGIN  = 6;
-    const ICON_SIZE = 32; // seule source de vérité — réutilisé pour la mesure ET le rendu
-    const BTN_H     = 44; // idem — ≥44px touch target (Apple HIG)
+    // Aération : le popup était compact au point d'être illisible une fois la police
+    // passée en 14 px. On donne de la largeur (le canvas fait maintenant 960), de la
+    // marge intérieure, et surtout de l'INTERLIGNE — c'est lui qui manquait le plus :
+    // sept substats collées les unes aux autres se lisent comme un bloc, pas comme
+    // une liste.
+    const PW        = isEquip ? 340 : 260;
+    const MARGIN    = 12;   // 6 → 12 : padding intérieur réel
+    const LINE_H    = 18;   // interligne des substats (14px de texte + 4 de respiration)
+    const BLOCK_GAP = 12;   // respiration entre blocs (stats | lore | passif)
+    const ICON_SIZE = 40;   // 32 → 40 : l'icône doit tenir tête au nom en 14px
+    const BTN_H     = 44;   // ≥44px touch target (Apple HIG)
 
     // Hauteur du panneau calculée depuis le contenu réel (plus de troncature à 90
     // caractères ni de taille fixe trop courte pour un lore long) : on mesure le
@@ -1215,8 +1220,8 @@ export class InventoryScene extends Phaser.Scene {
     const descRaw0   = passiveLabel ? `${baseDesc0}\n\n${t('arsenal.passive_label')} ${passiveLabel}` : baseDesc0;
     let   descHeight = 0;
     if (isEquip && descRaw0) {
-      const probe = this.add.text(0, 0, descRaw0, uiStyle(9, UI.TXT_MUTED, {
-        italic: true, wordWrapWidth: PW - MARGIN * 2, lineSpacing: 2,
+      const probe = this.add.text(0, 0, descRaw0, uiStyle(TYPE.SMALL, UI.TXT_MUTED, {
+        italic: true, wordWrapWidth: PW - MARGIN * 2, lineSpacing: 4,
       }));
       descHeight = probe.height;
       probe.destroy();
@@ -1244,11 +1249,11 @@ export class InventoryScene extends Phaser.Scene {
     const headerH = MARGIN + Math.max(ICON_SIZE, rightColH) + MARGIN;
 
     const contentH = isEquip
-      ? headerH + substatCount * 14 + 4 + descHeight + 10 + BTN_H + MARGIN * 2
-      : 116;
+      ? headerH + substatCount * LINE_H + BLOCK_GAP + descHeight + BLOCK_GAP + BTN_H + MARGIN * 2
+      : 130;
     // Bornes : jamais plus petit que l'ancien minimum (évite une régression visuelle
     // sur les items courts), jamais plus grand que l'écran moins une marge de sécurité.
-    const PH = Math.min(Math.max(contentH, isEquip ? 130 : 116), H - MARGIN * 4);
+    const PH = Math.min(Math.max(contentH, isEquip ? 150 : 130), H - MARGIN * 4);
 
     // Anchor near the slot, clamp so the popup stays fully on screen
     let px = nearX - PW / 2;
@@ -1360,22 +1365,22 @@ export class InventoryScene extends Phaser.Scene {
     if (isEquip) {
       let bodyY = py + headerH + 6;
       for (const view of this.getSubstatLineViews(item)) {
-        const lineTxt = this.add.text(px + MARGIN, bodyY, `• ${view.text}`, uiStyle(9, view.color)).setDepth(depth + 1);
+        const lineTxt = this.add.text(px + MARGIN, bodyY, `• ${view.text}`, uiStyle(TYPE.BODY, view.color)).setDepth(depth + 1);
         this.consumePopupObjects.push(lineTxt);
         if (view.rangeText) {
           this.consumePopupObjects.push(
-            this.add.text(px + MARGIN + lineTxt.width + 4, bodyY, view.rangeText, uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setDepth(depth + 1),
+            this.add.text(px + MARGIN + lineTxt.width + 6, bodyY + 3, view.rangeText, uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setDepth(depth + 1),
           );
         }
-        bodyY += 14;
+        bodyY += LINE_H;
       }
-      bodyY += 4;
+      bodyY += BLOCK_GAP;
       // Texte complet (plus de troncature à 90 caractères), lore/description +
       // passif éventuel sur la même chaîne (cf. descRaw0/descHeight mesurés plus
       // haut, avant que PH ne soit fixé — doit rester identique à ce texte-ci).
       this.consumePopupObjects.push(
-        this.add.text(px + MARGIN, bodyY, descRaw0, uiStyle(9, UI.TXT_MUTED, {
-          italic: true, wordWrapWidth: PW - MARGIN * 2, lineSpacing: 2,
+        this.add.text(px + MARGIN, bodyY, descRaw0, uiStyle(TYPE.SMALL, UI.TXT_MUTED, {
+          italic: true, wordWrapWidth: PW - MARGIN * 2, lineSpacing: 4,
         })).setDepth(depth + 1),
       );
     }
