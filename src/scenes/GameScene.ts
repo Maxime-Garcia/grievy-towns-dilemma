@@ -25,7 +25,7 @@ import { getZoneLayout, ZoneLayout, LootableObject, WaterArea } from '../data/zo
 import { ALL_ITEMS } from '../data/items';
 import { loadBindings, KeyBindings } from '../data/keybindings';
 import { keyIconFrame, keyCodeLabel } from '../utils/KeyIcons';
-import { uiStyle } from '../utils/UITheme';
+import { uiStyle, FONT } from '../utils/UITheme';
 import { t, localizeItem } from '../i18n';
 import { BestiarySystem } from '../systems/BestiarySystem';
 import { ArsenalSystem, ARSENAL_ITEM_TYPES } from '../systems/ArsenalSystem';
@@ -1987,7 +1987,7 @@ export class GameScene extends Phaser.Scene {
         // Announcement
         const { width: W, height: H } = this.cameras.main;
         const lbl = this.add.text(W / 2, H / 2 - 40, '— Reinforcements —', {
-          fontSize: '14px', color: '#ffd700', fontFamily: 'monospace',
+          fontSize: '14px', color: '#ffd700', fontFamily: FONT,
           stroke: '#000000', strokeThickness: 3,
         }).setScrollFactor(0).setOrigin(0.5).setDepth(200).setAlpha(0);
         this.tweens.add({
@@ -2883,7 +2883,7 @@ export class GameScene extends Phaser.Scene {
     const nameLabel = this.add.text(W / 2, H / 2 - 30, bossName, {
       fontSize: '20px',
       color: '#ffff00',
-      fontFamily: 'monospace',
+      fontFamily: FONT,
       stroke: '#000000',
       strokeThickness: 4,
     }).setScrollFactor(0).setOrigin(0.5).setDepth(200).setAlpha(0);
@@ -3729,7 +3729,7 @@ export class GameScene extends Phaser.Scene {
     const label = this.add.text(W / 2, H / 2, bossName, {
       fontSize: '22px',
       color: '#ffffff',
-      fontFamily: 'monospace',
+      fontFamily: FONT,
       stroke: '#000000',
       strokeThickness: 5,
     }).setScrollFactor(0).setOrigin(0.5).setDepth(200).setAlpha(0);
@@ -3766,7 +3766,7 @@ export class GameScene extends Phaser.Scene {
     const label = isCrit ? `${amount}!` : `${amount}`;
 
     const txt = this.add.text(x + Phaser.Math.Between(-6, 6), y, label, {
-      fontSize: size, color, fontFamily: 'monospace',
+      fontSize: size, color, fontFamily: FONT,
       stroke: isCrit ? '#ffffff' : '#000000', strokeThickness: isCrit ? 3 : 2,
     }).setDepth(100).setOrigin(0.5, 1);
 
@@ -3795,7 +3795,7 @@ export class GameScene extends Phaser.Scene {
   /** Feedback flottant DODGE_PCT (loot stat rolls) — même style que showDamageNumber. */
   private showDodgeText(x: number, y: number) {
     const txt = this.add.text(x + Phaser.Math.Between(-6, 6), y, 'Esquive !', {
-      fontSize: '13px', color: '#88ddff', fontFamily: 'monospace',
+      fontSize: '13px', color: '#88ddff', fontFamily: FONT,
       stroke: '#000000', strokeThickness: 2,
     }).setDepth(100).setOrigin(0.5, 1);
 
@@ -3811,7 +3811,7 @@ export class GameScene extends Phaser.Scene {
 
   private showHealNumber(x: number, y: number, amount: number) {
     const txt = this.add.text(x, y, `+${amount}`, {
-      fontSize: '14px', color: '#44ff88', fontFamily: 'monospace',
+      fontSize: '14px', color: '#44ff88', fontFamily: FONT,
       stroke: '#000000', strokeThickness: 2,
     }).setDepth(100);
     this.tweens.add({ targets: txt, y: y - 40, alpha: 0, duration: 900, onComplete: () => txt.destroy() });
@@ -3900,7 +3900,7 @@ export class GameScene extends Phaser.Scene {
       gfx.lineStyle(1, 0x44ff88, 0.6);
       gfx.strokeRect(tp.x, tp.y, tp.w, tp.h);
       const label = this.add.text(tp.x + tp.w / 2, tp.y + tp.h / 2, tp.label, {
-        fontSize: '9px', color: '#88ffaa', fontFamily: 'monospace',
+        fontSize: '9px', color: '#88ffaa', fontFamily: FONT,
         stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5).setDepth(1);
       this.zoneLabels.push(label);
@@ -4345,7 +4345,7 @@ export class GameScene extends Phaser.Scene {
 
       // Name label above NPC
       const nameLabel = this.add.text(pos.x, pos.y - 22, npc.name, {
-        fontSize: '9px', color: '#ffee88', fontFamily: 'monospace',
+        fontSize: '9px', color: '#ffee88', fontFamily: FONT,
         stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5, 1).setDepth(5);
       this.zoneLabels.push(nameLabel);
@@ -4495,7 +4495,7 @@ export class GameScene extends Phaser.Scene {
         ? localizeItem(firstItem).name
         : t(`notif.loot_${lo.type}` as const);
       const lootLabel = this.add.text(lo.x, lo.y - 16, labelText, {
-        fontSize: '8px', color: '#ffeeaa', fontFamily: 'monospace',
+        fontSize: '8px', color: '#ffeeaa', fontFamily: FONT,
         stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5, 1).setDepth(4);
       this.zoneLabels.push(lootLabel);

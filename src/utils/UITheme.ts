@@ -71,7 +71,17 @@ export const UI = {
   TXT_CYAN:      '#7fe8d8',  // titres de sections / panneaux (contraste ≥ 9:1 sur BG_MID)
 } as const;
 
-export const FONT = "'Press Start 2P', monospace";
+// ── Polices Neatpixels (ElvGames) — déclarées en @font-face dans index.html ──
+// Une seule famille pixel dans TOUT le jeu (FONT), au lieu de l'ancien duo
+// 'Press Start 2P' (monde) + Verdana (UI) qui juraient l'un avec l'autre.
+/** Corps de texte : dialogues, menus, HUD, tooltips. */
+export const FONT = "'Neatpixels', monospace";
+/** Titres, noms de boss, écrans d'entrée de boss — plus lourde, plus solennelle. */
+export const FONT_TITLE = "'Neatpixels Boss', 'Neatpixels', monospace";
+/** HUD dense / petites valeurs chiffrées — la plus étroite des quatre. */
+export const FONT_HUD = "'Neatpixels Minimal', 'Neatpixels', monospace";
+/** Accents typographiques massifs (logo, chapitrage). */
+export const FONT_DISPLAY = "'Neatpixels Blocks', 'Neatpixels', monospace";
 
 /**
  * Résolution de rendu du texte (cf. `uiStyle`/`pxStyle`). Valeur par défaut
@@ -111,14 +121,17 @@ export function setTextResolution(zoom: number): void {
 }
 
 /**
- * Police UI moderne — lisible sans zoom, même après le downscale Scale.FIT
- * sur mobile (×0.47 à 375 CSS px). Verdana est large et très lisible aux
- * petites tailles, disponible partout sans chargement externe.
+ * Police de l'interface. Historiquement Verdana : un choix de LISIBILITÉ, assumé
+ * contre l'identité pixel, parce que 'Press Start 2P' était illisible aux petites
+ * tailles. Neatpixels règle le dilemme — c'est une police pixel dessinée pour du
+ * corps de texte, lisible là où Press Start 2P ne l'était pas.
  *
- * Règle : FONT (pixel) = identité — titre du jeu, gros titres d'écran.
- *         FONT_UI (moderne) = TOUT le reste : corps, labels, stats, boutons.
+ * Conservé comme alias de FONT (plutôt que supprimé) : ~200 usages dans les scènes
+ * s'appuient dessus, et un import unique évite un rename massif à faible valeur.
+ * Le jeu n'a désormais plus qu'UNE famille de texte — cf. FONT_TITLE/FONT_HUD pour
+ * les variantes de hiérarchie.
  */
-export const FONT_UI = "Verdana, 'Segoe UI', Tahoma, Geneva, sans-serif";
+export const FONT_UI = FONT;
 
 /** Échelle typographique officielle (px logiques 800×600) — voir UI_UX_GUIDELINES.md §2.2 */
 export const TYPE = {

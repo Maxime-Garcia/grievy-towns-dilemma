@@ -10,11 +10,33 @@
   <meta name="apple-mobile-web-app-title" content="Grievy Town" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icon.svg" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
   <title>Grievy Town's Dilemma</title>
   <style>
+    /* Neatpixels (ElvGames) — polices pixel LOCALES : plus aucune dépendance à
+       Google Fonts (une requête réseau de moins, et le jeu reste jouable hors ligne
+       via le service worker). Standard = corps de texte ; Boss/Blocks = titres et
+       écrans de boss ; Minimal = HUD dense. Licence : public/assets/fonts/. */
+    @font-face {
+      font-family: 'Neatpixels';
+      src: url('/assets/fonts/neatpixels-standard.ttf') format('truetype');
+      font-display: block;
+    }
+    @font-face {
+      font-family: 'Neatpixels Minimal';
+      src: url('/assets/fonts/neatpixels-minimal.ttf') format('truetype');
+      font-display: block;
+    }
+    @font-face {
+      font-family: 'Neatpixels Boss';
+      src: url('/assets/fonts/neatpixels-boss.ttf') format('truetype');
+      font-display: block;
+    }
+    @font-face {
+      font-family: 'Neatpixels Blocks';
+      src: url('/assets/fonts/neatpixels-blocks.ttf') format('truetype');
+      font-display: block;
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
       width: 100%;
@@ -29,7 +51,7 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      font-family: 'Press Start 2P', monospace;
+      font-family: 'Neatpixels', monospace;
     }
     canvas {
       display: block;
