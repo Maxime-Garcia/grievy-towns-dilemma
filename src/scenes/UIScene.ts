@@ -99,7 +99,7 @@ export class UIScene extends Phaser.Scene {
     // sur fond translucide. Exclue volontairement de la règle "toujours uiStyle()" :
     // c'est un badge de debug monospace (lisibilité console), pas un texte de jeu —
     // uiStyle() impose FONT_UI (Verdana), incompatible avec l'esthétique recherchée ici.
-    const BUILD_LABEL = 'UI: 960x720 + hierarchie typo (671b908)';
+    const BUILD_LABEL = 'Refonte UI: 960x720 + hierarchie (4e61256)';
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',

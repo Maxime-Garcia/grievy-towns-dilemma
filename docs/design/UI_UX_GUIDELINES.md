@@ -6,14 +6,17 @@
 > Les tokens de ce document sont extraits du code réel (`src/utils/UITheme.ts`, `src/types/index.ts`,
 > `src/main.ts`) — si le code et ce doc divergent, corriger l'un ou l'autre, jamais ignorer.
 
-**Dernière synchro avec le code :** passe « assets UI pixel art » (2026-07-13) —
-icônes de skills/talents bakées depuis la sheet `ui_icons_16` (glyphe = effet,
-teinte = élément/branche), cadres de slots en vrai asset (`addUiFrame`, §3.14),
-onglets de filtrage du sac (dette D13 résorbée). NOTE typo : les polices sont
-passées à **Neatpixels** (`FONT`/`FONT_TITLE`/`FONT_HUD`/`FONT_DISPLAY` dans
-UITheme.ts) — `FONT_UI` est désormais un alias de `FONT` ; les mentions
-'Press Start 2P'/Verdana ci-dessous décrivent l'ancien système et sont à lire
-comme « police pixel identitaire » / « police de corps » respectivement.
+**Dernière synchro avec le code :** refonte « hiérarchie, aération, débordements »
+(2026-07-13) — canvas **960×720** (zoom caméra monde 1.2 en compensation : le
+gamefeel est inchangé), polices **Neatpixels** avec **une grille par variante**
+(Standard 7 / Minimal 10 / Boss 18) et échelle refondue (§2.2), nouveaux helpers
+`titleStyle()` et **`fitText()`** (troncature mesurée en PIXELS — les `slice(n)` sur
+des caractères sont bannis, ils étaient la cause structurelle des débordements).
+Tous les écrans repassés. ⚠️ Les tailles en px citées dans les §6.x ci-dessous
+peuvent encore dater de l'ancienne échelle — **le code fait foi**.
+Précédente : passe « assets UI pixel art » (2026-07-13) —
+icônes de skills/talents bakées depuis la sheet `ui_icons_16`, cadres de slots en
+vrai asset (`addUiFrame`, §3.14), onglets de filtrage du sac (dette D13 résorbée).
 Précédente : passe « lisibilité micro-textes » (2026-07-12) —
 plus aucun `uiStyle` < 9 px dans les scènes (les tailles plancher référencent `TYPE.SMALL`),
 `TXT_MUTED`/`TXT_HINT` remontés, résolution de rendu du texte plafonnée à 10 (`setTextResolution`).
@@ -50,27 +53,35 @@ Concrètement :
 
 | Paramètre | Valeur | Source |
 |-----------|--------|--------|
-| Résolution logique | **800×600 px**, fixe | `src/main.ts` (`scale.width/height`) |
-| Scale mode | `Phaser.Scale.FIT` + `CENTER_BOTH` | `src/main.ts` |
+| Résolution logique | **960×720 px**, fixe | `src/main.ts` (`scale.width/height`) |
+| Zoom caméra du MONDE | **1.2** (compense la montée de résolution) | `GameScene.WORLD_CAMERA_ZOOM` |
+| Scale mode | `Phaser.Scale.FIT` + `CENTER_BOTH` + `autoRound` | `src/main.ts` |
 | Rendu | `pixelArt: true` (nearest-neighbor, zéro anti-aliasing) | `src/main.ts` |
-| Police identité | `'Press Start 2P', monospace` → `FONT` | `UITheme.ts` |
-| Police UI | `Verdana, 'Segoe UI', Tahoma, Geneva, sans-serif` → `FONT_UI` | `UITheme.ts` |
+| Polices | **Neatpixels** (Standard / Minimal / Boss / Blocks) | `UITheme.ts`, `public/assets/fonts/` |
 
-**Conséquence critique :** toutes les coordonnées UI sont en **unités logiques** (800×600).
-Sur un téléphone de 375 CSS px de large, `Scale.FIT` réduit tout d'un facteur **≈ 0.47**.
-Un élément de 44 px logiques ne fait donc que ~21 px physiques à l'écran. C'est pourquoi :
+### Pourquoi 960×720 et pas 800×600
 
-- Le **minimum absolu** de zone tactile est 44×44 px logiques — mais c'est un plancher, pas une cible.
+Le canvas était à 800×600. Le passage à une police **pixel** a porté le corps de texte à 14 px
+(contre 11-12 avant), dans des panneaux aux largeurs **codées en dur** : le texte n'avait plus
+aucun exutoire, et l'UI est devenue illisible et sans air.
+
+960×720 = exactement **1,2 × 800×600** (même ratio 4:3). `GameScene` compense avec
+`cameras.main.setZoom(1.2)` : la caméra montre **exactement la même zone de monde** et les sprites
+ont la **même taille apparente** — le gamefeel est validé, il ne devait pas bouger parce que l'UI
+manquait de place. Seules les scènes d'UI (caméra à zoom 1) profitent des 20 % de pixels gagnés.
+
+**Corollaire :** ne jamais coder 960/720 en dur non plus. Tout dérive de `cameras.main.width/height`.
+
+### Zones tactiles
+
+Sur un téléphone de 375 CSS px de large, `Scale.FIT` réduit tout d'un facteur ≈ 0.39.
+Un élément de 44 px logiques ne fait donc que ~17 px physiques. C'est pourquoi :
+
+- Le **minimum absolu** de zone tactile est 44×44 px logiques — un plancher, pas une cible.
 - Les actions **fréquentes en combat** (skills) visent **52 px et plus**, avec hit zone élargie.
 - Toujours ajouter une **hit zone invisible** (`add.rectangle(..., 0, 0)`) de **+4 à +6 px** au-delà du visuel.
-- Ne jamais coller un élément interactif à un bord absolu de l'écran (le pouce rate les bords ; les
-  gestes système iOS/Android mangent les 20 derniers px du bas).
-- C'est aussi pourquoi la police UI moderne est indispensable : Verdana 10 px logiques reste
-  lisible à ×0.47 ; Press Start 2P 5–7 px ne l'était pas.
-- **Résolution de rendu du texte** : `setTextResolution(zoom)` (UITheme.ts, appelée au boot dans
-  `main.ts`) calibre la densité interne des canvas de texte sur le zoom réel — **plafonnée à 10** :
-  au-delà, la minification NEAREST (pixelArt) décime les pixels rendus et transforme les
-  micro-textes (9 px) en bruit. Ne jamais retirer ni déplafonner sans re-tester sur grand écran.
+- Ne jamais coller un élément interactif à un bord absolu (le pouce rate les bords ; les gestes
+  système iOS/Android mangent les 20 derniers px du bas).
 
 Toujours calculer les positions à partir de la caméra, jamais en dur :
 
@@ -171,37 +182,66 @@ Feu `0xff4400` · Eau `0x2266ff` · Foudre `0xffee00` · Glace `0x88ddff` · Ven
 Validé `0xf0e8d8` · Restant `0x444444` · Finisher prêt `0xffb347` (ambre) · Combo cassé `0x777777`
 **Interdits pour les pips :** azur `0x66ddff` et doré `0xffe066` (réservés à d'autres systèmes).
 
-### 2.2 Typographie — LE cœur de la refonte
+### 2.2 Typographie — LA règle non négociable : rester sur la grille
 
-**Deux familles, deux fonctions :**
+Le jeu utilise **Neatpixels** (ElvGames), une police **pixel**. Ça impose une contrainte que
+l'ancienne UI (Verdana, une police lisse) n'avait pas, et qui explique la moitié des bugs de cette
+section :
 
-| Constante | Famille | Rôle |
-|-----------|---------|------|
-| `FONT` | `'Press Start 2P', monospace` | **Identité uniquement** : titre du jeu (MainMenu 24 px). Ne plus l'utiliser pour du texte fonctionnel. |
-| `FONT_UI` | `Verdana, 'Segoe UI', Tahoma, Geneva, sans-serif` | **Tout le reste.** Créée via `uiStyle()`. |
+> **Une police pixel n'est nette QU'À un multiple entier de sa grille de dessin.**
+> Hors grille, le rastériseur du navigateur anti-aliase le glyphe — et ce flou est **cuit dans le
+> canvas 2D du Text avant même que Phaser ne le voie**. Aucun réglage de filtrage (`pixelArt`,
+> NEAREST, résolution de texte) ne le rattrape après coup. C'est ce qui a fait tourner en rond
+> toutes les tentatives de « corriger le flou » : on réglait le filtrage d'une image déjà floue.
 
-**Échelle typographique officielle** (constante `TYPE` de UITheme.ts, px logiques) :
+**Et chaque variante a SA grille** (mesurée dans les TTF) :
 
-| Rôle | Taille | Style | Exemples dans le code |
-|------|--------|-------|----------------------|
-| Titre d'écran | **15** | bold + stroke, doré | `INVENTAIRE` |
-| Titre de section / nom (heading) | **13** | bold, souvent stroke | Nom d'item détail, speaker dialogue, nom de talent, boutons MainMenu |
-| Corps / valeur (body) | **12** | normal ou bold | Corps de dialogue (13), main stat, notifications, nom de zone |
-| Label / secondaire | **10–11** | normal | Labels de stats, substats, descriptions, tabs (11), boutons d'action (11) |
-| Badge / hint / micro | **9** | — | **MINIMUM ABSOLU.** Abréviations de slots, hints, lore, footer |
+| Famille | Constante | Grille | Tailles nettes | Rôle |
+|---|---|---|---|---|
+| Neatpixels Boss | `FONT_TITLE` | **18 px** | 18, 36 | **Titres d'écran** (via `titleStyle()`) |
+| Neatpixels Standard | `FONT` / `FONT_UI` | **7 px** | 7, 14, 21, 28 | Corps, titres de section, valeurs |
+| Neatpixels Minimal | `FONT_HUD` | **10 px** | 10, 20, 30 | Micro-texte, HUD dense, badges |
+| Neatpixels Blocks | `FONT_DISPLAY` | 7 px | 7, 14, 21 | Accents typographiques massifs |
+
+**Échelle officielle** (constante `TYPE` de UITheme.ts) :
+
+| Rôle | Constante | Taille | Police | Exemples |
+|------|-----------|--------|--------|----------|
+| Titre d'écran | `TYPE.TITLE` | **18** | **Boss** (`titleStyle()`) | `INVENTAIRE`, `ARSENAL`, `PAUSE` |
+| Titre de section / nom d'item | `TYPE.HEADING` | **21** | Standard | Nom d'item (détail), nom de talent |
+| Corps / valeur | `TYPE.BODY` | **14** | Standard | Dialogues, stats, boutons |
+| Libellé secondaire | `TYPE.LABEL` | **14** | Standard | **Même taille que BODY** — se distingue par la COULEUR (`UI.TXT_MUTED`) et la graisse, jamais par la taille |
+| Micro-texte / badge | `TYPE.SMALL` | **10** | **Minimal** | Hints, taux de drop, fourchettes |
+
+**Pourquoi les titres sont en police Boss et non « en plus gros » :** avec une grille de 7, il n'y a
+rien entre 14 et 21. Un titre à 21 ne domine pas assez un corps à 14, et 28 est écrasant. Une police
+*différente*, plus lourde, rétablit la hiérarchie sans se battre pour un palier de taille.
+
+**Pourquoi `SMALL` est en Minimal :** Standard n'offre rien entre 7 (illisible) et 14 (trop gros pour
+un badge). Minimal est dessinée sur une grille de 10 — précisément ce registre. C'est l'intention du
+pack : **trois polices, trois grilles, donc plus de paliers nets qu'avec une seule.**
 
 Règles :
-- **Toujours passer par `uiStyle(size, color, opts)`** — jamais de style inline.
-- **Jamais de taille < 9 px** : tout texte au plancher référence **`TYPE.SMALL`** (pas un `9` en
-  dur) — purge complète des 7–8 px effectuée le 2026-07-12 (Arsenal, Bestiaire, Inventaire, Dialogue).
-- Texte superposé à une barre, un sprite ou une icône → `{ stroke: true }` (contour noir épaisseur 3).
-- Texte long → `{ wordWrapWidth: ... }`, jamais de débordement.
+- **Toujours passer par `uiStyle()` / `titleStyle()`** — jamais de style inline. `uiStyle` **route
+  automatiquement** vers la bonne police : toute taille ≤ 11 part en Minimal 10, au-dessus en
+  Standard 14/21/28. Un littéral tombera donc toujours sur une grille.
+- **Ne JAMAIS écrire une taille de police en dur dans un style inline.** C'est le seul moyen de sortir
+  de la grille — et donc de réintroduire le flou.
+- **Troncature : `fitText(scene, text, style, maxWidth)`, JAMAIS `slice(n)`.** Une troncature au
+  nombre de caractères ne veut rien dire (`MMMM` et `iiii` n'ont pas la même largeur) et ignore la
+  police. C'était la cause **structurelle** des débordements : chaque changement de typo les faisait
+  tous réapparaître.
+- Texte long → `{ wordWrapWidth: ... }`. **Zéro débordement**, sans exception.
+- Texte superposé à une barre, un sprite ou une icône → `{ stroke: true }`.
 - Chiffres/valeurs à droite : `.setOrigin(1, 0)` ; titres centrés : `.setOrigin(0.5, 0)`.
-- Chiffres de quantité sur les slots : 10 px bold + stroke.
-- `pxStyle()` reste défini dans UITheme.ts mais n'est plus référencé que par le **titre du jeu
-  de MainMenuScene** (seul usage identitaire autorisé). Toutes les autres scènes sont migrées
-  vers `uiStyle` (passe « arcane fresh » 07/2026) — **ne jamais l'utiliser dans du nouveau code
-  fonctionnel** (dette D11 résorbée).
+- `TEXT_RESOLUTION = 1` : **ne pas y toucher.** Sur-échantillonner une police pixel puis
+  ré-échantillonner en NEAREST la **dégrade** (les traits d'un pixel de large disparaissent par
+  endroits) au lieu de l'améliorer. L'ancienne machinerie (×4 à ×10) n'existait que pour sauver des
+  polices *lisses* du filtrage NEAREST — elle n'a plus d'objet.
+
+**Corollaire de dimensionnement :** une ligne de texte de 14 px a besoin d'au moins **18 px**
+d'interligne et **26 px** de rangée. Les valeurs héritées de l'ancienne échelle (`ROW_H = 22`,
+interligne 14) donnaient zéro respiration — c'est ce qui rendait l'UI « pas aérée ».
 
 ### 2.3 Espacements et dimensions standard
 
