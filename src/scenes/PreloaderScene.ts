@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
 import { parseTMXtoTiledJSON } from '../utils/TMXParser';
-import { RARITY_COLORS, ItemRarity } from '../types';
+import { RARITY_COLORS, ItemRarity, ElementType } from '../types';
 import { ALL_ITEMS } from '../data/items';
+import { SKILLS } from '../data/skills';
+import { TALENT_MAP } from '../data/talents';
 
 export class PreloaderScene extends Phaser.Scene {
   // PNJ de Grievy Town ayant un sprite bitmap réel (Characters Pack 06 — ELV Games).
@@ -37,37 +39,78 @@ export class PreloaderScene extends Phaser.Scene {
   };
   private static readonly ENEMY_STATES = ['idle', 'walk', 'attack', 'damage', 'dead'] as const;
 
-  // Icônes d'armes réelles (packs Sword/Staff/Bow/Dagger/Axe Item Icons — voir
-  // ASSET_SOURCES.md) — un fichier statique 32×32 par arme, pas de recolor par
-  // élément (contrairement aux ennemis) : l'élément d'une arme looté est signalé
-  // par la couleur de survol de son emplacement dans l'inventaire, pas l'icône.
-  private static readonly WEAPON_ICON_KEYS = [
-    'item_arc_sword', 'item_blizzard_gs', 'item_cinder_dagger', 'item_colossus_greatsword',
-    'item_coral_sword', 'item_crystal_staff', 'item_depth_fang', 'item_divine_sword',
-    'item_dragonfang_sword', 'item_drowned_sword', 'item_earth_tome', 'item_echo_blade',
-    'item_fire_staff', 'item_first_blade', 'item_frost_dagger', 'item_frost_staff',
-    'item_gale_dagger', 'item_gorvun_hammer', 'item_harpy_bow', 'item_herald_staff',
-    'item_iron_sword', 'item_leviathan_staff', 'item_magma_greatsword', 'item_malachar_blade',
-    'item_malachars_staff', 'item_memory_staff', 'item_phoenix_bow', 'item_pyroclast_bow',
-    'item_seismic_staff', 'item_sentinel_sword', 'item_shadow_dagger', 'item_shadow_staff',
-    'item_sky_bow', 'item_soul_bow', 'item_steel_sword', 'item_stone_dagger',
-    'item_storm_sword', 'item_temporal_blade', 'item_test_axe', 'item_test_dual_dagger',
-    'item_test_dual_sword', 'item_test_hammer', 'item_thunder_bow', 'item_thunder_staff',
-    'item_tide_staff', 'item_titan_greatsword', 'item_velmara_blade', 'item_void_bow',
-    'item_void_reaper', 'item_volkran_hammer', 'item_water_staff', 'item_wind_bow',
-    'item_wind_greatsword', 'item_world_eater',
-  ] as const;
+  // Les anciennes listes WEAPON_ICON_KEYS / ARMOR_ICON_KEYS (ecrites a la main, et
+  // qui ne couvraient que 54 armes + 10 casques) ont disparu : les icones ditems
+  // sont desormais DERIVEES de ALL_ITEMS dans preload(). Le catalogue compte ~630
+  // items (dont ~390 generes, cf. scripts/genItems.mjs) et chacun a son PNG 32x32
+  // (scripts/fillMissingIcons.mjs garantit quaucune cle icon ne reste sans fichier).
+  // Maintenir la liste a la main etait intenable — cest precisement ce qui laissait
+  // des equipements sans skin.
 
-  // Icônes d'armure réelles (Armory Item Icons — voir ASSET_SOURCES.md). Contrairement
-  // aux armes, ici recolorées par élément (colorize HSV) quand le pack ne fournit pas
-  // nativement la couleur voulue — même logique que les ennemis. Lot 1/8 : casques.
-  // Prochains lots (plastrons/jambières/bottes/gants/capes/anneaux/amulettes) à
-  // compléter dans cette même liste au fil des sessions suivantes.
-  private static readonly ARMOR_ICON_KEYS = [
-    'item_leather_helm', 'item_iron_helm', 'item_titan_helm', 'item_fire_helm',
-    'item_earth_helm', 'item_wind_helm', 'item_water_helm', 'item_lightning_helm',
-    'item_dark_helm', 'item_mirror_helm',
-  ] as const;
+  // ── Icônes de skills — glyphes de la sheet `ui_icons_16` (GUI pack ELV,
+  // "Icons 16x16 Transparent" : glyphes BLANCS sur transparent, 336 frames en
+  // grille 16 col × 21 lignes) teintés à la couleur de l'élément au bake.
+  // Le glyphe dit l'EFFET (projectile, bouclier, soin…), la teinte dit
+  // l'ÉLÉMENT — cf. couleurs élémentaires INSPIRATIONS.md §3, éclaircies pour
+  // rester lisibles sur slot sombre. Indices vérifiés visuellement sur les
+  // fichiers unitaires `Icons Style 1/Style 1 Icon NNN.png` (même ordre).
+  private static readonly SKILL_ICON_FRAME: Record<string, number> = {
+    dash:            307, // double chevron (élan)
+    echo_strike:       0, // épée
+    fireball:        140, // orbe
+    flame_dash:      307, // double chevron (teinté feu)
+    inferno_burst:   141, // anneau (déflagration)
+    stone_shield:    139, // bouclier rond
+    seismic_slam:    313, // flèche pleine vers le bas (onde au sol)
+    terra_surge:     312, // flèche pleine vers le haut (pics qui jaillissent)
+    gale_step:       307, // double chevron
+    tornado_spin:    136, // spirale
+    skyward_strike:  312, // flèche vers le haut
+    tidal_wave:      272, // goutte/losange
+    healing_current: 320, // croix « + »
+    frost_lance:      84, // trait diagonal (lance)
+    thunder_bolt:     81, // trait diagonal (projectile rapide)
+    chain_lightning: 138, // grille (cibles multiples chaînées)
+    volt_dash:       307, // double chevron
+    frost_nova:      141, // anneau (nova)
+    blizzard_skill:  328, // éclat diagonal
+    ice_barrier:     142, // grand bouclier
+    soul_echo:       176, // crâne
+    void_step:       141, // anneau (portail)
+    prism_burst:     274, // gemme
+    elaras_gift:     273, // fiole/calice (don)
+  };
+
+  /** Teintes élémentaires des glyphes — variantes éclaircies des couleurs
+   *  élémentaires (INSPIRATIONS.md §3) pour le contraste sur SLOT_BG sombre. */
+  private static readonly ELEMENT_ICON_TINT: Record<ElementType, number> = {
+    [ElementType.FIRE]:      0xff7a44,
+    [ElementType.EARTH]:     0xa9c04f,
+    [ElementType.WIND]:      0xbfe9ff,
+    [ElementType.WATER]:     0x5d9cff,
+    [ElementType.LIGHTNING]: 0xffee55,
+    [ElementType.ICE]:       0xa8e4ff,
+    [ElementType.DARK]:      0xb070ff,
+    [ElementType.DIVINE]:    0xffd76a,
+    [ElementType.NEUTRAL]:   0xf0e8d8,
+  };
+
+  // ── Icônes de talents — un glyphe thématique par branche, teinté à la
+  // couleur de branche (sync avec BRANCH_META de SkillScene / TalentBranch de
+  // types/index.ts). Avant cette passe, les clés `talent_*` n'existaient dans
+  // AUCUNE texture : les nodes de SkillScene affichaient la texture manquante.
+  private static readonly TALENT_BRANCH_ICON: Record<string, { frame: number; tint: number }> = {
+    VIGOR:    { frame: 0,   tint: 0xe05555 }, // épée — force physique
+    INSTINCT: { frame: 84,  tint: 0xe8bb44 }, // trait — réflexes
+    ARCANE:   { frame: 140, tint: 0xb866e0 }, // orbe — magie
+    IGNIS:    { frame: 141, tint: 0xff8844 }, // anneau — déflagration
+    ZEPHYR:   { frame: 307, tint: 0x66e8bb }, // chevrons — vitesse
+    ABYSSAL:  { frame: 272, tint: 0x5588ff }, // goutte — profondeurs
+    TERRA:    { frame: 139, tint: 0xcc9955 }, // bouclier — roc
+    FULGURIS: { frame: 81,  tint: 0xffdd55 }, // trait — foudre
+    GLACIUS:  { frame: 142, tint: 0xcceeff }, // grand bouclier — préservation
+    TENEBRES: { frame: 176, tint: 0xaa66dd }, // crâne — magie noire
+  };
 
   constructor() { super({ key: 'PreloaderScene' }); }
 
@@ -111,13 +154,17 @@ export class PreloaderScene extends Phaser.Scene {
       }
     }
 
-    // ── Icônes d'armes réelles (voir ASSET_SOURCES.md) ──
-    for (const key of PreloaderScene.WEAPON_ICON_KEYS) {
-      this.load.image(key, `assets/sprites/items/${key}.png`);
+    // ── Icônes d'items (voir ASSET_SOURCES.md) ──
+    // DÉRIVÉ du catalogue, plus une liste écrite à la main : le catalogue compte
+    // désormais ~630 items (dont ~390 générés, cf. scripts/genItems.mjs) et chacun
+    // a son PNG 32×32 (scripts/fillMissingIcons.mjs garantit qu'aucune clé `icon`
+    // ne reste sans fichier). Maintenir la liste à la main était intenable et c'est
+    // exactement ce qui laissait des items sans skin.
+    const itemIconKeys = new Set<string>();
+    for (const item of Object.values(ALL_ITEMS)) {
+      if (item.icon) itemIconKeys.add(item.icon);
     }
-
-    // ── Icônes d'armure réelles (voir ASSET_SOURCES.md) ──
-    for (const key of PreloaderScene.ARMOR_ICON_KEYS) {
+    for (const key of itemIconKeys) {
       this.load.image(key, `assets/sprites/items/${key}.png`);
     }
 
@@ -129,6 +176,16 @@ export class PreloaderScene extends Phaser.Scene {
     // ── Icônes de navigation HUD (remplace le texte "INV"/"SKL") ──
     this.load.image('nav_inventory', 'assets/sprites/ui/nav_inventory.png');
     this.load.image('nav_skills',    'assets/sprites/ui/nav_skills.png');
+
+    // ── Assets UI pixel art (GUI Kit + Retro Inventory, ELV Games) ──
+    // Fichiers copiés par `node scripts/copy-ui-assets.mjs` (voir
+    // ASSET_SOURCES.md §ui/). S'ils manquent, le loaderror est silencieux et
+    // toute l'UI retombe sur les placeholders / rendu Graphics existants.
+    // ui_icons_16 : 336 glyphes blancs 16×16 (16 col × 21 lignes) — source des
+    // icônes de skills/talents bakées dans generateSkillAndTalentIcons().
+    this.load.spritesheet('ui_icons_16', 'assets/sprites/ui/ui_icons_16.png', { frameWidth: 16, frameHeight: 16 });
+    this.load.image('ui_slot_frame', 'assets/sprites/ui/ui_slot_frame.png'); // slot sombre + coins or (Retro Inventory)
+    this.load.image('ui_tab_frame',  'assets/sprites/ui/ui_tab_frame.png');  // fond d'onglet bleu nuit (GUI Kit UI 03)
 
     // ── Tileset de sol Grievy Town — Fantasy Dreamland Reborn (voir ASSET_SOURCES.md) ──
     // Convention : tileset_<zoneId>_ground / _path, chargé par zone dans GameScene.drawZoneMap().
@@ -158,6 +215,7 @@ export class PreloaderScene extends Phaser.Scene {
   create() {
     this.generateWeaponIcons();
     this.generateItemIcons();
+    this.generateSkillAndTalentIcons();
     this.createPlayerAnimations();
     this.createNpcAnimations();
     this.createEnemyAnimations();
@@ -265,6 +323,73 @@ export class PreloaderScene extends Phaser.Scene {
         });
       }
     }
+  }
+
+  // ── Icônes de skills et de talents — bake depuis la sheet ui_icons_16 ────
+  //
+  // Remplace les placeholders "carré coloré + initiales" (PlaceholderAssets)
+  // par de vrais glyphes pixel art teintés. Trois garde-fous :
+  //   1. sheet absente (script de copie pas encore lancé) → on ne touche à rien ;
+  //   2. une texture skill_* chargée depuis un VRAI fichier PNG (HTMLImageElement)
+  //      reste prioritaire — le bake ne remplace que les canvas placeholders ;
+  //   3. frame hors sheet (géométrie inattendue) → skip silencieux.
+  private generateSkillAndTalentIcons(): void {
+    if (!this.textures.exists('ui_icons_16')) return;
+
+    for (const skill of SKILLS) {
+      // Annotation élargie : l'accès indexé n'inclut pas undefined sans
+      // noUncheckedIndexedAccess — un skill hors table doit être skippé.
+      const frame: number | undefined = PreloaderScene.SKILL_ICON_FRAME[skill.id];
+      if (frame === undefined) continue;
+      const tint = PreloaderScene.ELEMENT_ICON_TINT[skill.element ?? ElementType.NEUTRAL];
+      this.bakeTintedGlyph(skill.icon, frame, tint);
+    }
+
+    for (const node of Object.values(TALENT_MAP)) {
+      const def: { frame: number; tint: number } | undefined =
+        PreloaderScene.TALENT_BRANCH_ICON[String(node.branch)];
+      if (def === undefined) continue;
+      this.bakeTintedGlyph(node.icon, def.frame, def.tint);
+    }
+  }
+
+  /**
+   * Bake une texture 32×32 : glyphe blanc 16×16 de `ui_icons_16` upscalé ×2
+   * (entier — zéro artefact NEAREST) puis teinté à plat via `source-in`.
+   * Ne remplace jamais une texture provenant d'un vrai fichier image.
+   */
+  private bakeTintedGlyph(key: string, frameIndex: number, tint: number): void {
+    const frame = this.textures.getFrame('ui_icons_16', frameIndex);
+    // Frame absente → Phaser renvoie la frame __BASE (la sheet entière) :
+    // on la détecte par sa taille de découpe.
+    if (!frame || frame.cutWidth !== 16 || frame.cutHeight !== 16) return;
+    const sheetImg = frame.source.image;
+    // Narrowing explicite : drawImage n'accepte que des sources canvas/image
+    // (jamais le cas WebGLTexture/RenderTexture pour un spritesheet chargé).
+    if (!(sheetImg instanceof HTMLImageElement) && !(sheetImg instanceof HTMLCanvasElement)) return;
+
+    if (this.textures.exists(key)) {
+      const src = this.textures.get(key).source[0]?.image;
+      if (src instanceof HTMLImageElement) return; // vrai PNG dédié — prioritaire
+      this.textures.remove(key);
+    }
+
+    const S = 32;
+    const canvas = document.createElement('canvas');
+    canvas.width  = S;
+    canvas.height = S;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(
+      sheetImg,
+      frame.cutX, frame.cutY, frame.cutWidth, frame.cutHeight,
+      0, 0, S, S,
+    );
+    ctx.globalCompositeOperation = 'source-in';
+    ctx.fillStyle = '#' + tint.toString(16).padStart(6, '0');
+    ctx.fillRect(0, 0, S, S);
+    this.textures.addCanvas(key, canvas);
   }
 
   private generateWeaponIcons(): void {

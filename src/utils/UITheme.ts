@@ -373,6 +373,32 @@ export function strokeSlotHighlight(
   g.strokeRoundedRect(x, y, size, size, radius);
 }
 
+/**
+ * Cadre UI en VRAI asset pixel art (packs GUI Kit / Retro Inventory — voir
+ * ASSET_SOURCES.md §ui/), posé PAR-DESSUS le fond dessiné par drawSlot/drawCard.
+ * (cx, cy) = CENTRE du cadre (aligné sur les conventions d'Image Phaser).
+ *
+ * - WebGL : NineSlice — les coins restent à l'échelle native (nets), seuls les
+ *   bords/centre s'étirent. Canvas (NineSlice non supporté) : Image étirée.
+ * - Texture absente (script scripts/copy-ui-assets.mjs pas lancé) : retourne
+ *   null — l'appelant garde son rendu Graphics existant, rien ne casse.
+ *
+ * Les deux types retournés exposent setY/setMask/setTint/setAlpha : compatibles
+ * avec le pattern de scroll registré de InventoryScene.renderGrid.
+ */
+export function addUiFrame(
+  scene: Phaser.Scene,
+  cx: number, cy: number, w: number, h: number,
+  texKey = 'ui_slot_frame',
+  slice = 8,
+): Phaser.GameObjects.Image | Phaser.GameObjects.NineSlice | null {
+  if (!scene.textures.exists(texKey)) return null;
+  if (scene.sys.game.renderer.type === Phaser.WEBGL) {
+    return scene.add.nineslice(cx, cy, texKey, undefined, w, h, slice, slice, slice, slice);
+  }
+  return scene.add.image(cx, cy, texKey).setDisplaySize(w, h);
+}
+
 /** Séparateur horizontal discret — remplace les lineStyle/moveTo/lineTo répétés. */
 export function drawDivider(
   g: Phaser.GameObjects.Graphics,

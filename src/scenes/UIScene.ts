@@ -1,7 +1,7 @@
 import { PlayerState, Item, ItemRarity, RARITY_COLORS } from '../types';
 import { GameScene } from './GameScene';
 import { SKILL_MAP } from '../data/skills';
-import { UI, drawGlowPanel, drawSlot, drawBar, uiStyle, resonanceColor } from '../utils/UITheme';
+import { UI, drawGlowPanel, drawSlot, drawBar, addUiFrame, uiStyle, resonanceColor } from '../utils/UITheme';
 import { StatRollSystem } from '../systems/StatRollSystem';
 import { t, localizeItem, localizeSkill } from '../i18n';
 
@@ -95,7 +95,7 @@ export class UIScene extends Phaser.Scene {
     // sur fond translucide. Exclue volontairement de la règle "toujours uiStyle()" :
     // c'est un badge de debug monospace (lisibilité console), pas un texte de jeu —
     // uiStyle() impose FONT_UI (Verdana), incompatible avec l'esthétique recherchée ici.
-    const BUILD_LABEL = 'HIDDEN Wave 2: 15 passifs + 15 items (5afd17f)';
+    const BUILD_LABEL = 'SPEAR + 392 items + Neatpixels + UI assets (5013d2f)';
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',
@@ -166,6 +166,9 @@ export class UIScene extends Phaser.Scene {
       const slotGfx = this.add.graphics();
       // Slot arrondi moderne (arcane fresh) — même primitive que l'inventaire
       drawSlot(slotGfx, sx, SY, SLOT_SZ, UI.SLOT_BORDER, { occupied: true, radius: 6 });
+      // Cadre pixel art réel (Retro Inventory) — même asset que les slots de
+      // l'inventaire (cohérence §7 guidelines) ; null si non copié, sans effet.
+      addUiFrame(this, sx + SLOT_SZ / 2, SY + SLOT_SZ / 2, SLOT_SZ, SLOT_SZ);
 
       const icon = this.add.image(sx + SLOT_SZ / 2, SY + SLOT_SZ / 2, 'skill_dash')
         .setDisplaySize(34, 34);

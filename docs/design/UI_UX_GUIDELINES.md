@@ -6,7 +6,15 @@
 > Les tokens de ce document sont extraits du code réel (`src/utils/UITheme.ts`, `src/types/index.ts`,
 > `src/main.ts`) — si le code et ce doc divergent, corriger l'un ou l'autre, jamais ignorer.
 
-**Dernière synchro avec le code :** passe « lisibilité micro-textes » (2026-07-12) —
+**Dernière synchro avec le code :** passe « assets UI pixel art » (2026-07-13) —
+icônes de skills/talents bakées depuis la sheet `ui_icons_16` (glyphe = effet,
+teinte = élément/branche), cadres de slots en vrai asset (`addUiFrame`, §3.14),
+onglets de filtrage du sac (dette D13 résorbée). NOTE typo : les polices sont
+passées à **Neatpixels** (`FONT`/`FONT_TITLE`/`FONT_HUD`/`FONT_DISPLAY` dans
+UITheme.ts) — `FONT_UI` est désormais un alias de `FONT` ; les mentions
+'Press Start 2P'/Verdana ci-dessous décrivent l'ancien système et sont à lire
+comme « police pixel identitaire » / « police de corps » respectivement.
+Précédente : passe « lisibilité micro-textes » (2026-07-12) —
 plus aucun `uiStyle` < 9 px dans les scènes (les tailles plancher référencent `TYPE.SMALL`),
 `TXT_MUTED`/`TXT_HINT` remontés, résolution de rendu du texte plafonnée à 10 (`setTextResolution`).
 Précédente : refonte « UI moderne lisible » (2026-07-06) — double système typographique,
@@ -319,6 +327,26 @@ File FIFO, une seule visible à la fois, au-dessus des skill slots, centrée. 12
 couleur sémantique (doré = level-up, orange = quête, bleu = skill, vert = zone, couleur de rareté =
 loot). 2.5 s + fade 400 ms. Les items Common ne notifient pas (anti-spam).
 
+### 3.13bis `addUiFrame(scene, cx, cy, w, h, texKey?, slice?)` — cadre en vrai asset
+Pose un cadre pixel art réel (packs GUI Kit / Retro Inventory — `ui_slot_frame`,
+`ui_tab_frame`, voir ASSET_SOURCES.md §ui/) PAR-DESSUS un fond dessiné
+(drawSlot/drawCard). NineSlice en WebGL (coins nets non étirés), Image étirée en
+Canvas, **null si la texture manque** (script `scripts/copy-ui-assets.mjs` non
+lancé) — l'appelant garde alors son rendu Graphics : ne jamais supposer le
+retour non-null. Utilisé par les slots de l'inventaire (grille + paperdoll) et
+les onglets du sac. Quand un cadre asset est posé, la bordure de rareté/hover
+vit dans un Graphics « ring » séparé AU-DESSUS du cadre (le hover redessine le
+ring, jamais le fond complet).
+
+### 3.13ter Icônes de skills/talents — glyphes bakés
+Les textures `skill_*` et `talent_*` sont bakées au boot
+(`PreloaderScene.generateSkillAndTalentIcons()`) depuis la sheet
+`ui_icons_16` (336 glyphes blancs 16×16) : glyphe = **effet** (projectile,
+bouclier, soin, chevrons…), teinte = **élément** (skills) ou **couleur de
+branche** (talents). Upscale ×2 entier (32×32), teinte à plat `source-in`.
+Un vrai PNG dédié dans `assets/sprites/skills/` reste prioritaire sur le bake.
+Ne plus créer d'icône de skill en Graphics procédural.
+
 ### 3.13 Tooltip
 Panneau depth 30, nom doré 13 px bold + description muted 10 px wrapped. Position clampée dans
 l'écran. **Attention :** le tooltip SkillScene historique est hover-only — tout nouveau tooltip
@@ -452,7 +480,12 @@ Layout 3 panneaux fixes : **paperdoll 180 px | stats/détail 220 px | grille** (
   description 10 px muted italique → **boutons d'action empilés en bas** (zone de pouce) : visuel
   32 px arrondi, hit ≥ 44 px, label 11 px bold — Équiper/Utiliser (vert), Vendre (orange), Fermer (muted).
 - Équiper flashe le slot paperdoll cible en blanc 400 ms (`lastFlashSlotKey`).
-- **Grille** : bordure de cellule = rareté, badge quantité 10 px bold + stroke, scroll **wheel + drag
+- **Onglets de filtrage du sac** (D13 résorbée) : rangée de 5 onglets (26 px visuel, hit 44) entre le
+  titre SAC et la grille — Tous / Équip. / Conso. / Matér. / Autres. Actif = alpha plein + bande
+  d'accent arcane basse + label cyan gras 9 px ; visuel = asset `ui_tab_frame` (fallback Graphics).
+  Changer d'onglet reset le scroll et re-rend la grille filtrée.
+- **Grille** : bordure de cellule = rareté (Graphics « ring » au-dessus du cadre asset `ui_slot_frame`
+  quand il est chargé), badge quantité 10 px bold + stroke, scroll **wheel + drag
   vertical** (§5.4), tap avec `getDistance() > 10` ignoré (anti-scroll-tap).
 - Popup consommable : `drawGlowPanel` accent vert, nom 11 px bold rareté, effet 10 px vert,
   boutons 44 px, pop-in 90 ms, auto-dismiss 4 s, tap extérieur ferme.
@@ -551,7 +584,7 @@ Identiques sur **tous** les écrans, actuels et futurs :
 | D10 | `RARITY_COLORS` (code) diverge du tableau INSPIRATIONS.md §4 (Hidden, Mythic) | `src/types/index.ts` | ouverte |
 | ~~D11~~ | ~~Scènes non migrées vers `uiStyle`/`FONT_UI` (encore en `pxStyle` pixel)~~ | Pause, Shop, Bestiary, NameInput, Intro, Ending, UIScene, SkillScene | **Résorbée** — passe « arcane fresh » généralisée (07/2026) ; seul le titre du jeu (MainMenu, NameInput) reste en police pixel (identité) |
 | D12 | Pas de drag-and-drop grille → paperdoll (le tap-equip couvre le besoin, D&D = confort desktop) | InventoryScene | ouverte, basse priorité |
-| D13 | Pas d'onglets de filtrage du sac (Tous / Équipement / Conso / Ressources / Quête) | InventoryScene | ouverte |
+| ~~D13~~ | ~~Pas d'onglets de filtrage du sac~~ | InventoryScene | **Résorbée** — 5 onglets (Tous / Équip. / Conso. / Matér. / Autres) au-dessus de la grille, visuel asset `ui_tab_frame` + fallback Graphics (passe assets 2026-07-13) |
 | D14 | Pas de comparaison item survolé vs équipé (flèches vertes/rouges — INSPIRATIONS.md §4) | InventoryScene détail | ouverte |
 
 ---

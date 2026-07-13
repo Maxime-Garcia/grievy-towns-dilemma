@@ -9,7 +9,7 @@ import { StatRollSystem, isEquipableItem } from '../systems/StatRollSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { getPassiveEffectLabel } from '../data/passiveEffects';
 import {
-  UI, TYPE, drawGlowPanel, drawCard, drawSlot,
+  UI, TYPE, drawGlowPanel, drawCard, drawSlot, addUiFrame,
   drawDivider, addCloseButton, uiStyle, openScreenTransition,
   resonanceColor, formatRangedStatBounds, lineQuality,
 } from '../utils/UITheme';
@@ -43,6 +43,20 @@ const INV_SLOT   = 48;    // inventory slot size
 const INV_COLS   = 7;     // inventory grid columns
 const GROUP_HEADER_H = 20; // bag category header band height
 const GROUP_GAP      = 6;  // breathing room after a category's last row
+
+// ── Onglets de filtrage du sac (dette D13 des guidelines, résorbée) ──────────
+// 5 onglets au-dessus de la grille : réduisent le scroll dès que le loot ARPG
+// multiplie les instances. Labels courts (§1.5 économie d'écran) — hardcodés FR
+// comme les labels de branches de SkillScene (BRANCH_META).
+type BagFilter = 'ALL' | 'EQUIP' | 'CONSUMABLE' | 'MATERIAL' | 'MISC';
+const BAG_TABS: ReadonlyArray<{ id: BagFilter; label: string; cats: readonly InventoryCategory[] | null }> = [
+  { id: 'ALL',        label: 'Tous',   cats: null },
+  { id: 'EQUIP',      label: 'Équip.', cats: ['WEAPON', 'ARMOR', 'ACCESSORY'] },
+  { id: 'CONSUMABLE', label: 'Conso.', cats: ['CONSUMABLE'] },
+  { id: 'MATERIAL',   label: 'Matér.', cats: ['MATERIAL'] },
+  { id: 'MISC',       label: 'Autres', cats: ['KEY_ITEM', 'SKIN'] },
+];
+const BAG_TABS_H = 26; // hauteur visuelle d'un onglet (hit zone élargie à 44)
 
 /** Bag category → i18n label key (mirrors ArsenalScene.SECTION_LABEL_KEYS style). */
 const CATEGORY_LABEL_KEYS: Record<InventoryCategory, string> = {
@@ -112,6 +126,8 @@ export class InventoryScene extends Phaser.Scene {
 
   // Long-press detection: single ref, cleared on pointerup / pointerout / shutdown
   private longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  // Onglet de filtrage actif du sac (D13) — reset à 'ALL' à chaque ouverture
+  private bagFilter: BagFilter = 'ALL';
   // Which paperdoll slot to flash after a successful tap-equip
   private lastFlashSlotKey: EquipSlotKey | null = null;
 
@@ -129,6 +145,7 @@ export class InventoryScene extends Phaser.Scene {
     this.gameScene   = data.gameScene;
     this.player      = data.gameScene.gameState.player;
     this.selectedItem = null;
+    this.bagFilter    = 'ALL';
   }
 
   create() {
@@ -281,6 +298,21 @@ export class InventoryScene extends Phaser.Scene {
       drawSlot(bg, sx, sy, EQ_SLOT, rarHex, { occupied: !!item });
       this.dynamicObjs.push(bg);
 
+      // Cadre pixel art réel (Retro Inventory) par-dessus le fond — cf. grille.
+      const frame = addUiFrame(this, sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, EQ_SLOT, EQ_SLOT);
+      if (frame) this.dynamicObjs.push(frame);
+
+      // Anneau de rareté/survol au-dessus du cadre (slots occupés uniquement —
+      // un slot vide garde la bordure discrète de drawSlot sous le cadre).
+      const ring = this.add.graphics();
+      const drawRing = (color: number) => {
+        ring.clear();
+        ring.lineStyle(2, color, 1);
+        ring.strokeRoundedRect(sx, sy, EQ_SLOT, EQ_SLOT, 5);
+      };
+      if (item) drawRing(rarHex);
+      this.dynamicObjs.push(ring);
+
       if (item) {
         const iconKey = this.resolveIcon(item);
         if (iconKey) {
@@ -308,10 +340,10 @@ export class InventoryScene extends Phaser.Scene {
           sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, EQ_SLOT + 8, EQ_SLOT + 8, 0x000000, 0,
         ).setInteractive({ useHandCursor: true });
         this.dynamicObjs.push(hit);
-        // clear() + redraw complet (pas juste un stroke par-dessus) : sinon chaque
-        // survol empile une nouvelle commande de tracé sur le même Graphics (fuite).
-        hit.on('pointerover', () => { bg.clear(); drawSlot(bg, sx, sy, EQ_SLOT, 0xffffff, { occupied: true }); });
-        hit.on('pointerout',  () => { bg.clear(); drawSlot(bg, sx, sy, EQ_SLOT, rarHex,    { occupied: true }); });
+        // Survol : seul l'anneau est redessiné (clear + stroke) — fond et cadre
+        // asset intacts, aucune commande de tracé ne s'empile.
+        hit.on('pointerover', () => drawRing(0xffffff));
+        hit.on('pointerout',  () => drawRing(rarHex));
         hit.on('pointerdown', () => this.showDetail(item));
 
         // White flash overlay — confirmation visuelle après un tap-equip.
@@ -644,14 +676,22 @@ export class InventoryScene extends Phaser.Scene {
     const TITLE_H   = 22;
     const GRID_PAD  = 8;
     const GRID_X    = PX + GRID_PAD;
-    const GRID_Y    = PY + TITLE_H;
-    const VISIBLE_H = PH - TITLE_H;
+
+    // ── Onglets de filtrage (D13) — rangée fixe entre le titre SAC et la grille
+    this.renderBagTabs(GRID_X, PY + TITLE_H, INV_COLS * INV_SLOT);
+
+    const GRID_Y    = PY + TITLE_H + BAG_TABS_H + 4;
+    const VISIBLE_H = PH - TITLE_H - BAG_TABS_H - 4;
 
     // Grouped by category (weapons / armor / accessories / ...), rarity-sorted within
     // each group — see InventorySystem.groupForDisplay. A layout pass computes every
     // group's header/item pixel offsets up front so contentH (and thus the scroll
     // mask + max scroll) is known before anything is drawn.
-    const groups = InventorySystem.groupForDisplay(this.player.inventory);
+    // L'onglet actif filtre les groupes AVANT la passe de layout (le scroll et
+    // la hauteur de contenu se recalculent donc naturellement).
+    const activeTab = BAG_TABS.find(tb => tb.id === this.bagFilter) ?? BAG_TABS[0]!;
+    const groups = InventorySystem.groupForDisplay(this.player.inventory)
+      .filter(g => activeTab.cats === null || activeTab.cats.includes(g.category));
     interface GroupLayout { category: InventoryCategory; slots: InventorySlot[]; headerY: number; itemsY: number }
     let cursorY = 0;
     const layouts: GroupLayout[] = groups.map((g) => {
@@ -678,8 +718,8 @@ export class InventoryScene extends Phaser.Scene {
       this.dynamicObjs.push(go);
     };
 
-    // Empty state
-    if (this.player.inventory.length === 0) {
+    // Empty state — inventaire vide OU onglet actif sans aucun item
+    if (groups.length === 0) {
       this.dynamicObjs.push(
         this.add.text(
           PX + PW / 2, GRID_Y + VISIBLE_H / 2,
@@ -728,6 +768,59 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   /**
+   * Rangée d'onglets de filtrage du sac (D13) : Tous | Équip. | Conso. |
+   * Matér. | Autres. Visuel = asset `ui_tab_frame` (GUI Kit UI 03, nineslice)
+   * quand il est chargé, sinon fallback Graphics arrondi (mêmes conventions
+   * que les tabs de PauseScene). Onglet actif : alpha plein + bande d'accent
+   * arcane basse + label cyan gras ; hit zone 44 px de haut (norme tactile).
+   * Le changement d'onglet re-rend tout (refresh) — feedback immédiat.
+   */
+  private renderBagTabs(x: number, y: number, w: number): void {
+    const GAP = 4;
+    const tw  = Math.floor((w - GAP * (BAG_TABS.length - 1)) / BAG_TABS.length);
+
+    BAG_TABS.forEach((tab, i) => {
+      const tx     = x + i * (tw + GAP);
+      const active = tab.id === this.bagFilter;
+      const cx     = tx + tw / 2;
+      const cy     = y + BAG_TABS_H / 2;
+
+      const frame = addUiFrame(this, cx, cy, tw, BAG_TABS_H, 'ui_tab_frame');
+      const g     = this.add.graphics();
+      if (frame) {
+        frame.setAlpha(active ? 1 : 0.5);
+        this.dynamicObjs.push(frame);
+      } else {
+        g.fillStyle(active ? UI.BG_MID : UI.BG_DEEP, 1);
+        g.fillRoundedRect(tx, y, tw, BAG_TABS_H, 4);
+        g.lineStyle(1, active ? UI.ACCENT_ARCANE : UI.SEPARATOR, active ? 0.9 : 1);
+        g.strokeRoundedRect(tx, y, tw, BAG_TABS_H, 4);
+      }
+      if (active) {
+        // Bande d'accent basse — même vocabulaire que les tabs de SkillScene/Pause
+        g.fillStyle(UI.ACCENT_ARCANE, 0.9);
+        g.fillRect(tx + 4, y + BAG_TABS_H - 3, tw - 8, 2);
+      }
+      this.dynamicObjs.push(g);
+
+      this.dynamicObjs.push(
+        this.add.text(cx, cy, tab.label,
+          uiStyle(TYPE.SMALL, active ? UI.TXT_CYAN : UI.TXT_MUTED, { bold: active }))
+          .setOrigin(0.5),
+      );
+
+      const hit = this.add.rectangle(cx, cy, tw + GAP, 44, 0x000000, 0)
+        .setInteractive({ useHandCursor: true });
+      hit.on('pointerdown', () => {
+        if (this.bagFilter === tab.id) return;
+        this.bagFilter = tab.id;
+        this.refresh(); // re-rend immédiatement — l'état actif EST le feedback
+      });
+      this.dynamicObjs.push(hit);
+    });
+  }
+
+  /**
    * Draws one bag category header band (accent dot + label + count + divider),
    * scrolling in lockstep with the grid content below it — same registration
    * pattern as the slots (drawn at a local y baseline, shifted via setY/reg).
@@ -769,6 +862,24 @@ export class InventoryScene extends Phaser.Scene {
     drawSlot(bg, sx, 0, INV_SLOT - 2, rarHex, { occupied: true, radius: 4 });
     bg.setY(topY);
     reg(bg, topY);
+
+    // Cadre pixel art réel (Retro Inventory) par-dessus le fond, sous l'icône —
+    // absent (script de copie pas lancé) : le rendu drawSlot reste tel quel.
+    const frame = addUiFrame(this, sx + (INV_SLOT - 2) / 2, midY, INV_SLOT - 2, INV_SLOT - 2);
+    if (frame) reg(frame, midY);
+
+    // Anneau de rareté/survol AU-DESSUS du cadre (la bordure de drawSlot passe
+    // sous le cadre asset) — les handlers hover redessinent cet anneau, plus
+    // jamais le bg complet (même géométrie/épaisseur que la bordure drawSlot).
+    const ring = this.add.graphics();
+    const drawRing = (color: number) => {
+      ring.clear();
+      ring.lineStyle(2, color, 1);
+      ring.strokeRoundedRect(sx, 0, INV_SLOT - 2, INV_SLOT - 2, 4);
+    };
+    drawRing(rarHex);
+    ring.setY(topY);
+    reg(ring, topY);
 
     // Icon (try texture, fallback to colored square)
     const iconKey = this.resolveIcon(slot.item);
@@ -820,12 +931,13 @@ export class InventoryScene extends Phaser.Scene {
         this.doMainAction(slot.item, screenX, screenY);
       }
     });
-    // clear() + redraw complet — cf. note équivalente sur le paperdoll plus haut.
-    hit.on('pointerover', () => { bg.clear(); drawSlot(bg, sx, 0, INV_SLOT - 2, 0xffffff, { occupied: true, radius: 4 }); });
+    // Survol : seul l'anneau est redessiné (clear + stroke) — le fond et le
+    // cadre asset restent intacts, aucune commande de tracé ne s'empile.
+    hit.on('pointerover', () => drawRing(0xffffff));
     hit.on('pointerout',  () => {
       // Cancel long-press if the pointer leaves before 500 ms
       if (this.longPressTimer !== null) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
-      bg.clear(); drawSlot(bg, sx, 0, INV_SLOT - 2, rarHex, { occupied: true, radius: 4 });
+      drawRing(rarHex);
     });
   }
 
