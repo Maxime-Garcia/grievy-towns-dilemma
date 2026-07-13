@@ -244,8 +244,23 @@ const listPngs = (packDir, folderFilter = null) => {
   const filtered = folderFilter
     ? out.filter(p => path.basename(path.dirname(p)).toLowerCase() === folderFilter.toLowerCase())
     : out;
-  return filtered.sort();
+  // Certains packs rangent, à côté de leurs sprites, la PLANCHE DE CONTACT qui
+  // les regroupe tous. Sans ce filtre elle entre dans le pool et peut être tirée
+  // comme icône d'item : `item_gen_bow_dark_5` était ainsi un PNG de 512×768,
+  // écrasé dans un slot de 32 px. On ne garde que ce qui a la taille d'une icône.
+  return filtered.filter(isIconSized).sort();
 };
+
+/** Taille d'un PNG lue dans l'en-tête IHDR — pas de décodage de l'image. */
+function isIconSized(file) {
+  try {
+    const fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(24);
+    fs.readSync(fd, buf, 0, 24, 0);
+    fs.closeSync(fd);
+    return buf.readUInt32BE(16) <= 64 && buf.readUInt32BE(20) <= 64;
+  } catch { return false; }
+}
 
 fs.mkdirSync(OUT_ICONS, { recursive: true });
 

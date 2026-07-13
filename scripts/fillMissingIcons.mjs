@@ -66,11 +66,30 @@ const WEAPON_PACK = {
 const pools = new Map();
 const pool = (key, fn) => { if (!pools.has(key)) pools.set(key, fn()); return pools.get(key); };
 
+/**
+ * Un pack contient parfois, à côté de ses sprites, la PLANCHE DE CONTACT qui les
+ * regroupe tous (un seul PNG de plusieurs centaines de px). Copiée telle quelle
+ * comme icône d'item, elle s'affichait écrasée dans un slot de 32 px — c'est ce
+ * qui était arrivé à `item_gen_bow_dark_5` (512×768). On ne garde donc que les
+ * PNG à la taille d'une icône. Lecture de l'en-tête IHDR seule : pas de décodage.
+ */
+const isIconSized = (file) => {
+  try {
+    const fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(24);
+    fs.readSync(fd, buf, 0, 24, 0);
+    fs.closeSync(fd);
+    const w = buf.readUInt32BE(16);
+    const h = buf.readUInt32BE(20);
+    return w <= 64 && h <= 64;
+  } catch { return false; }
+};
+
 const weaponPool = (wt, element) => {
   const entry = WEAPON_PACK[wt];
   if (!entry) return [];
   const [pack, sub] = entry;
-  if (!sub) return pool(pack, () => walk(pack));
+  if (!sub) return pool(pack, () => walk(pack).filter(isIconSized));
   const color = ELEM_COLOR[element] ?? 'Normal';
   return pool(`${pack}|${sub}|${color}`, () => {
     let p = inFolder(pack, `${sub} ${color}`);
