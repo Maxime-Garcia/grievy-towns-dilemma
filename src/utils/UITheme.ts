@@ -84,40 +84,33 @@ export const FONT_HUD = "'Neatpixels Minimal', 'Neatpixels', monospace";
 export const FONT_DISPLAY = "'Neatpixels Blocks', 'Neatpixels', monospace";
 
 /**
- * Résolution de rendu du texte (cf. `uiStyle`/`pxStyle`). Valeur par défaut
- * sûre pour SSR/tests ; `setTextResolution()` la recalibre une seule fois au
- * boot (`main.ts`) d'après le zoom RÉEL choisi par le Scale Manager.
+ * Résolution de rendu du texte (cf. `uiStyle`/`pxStyle`).
  *
- * Pourquoi ce n'est pas un `3` fixe : le jeu tourne en `pixelArt:true` +
- * `image-rendering: pixelated` (index.html) — indispensable pour que les
- * sprites restent nets en gros pixels. Mais `Scale.FIT` + `zoom: MAX_ZOOM`
- * ne change QUE la taille CSS du canvas ; le canvas lui-même reste rendu à
- * 800×600 (cf. ScaleManager.resize — `canvas.width/height` = baseSize, jamais
- * multiplié par le zoom). Le navigateur agrandit donc tout le canvas déjà
- * rendu — texte compris — via un filtrage "plus proche voisin" d'un facteur
- * ÉGAL AU ZOOM. Un texte fin (8-10px) survit mal à ça, même généré à une
- * résolution interne fixe de 3× : sur un grand écran (zoom 3-4+), l'agrandissement
- * final blockifie quand même les glyphes. Fournir plus de détail source
- * (résolution ≥ zoom × un facteur confortable) neutralise l'essentiel de cet
- * effet sans toucher au Scale Manager ni au mapping des coordonnées d'input —
- * seule la police en profite, tout le reste du jeu (sprites, caméra, clics)
- * est inchangé.
+ * Vaut 1 — c'est-à-dire : AUCUN supersampling. Ça mérite une explication, parce que
+ * ce réglage a longtemps valu 4 à 10.
+ *
+ * Le jeu tourne en `pixelArt: true` : la texture d'un Text est affichée en NEAREST.
+ * Avec les anciennes polices (Press Start 2P, Verdana), qui sont LISSES, le glyphe
+ * rasterisé en canvas était anti-aliasé — et un anti-aliasing échantillonné en
+ * NEAREST ressort grignoté. On compensait en rasterisant à ×4-×10 pour donner au
+ * filtre « assez de matière ». Un pansement sur une incompatibilité de fond entre
+ * une police lisse et un rendu pixel.
+ *
+ * Neatpixels est une police PIXEL : ses glyphes sont déjà des grilles de pixels
+ * pleins, nets à l'échelle 1:1. Supersampler puis ré-échantillonner en NEAREST ne
+ * l'améliore pas — ça la DÉGRADE (la minification ne retient qu'une fraction des
+ * pixels rasterisés, et les traits d'un pixel de large disparaissent par endroits).
+ * À résolution 1, le glyphe est écrit tel quel dans le canvas, et le navigateur
+ * agrandit ensuite le tout par duplication de pixels (`image-rendering: pixelated`).
+ * Net à tous les zooms, et des canvas de texte 16 à 100× plus petits au passage.
  */
-let TEXT_RESOLUTION = 4;
+let TEXT_RESOLUTION = 1;
 
-/** À appeler une seule fois au boot (`main.ts`), après `new Phaser.Game()`,
- *  une fois que `game.scale.zoom` reflète la valeur réellement choisie. */
-export function setTextResolution(zoom: number): void {
-  // Plafond à 10 : la texture de texte est affichée sous filtrage NEAREST
-  // (pixelArt:true) — quand sa densité dépasse largement le zoom réel, la
-  // minification ne retient qu'une fraction des pixels rasterisés et les
-  // micro-glyphes (9-10px) ressortent "grignotés" (bruit de sous-échantillonnage,
-  // aggravé par le hinting du navigateur aux toutes petites tailles de police).
-  // 10 couvre les zooms réels desktop (FIT plafonne en pratique vers 2-4 →
-  // marge ≥ 2.5× au pire) : assez de détail source pour garder les gros textes
-  // nets (l'acquis de cette passe), sans sur-échantillonner à l'excès ni faire
-  // exploser la taille des canvas de texte.
-  TEXT_RESOLUTION = Math.min(10, Math.max(4, Math.ceil(zoom * 3)));
+/** À appeler une seule fois au boot (`main.ts`), après `new Phaser.Game()`.
+ *  Conservé (l'appel existe dans main.ts) mais désormais sans effet : avec une
+ *  police pixel, la bonne résolution est 1 quel que soit le zoom — voir ci-dessus. */
+export function setTextResolution(_zoom: number): void {
+  TEXT_RESOLUTION = 1;
 }
 
 /**
@@ -442,7 +435,13 @@ export function drawScrollbar(
  *  les taux rares (ex. 0.4% plutôt que 0%). Partagé entre ArsenalScene/BestiaryScene. */
 export function formatDropRate(rate: number): string {
   const pct = rate * 100;
-  return pct >= 10 ? `${Math.round(pct)}%` : pct >= 1 ? `${pct.toFixed(1)}%` : `${pct.toFixed(2)}%`;
+  if (pct >= 10) return `${Math.round(pct)}%`;
+  if (pct >= 1)  return `${pct.toFixed(1)}%`;
+  // Un taux non nul ne doit JAMAIS s'afficher « 0.00% » : le joueur en conclurait
+  // que le drop est impossible, alors qu'il est simplement très rare (un Hidden est
+  // à 0,07%). En dessous du seuil affichable, on le dit explicitement.
+  if (pct > 0 && pct < 0.01) return '<0.01%';
+  return `${pct.toFixed(2)}%`;
 }
 
 /** Result of {@link renderScrollableText} — caller owns both objects and must push

@@ -116,7 +116,11 @@ const orphans = [...byId.values()].filter(i => !alreadyLooted.has(i.id) && i.typ
 // Une lame mythique ne tombe pas d'un rat de zone 1 : la progression du butin
 // doit suivre celle des zones.
 const RARITY_MIN_LEVEL = { COMMON: 1, UNCOMMON: 1, RARE: 8, EPIC: 12, LEGENDARY: 16, MYTHIC: 20, HIDDEN: 25 };
-const RARITY_DROP = { COMMON: 0.22, UNCOMMON: 0.14, RARE: 0.07, EPIC: 0.03, LEGENDARY: 0.012, MYTHIC: 0.005, HIDDEN: 0.002 };
+// Taux de drop par rareté (probabilité 0-1). HIDDEN à 0.0007 = 0,07% : c'est la
+// valeur voulue côté design, et elle s'AFFICHE désormais telle quelle (le bestiaire
+// arrondissait à l'entier — 0,07% tombait à « 0.00% », ce qui donnait l'impression
+// d'un drop impossible).
+const RARITY_DROP = { COMMON: 0.22, UNCOMMON: 0.14, RARE: 0.07, EPIC: 0.03, LEGENDARY: 0.012, MYTHIC: 0.005, HIDDEN: 0.0007 };
 
 // ── Construction des ennemis ───────────────────────────────────────
 const sheets = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts/.enemySheets.json'), 'utf8'));
@@ -229,7 +233,9 @@ const defs = enemies.map(e => {
 }).join('\n');
 
 const bestiary = enemies.map(e => {
-  const drops = e.loot.map(l => `{ itemId: '${l.itemId}', dropRatePct: ${Math.round(l.dropRate * 100)}, isHidden: ${byId.get(l.itemId)?.rarity === 'HIDDEN'} }`).join(', ');
+  // PAS de Math.round : un taux de 0,07% (HIDDEN) ou 0,5% (MYTHIC) tombait à 0 et
+  // s'affichait « 0.00% » dans le Bestiaire — un drop bien réel passait pour impossible.
+  const drops = e.loot.map(l => `{ itemId: '${l.itemId}', dropRatePct: ${+(l.dropRate * 100).toFixed(2)}, isHidden: ${byId.get(l.itemId)?.rarity === 'HIDDEN'} }`).join(', ');
   return `  { enemyId: '${e.id}', name: '${esc(e.name)}', habitat: '${e.zone}', shortDesc: '${esc(e.isElite ? 'Rencontre d\\\'élite' : 'Faune hostile')} — niveau ${e.level}.', lore: '${esc(e.lore)}', drops: [${drops}] },`;
 }).join('\n');
 

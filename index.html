@@ -55,10 +55,13 @@
     }
     canvas {
       display: block;
-      /* image-rendering: pixelated RETIRÉ — va de pair avec pixelArt:false dans
-         main.ts. Le navigateur agrandit désormais le canvas en interpolant (lissé)
-         au lieu de dupliquer les pixels (blocs durs). Pour revenir au rendu pixel :
-         remettre `image-rendering: pixelated;` ici ET `pixelArt: true` dans main.ts. */
+      /* Va de pair avec `pixelArt: true` (main.ts) : le navigateur agrandit le canvas
+         en DUPLIQUANT les pixels au lieu de les interpoler. Sans ça, tout le travail
+         de rendu net côté Phaser serait annulé au dernier étage par le lissage du
+         navigateur. Les deux réglages sont indissociables. */
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      -ms-interpolation-mode: nearest-neighbor;
     }
 
     /* ── Boot loading overlay ────────────────────────────────────────────

@@ -17,29 +17,36 @@ import { ArsenalScene }   from './scenes/ArsenalScene';
 import { setTextResolution } from './utils/UITheme';
 
 // Le monkeypatch qui forçait LINEAR sur la texture de chaque `add.text()` a été
-// RETIRÉ : il n'existait que pour sauver le texte du filtrage NEAREST imposé par
-// `pixelArt: true`. Depuis le retrait du filtre pixel art (ci-dessous), LINEAR est
-// le filtre global — le patch ne faisait plus que coûter un setFilter par Text créé.
-// S'il fallait revenir à `pixelArt: true`, il faudrait le restaurer (cf. historique
-// git : commit d3c10e6 « filtre LINEAR sur les textures de texte »).
+// RETIRÉ. Il n'existait que pour sauver du filtrage NEAREST des polices LISSES
+// (Press Start 2P, Verdana) qui n'y survivaient pas. Le jeu est passé à Neatpixels,
+// une police PIXEL : elle veut NEAREST et y est nette. Forcer LINEAR dessus la
+// rendrait floue — exactement le défaut qu'on cherchait à supprimer.
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   parent: 'game-container',
   backgroundColor: '#000000',
-  // ── Filtre pixel art RETIRÉ (demande explicite : « ça rend moche, je veux
-  // tester sans ») ──
-  // pixelArt:true imposait un filtrage NEAREST global : les sprites 32×32 étaient
-  // agrandis en gros blocs durs. En passant à antialias, ils sont interpolés et
-  // paraissent lissés. C'est un choix de DA à valider À L'ŒIL, en jeu — c'est tout
-  // l'intérêt de le tester. Pour revenir en arrière : remettre `pixelArt: true` ici
-  // ET `image-rendering: pixelated` sur le canvas dans index.html (les deux vont
-  // ensemble, l'un sans l'autre ne fait rien).
-  pixelArt: false,
+  // ── Filtre pixel art : REMIS, mais le problème d'origine est réglé autrement ──
+  //
+  // Testé sans (antialias) : tout devient flou, forcément — un sprite 32×32 agrandi
+  // par interpolation bilinéaire N'EST que du flou. Ce n'était pas le bon levier.
+  //
+  // Ce qui rendait « moche » avant, ce n'était pas NEAREST : c'étaient les POLICES.
+  // Press Start 2P et Verdana sont des polices LISSES (anti-aliasées) ; rasterisées
+  // en canvas puis échantillonnées en NEAREST, leurs glyphes ressortaient grignotés.
+  // D'où toute la machinerie de supersampling (TEXT_RESOLUTION ×4 à ×10) et le
+  // monkeypatch LINEAR sur add.text() — des pansements sur une incompatibilité de
+  // fond entre une police lisse et un rendu pixel.
+  //
+  // Neatpixels, elle, est une VRAIE police pixel : elle veut NEAREST, et elle est
+  // nette à l'échelle 1:1. Le dilemme a disparu avec le changement de police —
+  // sprites nets ET texte net, sans pansement (cf. TEXT_RESOLUTION = 1 dans UITheme).
+  pixelArt: true,
   render: {
-    antialias: true,
-    antialiasGL: true,
-    roundPixels: false,
+    antialias: false,
+    antialiasGL: false,
+    roundPixels: true,
+    pixelArt: true,
   },
   scale: {
     mode: Phaser.Scale.FIT,
@@ -103,15 +110,10 @@ await bootFonts();
 
 const game = new Phaser.Game(config);
 
-// Calibre la résolution de rendu du texte (uiStyle/pxStyle, cf. UITheme.ts)
-// sur le zoom RÉEL choisi par le Scale Manager pour cet écran — un `3` fixe
-// ne suffit pas sur un grand moniteur où Scale.MAX_ZOOM choisit un zoom élevé
-// (le canvas 800×600 est alors très agrandi par le navigateur en NEAREST,
-// ce qui blockifie le texte si sa résolution interne ne suit pas). `READY`
-// fire une fois le Scale Manager initialisé, avant la première scène.
-// Complémentaire au fix LINEAR ci-dessus (celui-ci gère le filtrage, celui-là
-// la densité de la source avant filtrage — les deux ensemble donnent le
-// meilleur résultat, LINEAR seul suffirait déjà à éliminer le bruit NEAREST).
+// La résolution de rendu du texte est désormais fixée à 1 quel que soit le zoom :
+// Neatpixels est une police pixel, nette à l'échelle 1:1, et la sur-échantillonner
+// avant un filtrage NEAREST la dégrade au lieu de l'améliorer (cf. UITheme.ts).
+// L'appel est conservé pour garder le point d'ancrage si la DA changeait à nouveau.
 game.events.once(Phaser.Core.Events.READY, () => {
   setTextResolution(game.scale.zoom);
 });

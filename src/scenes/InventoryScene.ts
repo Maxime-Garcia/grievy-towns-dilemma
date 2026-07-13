@@ -1200,7 +1200,12 @@ export class InventoryScene extends Phaser.Scene {
     // décider PH, puis on le détruit — le vrai texte est recréé plus bas une fois
     // la position finale connue.
     const locItem    = localizeItem(item);
-    const substatCount = isEquip ? this.getSubstatLineViews(item).slice(0, 3).length : 0;
+    // Plus de plafond à 3 lignes. Le nombre de substats EST le signal de rareté
+    // (1 en COMMON → 7 en HIDDEN, cf. SUBSTAT_COUNT_BY_RARITY) : en tronquer
+    // l'affichage rendait un Hidden à 7 lignes strictement identique à un RARE à 3,
+    // et effaçait la hiérarchie que toute la table de raretés sert à établir.
+    // La hauteur du panneau est déjà dérivée de substatCount, il s'adapte donc seul.
+    const substatCount = isEquip ? this.getSubstatLineViews(item).length : 0;
     const passiveLabel = ('passiveEffect' in item && item.passiveEffect)
       ? getPassiveEffectLabel(item.passiveEffect)
       : undefined;
@@ -1330,7 +1335,7 @@ export class InventoryScene extends Phaser.Scene {
     // ── Equip-only: substats + description (the "lore etc." the popup lacked) ──
     if (isEquip) {
       let bodyY = py + headerH + 6;
-      for (const view of this.getSubstatLineViews(item).slice(0, 3)) {
+      for (const view of this.getSubstatLineViews(item)) {
         const lineTxt = this.add.text(px + MARGIN, bodyY, `• ${view.text}`, uiStyle(9, view.color)).setDepth(depth + 1);
         this.consumePopupObjects.push(lineTxt);
         if (view.rangeText) {
