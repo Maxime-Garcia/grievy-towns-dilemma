@@ -7,8 +7,8 @@
 > `src/main.ts`) — si le code et ce doc divergent, corriger l'un ou l'autre, jamais ignorer.
 
 **Dernière synchro avec le code :** refonte « hiérarchie, aération, débordements »
-(2026-07-13) — canvas **960×720** (zoom caméra monde 1.2 en compensation : le
-gamefeel est inchangé), polices **Neatpixels** avec **une grille par variante**
+(2026-07-13) — canvas **960×720** (zoom caméra monde à **1** : un zoom fractionnaire
+réintroduisait le flou, cf. §0bis), polices **Neatpixels** avec **une grille par variante**
 (Standard 7 / Minimal 10 / Boss 18) et échelle refondue (§2.2), nouveaux helpers
 `titleStyle()` et **`fitText()`** (troncature mesurée en PIXELS — les `slice(n)` sur
 des caractères sont bannis, ils étaient la cause structurelle des débordements).
@@ -383,14 +383,18 @@ loot). 2.5 s + fade 400 ms. Les items Common ne notifient pas (anti-spam).
 
 ### 3.13bis `addUiFrame(scene, cx, cy, w, h, texKey?, slice?)` — cadre en vrai asset
 Pose un cadre pixel art réel (packs GUI Kit / Retro Inventory — `ui_slot_frame`,
-`ui_tab_frame`, voir ASSET_SOURCES.md §ui/) PAR-DESSUS un fond dessiné
+voir ASSET_SOURCES.md §ui/) PAR-DESSUS un fond dessiné
 (drawSlot/drawCard). NineSlice en WebGL (coins nets non étirés), Image étirée en
 Canvas, **null si la texture manque** (script `scripts/copy-ui-assets.mjs` non
 lancé) — l'appelant garde alors son rendu Graphics : ne jamais supposer le
-retour non-null. Utilisé par les slots de l'inventaire (grille + paperdoll) et
-les onglets du sac. Quand un cadre asset est posé, la bordure de rareté/hover
+retour non-null. Utilisé par les slots de l'inventaire (grille + paperdoll).
+Slot d'équipement **VIDE** → variante `ui_slot_frame_empty` (bakée au boot,
+`PreloaderScene.generateEmptySlotFrame`) : même cadre/gris, mais l'emblème
+d'épée gravé au centre de l'asset est aplati (il se lisait comme une arme
+équipée). Quand un cadre asset est posé, la bordure de rareté/hover
 vit dans un Graphics « ring » séparé AU-DESSUS du cadre (le hover redessine le
-ring, jamais le fond complet).
+ring, jamais le fond complet). L'asset `ui_tab_frame` n'est plus utilisé par
+les onglets du sac (fond jugé illisible une fois étiré — cf. §6.2).
 
 ### 3.13ter Icônes de skills/talents — glyphes bakés
 Les textures `skill_*` et `talent_*` sont bakées au boot
@@ -534,15 +538,22 @@ Layout 3 panneaux fixes : **paperdoll 180 px | stats/détail 220 px | grille** (
   description 10 px muted italique → **boutons d'action empilés en bas** (zone de pouce) : visuel
   32 px arrondi, hit ≥ 44 px, label 11 px bold — Équiper/Utiliser (vert), Vendre (orange), Fermer (muted).
 - Équiper flashe le slot paperdoll cible en blanc 400 ms (`lastFlashSlotKey`).
-- **Onglets de filtrage du sac** (D13 résorbée) : rangée de 5 onglets (26 px visuel, hit 44) entre le
-  titre SAC et la grille — Tous / Équip. / Conso. / Matér. / Autres. Actif = alpha plein + bande
-  d'accent arcane basse + label cyan gras 9 px ; visuel = asset `ui_tab_frame` (fallback Graphics).
+- **Onglets de filtrage du sac** (D13 résorbée) : rangée de 5 onglets (34 px visuel, hit 44) entre le
+  titre SAC et la grille — **icônes** (glyphes `bagtab_*` bakés depuis `ui_icons_16` : grille=Tous,
+  épée=Équipement, fiole=Consommables, gemme=Matériaux, clé=Quête & divers) sur pilule Graphics sobre
+  (l'asset `ui_tab_frame` étiré rendait un fond sale — retiré). Actif = glyphe alpha plein + fond
+  `BG_MID` + liseré et bande basse arcane ; inactif = alpha 0.45. **Tooltip texte au survol**
+  (accessibilité) + fallback label texte si la sheet d'icônes manque.
   Changer d'onglet reset le scroll et re-rend la grille filtrée.
 - **Grille** : bordure de cellule = rareté (Graphics « ring » au-dessus du cadre asset `ui_slot_frame`
   quand il est chargé), badge quantité 10 px bold + stroke, scroll **wheel + drag
   vertical** (§5.4), tap avec `getDistance() > 10` ignoré (anti-scroll-tap).
-- Popup consommable : `drawGlowPanel` accent vert, nom 11 px bold rareté, effet 10 px vert,
-  boutons 44 px, pop-in 90 ms, auto-dismiss 4 s, tap extérieur ferme.
+- Popup consommable/équipement : `drawGlowPanel` accent vert, nom en **BODY 14 bold** couleur rareté
+  (le HEADING 21 écrasait la bulle), effet 10 px vert, boutons 44 px, pop-in 90 ms, auto-dismiss 4 s,
+  tap extérieur ferme.
+- **Passif d'équipement** : toujours rendu **ENTRE les stats et le lore**, en `TXT_BLUE` gras
+  (popup ET panneau détail) — jamais fondu dans l'italique muted de la description, jamais tronqué.
+  Dans l'Arsenal il vit en tête du viewport scrollable (or gras), lisible en entier par scroll.
 - Raccourcis ESC (fermer) et Z (action principale). Refresh par destruction/recréation des
   `dynamicObjs` — toujours pousser chaque objet dynamique dans le tableau.
 

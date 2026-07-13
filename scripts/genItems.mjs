@@ -99,7 +99,69 @@ const ARMOR_SUBS = [
 ];
 const ARMOR_OFF_SUBS = [['ATK_FLAT', 11, 23, false], ['MATK_FLAT', 11, 23, false], ['CRIT_RATE', 4, 8, true]];
 
-// ── Tables éditoriales ─────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// TABLES ÉDITORIALES — FR et EN en PARALLÈLE (mêmes longueurs, mêmes index)
+//
+// Le catalogue est généré ; le traduire à la main aurait voulu dire 486 items ×
+// (nom + description + lore). On tire donc un INDEX, et on lit la même case dans
+// les deux tables : l'anglais sort du générateur, gratuitement et sans dérive.
+// C'est aussi ce qui garantit que les deux langues resteront synchronisées à la
+// prochaine régénération.
+// ══════════════════════════════════════════════════════════════════
+/** Tire un INDEX (et non une valeur) — indispensable pour lire FR et EN en phase. */
+const pickI = (arr) => Math.floor(rnd() * arr.length);
+
+const EL_EN = {
+  FIRE: 'of Embers', ICE: 'of Frost', WATER: 'of Tides', LIGHTNING: 'of Thunder',
+  EARTH: 'of Stone', WIND: 'of the Peaks', DARK: 'of Shadows', DIVINE: 'of the Sanctuary',
+  NEUTRAL: '',
+};
+const EL_ZONE_EN = {
+  FIRE: 'Ignis Reach', ICE: 'Glaciem', WATER: 'Abyssmar', LIGHTNING: 'Volterra',
+  EARTH: 'Terravast', WIND: 'the Zephyr Peaks', DARK: 'Malachar\'s Spire',
+  DIVINE: 'the high sanctuaries', NEUTRAL: 'Grievy Town',
+};
+const WT_EN = {
+  SWORD: ['Sword', 'Blade', 'Longsword', 'Falchion'],
+  GREATSWORD: ['Greatsword', 'Great Blade', 'Colossus', 'Reaper'],
+  DAGGER: ['Dagger', 'Stiletto', 'Shiv', 'Fang'],
+  AXE: ['Axe', 'Hatchet', 'Cleaver', 'Bardiche'],
+  HAMMER: ['Mace', 'Hammer', 'Mallet', 'Bludgeon'],
+  SPEAR: ['Spear', 'Pike', 'Boar Spear', 'Halberd', 'Voulge'],
+  STAFF: ['Staff', 'Sceptre', 'Crozier', 'Rod'],
+  BOW: ['Bow', 'Longbow', 'Crossbow', 'Short Bow'],
+};
+const ADJ_EN = {
+  COMMON: ['of the Militia', 'of the Barracks', 'of Makeshift', 'of the Ranks', 'of the Garrison'],
+  UNCOMMON: ['of the Veteran', 'of the Watch', 'of the Campaign', 'of the Sergeant', 'of Ashford'],
+  RARE: ['of the Rampart', 'of the Oath', 'of the March', 'of the Watcher', 'of the Convoy'],
+  EPIC: ['of the Godhunter', 'of the Heretic', 'of the Last Circle', 'of Exile', 'of the Schism'],
+  LEGENDARY: ['of the Collapse', 'of the Six', 'of the Great Silence', 'of the White Dawn'],
+  MYTHIC: ['from Before the Sundering', 'of the Lost Name', 'of the First Hour'],
+  HIDDEN: ['That Has No Name', 'No One Forged', 'of Refusal'],
+};
+const LORE_ORIGIN_EN = {
+  COMMON: ['Turned out by the batch from the forges of %Z%, back when things were still ordered by the batch.', 'The kind of weapon you hand someone without asking their name.', 'Pulled off a rack in %Z%, between two that were worth nothing.'],
+  UNCOMMON: ['An armourer in %Z% reworked it three times before calling it good.', 'It saw a full campaign, and came back from it.', 'Struck at the heel with a %Z% maker\'s mark no one stamps anymore.'],
+  RARE: ['It was found buried in a door in %Z% — from the wrong side.', 'It changed hands four times, and every time out of necessity.', 'The last one to carry it never came back from %Z%. It did.'],
+  EPIC: ['Forged in %Z% by someone who knew exactly what it would be used against.', 'It bears a notch the metal should not have been able to take.', 'The archives of %Z% mention it once, then never again.'],
+  LEGENDARY: ['It is older than the charter of %Z%, and probably older than %Z% itself.', 'No smith claims it — and none dares say they could have made it.', 'It outlived the one who made it, the one who carried it, and the house of both.'],
+  MYTHIC: ['It predates the sundering of the world between the six, when the elements had not yet learned to keep apart.', 'Ovan files it among the "antecedent" objects, and refuses to elaborate.', 'The metal matches no known vein in Velmara.'],
+  HIDDEN: ['You do not forge it, you do not find it — it appears to those who have already accepted what it means.', 'It is mentioned nowhere, which to Ovan is precisely the problem.', 'It has been refused by everyone it offered itself to. Almost everyone.'],
+};
+const LORE_TWIST_EN = {
+  FIRE: ['What it cuts goes on burning long after the blade has left.', 'The heat does not come from the metal. It comes from what the metal decided.'],
+  ICE: ['The frost on it has never melted, not even against skin.', 'You do not fight the cold. You wait for it to finish.'],
+  WATER: ['It is damp to the touch, always, even after years kept dry.', 'The tide loses nothing. It gives back, later, and heavier.'],
+  LIGHTNING: ['It strikes before you have decided to strike; the arm follows, always a little late.', 'Volterra\'s lightning never strikes once — it checks its work.'],
+  EARTH: ['It does not shatter defences: it acts as though they were never there.', 'The weight is not a burden. It is the argument.'],
+  WIND: ['You do not carry it, you follow it — it decides the distance before you think of it.', 'The wind of the peaks has never had a dead moment. Neither has this.'],
+  DARK: ['What it takes, it keeps; what it keeps, it returns only to its bearer.', 'Shadow has no edge. That is far worse.'],
+  DIVINE: ['It was not made by a god: it was made to judge one.', 'The light it gives back illuminates nothing. It points.'],
+  NEUTRAL: ['Nothing remarkable about it, except that it is still here.', 'It promises nothing. That is already more than most.'],
+};
+
+// ── Tables éditoriales (FR) ────────────────────────────────────────
 const EL_FR = {
   FIRE: 'de Braise', ICE: 'de Givre', WATER: 'des Marées', LIGHTNING: 'de Foudre',
   EARTH: 'de Roche', WIND: 'des Cimes', DARK: 'des Ombres', DIVINE: 'du Sanctuaire',
@@ -153,8 +215,12 @@ const LORE_TWIST = {
 
 // ── Armures ────────────────────────────────────────────────────────
 const ARMOR_PROFILES = {
-  HELM:  { pack: 'Armory Item Icons', folders: ['Leather Helm', 'Steel Helm'],   def: 0.55, mdef: 0.60, fr: ['Heaume', 'Casque', 'Salade', 'Bassinet'], stats: ['end', 'int'] },
-  CHEST: { pack: 'Armory Item Icons', folders: ['Leather Armor', 'Steel Armor'], def: 1.00, mdef: 0.85, fr: ['Cuirasse', 'Plastron', 'Broigne', 'Haubert'], stats: ['end', 'vit'] },
+  HELM:  { pack: 'Armory Item Icons', folders: ['Leather Helm', 'Steel Helm'],   def: 0.55, mdef: 0.60,
+           fr: ['Heaume', 'Casque', 'Salade', 'Bassinet'],
+           en: ['Helm', 'Helmet', 'Sallet', 'Bascinet'], stats: ['end', 'int'] },
+  CHEST: { pack: 'Armory Item Icons', folders: ['Leather Armor', 'Steel Armor'], def: 1.00, mdef: 0.85,
+           fr: ['Cuirasse', 'Plastron', 'Broigne', 'Haubert'],
+           en: ['Cuirass', 'Breastplate', 'Byrnie', 'Hauberk'], stats: ['end', 'vit'] },
 };
 
 /**
@@ -187,6 +253,8 @@ const esc = (s) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 const usedIds = new Set();
 const weapons = [];
 const armors = [];
+/** [id, nameEn, descriptionEn, loreEn] — alimente src/i18n/generatedEn.ts. */
+const enKeys = [];
 let copied = 0;
 
 const copyIcon = (src, key) => {
@@ -216,9 +284,17 @@ for (const [wt, prof] of Object.entries(WEAPON_PROFILES)) {
       const element = pick(elements);
       const rarity = rollRarity();
       const R = RARITY[rarity];
-      const noun = pick(WT_FR[wt]);
-      const suffix = rnd() < 0.55 ? (EL_FR[element] || pick(ADJ[rarity])) : pick(ADJ[rarity]);
-      const name = `${noun} ${suffix}`.trim().replace(/\s+/g, ' ');
+      // Tirage par INDEX : la même case est lue dans la table FR et dans la table EN,
+      // donc les deux langues sortent en phase, sans traduction manuelle.
+      const nounI = pickI(WT_FR[wt]);
+      const adjI  = pickI(ADJ[rarity]);
+      const useElem = rnd() < 0.55 && !!EL_FR[element];
+      const noun    = WT_FR[wt][nounI];
+      const nounEn  = WT_EN[wt][nounI];
+      const suffix   = useElem ? EL_FR[element] : ADJ[rarity][adjI];
+      const suffixEn = useElem ? EL_EN[element] : ADJ_EN[rarity][adjI];
+      const name   = `${noun} ${suffix}`.trim().replace(/\s+/g, ' ');
+      const nameEn = `${nounEn} ${suffixEn}`.trim().replace(/\s+/g, ' ');
 
       const id = `gen_${wt.toLowerCase()}_${element.toLowerCase()}_${i + 1}`;
       if (usedIds.has(id)) continue;
@@ -266,9 +342,15 @@ for (const [wt, prof] of Object.entries(WEAPON_PROFILES)) {
       const bonus = {};
       for (const s of prof.stats) bonus[s] = Math.max(1, Math.round(R.dmg / 12));
 
-      const lore = `${pick(LORE_ORIGIN[rarity]).replace(/%Z%/g, EL_ZONE[element])} ${pick(LORE_TWIST[element])}`;
+      const oriI  = pickI(LORE_ORIGIN[rarity]);
+      const twiI  = pickI(LORE_TWIST[element]);
+      const lore   = `${LORE_ORIGIN[rarity][oriI].replace(/%Z%/g, EL_ZONE[element])} ${LORE_TWIST[element][twiI]}`;
+      const loreEn = `${LORE_ORIGIN_EN[rarity][oriI].replace(/%Z%/g, EL_ZONE_EN[element])} ${LORE_TWIST_EN[element][twiI]}`;
+      const desc   = `${noun} ${suffix}`.trim();
+      const descEn = `${nounEn} ${suffixEn}`.trim();
+      enKeys.push([id, nameEn, `${descEn}.`, loreEn]);
 
-      weapons.push(`  { id: '${id}', name: '${esc(name)}', description: '${esc(`${noun} ${suffix}`.trim())}.', rarity: ItemRarity.${rarity}, type: ItemType.WEAPON, icon: '${iconKey}', value: ${R.value}, ${element !== 'NEUTRAL' ? `element: ElementType.${element}, ` : ''}weaponType: WeaponType.${wt}, damage: ${dmg}, magicDamage: ${mdmg}, bonusStats: ${JSON.stringify(bonus)}, attackSpeed: ${prof.aspd}, lore: '${esc(lore)}', equipRanges: { mainStat: { key: '${mainKey}', min: ${lo}, max: ${hi} }, substats: [${subs.map(([k, a, b, p]) => `{ key: '${k}', min: ${ri(a, Math.round((a + b) / 2))}, max: ${ri(Math.round((a + b) / 2), b)}${p ? ', isPercentage: true' : ''} }`).join(', ')}] } },`);
+      weapons.push(`  { id: '${id}', name: '${esc(name)}', description: '${esc(desc)}.', rarity: ItemRarity.${rarity}, type: ItemType.WEAPON, icon: '${iconKey}', value: ${R.value}, ${element !== 'NEUTRAL' ? `element: ElementType.${element}, ` : ''}weaponType: WeaponType.${wt}, damage: ${dmg}, magicDamage: ${mdmg}, bonusStats: ${JSON.stringify(bonus)}, attackSpeed: ${prof.aspd}, lore: '${esc(lore)}', equipRanges: { mainStat: { key: '${mainKey}', min: ${lo}, max: ${hi} }, substats: [${subs.map(([k, a, b, p]) => `{ key: '${k}', min: ${ri(a, Math.round((a + b) / 2))}, max: ${ri(Math.round((a + b) / 2), b)}${p ? ', isPercentage: true' : ''} }`).join(', ')}] } },`);
     }
   }
 }
@@ -288,8 +370,15 @@ for (const [slot, prof] of Object.entries(ARMOR_PROFILES)) {
     const iconKey = `item_${id}`;
     copyIcon(pool[Math.floor(rnd() * pool.length)], iconKey);
 
-    const noun = pick(prof.fr);
-    const name = `${noun} ${rnd() < 0.5 ? (EL_FR[element] || pick(ADJ[rarity])) : pick(ADJ[rarity])}`.trim().replace(/\s+/g, ' ');
+    const nounI  = pickI(prof.fr);
+    const adjI   = pickI(ADJ[rarity]);
+    const useEl  = rnd() < 0.5 && !!EL_FR[element];
+    const noun   = prof.fr[nounI];
+    const nounEn = prof.en[nounI];
+    const sfx    = useEl ? EL_FR[element] : ADJ[rarity][adjI];
+    const sfxEn  = useEl ? EL_EN[element] : ADJ_EN[rarity][adjI];
+    const name   = `${noun} ${sfx}`.trim().replace(/\s+/g, ' ');
+    const nameEn = `${nounEn} ${sfxEn}`.trim().replace(/\s+/g, ' ');
     const def = Math.max(1, Math.round(R.dmg * prof.def));
     const mdef = Math.max(1, Math.round(R.dmg * prof.mdef));
     const mainVal = Math.max(4, Math.round(def * 0.45));
@@ -322,7 +411,12 @@ for (const [slot, prof] of Object.entries(ARMOR_PROFILES)) {
     const bonus = {};
     for (const s of prof.stats) bonus[s] = Math.max(1, Math.round(R.dmg / 14));
 
-    const lore = `${pick(LORE_ORIGIN[rarity]).replace(/%Z%/g, EL_ZONE[element])} ${pick(LORE_TWIST[element])}`;
+    const oriI = pickI(LORE_ORIGIN[rarity]);
+    const twiI = pickI(LORE_TWIST[element]);
+    const lore   = `${LORE_ORIGIN[rarity][oriI].replace(/%Z%/g, EL_ZONE[element])} ${LORE_TWIST[element][twiI]}`;
+    const loreEn = `${LORE_ORIGIN_EN[rarity][oriI].replace(/%Z%/g, EL_ZONE_EN[element])} ${LORE_TWIST_EN[element][twiI]}`;
+    const descEn = `${nounEn} of ${rarity === 'COMMON' ? 'ordinary' : 'fine'} make.`;
+    enKeys.push([id, nameEn, descEn, loreEn]);
 
     // `element` était tiré mais jamais émis : le nom annonçait « de Givre » et l'item
     // sortait NEUTRAL (l'ELEM_BONUS_PCT ne se rattachait à rien de lisible).
@@ -348,6 +442,25 @@ ${armors.join('\n')}
 `;
 
 fs.writeFileSync(OUT_TS, header, 'utf8');
+
+// ── Traductions anglaises ──────────────────────────────────────────
+// Les données du jeu sont écrites en FRANÇAIS et l'i18n retombe dessus quand une clé
+// manque (cf. src/i18n/index.ts : `lookup(key) ?? item.name`). Le français marchait
+// donc « par accident » — mais en ANGLAIS, les 486 items générés affichaient du
+// texte français. Le catalogue étant généré, ses traductions le sont aussi : même
+// tirage, tables parallèles, zéro dérive possible entre les deux langues.
+const enTs = `// ⚠ FICHIER GÉNÉRÉ — ne pas éditer à la main (\`node scripts/genItems.mjs\`).
+// Traductions EN du catalogue généré. Le FR vit dans les données elles-mêmes
+// (src/data/itemsGenerated.ts) et l'i18n y retombe naturellement.
+export const GENERATED_ITEMS_EN: Record<string, string> = {
+${enKeys.map(([id, n, d, l]) =>
+  `  'item.${id}.name': '${esc(n)}',\n  'item.${id}.description': '${esc(d)}',\n  'item.${id}.lore': '${esc(l)}',`
+).join('\n')}
+};
+`;
+fs.writeFileSync(path.join(ROOT, 'src', 'i18n', 'generatedItemsEn.ts'), enTs, 'utf8');
+
+console.log(`traductions EN   : ${enKeys.length} items (× 3 clés)`);
 console.log(`armes générées   : ${weapons.length}`);
 console.log(`armures générées : ${armors.length}`);
 console.log(`icônes copiées   : ${copied}`);

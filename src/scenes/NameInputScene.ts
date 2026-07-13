@@ -1,5 +1,5 @@
 import { SaveSystem } from '../systems/SaveSystem';
-import { UI, TYPE, FONT_UI, drawGlowPanel, drawCard, drawDivider, uiStyle, titleStyle } from '../utils/UITheme';
+import { UI, TYPE, FONT_UI, drawGlowPanel, drawDivider, uiStyle, titleStyle } from '../utils/UITheme';
 import { t } from '../i18n';
 
 export class NameInputScene extends Phaser.Scene {
@@ -26,28 +26,35 @@ export class NameInputScene extends Phaser.Scene {
 
     // Decorative separator lines (structure = cyan arcane)
     const deco = this.add.graphics();
-    drawDivider(deco, 18, 70,     W - 36, UI.ACCENT_ARCANE, 0.25);
+    drawDivider(deco, 18, 78,     W - 36, UI.ACCENT_ARCANE, 0.25);
     drawDivider(deco, 18, H - 70, W - 36, UI.ACCENT_ARCANE, 0.25);
 
-    // ── Title — mirror du titre de MainMenuScene : police Boss via titleStyle
-    //    (l'ancien FONT Standard à 16px était HORS grille de 7 → glyphes flous)
-    this.add.text(W / 2, 28, "GRIEVY TOWN'S DILEMMA",
+    // ── HIÉRARCHIE SIMPLIFIÉE (même effort que MainMenuScene) ─────────────
+    // L'écran empilait 8 niveaux de lecture (titre + sous-titre + pilule Slot
+    // + 3 lignes narratives + input + bouton + hint). Il n'en reste que 4 dans
+    // le flux : titre (identité) → accroche narrative → consigne → action
+    // (input + bouton). Le sous-titre du jeu disparaît (il appartient au
+    // MainMenu), la pilule « Slot N » devient une métadonnée discrète en coin,
+    // et « Tu ne te souviens plus de ton nom. » / « Choisis-en un. » fusionnent
+    // en UNE consigne.
+
+    // Titre — mirror du titre de MainMenuScene : police Boss via titleStyle
+    this.add.text(W / 2, 44, "GRIEVY TOWN'S DILEMMA",
       titleStyle(UI.TXT_GOLD, { stroke: true })).setOrigin(0.5);
 
-    this.add.text(W / 2, 54, t('menu.subtitle'), uiStyle(10, UI.TXT_MUTED)).setOrigin(0.5);
-
-    // ── Slot indicator (pilule arrondie — or = valeur) ─────────
-    const slotGfx = this.add.graphics();
-    drawCard(slotGfx, W / 2 - 88, 82, 176, 28, { bg: UI.BG_MID, radius: 14, shadow: false });
-    this.add.text(W / 2, 96, `${t('menu.slot')} ${this.slot + 1}`, uiStyle(TYPE.BODY, UI.TXT_GOLD, { bold: true })).setOrigin(0.5);
+    // Slot ciblé — métadonnée hors du flux de lecture (coin haut-droit, hint) :
+    // l'info reste disponible sans concurrencer la narration.
+    this.add.text(W - 24, 44, `${t('menu.slot')} ${this.slot + 1}`,
+      uiStyle(TYPE.SMALL, UI.TXT_HINT)).setOrigin(1, 0.5);
 
     // ── Narrative ─────────────────────────────────
-    // L'accroche narrative passe en HEADING (21) : c'est le cœur émotionnel de
-    // l'écran — le reste (contexte, consigne) redescend en BODY/SMALL.
-    const MID = H / 2 - 30;
-    this.add.text(W / 2, MID - 92, t('name_input.wake'),    uiStyle(TYPE.HEADING, UI.TXT_PARCHMENT, { bold: true, stroke: true })).setOrigin(0.5);
-    this.add.text(W / 2, MID - 60, t('name_input.no_name'), uiStyle(TYPE.BODY, UI.TXT_MUTED)).setOrigin(0.5);
-    this.add.text(W / 2, MID - 34, t('name_input.choose'),  uiStyle(9,  UI.TXT_HINT)).setOrigin(0.5);
+    // L'accroche passe en HEADING (21) : cœur émotionnel de l'écran — la
+    // consigne redescend en BODY muted, sur une seule ligne.
+    const MID = H / 2 - 20;
+    this.add.text(W / 2, MID - 96, t('name_input.wake'),
+      uiStyle(TYPE.HEADING, UI.TXT_PARCHMENT, { bold: true, stroke: true })).setOrigin(0.5);
+    this.add.text(W / 2, MID - 60, `${t('name_input.no_name')} ${t('name_input.choose')}`,
+      uiStyle(TYPE.BODY, UI.TXT_MUTED)).setOrigin(0.5);
 
     // ── HTML input (style moderne, coins arrondis, focus arcane) ──
     const canvas = this.game.canvas;

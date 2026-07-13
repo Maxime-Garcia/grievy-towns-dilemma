@@ -69,6 +69,51 @@ const ELITE_NOUN = {
 };
 const EPITHET = ['affamé', 'patient', 'obstiné', 'mal recousu', 'trop vieux', 'sans nom', 'décharné', 'insomniaque'];
 
+// ── Tables EN parallèles (mêmes longueurs, mêmes index) ────────────
+// Le catalogue est généré : ses traductions le sont aussi. On tire un INDEX et on
+// lit la même case dans les deux langues — l'anglais sort du générateur, et les deux
+// versions ne peuvent pas diverger à la prochaine régénération.
+const pickI = (a) => Math.floor(rnd() * a.length);
+
+const BEAST_NOUN_EN = {
+  FIRE:      ['Ashling', 'Emberling', 'Flamecrawler', 'Cinder', 'Furnace'],
+  EARTH:     ['Rockswarm', 'Delver', 'Stonechewer', 'Scree', 'Cairn'],
+  WIND:      ['Whistler', 'Cloudsplitter', 'Squall', 'Kite', 'Zephyrling'],
+  WATER:     ['Drowner', 'Undertow', 'Tidedrool', 'Eel', 'Foamer'],
+  LIGHTNING: ['Sleet', 'Quickarc', 'Crackler', 'Spark', 'Shortfuse'],
+  ICE:       ['Rimeling', 'Chilblain', 'Crackleback', 'Hoarfrost', 'Blackice'],
+  DARK:      ['Shadegnawer', 'The Faded', 'Nameless', 'Remnant', 'Silence'],
+};
+const ELITE_NOUN_EN = {
+  FIRE:      ['Lord of Embers', 'Prince of Furnaces', 'Burning Heresiarch'],
+  EARTH:     ['Colossus of the Rift', 'Elder of the Strata', 'Judge of Stone'],
+  WIND:      ['Master of the Peaks', 'Watcher of the Heights', 'Greater Gale'],
+  WATER:     ['Drowned Admiral', 'Warden of the Trenches', 'Voice of the Tide'],
+  LIGHTNING: ['Architect of the Grid', 'Great Arc', 'Foreman of Thunder'],
+  ICE:       ['Elder of the Permafrost', 'Sculptor of Silence', 'Numb King'],
+  DARK:      ['Echo of Malachar', 'What Remains', 'The Refused'],
+};
+const EPITHET_EN = ['the Starving', 'the Patient', 'the Stubborn', 'the Ill-Stitched', 'the Overold', 'the Nameless', 'the Gaunt', 'the Sleepless'];
+
+const LORE_BEAST_EN = {
+  FIRE:      ['It does not hunt: it waits for the heat to do the work, then collects.', 'You smell it before you see it. By then it is already too late.'],
+  EARTH:     ['It takes hours to cross a room. It has never needed to go faster.', 'What it crushes, it does not even eat. It simply passes.'],
+  WIND:      ['It circles above the passes for days. It chooses.', 'It makes no sound as it falls. That is the whole problem.'],
+  WATER:     ['It lives in water the light never reaches, and has never gone hungry.', 'It gives the bodies back. Three days later, always lighter.'],
+  LIGHTNING: ['It strikes before the thunder arrives. The thunder, for its part, is late.', 'Volterra\'s engineers catalogued it as a fault in the grid.'],
+  ICE:       ['It does not kill. It waits, and the cold concludes on its behalf.', 'It is sometimes found motionless for seasons. It was not dead.'],
+  DARK:      ['It has no shadow. That is the last thing you notice.', 'Malachar made dozens of them. Not one remembers him.'],
+};
+const LORE_ELITE_EN = {
+  FIRE:      ['It survived the first burning of Ignis Reach. It learned nothing from it.'],
+  EARTH:     ['Terravast counts it among its strata, not among its creatures.'],
+  WIND:      ['The passes howl when it descends. They say it does not like that either.'],
+  WATER:     ['It commanded something, once. It commands still, for want of orders to the contrary.'],
+  LIGHTNING: ['It is older than the grid. The grid was built around it.'],
+  ICE:       ['It stopped moving the day Crysthea fell silent. It did not stop watching.'],
+  DARK:      ['This is not Malachar. This is what he dropped along the way.'],
+};
+
 const LORE_BEAST = {
   FIRE:      ['Il ne chasse pas : il attend que la chaleur fasse le travail, puis ramasse.', 'On le reconnaît à l\'odeur avant de le voir. C\'est déjà trop tard.'],
   EARTH:     ['Il met des heures à traverser une salle. Il n\'a jamais eu besoin d\'aller plus vite.', 'Ce qu\'il écrase, il ne le mange même pas. Il passe, simplement.'],
@@ -132,18 +177,28 @@ const assign = (sheet, zone, isElite, idx) => {
   const el = zone.element;
   const lvl = Math.max(1, zone.level + (isElite ? 3 : 0) + Math.floor(rnd() * 3) - 1);
   const mult = isElite ? 2.4 : 1;
+  // Tirage par INDEX : même case lue en FR et en EN — les deux langues sortent en phase.
+  const nI = isElite ? pickI(ELITE_NOUN[el]) : pickI(BEAST_NOUN[el]);
+  const eI = isElite ? 0 : pickI(EPITHET);
   const name = isElite
-    ? `${pick(ELITE_NOUN[el])}`
-    : `${pick(BEAST_NOUN[el])} ${pick(EPITHET)}`;
+    ? ELITE_NOUN[el][nI]
+    : `${BEAST_NOUN[el][nI]} ${EPITHET[eI]}`;
+  const nameEn = isElite
+    ? ELITE_NOUN_EN[el][nI]
+    : `${BEAST_NOUN_EN[el][nI]} ${EPITHET_EN[eI]}`;
   // Lore tiré UNE SEULE FOIS : il alimente à la fois la fiche d'ennemi et l'entrée
   // de Bestiaire. Le tirer deux fois donnait deux lores différents pour la même
   // créature, ce qui se voyait immédiatement en jeu.
-  const lore = isElite ? pick(LORE_ELITE[el]) : pick(LORE_BEAST[el]);
+  const lI = isElite ? pickI(LORE_ELITE[el]) : pickI(LORE_BEAST[el]);
+  const lore   = isElite ? LORE_ELITE[el][lI]    : LORE_BEAST[el][lI];
+  const loreEn = isElite ? LORE_ELITE_EN[el][lI] : LORE_BEAST_EN[el][lI];
 
   return {
     id: sheet.id,
     name,
+    nameEn,
     lore,
+    loreEn,
     zone: zone.id,
     element: el,
     level: lvl,
@@ -268,6 +323,25 @@ export const GENERATED_ZONE_ENEMIES: Record<string, string[]> = ${JSON.stringify
 `;
 
 fs.writeFileSync(OUT, header, 'utf8');
+
+// ── Traductions anglaises ──────────────────────────────────────────
+// Les données sont écrites en FRANÇAIS et l'i18n retombe dessus quand une clé manque
+// (src/i18n/index.ts). Le FR marchait donc par repli — mais en ANGLAIS, les 139
+// créatures générées affichaient du texte français, nom ET lore. Le catalogue étant
+// généré, ses traductions le sont aussi : même tirage, tables parallèles.
+const enTs = `// ⚠ FICHIER GÉNÉRÉ — ne pas éditer à la main (\`node scripts/genEnemies.mjs\`).
+// Traductions EN des créatures générées (nom + entrée de Bestiaire).
+export const GENERATED_ENEMIES_EN: Record<string, string> = {
+${enemies.map(e => {
+  const short = e.isElite ? 'Elite encounter' : 'Hostile wildlife';
+  return `  'enemy.${e.id}.name': '${esc(e.nameEn)}',\n` +
+         `  'bestiary.${e.id}.shortDesc': '${short} — level ${e.level}.',\n` +
+         `  'bestiary.${e.id}.lore': '${esc(e.loreEn)}',`;
+}).join('\n')}
+};
+`;
+fs.writeFileSync(path.join(ROOT, 'src', 'i18n', 'generatedEnemiesEn.ts'), enTs, 'utf8');
+console.log(`traductions EN  : ${enemies.length} créatures (× 3 clés)`);
 const totalLoot = enemies.reduce((s, e) => s + e.loot.length, 0);
 console.log(`ennemis générés : ${enemies.length} (dont élites : ${enemies.filter(e => e.isElite).length})`);
 console.log(`items orphelins : ${orphans.length} → répartis : ${placed} (fallback niveau : ${fallbacks})`);

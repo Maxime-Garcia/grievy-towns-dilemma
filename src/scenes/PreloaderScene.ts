@@ -2,7 +2,6 @@ import Phaser from 'phaser';
 import { parseTMXtoTiledJSON } from '../utils/TMXParser';
 import { RARITY_COLORS, ItemRarity, ElementType, ItemType } from '../types';
 import { ALL_ITEMS } from '../data/items';
-import { ENEMY_MAP } from '../data/enemies';
 import { SKILLS } from '../data/skills';
 import { TALENT_MAP } from '../data/talents';
 
@@ -14,49 +13,19 @@ export class PreloaderScene extends Phaser.Scene {
     'aldric', 'brother_ovan', 'kelvar', 'theron', 'liria', 'mira', 'ysolde',
   ] as const;
 
-  // Ennemis avec sprite bitmap réel (Rogue Adventure Enemy Pack 1-4 + boss packs
-  // Molarbeast/Titan Guard, recolorés par élément — voir ASSET_SOURCES.md).
-  // Chaque strip idle/walk/attack/damage/dead a 6 frames, taille fixe par ennemi
-  // (dépend de la créature source, pas de l'élément) : 32, 48 ou 80px/frame.
-  private static readonly ENEMY_FRAME_SIZE: Record<string, number> = {
-    // 32×32
-    cinder_sprite: 32, ember_broodmother: 32, crystal_golem: 32, terravast_serpent: 32,
-    rune_shard_ghost: 32, stone_hound: 32, cloudpiercer: 32, tide_shaper: 32,
-    spark_imp: 32, volt_hound: 32, arc_node: 32, glacial_shaper: 32,
-    void_weaver: 32, void_stalker: 32,
-    // 48×48
-    ember_wyrm: 48, lava_golem: 48, ash_revenant: 48, magma_titan: 48,
-    scorch_sentinel: 48, pyrath_boss: 48, stone_crawler: 48, cave_lurker: 48,
-    ruin_colossus: 48, gale_harpy: 48, storm_eagle: 48, wind_wraith: 48,
-    cyclone_sprite: 48, sky_titan: 48, storm_caller: 48, sylvael_boss: 48,
-    tide_crawler: 48, sea_wraith: 48, coral_golem: 48, depth_serpent: 48,
-    abyssal_shade: 48, drowned_knight: 48, thunder_drake: 48, chain_revenant: 48,
-    grid_architect: 48, storm_herald: 48, volkran_boss: 48, frost_wolf: 48,
-    ice_golem: 48, blizzard_wraith: 48, permafrost_titan: 48, crystal_dragon: 48,
-    hoarfrost_stalker: 48, dark_revenant: 48, shadow_construct: 48, void_sentinel: 48,
-    malachar_boss: 48,
-    // 80×80 (Titan Guard boss)
-    gorvun_boss: 80, thalymor_boss: 80, crysthea_boss: 80,
-
-    // ── 139 créatures Fantasy Dreamland (scripts/sliceEnemySheets.mjs) ──
-    // Toutes en 48×48. Ajoutées DYNAMIQUEMENT plus bas (`fd_*`) plutôt qu'une à
-    // une : lister 139 ids à la main serait exactement le genre d'oubli qui a déjà
-    // laissé des dizaines d'items sans skin.
-  };
-  private static readonly ENEMY_STATES = ['idle', 'walk', 'attack', 'damage', 'dead'] as const;
-
-  /**
-   * Toutes les tailles de frame, y compris les créatures générées (préfixe `fd_`,
-   * toutes en 48×48). Dérivé de ENEMY_MAP : une créature ajoutée au catalogue
-   * charge automatiquement ses sprites.
-   */
-  private static enemyFrameSizes(): Record<string, number> {
-    const sizes: Record<string, number> = { ...PreloaderScene.ENEMY_FRAME_SIZE };
-    for (const id of Object.keys(ENEMY_MAP)) {
-      if (id.startsWith('fd_')) sizes[id] = 48;
-    }
-    return sizes;
-  }
+  // ── Sprites d'ennemis : PLUS CHARGÉS ICI ─────────────────────────────────
+  //
+  // Ils l'étaient : 193 créatures × 5 strips = 965 fichiers PNG, et autant de
+  // textures WebGL, AVANT l'affichage du menu principal. Une zone n'en fait
+  // spawner qu'une vingtaine, et Grievy Town — la zone de départ — aucune : on
+  // payait au boot la quasi-totalité d'un travail dont ~90 % ne servait jamais.
+  //
+  // Le chargement est désormais porté par src/utils/EnemyAssets.ts :
+  //   · GameScene.preload() / performZoneTransition() → la liste exacte de la zone ;
+  //   · AssetStreamScene                              → les strips `idle` (portraits
+  //                                                     Bestiaire/Arsenal) en fond.
+  // La table des tailles de frame et la dérivation du nombre de frames depuis la
+  // texture (4 ou 6 selon le pack source) y ont été déplacées telles quelles.
 
   // Les anciennes listes WEAPON_ICON_KEYS / ARMOR_ICON_KEYS (ecrites a la main, et
   // qui ne couvraient que 54 armes + 10 casques) ont disparu : les icones ditems
@@ -131,13 +100,27 @@ export class PreloaderScene extends Phaser.Scene {
     TENEBRES: { frame: 176, tint: 0xaa66dd }, // crâne — magie noire
   };
 
+  // ── Icônes des onglets de filtrage du sac (InventoryScene.renderBagTabs) ──
+  // Glyphes ui_icons_16 bakés en parchemin neutre : l'état actif/inactif se
+  // joue à l'ALPHA (pas à la teinte), pour rester lisible sur les deux fonds
+  // d'onglet. Indices repérés sur la planche `Icons 32x32 Style 01.png` du pack
+  // (même ordre que la sheet) — mêmes conventions que SKILL_ICON_FRAME.
+  private static readonly BAG_TAB_ICON_FRAME: Record<string, number> = {
+    bagtab_all:        138, // grille de cases — tout l'inventaire
+    bagtab_equip:      0,   // épée — armes & armures (index vérifié : echo_strike)
+    bagtab_consumable: 273, // fiole/calice — consommables (index vérifié : elaras_gift)
+    bagtab_material:   274, // gemme — matériaux (index vérifié : prism_burst)
+    bagtab_misc:       217, // clé — objets de quête & divers (rangée des clés)
+  };
+
   constructor() { super({ key: 'PreloaderScene' }); }
 
   preload() {
     // Continues the boot-loading overlay's bar (see index.html) from where
-    // BootScene left off (PROGRESS_SHARE%) up to 100% — this scene loads the
-    // vast majority of assets (270 enemy sprite files + player/npc/tilesets/
-    // maps), so it owns the bulk of the bar's range.
+    // BootScene left off (PROGRESS_SHARE%) up to 100%. Cette scène ne charge plus que
+    // le NOYAU indispensable au menu et à Grievy Town : héros, PNJ, icônes d'items, UI,
+    // tilesets, maps. Les 965 strips d'ennemis qu'elle chargeait sont partis en
+    // chargement par zone (GameScene.preload) et en tâche de fond (AssetStreamScene).
     const BOOT_SHARE = 15;
     this.load.on('progress', (value: number) => {
       window.__bootLoading?.setProgress(BOOT_SHARE + value * (100 - BOOT_SHARE), 'Chargement des sprites');
@@ -161,17 +144,7 @@ export class PreloaderScene extends Phaser.Scene {
       this.load.spritesheet(`npc_${npcId}_walk`, `assets/sprites/npcs/npc_${npcId}_walk.png`, { frameWidth: 24, frameHeight: 24 });
     }
 
-    // ── Ennemis — Rogue Adventure Enemy Pack recoloré par élément (voir ASSET_SOURCES.md) ──
-    // Strip horizontal 6 frames, une seule direction (pas de flip directionnel pour les ennemis).
-    for (const [enemyId, size] of Object.entries(PreloaderScene.enemyFrameSizes())) {
-      for (const state of PreloaderScene.ENEMY_STATES) {
-        this.load.spritesheet(
-          `enemy_${enemyId}_${state}`,
-          `assets/sprites/enemies/enemy_${enemyId}_${state}.png`,
-          { frameWidth: size, frameHeight: size },
-        );
-      }
-    }
+    // ── Ennemis : voir le commentaire en tête de classe — chargés par zone ──
 
     // ── Icônes d'items (voir ASSET_SOURCES.md) ──
     // DÉRIVÉ du catalogue, plus une liste écrite à la main : le catalogue compte
@@ -248,9 +221,13 @@ export class PreloaderScene extends Phaser.Scene {
     this.generateWeaponIcons();
     this.generateItemIcons();
     this.generateSkillAndTalentIcons();
+    this.generateEmptySlotFrame();
     this.createPlayerAnimations();
     this.createNpcAnimations();
-    this.createEnemyAnimations();
+    // createEnemyAnimations() a disparu : une animation ne peut être créée qu'une fois
+    // sa texture chargée, or les strips d'ennemis arrivent maintenant par zone.
+    // C'est registerEnemyAnimations() (EnemyAssets.ts) qui les déclare, au moment où
+    // la zone les charge — même logique, même dérivation du nombre de frames.
 
     // Parse loaded TMX text files into Tiled JSON and inject into the tilemap cache
     const tmxEntries: Array<[string, string]> = [
@@ -269,6 +246,11 @@ export class PreloaderScene extends Phaser.Scene {
     }
 
     window.__bootLoading?.hide();
+
+    // Portraits du Bestiaire/Arsenal : téléchargés en tâche de fond pendant que le
+    // joueur est au menu, et non plus dans le chemin bloquant du boot (cf.
+    // AssetStreamScene). `launch` et non `start` : elle tourne EN PARALLÈLE du menu.
+    this.scene.launch('AssetStreamScene');
     this.scene.start('MainMenuScene');
   }
 
@@ -331,38 +313,6 @@ export class PreloaderScene extends Phaser.Scene {
     }
   }
 
-  // ── Animations des ennemis (strip 6 frames, une seule direction) ─────────
-  private createEnemyAnimations(): void {
-    const STATE_CONFIG: Record<typeof PreloaderScene.ENEMY_STATES[number], { frameRate: number; repeat: number }> = {
-      idle:   { frameRate: 5,  repeat: -1 },
-      walk:   { frameRate: 8,  repeat: -1 },
-      attack: { frameRate: 10, repeat: 0 },
-      damage: { frameRate: 10, repeat: 0 },
-      dead:   { frameRate: 8,  repeat: 0 },
-    };
-
-    for (const enemyId of Object.keys(PreloaderScene.enemyFrameSizes())) {
-      for (const state of PreloaderScene.ENEMY_STATES) {
-        const textureKey = `enemy_${enemyId}_${state}`;
-        if (!this.textures.exists(textureKey)) continue;
-        if (this.anims.exists(textureKey)) continue;
-        const { frameRate, repeat } = STATE_CONFIG[state];
-        // Le nombre de frames est DÉRIVÉ de la texture, plus codé en dur à 6 :
-        // les strips historiques ont 6 frames, ceux découpés des packs Fantasy
-        // Dreamland (scripts/sliceEnemySheets.mjs) en ont 4. Un `end: 5` fixe
-        // aurait produit des frames fantômes sur ces derniers.
-        const frameCount = this.textures.get(textureKey).getFrameNames().length;
-        if (frameCount === 0) continue;
-        this.anims.create({
-          key: textureKey,
-          frames: this.anims.generateFrameNumbers(textureKey, { start: 0, end: frameCount - 1 }),
-          frameRate,
-          repeat,
-        });
-      }
-    }
-  }
-
   // ── Icônes de skills et de talents — bake depuis la sheet ui_icons_16 ────
   //
   // Remplace les placeholders "carré coloré + initiales" (PlaceholderAssets)
@@ -388,6 +338,13 @@ export class PreloaderScene extends Phaser.Scene {
         PreloaderScene.TALENT_BRANCH_ICON[String(node.branch)];
       if (def === undefined) continue;
       this.bakeTintedGlyph(node.icon, def.frame, def.tint);
+    }
+
+    // Icônes des onglets du sac — parchemin neutre, cf. BAG_TAB_ICON_FRAME.
+    // Si la sheet manque, on n'arrive pas ici : InventoryScene retombe alors
+    // sur ses labels texte (garde textures.exists dans renderBagTabs).
+    for (const [key, frame] of Object.entries(PreloaderScene.BAG_TAB_ICON_FRAME)) {
+      this.bakeTintedGlyph(key, frame, 0xf0e8d8);
     }
   }
 
@@ -428,6 +385,63 @@ export class PreloaderScene extends Phaser.Scene {
     ctx.fillStyle = '#' + tint.toString(16).padStart(6, '0');
     ctx.fillRect(0, 0, S, S);
     this.textures.addCanvas(key, canvas);
+  }
+
+  /**
+   * Variante « slot vide » du cadre d'inventaire : `ui_slot_frame_empty`.
+   *
+   * L'asset `ui_slot_frame` (Retro Inventory, Inventory_Slot_2) porte un emblème
+   * d'ÉPÉE gravé au centre. Sur un slot d'équipement VIDE du paperdoll, cette
+   * épée décorative se lisait comme « une arme est équipée ici » et noyait le
+   * libellé fantôme du slot (bug UX reporté). On bake donc une copie de l'asset
+   * dont l'intérieur est aplati à sa couleur de fond DOMINANTE (mode) : même
+   * cadre, même gris, sans l'emblème. Échantillonner le mode plutôt qu'un pixel
+   * fixe rend le bake robuste si l'asset change (l'emblème est minoritaire en
+   * surface). Les coins/bords (zone du NineSlice, 8 px) sont laissés intacts.
+   *
+   * Asset absent (script copy-ui-assets.mjs pas lancé) : no-op — addUiFrame
+   * renverra null et le slot gardera son rendu drawSlot, rien ne casse.
+   */
+  private generateEmptySlotFrame(): void {
+    if (!this.textures.exists('ui_slot_frame') || this.textures.exists('ui_slot_frame_empty')) return;
+    const src = this.textures.get('ui_slot_frame').source[0]?.image;
+    if (!(src instanceof HTMLImageElement) && !(src instanceof HTMLCanvasElement)) return;
+
+    const w = src.width;
+    const h = src.height;
+    const SLICE = 8; // même découpe que addUiFrame (NineSlice slice = 8)
+    if (w <= SLICE * 2 || h <= SLICE * 2) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.width  = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(src, 0, 0);
+
+    // Couleur dominante (mode RGBA) de la zone intérieure
+    const inner = ctx.getImageData(SLICE, SLICE, w - SLICE * 2, h - SLICE * 2);
+    const counts = new Map<number, number>();
+    const d = inner.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const key = ((d[i]! << 24) | (d[i + 1]! << 16) | (d[i + 2]! << 8) | d[i + 3]!) >>> 0;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    let mode = 0;
+    let modeCount = -1;
+    for (const [key, n] of counts) {
+      if (n > modeCount) { modeCount = n; mode = key; }
+    }
+    const r = (mode >>> 24) & 0xff;
+    const g = (mode >>> 16) & 0xff;
+    const b = (mode >>> 8) & 0xff;
+    const a = mode & 0xff;
+
+    ctx.clearRect(SLICE, SLICE, w - SLICE * 2, h - SLICE * 2);
+    ctx.fillStyle = `rgba(${r},${g},${b},${a / 255})`;
+    ctx.fillRect(SLICE, SLICE, w - SLICE * 2, h - SLICE * 2);
+    this.textures.addCanvas('ui_slot_frame_empty', canvas);
   }
 
   /**

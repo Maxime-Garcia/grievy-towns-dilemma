@@ -13,7 +13,7 @@ import { WorldState, ElementType, ItemType, ItemRarity, RARITY_COLORS, Item, Wea
 import {
   UI, TYPE, drawGlowPanel, drawCard, drawBadge, uiStyle, titleStyle, fitText, drawDivider,
   addCloseButton, drawScrollbar,
-  renderScrollableText, formatDropRate, drawConfirmCancelButtons, ARCANE_CONFIRM_ACCENT,
+  formatDropRate, drawConfirmCancelButtons, ARCANE_CONFIRM_ACCENT,
   openScreenTransition, closeScreenTransition, portalRedirectTransition,
   formatRangedStatLine,
 } from '../utils/UITheme';
@@ -100,18 +100,18 @@ const DROP_SOURCE_ROW_H = 44;
 const DROP_SOURCE_MAX_ROWS = 6;
 
 /**
- * Réserve verticale (px) sous les stats, avant le titre "Description", pour le
- * libellé du passif (affiché en gras dans le bloc identité — cf. renderDetail).
- * Calibrée pour le passif le plus long connu (~100 caractères, ex.
- * COMBAT_START_ZERO_CD / FIRST_STRIKE_500_PCT dans passiveEffects.ts) sur 2
- * lignes wrappées à la largeur de la colonne identité. Fixe et indépendante de
- * l'item sélectionné : LORE_Y doit rester la même géométrie pour tous les items
- * (panneau uniforme, cf. create()) — un item sans passif laisse juste un blanc.
- * 36 → 44 : le bloc identité au-dessus a grandi (nom en HEADING 21, stats en
- * BODY 14 au pas de 18) — la réserve suit pour que le passif ne mange jamais
- * le titre "Description".
+ * Réserve verticale (px) sous les stats, avant le titre "Description" — marge
+ * de sécurité du bloc identité (un nom en HEADING 21 peut wrapper sur 2 lignes,
+ * suivi de jusqu'à 3 lignes de stats en BODY 14 au pas de 18). Fixe et
+ * indépendante de l'item sélectionné : LORE_Y doit rester la même géométrie
+ * pour tous les items (panneau uniforme, cf. create()).
+ * NB : cette constante s'appelait PASSIVE_RESERVE_PX quand le passif était
+ * rendu dans le bloc identité, clampé en hauteur — ce clamp TRONQUAIT les
+ * passifs longs des items Hidden (bug reporté : « Vous soigne de 25% de tous
+ * les dégâts in… »). Le passif vit désormais EN TÊTE du viewport scrollable
+ * (cf. renderDetail) : visible sans scroll, et lisible EN ENTIER en scrollant.
  */
-const PASSIVE_RESERVE_PX = 44;
+const IDENTITY_RESERVE_PX = 44;
 
 /**
  * Sous-titre du bloc fourchettes (§7.1) — hardcodé FR (pas de clé i18n) : la
@@ -141,8 +141,8 @@ export class ArsenalScene extends Phaser.Scene {
   private detailObjs: Phaser.GameObjects.GameObject[] = [];
   private scrollbarGfx!: Phaser.GameObjects.Graphics;
 
-  // Scroll interne du bloc description/lore (viewport masqué à taille fixe — voir
-  // renderScrollableText) : offset en pixels, indépendant du scroll de la liste.
+  // Scroll interne du bloc passif/fourchettes/lore (viewport masqué à taille
+  // fixe — cf. renderDetail) : offset en pixels, indépendant du scroll de la liste.
   private loreScrollPx = 0;
   private loreMaxScrollPx = 0;
 
@@ -236,12 +236,11 @@ export class ArsenalScene extends Phaser.Scene {
 
     // Viewport fixe du bloc description/lore — même géométrie pour tous les items
     // (panneau uniforme), le texte défile DEDANS au lieu de faire varier la taille
-    // du panneau ou de déborder hors-cadre (cf. renderScrollableText).
-    // +PASSIVE_RESERVE_PX : place réservée au libellé du passif (gras, dans le
-    // bloc identité) entre la fin des stats et le titre "Description" — voir
-    // la constante pour le détail du calibrage.
+    // du panneau ou de déborder hors-cadre (cf. renderDetail, blocs masqués).
+    // +IDENTITY_RESERVE_PX : marge de sécurité sous le bloc identité (nom +
+    // badges + stats) avant le titre "Description" — voir la constante.
     this.LORE_X = this.DET_X + this.PAD;
-    this.LORE_Y = this.DET_Y + this.PAD + 96 + 18 + PASSIVE_RESERVE_PX + 14;
+    this.LORE_Y = this.DET_Y + this.PAD + 96 + 18 + IDENTITY_RESERVE_PX + 14;
     this.LORE_W = this.DET_W - this.PAD * 2;
 
     const listBg = this.add.graphics();
@@ -556,92 +555,85 @@ export class ArsenalScene extends Phaser.Scene {
     if (entry.discovered) {
       // Valeurs en TYPE.BODY (14) : « les valeurs importantes en grand » — le
       // micro-texte reste réservé aux fourchettes/badges (TYPE.SMALL).
+      // PARCHEMIN partout (retour utilisateur : le TXT_MUTED rendait ATK/M.ATK/
+      // Vit. d'attaque « ternes » face au blanc de la section sources). La
+      // fourchette catalogue (muted) se distingue désormais par l'ITALIQUE,
+      // les valeurs figées par le GRAS — plus jamais par une couleur éteinte.
       for (const line of this.statLines(item)) {
-        this.detailObjs.push(this.add.text(ix, iy, line.text, uiStyle(TYPE.BODY, line.muted ? UI.TXT_MUTED : UI.TXT_PARCHMENT)));
+        this.detailObjs.push(this.add.text(ix, iy, line.text,
+          uiStyle(TYPE.BODY, UI.TXT_PARCHMENT, line.muted ? { italic: true } : { bold: true })));
         iy += 18;
       }
-
-      // Passif : en gras, couleur distincte (or) — sorti du bloc lore pour rester
-      // visible sans avoir à scroller. Budget vertical réservé par
-      // PASSIVE_RESERVE_PX (voir sa doc) entre ici et le titre "Description".
-      const passiveLabel = ('passiveEffect' in item && item.passiveEffect)
-        ? getPassiveEffectLabel(item.passiveEffect)
-        : undefined;
-      if (passiveLabel) {
-        iy += 4;
-        const passiveTxt = this.add.text(ix, iy, `${t('arsenal.passive_label')} ${passiveLabel}`,
-          uiStyle(TYPE.SMALL, UI.TXT_GOLD, { bold: true, wordWrapWidth: iw, lineSpacing: 4 }));
-        this.detailObjs.push(passiveTxt);
-
-        // Le titre « Description » est à une position FIXE (descY, ci-dessous) : la
-        // géométrie du panneau doit rester identique pour tous les items. Le bloc
-        // identité, lui, est en FLUX — et avec un nom qui wrappe sur 2 lignes ou un
-        // passif sur 3, il n'arrivait plus qu'à ~2 px du filet du titre, qu'il finissait
-        // par mordre. On borne donc le passif à l'espace réellement disponible plutôt
-        // que d'espérer qu'il tienne : il est tronqué en hauteur, pas empilé par-dessus.
-        const passiveLimit = this.DET_Y + pad + 96 + 18 + PASSIVE_RESERVE_PX - 10;
-        while (passiveTxt.text.length > 4 && iy + passiveTxt.height > passiveLimit) {
-          passiveTxt.setText(`${passiveTxt.text.slice(0, -6)}…`);
-        }
-      }
+      // Le passif n'est plus rendu ici : il vit en tête du viewport scrollable
+      // ci-dessous — jamais tronqué (cf. doc de IDENTITY_RESERVE_PX).
     }
 
     // ── Description / lore ──────────────────────────────────────
     // Viewport fixe (this.LORE_X/Y/W/H, calculé une fois dans create()) : le texte
     // défile DEDANS (molette + scrollbar) au lieu de faire varier la taille du
     // panneau ou de déborder hors-cadre — garantit un panneau UNIFORME pour tous
-    // les items tout en gardant tout le lore accessible (cf. renderScrollableText).
-    const descY = this.DET_Y + pad + 96 + 18 + PASSIVE_RESERVE_PX;
+    // les items tout en gardant tout le contenu accessible (blocs masqués ci-dessous).
+    const descY = this.DET_Y + pad + 96 + 18 + IDENTITY_RESERVE_PX;
     this.addSectionTitle(t('arsenal.description_title'), descY);
 
     const baseDesc = loc.lore ?? loc.description;
     const descText = entry.discovered ? baseDesc : t('arsenal.not_discovered');
     const descColor = entry.discovered ? UI.TXT_PARCHMENT : UI.TXT_MUTED;
 
-    // Fourchettes de roll (§7.1) : contenu de longueur VARIABLE (2 lignes en
-    // COMMON, jusqu'à 8 en HIDDEN) — ne peut pas tenir dans la zone identité
-    // fixe au-dessus (déjà pleine à 3 lignes avec ATK/MATK/ASPD). Rendu DANS
-    // le même viewport scrollable que le lore, en tête, avec sa propre teinte
-    // grise — deux Text partageant un seul mask/scroll, plutôt qu'un second
-    // viewport indépendant (garde LORE_Y/dropTitleY strictement inchangés).
-    const rangeLines = entry.discovered ? this.equipRangeLines(item) : [];
-    let maxScrollPx: number;
-
-    if (rangeLines.length > 0) {
-      const rangesTxt = this.add.text(
-        this.LORE_X, this.LORE_Y - this.loreScrollPx,
-        `${RANGES_SUBTITLE}\n${rangeLines.join('\n')}`,
-        uiStyle(TYPE.SMALL, UI.TXT_MUTED, { italic: true, lineSpacing: 4, wordWrapWidth: this.LORE_W }),
-      );
-      const gapY = 10;
-      // Corps de lecture en TYPE.BODY (14) — le lore est le contenu principal du
-      // viewport, il mérite la taille de lecture, pas du micro-texte.
-      const loreTxt = this.add.text(
-        this.LORE_X, rangesTxt.y + rangesTxt.height + gapY,
-        descText, uiStyle(TYPE.BODY, descColor, { lineSpacing: 5, wordWrapWidth: this.LORE_W }),
-      );
-
-      maxScrollPx = Math.max(0, Math.ceil(rangesTxt.height + gapY + loreTxt.height) - this.LORE_H);
-      if (this.loreScrollPx > maxScrollPx) {
-        rangesTxt.y = this.LORE_Y - maxScrollPx;
-        loreTxt.y = rangesTxt.y + rangesTxt.height + gapY;
-      }
-
-      const maskGfx = this.make.graphics(undefined, false);
-      maskGfx.fillStyle(0xffffff, 1);
-      maskGfx.fillRect(this.LORE_X, this.LORE_Y, this.LORE_W, this.LORE_H);
-      const geomMask = maskGfx.createGeometryMask();
-      rangesTxt.setMask(geomMask);
-      loreTxt.setMask(geomMask);
-      this.detailObjs.push(rangesTxt, loreTxt, maskGfx);
-    } else {
-      const loreResult = renderScrollableText(
-        this, this.LORE_X, this.LORE_Y, this.LORE_W, this.LORE_H,
-        descText, uiStyle(TYPE.BODY, descColor, { lineSpacing: 5 }), this.loreScrollPx,
-      );
-      this.detailObjs.push(loreResult.text, loreResult.mask);
-      maxScrollPx = loreResult.maxScrollPx;
+    // Contenu du viewport scrollable — blocs empilés partageant UN masque et
+    // UN scroll (garde LORE_Y/dropTitleY strictement inchangés) :
+    //  1. PASSIF (or gras, TYPE.BODY) : info capitale d'un item Hidden. En TÊTE
+    //     du viewport, donc visible sans scroller dans tous les cas courants —
+    //     et le scroll garantit sa lecture EN ENTIER quelle que soit sa longueur
+    //     (l'ancien clamp du bloc identité le tronquait, bug reporté).
+    //  2. Fourchettes de roll (§7.1) : longueur VARIABLE (2 lignes en COMMON,
+    //     jusqu'à 8 en HIDDEN) — seul le viewport scrollable peut l'absorber.
+    //  3. Lore/description : corps de lecture en TYPE.BODY.
+    const blocks: { text: string; style: Phaser.Types.GameObjects.Text.TextStyle }[] = [];
+    const passiveLabel = entry.discovered && 'passiveEffect' in item && item.passiveEffect
+      ? getPassiveEffectLabel(item.passiveEffect)
+      : undefined;
+    if (passiveLabel) {
+      blocks.push({
+        text: `${t('arsenal.passive_label')} ${passiveLabel}`,
+        style: uiStyle(TYPE.BODY, UI.TXT_GOLD, { bold: true, lineSpacing: 4, wordWrapWidth: this.LORE_W }),
+      });
     }
+    const rangeLines = entry.discovered ? this.equipRangeLines(item) : [];
+    if (rangeLines.length > 0) {
+      blocks.push({
+        text: `${RANGES_SUBTITLE}\n${rangeLines.join('\n')}`,
+        style: uiStyle(TYPE.SMALL, UI.TXT_MUTED, { italic: true, lineSpacing: 4, wordWrapWidth: this.LORE_W }),
+      });
+    }
+    blocks.push({
+      text: descText,
+      style: uiStyle(TYPE.BODY, descColor, { lineSpacing: 5, wordWrapWidth: this.LORE_W }),
+    });
+
+    const GAP_Y = 10;
+    const blockTexts: Phaser.GameObjects.Text[] = [];
+    let blockY = this.LORE_Y - this.loreScrollPx;
+    for (const block of blocks) {
+      const txt = this.add.text(this.LORE_X, blockY, block.text, block.style);
+      blockTexts.push(txt);
+      blockY += txt.height + GAP_Y;
+    }
+    const contentPx = blockY + this.loreScrollPx - this.LORE_Y - GAP_Y;
+    const maxScrollPx = Math.max(0, Math.ceil(contentPx) - this.LORE_H);
+    if (this.loreScrollPx > maxScrollPx) {
+      // Offset devenu trop grand pour ce contenu (changement d'item) : on
+      // remonte tous les blocs d'un même delta avant le clamp ci-dessous.
+      const dy = this.loreScrollPx - maxScrollPx;
+      for (const txt of blockTexts) txt.setY(txt.y + dy);
+    }
+
+    const maskGfx = this.make.graphics(undefined, false);
+    maskGfx.fillStyle(0xffffff, 1);
+    maskGfx.fillRect(this.LORE_X, this.LORE_Y, this.LORE_W, this.LORE_H);
+    const geomMask = maskGfx.createGeometryMask();
+    for (const txt of blockTexts) txt.setMask(geomMask);
+    this.detailObjs.push(...blockTexts, maskGfx);
 
     this.loreMaxScrollPx = maxScrollPx;
     if (this.loreScrollPx > this.loreMaxScrollPx) this.loreScrollPx = this.loreMaxScrollPx;
@@ -695,9 +687,12 @@ export class ArsenalScene extends Phaser.Scene {
   /** Scanne ALL_BESTIARY (les 196 monstres, generes compris — BESTIARY_DATA seul
    *  ne couvrait que les 57 ecrits a la main, d'ou les "Source inconnue" sur tout
    *  item ne tombant que des monstres generes) pour lister ses sources —
-   *  respecte isHidden/isDropRevealed (jamais de spoil d'un drop caché non révélé). */
+   *  respecte isHidden/isDropRevealed (jamais de spoil d'un drop caché non révélé).
+   *
+   *  Le TITRE de la section suit le contenu réel (retour utilisateur : « Obtenu
+   *  auprès de » suivi d'un monstre sonnait comme un achat chez un PNJ) :
+   *  monstres → « Lâché par », marchands → « En vente chez », rien → « Provenance ». */
   private renderDroppedBySection(itemId: string, titleY: number) {
-    this.addSectionTitle(t('arsenal.dropped_by_title'), titleY);
     const contentX = this.DET_X + this.PAD;
     const contentY = titleY + 18;
     const contentW = this.DET_W - this.PAD * 2;
@@ -717,11 +712,13 @@ export class ArsenalScene extends Phaser.Scene {
       // le marchand et sa ville.
       const vendors = this.findVendors(itemId);
       if (vendors.length === 0) {
+        this.addSectionTitle(t('arsenal.source_title'), titleY);
         this.detailObjs.push(
           this.add.text(contentX, contentY, t('arsenal.loot_unknown'), uiStyle(9, UI.TXT_MUTED)),
         );
         return;
       }
+      this.addSectionTitle(t('arsenal.sold_by_title'), titleY);
       const vendorStyle = uiStyle(TYPE.BODY, UI.TXT_GOLD);
       vendors.slice(0, 4).forEach((v, i) => {
         const line = `${v.name}${v.location ? ` — ${v.location}` : ''}   ${v.price} or`;
@@ -732,10 +729,11 @@ export class ArsenalScene extends Phaser.Scene {
       });
       return;
     }
+    this.addSectionTitle(t('arsenal.dropped_by_title'), titleY);
 
     // Nombre de lignes réellement calculé depuis l'espace restant sous contentY
     // (pas un DROP_SOURCE_MAX_ROWS fixe) : le budget vertical au-dessus de ce
-    // point varie désormais avec PASSIVE_RESERVE_PX (cf. sa doc) — un plafond
+    // point varie désormais avec IDENTITY_RESERVE_PX (cf. sa doc) — un plafond
     // fixe déborderait hors du panneau pour un item à 7+ sources de drop non
     // cachées (ex: ember_core, minor_mana_potion). -18 = marge de sécurité avant
     // le bord du panneau, -14 = place réservée pour la ligne "+N autres".
@@ -887,10 +885,11 @@ export class ArsenalScene extends Phaser.Scene {
   /**
    * Lignes de stats affichées dans le panneau détail, selon le type d'objet.
    * Le mainStat (miroir ATK/MATK pour une arme, ligne d'identité pour une
-   * armure/accessoire) est affiché en fourchette grise (`muted: true`) au lieu
-   * de sa valeur figée — §7.1 : « au lieu des valeurs figées actuelles pour le
-   * mainStat ». Le dégât secondaire (non mainStat) et l'ASPD ne roll jamais
-   * (§1.3) et restent figés, couleur normale. Les SUBSTATS (nombre variable,
+   * armure/accessoire) est affiché en fourchette (`muted: true` → rendu en
+   * italique parchemin) au lieu de sa valeur figée — §7.1 : « au lieu des
+   * valeurs figées actuelles pour le mainStat ». Le dégât secondaire (non
+   * mainStat) et l'ASPD ne roll jamais (§1.3) et restent figés, en gras
+   * parchemin. Les SUBSTATS (nombre variable,
    * 1 à 7 lignes) ne sont PAS ici : cette zone a un budget vertical fixe (déjà
    * ~pleine avec 3 lignes) — elles vivent dans le bloc lore scrollable
    * (cf. equipRangeLines + renderDetail).
@@ -922,9 +921,9 @@ export class ArsenalScene extends Phaser.Scene {
       // Accessoires (ring/amulet) : ni arme ni armure — seule la ligne d'identité existe ici.
       lines.push({ text: formatRangedStatLine(ranges.mainStat), muted: true });
     }
-    // Le passif n'est PAS inclus ici : il est rendu séparément juste après ces
-    // lignes dans renderDetail() (gras + couleur or, distinct du parchemin des
-    // stats), dans l'espace réservé par PASSIVE_RESERVE_PX — cf. sa doc.
+    // Le passif n'est PAS inclus ici : il est rendu en tête du viewport
+    // scrollable de renderDetail() (gras + couleur or, jamais tronqué) —
+    // cf. doc de IDENTITY_RESERVE_PX.
     return lines;
   }
 

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { BootScene }      from './scenes/BootScene';
 import { PreloaderScene } from './scenes/PreloaderScene';
+import { AssetStreamScene } from './scenes/AssetStreamScene';
 import { MainMenuScene }  from './scenes/MainMenuScene';
 import { NameInputScene } from './scenes/NameInputScene';
 import { IntroScene }     from './scenes/IntroScene';
@@ -56,11 +57,11 @@ const config: Phaser.Types.Core.GameConfig = {
     // (contre 11-12 avant). Dans un canvas de 800×600 aux panneaux calés en dur,
     // il n'avait plus aucun exutoire — d'où l'UI illisible et « pas assez aérée ».
     //
-    // Le gamefeel, lui, ne bouge PAS : GameScene passe sa caméra à zoom 1,2 (cf.
-    // WORLD_CAMERA_ZOOM là-bas). À 1,2 sur un canvas 960×720, la caméra montre
-    // exactement la même zone de monde qu'avant (800×600 unités) et les sprites ont
-    // la même taille apparente. Seules les scènes d'UI (caméra à zoom 1) profitent
-    // des 20 % de pixels supplémentaires.
+    // Le zoom de la caméra du monde reste à 1 (WORLD_CAMERA_ZOOM dans GameScene) :
+    // un zoom fractionnaire ré-échantillonnerait tout le monde en NEAREST et
+    // réintroduirait exactement le flou que la passe typographique a éliminé. Le monde
+    // montre donc simplement 20 % de champ en plus — la physique, elle, est en unités
+    // monde et ne bouge pas.
     width: 960,
     height: 720,
     zoom: Phaser.Scale.MAX_ZOOM,
@@ -85,6 +86,9 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [
     BootScene,
     PreloaderScene,
+    // Scène de service sans rendu (`active: false`) : PreloaderScene la `launch()` en
+    // parallèle du menu pour streamer les portraits d'ennemis hors du chemin de boot.
+    AssetStreamScene,
     MainMenuScene,
     NameInputScene,
     IntroScene,

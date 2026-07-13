@@ -556,46 +556,49 @@ export class BestiaryScene extends Phaser.Scene {
     this.detailObjs.push(nameTxt);
     iy += nameTxt.height + 8;
 
-    // Habitat — toujours visible : guide le joueur vers la créature manquante
+    // Habitat — toujours visible : guide le joueur vers la créature manquante.
+    // Hauteur MESURÉE (plus de +20 forfaitaire) : le badge d'élément dessiné en
+    // dessous mordait le bas de « Habitat : … » (chevauchement reporté).
     const zoneKey = ZONE_HABITAT_KEYS[def.element];
     const habitatStr = zoneKey ? t(zoneKey) : data.habitat;
-    this.detailObjs.push(
-      this.add.text(ix, iy, `${t('bestiary.habitat')} ${habitatStr}`, uiStyle(TYPE.BODY, UI.TXT_MUTED)),
-    );
-    iy += 20;
+    const habitatTxt = this.add.text(ix, iy, `${t('bestiary.habitat')} ${habitatStr}`,
+      uiStyle(TYPE.BODY, UI.TXT_MUTED, { wordWrapWidth: iw }));
+    this.detailObjs.push(habitatTxt);
+    iy += habitatTxt.height + 6;
 
-    // Badges : niveau, élément, boss/élite
-    let bx = ix;
-    bx += this.addInfoBadge(bx, iy + 7,
-      entry.discovered ? t('bestiary.level').replace('{lvl}', String(def.baseLevel)) : t('bestiary.level_unknown'),
-      0x1a2030, UI.TXT_GOLD);
+    // Badges : élément + boss/élite. Le badge de NIVEAU a été retiré (retour
+    // utilisateur) : l'info « Nv. X » vit déjà dans la liste de gauche, et ce
+    // badge encombrait l'en-tête au point de chevaucher l'habitat.
     if (entry.discovered) {
+      let bx = ix;
       const elemTxtColor = BRIGHT_ELEMENTS.includes(def.element) ? '#101018' : '#f5edd0';
-      bx += this.addInfoBadge(bx, iy + 7, t(`element.${def.element}`), elemColor, elemTxtColor);
-      if (def.isBoss)       bx += this.addInfoBadge(bx, iy + 7, t('bestiary.boss'),  0x551111, '#ffdddd');
-      else if (def.isElite) bx += this.addInfoBadge(bx, iy + 7, t('bestiary.elite'), 0x553311, '#ffe6cc');
+      bx += this.addInfoBadge(bx, iy + 11, t(`element.${def.element}`), elemColor, elemTxtColor);
+      if (def.isBoss)       bx += this.addInfoBadge(bx, iy + 11, t('bestiary.boss'),  0x551111, '#ffdddd');
+      else if (def.isElite) bx += this.addInfoBadge(bx, iy + 11, t('bestiary.elite'), 0x553311, '#ffe6cc');
+      iy += 30;
     }
-    iy += 26;
 
-    // Faiblesse + compteur de victoires — info de gameplay : TYPE.BODY
-    // (libellé en TXT_MUTED, valeur en couleur élémentaire = convention LABEL).
-    if (entry.discovered && def.weakness) {
-      const wkColor = ELEMENT_COLORS[def.weakness] ?? ELEMENT_COLORS[ElementType.NEUTRAL];
-      const wkLabel = this.add.text(ix, iy, t('bestiary.weakness'), uiStyle(TYPE.LABEL, UI.TXT_MUTED));
-      const wkValue = this.add.text(ix + wkLabel.width + 6, iy, t(`element.${def.weakness}`),
-        uiStyle(TYPE.BODY, '#' + wkColor.toString(16).padStart(6, '0'), { bold: true }));
-      this.detailObjs.push(wkLabel, wkValue);
-      iy += 18;
-    }
-    // Le titre « Histoire » est à une position FIXE (loreY, ci-dessous) — la géométrie
-    // du panneau doit rester identique pour tous les monstres. Le bloc identité, lui,
-    // est en FLUX : un nom d'ennemi qui wrappe sur 2 lignes (HEADING 21) poussait ce
-    // compteur SOUS le filet du titre. On ne l'affiche que s'il y a réellement la place.
+    // Faiblesse (gauche) + compteur de victoires (droite) — sur la MÊME ligne :
+    // le bloc identité est en FLUX au-dessus d'un titre « Histoire » à position
+    // FIXE (loreY) ; empiler une ligne de plus finissait sous le filet du titre.
+    // Garde : si un nom sur 2 lignes a déjà consommé le budget, on saute la
+    // ligne plutôt que de mordre le titre.
     const identityLimit = this.DET_Y + pad + 96 + 30 - 12;
-    if (entry.kills > 0 && iy + 16 <= identityLimit) {
-      this.detailObjs.push(
-        this.add.text(ix, iy, t('bestiary.kills').replace('{n}', String(entry.kills)), uiStyle(TYPE.BODY, UI.TXT_MUTED)),
-      );
+    if (entry.discovered && iy + 16 <= identityLimit) {
+      if (def.weakness) {
+        const wkColor = ELEMENT_COLORS[def.weakness] ?? ELEMENT_COLORS[ElementType.NEUTRAL];
+        const wkLabel = this.add.text(ix, iy, t('bestiary.weakness'), uiStyle(TYPE.LABEL, UI.TXT_MUTED));
+        const wkValue = this.add.text(ix + wkLabel.width + 6, iy, t(`element.${def.weakness}`),
+          uiStyle(TYPE.BODY, '#' + wkColor.toString(16).padStart(6, '0'), { bold: true }));
+        this.detailObjs.push(wkLabel, wkValue);
+      }
+      if (entry.kills > 0) {
+        this.detailObjs.push(
+          this.add.text(this.DET_X + this.DET_W - pad, iy,
+            t('bestiary.kills').replace('{n}', String(entry.kills)),
+            uiStyle(TYPE.BODY, UI.TXT_MUTED)).setOrigin(1, 0),
+        );
+      }
     }
 
     // ── Section Histoire ─────────────────────────────────────
@@ -782,9 +785,15 @@ export class BestiaryScene extends Phaser.Scene {
     }
     this.detailObjs.push(g);
 
+    // Légende ALIGNÉE À GAUCHE sur la carte (plus centrée sur ses 180 px) :
+    // centrée, une légende plus large que la carte débordait à GAUCHE du
+    // panneau détail, jusque sur la liste (chevauchement reporté). Ancrée à
+    // mapX et clampée en pixels (fitText), elle reste contenue quoi qu'il arrive.
+    const legendStyle = uiStyle(TYPE.SMALL, UI.TXT_HINT);
     this.detailObjs.push(
-      this.add.text(mapX + LOCATION_MAP_W / 2, mapY + LOCATION_MAP_H + 8, t('bestiary.location_approx'),
-        uiStyle(TYPE.SMALL, UI.TXT_HINT)).setOrigin(0.5, 0),
+      this.add.text(mapX, mapY + LOCATION_MAP_H + 8,
+        fitText(this, t('bestiary.location_approx'), legendStyle, this.DET_W - this.PAD * 2),
+        legendStyle).setOrigin(0, 0),
     );
   }
 

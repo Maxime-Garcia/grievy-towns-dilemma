@@ -47,17 +47,22 @@ const GROUP_GAP      = 6;  // breathing room after a category's last row
 
 // ── Onglets de filtrage du sac (dette D13 des guidelines, résorbée) ──────────
 // 5 onglets au-dessus de la grille : réduisent le scroll dès que le loot ARPG
-// multiplie les instances. Labels courts (§1.5 économie d'écran) — hardcodés FR
-// comme les labels de branches de SkillScene (BRANCH_META).
+// multiplie les instances. Depuis la passe 07/2026 : ICÔNES cliquables (glyphes
+// `bagtab_*` bakés au boot, cf. PreloaderScene.BAG_TAB_ICON_FRAME) au lieu des
+// labels texte — le `label` reste la source du TOOLTIP au survol et le fallback
+// affiché si la sheet d'icônes n'est pas chargée. Hardcodé FR comme les labels
+// de branches de SkillScene (BRANCH_META).
 type BagFilter = 'ALL' | 'EQUIP' | 'CONSUMABLE' | 'MATERIAL' | 'MISC';
-const BAG_TABS: ReadonlyArray<{ id: BagFilter; label: string; cats: readonly InventoryCategory[] | null }> = [
-  { id: 'ALL',        label: 'Tous',   cats: null },
-  { id: 'EQUIP',      label: 'Équip.', cats: ['WEAPON', 'ARMOR', 'ACCESSORY'] },
-  { id: 'CONSUMABLE', label: 'Conso.', cats: ['CONSUMABLE'] },
-  { id: 'MATERIAL',   label: 'Matér.', cats: ['MATERIAL'] },
-  { id: 'MISC',       label: 'Autres', cats: ['KEY_ITEM', 'SKIN'] },
+const BAG_TABS: ReadonlyArray<{ id: BagFilter; label: string; icon: string; cats: readonly InventoryCategory[] | null }> = [
+  { id: 'ALL',        label: 'Tous',          icon: 'bagtab_all',        cats: null },
+  { id: 'EQUIP',      label: 'Équipement',    icon: 'bagtab_equip',      cats: ['WEAPON', 'ARMOR', 'ACCESSORY'] },
+  { id: 'CONSUMABLE', label: 'Consommables',  icon: 'bagtab_consumable', cats: ['CONSUMABLE'] },
+  { id: 'MATERIAL',   label: 'Matériaux',     icon: 'bagtab_material',   cats: ['MATERIAL'] },
+  { id: 'MISC',       label: 'Quête & divers', icon: 'bagtab_misc',      cats: ['KEY_ITEM', 'SKIN'] },
 ];
-const BAG_TABS_H = 26; // hauteur visuelle d'un onglet (hit zone élargie à 44)
+// 26 → 34 : les onglets portent un glyphe 32×32 (échelle ×2 ENTIÈRE de la
+// grille 16 px — tout autre facteur produirait des artefacts NEAREST).
+const BAG_TABS_H = 34; // hauteur visuelle d'un onglet (hit zone élargie à 44)
 
 /** Bag category → i18n label key (mirrors ArsenalScene.SECTION_LABEL_KEYS style). */
 const CATEGORY_LABEL_KEYS: Record<InventoryCategory, string> = {
@@ -133,6 +138,9 @@ export class InventoryScene extends Phaser.Scene {
   private longPressTimer: ReturnType<typeof setTimeout> | null = null;
   // Onglet de filtrage actif du sac (D13) — reset à 'ALL' à chaque ouverture
   private bagFilter: BagFilter = 'ALL';
+  // Tooltip transient du survol d'un onglet à icône (accessibilité : le glyphe
+  // seul ne suffit pas) — détruit sur pointerout / refresh / shutdown.
+  private tabTooltip: Phaser.GameObjects.Text | null = null;
   // Which paperdoll slot to flash after a successful tap-equip
   private lastFlashSlotKey: EquipSlotKey | null = null;
 
@@ -322,7 +330,12 @@ export class InventoryScene extends Phaser.Scene {
       this.dynamicObjs.push(bg);
 
       // Cadre pixel art réel (Retro Inventory) par-dessus le fond — cf. grille.
-      const frame = addUiFrame(this, sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, EQ_SLOT, EQ_SLOT);
+      // Slot VIDE → variante `ui_slot_frame_empty` (bakée au boot) : même cadre,
+      // même gris, mais SANS l'emblème d'épée gravé au centre de l'asset — sur
+      // un slot vide il se lisait comme une arme déjà équipée et noyait le
+      // libellé fantôme (bug UX reporté). Cf. PreloaderScene.generateEmptySlotFrame.
+      const frame = addUiFrame(this, sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, EQ_SLOT, EQ_SLOT,
+        item ? 'ui_slot_frame' : 'ui_slot_frame_empty');
       if (frame) this.dynamicObjs.push(frame);
 
       // Anneau de rareté/survol au-dessus du cadre (slots occupés uniquement —
@@ -349,11 +362,13 @@ export class InventoryScene extends Phaser.Scene {
           this.addColorSquare(sx + 4, sy + 4, EQ_SLOT - 8, rarHex);
         }
       } else {
-        // Slot vide : libellé fantôme clampé en PIXELS (fitText) — l'ancien
-        // slice(0, 4) rendait « Bague 1 » et « Bague 2 » identiques (BAGU/BAGU).
+        // Slot vide : libellé fantôme COURT (`inventory.slot_short.*`, ≤ 7
+        // caractères — « Poitrine »/« Amulette » sortaient tronqués en
+        // « POITRI… ») + fitText en filet de sécurité (jamais de slice(n)).
         // Les slots numérotés passent sur deux lignes : le numéro survit toujours.
+        // Mesure INTERIM en attendant les icônes de slot (assets à fournir).
         const style    = uiStyle(TYPE.SMALL, UI.TXT_HINT, { bold: true, align: 'center' });
-        const full     = t(`inventory.slot.${key}`).toUpperCase();
+        const full     = t(`inventory.slot_short.${key}`).toUpperCase();
         const numbered = full.match(/^(.*\S)\s+(\d+)$/);
         const label    = numbered
           ? `${fitText(this, numbered[1]!, style, EQ_SLOT - 6)}\n${numbered[2]}`
@@ -635,6 +650,21 @@ export class InventoryScene extends Phaser.Scene {
     }
     curY += 8;
 
+    // ── Passif — ENTRE les stats et la description, en bleu clair gras :
+    // c'est l'info décisive d'un équipement (Hidden en particulier), elle doit
+    // ressortir au lieu de se fondre dans l'italique muted du lore. Même
+    // convention que le popup de confirmation (showActionConfirmPopup).
+    const detailPassive = ('passiveEffect' in item && item.passiveEffect)
+      ? getPassiveEffectLabel(item.passiveEffect)
+      : undefined;
+    if (detailPassive) {
+      const passiveTxt = this.add.text(PX + 14, curY,
+        `${t('arsenal.passive_label')} ${detailPassive}`,
+        uiStyle(TYPE.SMALL, UI.TXT_BLUE, { bold: true, wordWrapWidth: PW - 28, lineSpacing: 4 }));
+      this.dynamicObjs.push(passiveTxt);
+      curY += passiveTxt.height + 8;
+    }
+
     // ── Description ───────────────────────────────────────────────────────
     const descTxt = this.add.text(PX + 14, curY, locItem.description, uiStyle(TYPE.SMALL, UI.TXT_MUTED, {
       italic: true, wordWrapWidth: PW - 28, lineSpacing: 4,
@@ -885,12 +915,18 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   /**
-   * Rangée d'onglets de filtrage du sac (D13) : Tous | Équip. | Conso. |
-   * Matér. | Autres. Visuel = asset `ui_tab_frame` (GUI Kit UI 03, nineslice)
-   * quand il est chargé, sinon fallback Graphics arrondi (mêmes conventions
-   * que les tabs de PauseScene). Onglet actif : alpha plein + bande d'accent
-   * arcane basse + label cyan gras ; hit zone 44 px de haut (norme tactile).
-   * Le changement d'onglet re-rend tout (refresh) — feedback immédiat.
+   * Rangée d'onglets de filtrage du sac (D13) : Tous | Équipement |
+   * Consommables | Matériaux | Quête & divers — en ICÔNES (glyphes `bagtab_*`
+   * bakés au boot, tooltip texte au survol pour l'accessibilité), fallback
+   * label texte si la sheet d'icônes n'est pas chargée.
+   *
+   * Fond : pilule Graphics sobre (vocabulaire des tabs de PauseScene). L'asset
+   * `ui_tab_frame` a été retiré ici : étiré en NineSlice sur ~64×26, son motif
+   * produisait le fond « sale » reporté par l'utilisateur.
+   *
+   * Onglet actif : fond BG_MID + liseré et bande basse arcane + glyphe alpha
+   * plein ; hit zone 44 px de haut (norme tactile). Le changement d'onglet
+   * re-rend tout (refresh) — l'état actif EST le feedback.
    */
   private renderBagTabs(x: number, y: number, w: number): void {
     const GAP = 4;
@@ -902,17 +938,11 @@ export class InventoryScene extends Phaser.Scene {
       const cx     = tx + tw / 2;
       const cy     = y + BAG_TABS_H / 2;
 
-      const frame = addUiFrame(this, cx, cy, tw, BAG_TABS_H, 'ui_tab_frame');
-      const g     = this.add.graphics();
-      if (frame) {
-        frame.setAlpha(active ? 1 : 0.5);
-        this.dynamicObjs.push(frame);
-      } else {
-        g.fillStyle(active ? UI.BG_MID : UI.BG_DEEP, 1);
-        g.fillRoundedRect(tx, y, tw, BAG_TABS_H, 4);
-        g.lineStyle(1, active ? UI.ACCENT_ARCANE : UI.SEPARATOR, active ? 0.9 : 1);
-        g.strokeRoundedRect(tx, y, tw, BAG_TABS_H, 4);
-      }
+      const g = this.add.graphics();
+      g.fillStyle(active ? UI.BG_MID : UI.BG_DEEP, 1);
+      g.fillRoundedRect(tx, y, tw, BAG_TABS_H, 4);
+      g.lineStyle(1, active ? UI.ACCENT_ARCANE : UI.SEPARATOR, active ? 0.9 : 1);
+      g.strokeRoundedRect(tx, y, tw, BAG_TABS_H, 4);
       if (active) {
         // Bande d'accent basse — même vocabulaire que les tabs de SkillScene/Pause
         g.fillStyle(UI.ACCENT_ARCANE, 0.9);
@@ -920,21 +950,58 @@ export class InventoryScene extends Phaser.Scene {
       }
       this.dynamicObjs.push(g);
 
-      this.dynamicObjs.push(
-        this.add.text(cx, cy, tab.label,
-          uiStyle(TYPE.SMALL, active ? UI.TXT_CYAN : UI.TXT_MUTED, { bold: active }))
-          .setOrigin(0.5),
-      );
+      // Glyphe 32×32 à sa taille NATIVE (bake ×2 de la grille 16 px — tout
+      // redimensionnement non entier réintroduirait du flou NEAREST).
+      const inactiveAlpha = 0.45;
+      let icon: Phaser.GameObjects.Image | null = null;
+      if (this.textures.exists(tab.icon)) {
+        icon = this.add.image(cx, cy, tab.icon).setAlpha(active ? 1 : inactiveAlpha);
+        this.dynamicObjs.push(icon);
+      } else {
+        // Fallback texte (sheet ui_icons_16 absente) — comportement historique,
+        // clampé en pixels (les labels complets servent d'abord au tooltip).
+        const tabStyle = uiStyle(TYPE.SMALL, active ? UI.TXT_CYAN : UI.TXT_MUTED, { bold: active });
+        this.dynamicObjs.push(
+          this.add.text(cx, cy, fitText(this, tab.label, tabStyle, tw - 8), tabStyle).setOrigin(0.5),
+        );
+      }
 
       const hit = this.add.rectangle(cx, cy, tw + GAP, 44, 0x000000, 0)
         .setInteractive({ useHandCursor: true });
+      hit.on('pointerover', () => {
+        if (icon && !active) icon.setAlpha(0.8);
+        this.showTabTooltip(cx, y, tab.label);
+      });
+      hit.on('pointerout', () => {
+        if (icon && tab.id !== this.bagFilter) icon.setAlpha(inactiveAlpha);
+        this.hideTabTooltip();
+      });
       hit.on('pointerdown', () => {
+        this.hideTabTooltip();
         if (this.bagFilter === tab.id) return;
         this.bagFilter = tab.id;
         this.refresh(); // re-rend immédiatement — l'état actif EST le feedback
       });
       this.dynamicObjs.push(hit);
     });
+  }
+
+  /** Tooltip du survol d'un onglet à icône — nom complet du filtre, au-dessus
+   *  de la rangée (depth 30, convention tooltips §2.5). Un seul à la fois. */
+  private showTabTooltip(cx: number, tabTopY: number, label: string): void {
+    this.hideTabTooltip();
+    this.tabTooltip = this.add.text(cx, tabTopY - 4, label,
+      uiStyle(TYPE.SMALL, UI.TXT_PARCHMENT, { bold: true, stroke: true }))
+      .setOrigin(0.5, 1)
+      .setDepth(30);
+    // Clamp horizontal : le tooltip du dernier onglet ne doit pas sortir du cadre
+    const W = this.cameras.main.width;
+    const half = this.tabTooltip.width / 2;
+    if (cx + half > W - MARGIN - 4) this.tabTooltip.setX(W - MARGIN - 4 - half);
+  }
+
+  private hideTabTooltip(): void {
+    if (this.tabTooltip) { this.tabTooltip.destroy(); this.tabTooltip = null; }
   }
 
   /**
@@ -1257,10 +1324,20 @@ export class InventoryScene extends Phaser.Scene {
       ? getPassiveEffectLabel(item.passiveEffect)
       : undefined;
     const baseDesc0  = isEquip ? (locItem.lore ?? locItem.description) : '';
-    const descRaw0   = passiveLabel ? `${baseDesc0}\n\n${t('arsenal.passive_label')} ${passiveLabel}` : baseDesc0;
-    let   descHeight = 0;
-    if (isEquip && descRaw0) {
-      const probe = this.add.text(0, 0, descRaw0, uiStyle(TYPE.SMALL, UI.TXT_MUTED, {
+    // Passif SÉPARÉ du lore (il était concaténé en fin de description) : rendu
+    // ENTRE les stats et le lore, en BLEU CLAIR gras — c'est l'info décisive
+    // d'un équipement, elle ne doit plus se fondre dans l'italique du lore.
+    const passiveText  = (isEquip && passiveLabel) ? `${t('arsenal.passive_label')} ${passiveLabel}` : undefined;
+    const passiveStyle = uiStyle(TYPE.SMALL, UI.TXT_BLUE, { bold: true, wordWrapWidth: PW - MARGIN * 2, lineSpacing: 4 });
+    let passiveHeight = 0;
+    if (passiveText) {
+      const probe = this.add.text(0, 0, passiveText, passiveStyle);
+      passiveHeight = probe.height;
+      probe.destroy();
+    }
+    let descHeight = 0;
+    if (isEquip && baseDesc0) {
+      const probe = this.add.text(0, 0, baseDesc0, uiStyle(TYPE.SMALL, UI.TXT_MUTED, {
         italic: true, wordWrapWidth: PW - MARGIN * 2, lineSpacing: 4,
       }));
       descHeight = probe.height;
@@ -1278,9 +1355,12 @@ export class InventoryScene extends Phaser.Scene {
     // lignes, écrase la ligne de Résonance, et décale tout le corps vers le bas —
     // au point de faire sortir le passif du panneau. On mesure donc le nom pour de
     // vrai, exactement comme on mesure déjà la description.
+    // Nom en TYPE.BODY (14) gras — plus HEADING (21) : dans une bulle compacte,
+    // le HEADING écrasait tout (retour utilisateur « titre beaucoup trop gros ») ;
+    // la hiérarchie est déjà portée par la couleur de rareté et le gras.
     const nameWrapW = PW - (MARGIN * 2 + ICON_SIZE + 2) - MARGIN - (item.element ? 17 : 0);
     const nameProbe = this.add.text(0, 0, locItem.name,
-      uiStyle(TYPE.HEADING, '#ffffff', { bold: true, wordWrapWidth: Math.max(40, nameWrapW) }));
+      uiStyle(TYPE.BODY, '#ffffff', { bold: true, wordWrapWidth: Math.max(40, nameWrapW) }));
     const nameH = nameProbe.height;
     nameProbe.destroy();
 
@@ -1289,7 +1369,8 @@ export class InventoryScene extends Phaser.Scene {
     const headerH = MARGIN + Math.max(ICON_SIZE, rightColH) + MARGIN;
 
     const contentH = isEquip
-      ? headerH + substatCount * LINE_H + BLOCK_GAP + descHeight + BLOCK_GAP + BTN_H + MARGIN * 2
+      ? headerH + substatCount * LINE_H + (passiveText ? passiveHeight + 6 : 0)
+        + BLOCK_GAP + descHeight + BLOCK_GAP + BTN_H + MARGIN * 2
       : 130;
     // Bornes : jamais plus petit que l'ancien minimum (évite une régression visuelle
     // sur les items courts), jamais plus grand que l'écran moins une marge de sécurité.
@@ -1357,9 +1438,11 @@ export class InventoryScene extends Phaser.Scene {
     // Plus de troncature à 22 caractères : elle datait d'une police plus étroite et
     // amputait les noms (« Faucheur du Néa.. »). Le nom wrappe sur deux lignes si
     // besoin — la hauteur du panneau en tient compte (cf. nameProbe plus haut).
+    // TYPE.BODY gras (même style que la sonde nameProbe — les deux doivent
+    // rester synchronisés) : cf. commentaire de la sonde.
     this.consumePopupObjects.push(
       this.add.text(nameX, py + MARGIN, locItem.name,
-        uiStyle(TYPE.HEADING, rarHexStr, {
+        uiStyle(TYPE.BODY, rarHexStr, {
           bold: true, wordWrapWidth: px + PW - MARGIN - nameX,
         }),
       ).setDepth(depth + 1),
@@ -1414,12 +1497,21 @@ export class InventoryScene extends Phaser.Scene {
         }
         bodyY += LINE_H;
       }
+      // Passif ENTRE les stats et le lore, en bleu clair gras (même style que
+      // la sonde passiveStyle — hauteur déjà comptée dans contentH plus haut).
+      if (passiveText) {
+        bodyY += 6;
+        const passiveTxt = this.add.text(px + MARGIN, bodyY, passiveText, passiveStyle)
+          .setDepth(depth + 1);
+        this.consumePopupObjects.push(passiveTxt);
+        bodyY += passiveTxt.height;
+      }
       bodyY += BLOCK_GAP;
-      // Texte complet (plus de troncature à 90 caractères), lore/description +
-      // passif éventuel sur la même chaîne (cf. descRaw0/descHeight mesurés plus
-      // haut, avant que PH ne soit fixé — doit rester identique à ce texte-ci).
+      // Texte complet (plus de troncature à 90 caractères) — lore/description
+      // seul (cf. baseDesc0/descHeight mesurés plus haut, avant que PH ne soit
+      // fixé — doit rester identique à ce texte-ci).
       this.consumePopupObjects.push(
-        this.add.text(px + MARGIN, bodyY, descRaw0, uiStyle(TYPE.SMALL, UI.TXT_MUTED, {
+        this.add.text(px + MARGIN, bodyY, baseDesc0, uiStyle(TYPE.SMALL, UI.TXT_MUTED, {
           italic: true, wordWrapWidth: PW - MARGIN * 2, lineSpacing: 4,
         })).setDepth(depth + 1),
       );
@@ -1597,6 +1689,8 @@ export class InventoryScene extends Phaser.Scene {
     this.input.off('pointermove');
     // Close any open consume popup before rebuilding the scene
     this.closeConsumePopup();
+    // Tooltip d'onglet hors dynamicObjs (transient) — détruit explicitement
+    this.hideTabTooltip();
     // Fenêtre virtualisée de la grille : ses objets ne sont PAS dans dynamicObjs
     // (ils vont et viennent au fil du scroll) — les détruire explicitement, sinon
     // chaque refresh en laisserait un lot orphelin derrière lui.

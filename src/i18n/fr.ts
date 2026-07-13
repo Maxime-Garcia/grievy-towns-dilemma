@@ -82,7 +82,11 @@ export const FR: Record<string, string> = {
   'arsenal.section_cape': 'Capes',
   'arsenal.section_ring': 'Anneaux',
   'arsenal.section_amulet': 'Amulettes',
-  'arsenal.dropped_by_title': 'OBTENU AUPRÈS DE',
+  // Titre de la section sources — suit le contenu réel (« Obtenu auprès de »
+  // suivi d'un monstre sonnait comme un achat chez un PNJ, retour utilisateur) :
+  'arsenal.dropped_by_title': 'LÂCHÉ PAR',
+  'arsenal.sold_by_title': 'EN VENTE CHEZ',
+  'arsenal.source_title': 'PROVENANCE',
   'arsenal.loot_unknown': 'Source inconnue',
   'arsenal.dropped_by_more': '+{n} autres',
   'arsenal.view_in_bestiary': 'Voir dans le Bestiaire →',
@@ -184,6 +188,19 @@ export const FR: Record<string, string> = {
   'inventory.slot.ring1': 'Bague 1',
   'inventory.slot.ring2': 'Bague 2',
   'inventory.slot.amulet': 'Amulette',
+  // Libellés COURTS des slots vides du paperdoll (≤ 7 caractères : la case fait
+  // 48 px, la police Minimal 10 ≈ 6 px/caractère — « Poitrine »/« Amulette »
+  // sortaient tronqués en « POITRI… »). Mesure interim avant les icônes de slot.
+  'inventory.slot_short.weapon': 'Arme',
+  'inventory.slot_short.helm': 'Casque',
+  'inventory.slot_short.chest': 'Torse',
+  'inventory.slot_short.legs': 'Jambes',
+  'inventory.slot_short.boots': 'Bottes',
+  'inventory.slot_short.gloves': 'Gants',
+  'inventory.slot_short.cape': 'Cape',
+  'inventory.slot_short.ring1': 'Bague 1',
+  'inventory.slot_short.ring2': 'Bague 2',
+  'inventory.slot_short.amulet': 'Collier',
   'inventory.use_item':    'Utiliser',
   'inventory.equip_item':  'Équiper',
   'inventory.cancel':      'Annuler',

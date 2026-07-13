@@ -34,6 +34,12 @@ import type { BestiaryScene } from './BestiaryScene';
 import type { ArsenalScene } from './ArsenalScene';
 import { ENEMY_SPRITE_BBOX, NPC_SPRITE_BBOX, PLAYER_SPRITE_BBOX } from '../data/spriteGeometry';
 import { fitSpriteToContent } from '../utils/SpriteFit';
+import {
+  enemyIdsForZone,
+  queueEnemySprites,
+  registerEnemyAnimations,
+  ensureEnemyAssets,
+} from '../utils/EnemyAssets';
 
 const ELEMENT_PROJECTILE_COLORS: Partial<Record<ElementType, number>> = {
   [ElementType.FIRE]:      0xff4400,
@@ -427,9 +433,30 @@ export class GameScene extends Phaser.Scene {
     this.projectileCollider = null;
   }
 
+  /**
+   * Sprites d'ennemis de la zone où l'on entre — voir src/utils/EnemyAssets.ts.
+   *
+   * Ils ne sont plus chargés au boot (965 fichiers pour 193 créatures, dont ~90 %
+   * ne servent jamais dans une session). Les mettre en file ICI plutôt que dans
+   * create() n'est pas un détail : Phaser ne lance create() qu'une fois le loader
+   * de preload() vidé. La garantie « la texture existe au moment du spawn » —
+   * dont dépendent les gardes `textures.exists('enemy_X_idle')` de
+   * createEnemiesForZone() — est donc tenue par le moteur, sans aucun await.
+   *
+   * Idempotent : au retour dans une zone déjà visitée, tout est en cache et le
+   * loader n'a rien à faire.
+   */
+  preload() {
+    queueEnemySprites(this, enemyIdsForZone(this.gameState.player.currentZone));
+  }
+
   create() {
     const zoneId = this.gameState.player.currentZone;
     this.layout = getZoneLayout(zoneId);
+
+    // Les animations ne peuvent être déclarées qu'une fois les textures présentes —
+    // c'est-à-dire maintenant, preload() étant terminé.
+    registerEnemyAnimations(this, enemyIdsForZone(zoneId));
 
     this.generatePixelTexture();
     this.drawZoneMap();
@@ -2181,6 +2208,14 @@ export class GameScene extends Phaser.Scene {
     };
     const enemyColor = ZONE_ENEMY_COLORS_LOCAL[zoneId] ?? 0xaa4444;
     const texKey = `enemy_${minionDef.id}`;
+    // enemyIdsForZone() inclut déjà les `summonMinionId` de la zone, donc les textures
+    // ET les animations du sbire sont normalement là. Filet de sécurité : le def du
+    // sbire arrive ici par paramètre (donc potentiellement hors liste de zone si la
+    // data bouge), et depuis qu'AssetStreamScene précharge les strips `idle` de TOUT
+    // le catalogue, `textures.exists(..._idle)` peut être vrai SANS que l'animation
+    // correspondante existe — `play()` logerait alors une animation manquante.
+    // registerEnemyAnimations est idempotent et ne coûte rien si tout est déjà déclaré.
+    registerEnemyAnimations(this, [minionDef.id]);
     const hasRealSprite = this.textures.exists(`enemy_${minionDef.id}_idle`);
     if (!hasRealSprite) this.ensureTexture(texKey, enemyColor);
 
@@ -4751,7 +4786,46 @@ export class GameScene extends Phaser.Scene {
     this.bossDeathObjects = [];
   }
 
+  /**
+   * Entrée en zone. Les sprites de la zone cible sont garantis présents AVANT de
+   * reconstruire quoi que ce soit (cf. EnemyAssets.ensureEnemyAssets) : sans ce
+   * verrou, createEnemiesForZone() ne trouverait pas `enemy_X_idle` et retomberait
+   * sur les carrés procéduraux.
+   *
+   * L'attente est gratuite en termes de gamefeel : on est déjà sous le fondu au
+   * noir de travelToZone(), la physique est en pause et update() sort immédiatement
+   * tant que `isTraveling` est vrai — rien ne tourne pendant le chargement. Et sur
+   * une zone déjà visitée, le rappel est SYNCHRONE (tout est en cache).
+   */
   private performZoneTransition(zoneId: string, targetX: number, targetY: number) {
+    const loadingLabel = this.showZoneLoadingLabel();
+    ensureEnemyAssets(this, enemyIdsForZone(zoneId), () => {
+      loadingLabel.destroy();
+      // La scène a pu être arrêtée pendant le chargement (retour au menu principal) :
+      // reconstruire une zone sur une scène morte planterait sur des refs détruites.
+      if (!this.scene.isActive()) return;
+      this.buildZone(zoneId, targetX, targetY);
+    });
+  }
+
+  /**
+   * Indicateur discret pendant le chargement d'une zone jamais visitée.
+   *
+   * Créé AVANT ensureEnemyAssets et détruit dans son rappel : sur une zone déjà en
+   * cache le rappel est synchrone, le label naît et meurt dans la même frame et
+   * n'est donc jamais rendu. Il n'apparaît que quand il y a réellement à attendre.
+   * Pas de i18n ici : aucune clé `common.loading` n'existe et `t()` renverrait la
+   * clé brute à l'écran.
+   */
+  private showZoneLoadingLabel(): Phaser.GameObjects.Text {
+    const { width: W, height: H } = this.cameras.main;
+    return this.add.text(W / 2, H - 40, 'Chargement de la zone...', uiStyle(12, '#cccccc', { stroke: true }))
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(1000);
+  }
+
+  private buildZone(zoneId: string, targetX: number, targetY: number) {
     try {
     this.gameState.player.currentZone = zoneId;
     this.gameState.player.position    = { x: targetX, y: targetY };
