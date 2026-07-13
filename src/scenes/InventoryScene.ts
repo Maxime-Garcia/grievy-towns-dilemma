@@ -105,6 +105,10 @@ export class InventoryScene extends Phaser.Scene {
   // Dynamic objects are destroyed and recreated on every refresh
   private dynamicObjs: Phaser.GameObjects.GameObject[] = [];
   private scrollMaskGfx?: Phaser.GameObjects.Graphics;
+  /** Détruit les objets de la fenêtre virtualisée courante de la grille (cf.
+   *  renderGrid) — ils vivent hors de dynamicObjs puisqu'ils sont reconstruits au
+   *  fil du scroll, pas seulement au refresh. */
+  private gridWindowDispose: (() => void) | null = null;
 
   // Static objects set once in create(), updated in refresh()
   private goldText!: Phaser.GameObjects.Text;
@@ -711,11 +715,74 @@ export class InventoryScene extends Phaser.Scene {
     const geomMask = maskGfx.createGeometryMask();
     this.scrollMaskGfx = maskGfx;
 
-    const scrollables: { obj: ScrollableGO; baseY: number }[] = [];
+    // ══════════════════════════════════════════════════════════════════
+    // VIRTUALISATION DE LA GRILLE
+    //
+    // Avant : chaque slot du sac était instancié, quel qu'en soit le nombre.
+    // Un slot coûte ~5 GameObjects (fond Graphics + cadre NineSlice + anneau de
+    // survol + icône + zone cliquable) — avec un sac de 400 items, ça faisait
+    // ~2 000 objets créés à CHAQUE refresh (ouverture, clic d'onglet, équipement,
+    // vente), et le scroll repositionnait les 2 000 à chaque cran de molette.
+    // D'où le freeze : le jeu devenait injouable dès que le sac se remplissait.
+    //
+    // Maintenant : on ne rend que la fenêtre visible + une marge de RENDER_BUFFER
+    // px au-dessus et en dessous. Le scroll se contente de déplacer ce petit lot ;
+    // on ne reconstruit la fenêtre que lorsqu'on sort de la marge. Le coût devient
+    // fonction de la HAUTEUR DU PANNEAU, plus de la taille du sac : un sac de 40
+    // items et un sac de 1 000 rendent exactement le même nombre d'objets.
+    // ══════════════════════════════════════════════════════════════════
+    const RENDER_BUFFER = INV_SLOT * 2; // 2 rangées de marge de part et d'autre
+
+    let scrollables: { obj: ScrollableGO; baseY: number }[] = [];
+    /** Objets de la fenêtre courante — détruits/reconstruits à chaque re-fenêtrage,
+     *  séparés de dynamicObjs (qui, lui, ne bouge pas tant qu'on ne refresh() pas). */
+    let windowObjs: Phaser.GameObjects.GameObject[] = [];
+
     const reg: RegisterFn = (go, baseY) => {
       go.setMask(geomMask);
       scrollables.push({ obj: go, baseY });
-      this.dynamicObjs.push(go);
+      windowObjs.push(go);
+    };
+
+    const gridW = INV_COLS * INV_SLOT;
+
+    /** (Re)construit les seuls objets qui tombent dans la fenêtre visible. */
+    const renderWindow = (sy: number) => {
+      for (const go of windowObjs) { if (go.active) go.destroy(); }
+      windowObjs = [];
+      scrollables = [];
+
+      const top    = sy - RENDER_BUFFER;
+      const bottom = sy + VISIBLE_H + RENDER_BUFFER;
+
+      for (const layout of layouts) {
+        // En-tête de groupe
+        if (layout.headerY + GROUP_HEADER_H >= top && layout.headerY <= bottom) {
+          this.renderInventoryGroupHeader(
+            layout.category, layout.slots.length,
+            GRID_X, GRID_Y + layout.headerY, gridW, reg,
+          );
+        }
+        // Slots : on saute directement aux rangées concernées, sans balayer le reste
+        const rows      = Math.ceil(layout.slots.length / INV_COLS);
+        const firstRow  = Math.max(0, Math.floor((top - layout.itemsY) / INV_SLOT));
+        const lastRow   = Math.min(rows - 1, Math.floor((bottom - layout.itemsY) / INV_SLOT));
+        for (let row = firstRow; row <= lastRow; row++) {
+          for (let col = 0; col < INV_COLS; col++) {
+            const idx = row * INV_COLS + col;
+            const slot = layout.slots[idx];
+            if (!slot) break;
+            this.renderInventorySlot(
+              slot,
+              GRID_X + col * INV_SLOT,
+              GRID_Y + layout.itemsY + row * INV_SLOT,
+              reg,
+            );
+          }
+        }
+      }
+      // Repositionner le lot fraîchement créé selon le scroll courant
+      for (const { obj, baseY } of scrollables) obj.setY(baseY - sy);
     };
 
     // Empty state — inventaire vide OU onglet actif sans aucun item
@@ -728,24 +795,35 @@ export class InventoryScene extends Phaser.Scene {
       );
     }
 
-    const gridW = INV_COLS * INV_SLOT;
-    for (const layout of layouts) {
-      this.renderInventoryGroupHeader(layout.category, layout.slots.length, GRID_X, GRID_Y + layout.headerY, gridW, reg);
-      layout.slots.forEach((slot, idx) => {
-        const col  = idx % INV_COLS;
-        const row  = Math.floor(idx / INV_COLS);
-        const sx   = GRID_X + col * INV_SLOT;
-        const topY = GRID_Y + layout.itemsY + row * INV_SLOT;
-        this.renderInventorySlot(slot, sx, topY, reg);
-      });
-    }
+    renderWindow(0);
+    /** Scroll auquel la fenêtre courante a été construite. */
+    let windowScrollY = 0;
+    // Les objets de fenêtre doivent mourir avec le reste au prochain refresh() :
+    // on branche un porteur dans dynamicObjs qui les détruit en cascade.
+    this.gridWindowDispose = () => {
+      for (const go of windowObjs) { if (go.active) go.destroy(); }
+      windowObjs = [];
+      scrollables = [];
+    };
 
     // Scroll : molette (desktop) + drag vertical (tactile — dette D2 résorbée)
     if (contentH > VISIBLE_H) {
       const maxScroll = contentH - VISIBLE_H;
+
+      const applyScroll = (next: number) => {
+        scrollY = Phaser.Math.Clamp(next, 0, maxScroll);
+        // Tant qu'on reste dans la marge, il suffit de déplacer le petit lot déjà
+        // rendu. On ne reconstruit la fenêtre que lorsqu'on en sort.
+        if (Math.abs(scrollY - windowScrollY) >= RENDER_BUFFER) {
+          renderWindow(scrollY);
+          windowScrollY = scrollY;
+        } else {
+          for (const { obj, baseY } of scrollables) obj.setY(baseY - scrollY);
+        }
+      };
+
       this.input.on('wheel', (_p: unknown, _g: unknown, _dx: number, dy: number) => {
-        scrollY = Phaser.Math.Clamp(scrollY + dy * 0.8, 0, maxScroll);
-        for (const { obj, baseY } of scrollables) obj.setY(baseY - scrollY);
+        applyScroll(scrollY + dy * 0.8);
       });
 
       const gridRight = GRID_X + INV_COLS * INV_SLOT + 4;
@@ -756,8 +834,7 @@ export class InventoryScene extends Phaser.Scene {
         if (p.downY < GRID_Y || p.downY > GRID_Y + VISIBLE_H) return;
         const dy = p.y - p.prevPosition.y;
         if (dy === 0) return;
-        scrollY = Phaser.Math.Clamp(scrollY - dy, 0, maxScroll);
-        for (const { obj, baseY } of scrollables) obj.setY(baseY - scrollY);
+        applyScroll(scrollY - dy);
         // Un drag en cours annule le long-press (le doigt scrolle, il ne maintient pas)
         if (p.getDistance() > 10 && this.longPressTimer !== null) {
           clearTimeout(this.longPressTimer);
@@ -1446,6 +1523,11 @@ export class InventoryScene extends Phaser.Scene {
     this.input.off('pointermove');
     // Close any open consume popup before rebuilding the scene
     this.closeConsumePopup();
+    // Fenêtre virtualisée de la grille : ses objets ne sont PAS dans dynamicObjs
+    // (ils vont et viennent au fil du scroll) — les détruire explicitement, sinon
+    // chaque refresh en laisserait un lot orphelin derrière lui.
+    this.gridWindowDispose?.();
+    this.gridWindowDispose = null;
     for (const go of this.dynamicObjs) {
       if (go.active) go.destroy();
     }

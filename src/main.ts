@@ -55,12 +55,19 @@ const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   parent: 'game-container',
   backgroundColor: '#000000',
-  pixelArt: true,
+  // ── Filtre pixel art RETIRÉ (demande explicite : « ça rend moche, je veux
+  // tester sans ») ──
+  // pixelArt:true imposait un filtrage NEAREST global : les sprites 32×32 étaient
+  // agrandis en gros blocs durs. En passant à antialias, ils sont interpolés et
+  // paraissent lissés. C'est un choix de DA à valider À L'ŒIL, en jeu — c'est tout
+  // l'intérêt de le tester. Pour revenir en arrière : remettre `pixelArt: true` ici
+  // ET `image-rendering: pixelated` sur le canvas dans index.html (les deux vont
+  // ensemble, l'un sans l'autre ne fait rien).
+  pixelArt: false,
   render: {
-    antialias: false,
-    antialiasGL: false,
-    roundPixels: true,
-    pixelArt: true,
+    antialias: true,
+    antialiasGL: true,
+    roundPixels: false,
   },
   scale: {
     mode: Phaser.Scale.FIT,
