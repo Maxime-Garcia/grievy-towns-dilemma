@@ -2772,6 +2772,10 @@ export class GameScene extends Phaser.Scene {
     const loot = LootSystem.rollLoot(
       enemyDef.loot, enemyDef.baseGold, enemyDef.baseXp,
       activeEnemy.level, this.gameState.player, lootQFloor,
+      // Élites et boss ont une chance nettement accrue de world drop (catalogue
+      // générique) — c'est ce qui rend leur mise à mort intéressante au-delà de
+      // leur table fixe.
+      { isElite: !!activeEnemy.isElite, isBoss: !!isBoss },
     );
 
     this.gameState.player.gold += loot.gold;

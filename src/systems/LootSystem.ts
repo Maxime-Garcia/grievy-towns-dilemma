@@ -44,6 +44,65 @@ function applyRandomElement(item: Item): Item {
 const PITY_EPIC      = 250;
 const PITY_LEGENDARY = 500;
 
+// ════════════════════════════════════════════════════════════════════
+// WORLD DROP — le catalogue générique (`gen_*`, ~390 armes/armures issues des
+// packs d'icônes) n'appartient à AUCUNE table de loot d'ennemi : l'y inscrire à
+// la main aurait voulu dire 390 lignes réparties sur 60 ennemis, impossibles à
+// maintenir. À la place, un pool global à l'ARPG : chaque kill a une chance de
+// lâcher, EN PLUS de sa table fixe, un item tiré du catalogue générique.
+//
+// Les tables fixes gardent donc tout leur rôle (l'ennemi qui lâche SON arme
+// signature, le drop garanti de boss) ; le world drop fournit le bruit de fond
+// qui fait vivre la chasse au butin et rend l'Arsenal réellement complétable.
+// ════════════════════════════════════════════════════════════════════
+
+/** Probabilité qu'un kill produise un world drop, avant modulation élite/boss. */
+const WORLD_DROP_CHANCE = 0.18;
+const WORLD_DROP_ELITE_MULT = 2.5;
+const WORLD_DROP_BOSS_MULT  = 4.0;
+
+/**
+ * Niveau d'ennemi minimum pour qu'une rareté puisse tomber en world drop.
+ * Sans ce garde-fou, un rat de niveau 1 pourrait lâcher un MYTHIC : la
+ * progression du butin n'aurait plus aucun sens et le early game serait résolu
+ * au premier coup de chance.
+ */
+const WORLD_DROP_MIN_LEVEL: Partial<Record<ItemRarity, number>> = {
+  [ItemRarity.COMMON]: 1,
+  [ItemRarity.UNCOMMON]: 3,
+  [ItemRarity.RARE]: 6,
+  [ItemRarity.EPIC]: 11,
+  [ItemRarity.LEGENDARY]: 17,
+  [ItemRarity.MYTHIC]: 24,
+};
+
+/**
+ * Plancher de rareté du world drop. Un boss qui lâche une épée COMMON est un
+ * anticlimax : sa mort doit valoir quelque chose. On ne touche PAS aux
+ * probabilités relatives des raretés supérieures — on retire simplement le bas
+ * de la table pour les cibles d'élite, et la renormalisation fait le reste.
+ */
+const WORLD_DROP_RARITY_FLOOR: ItemRarity[] = [
+  ItemRarity.COMMON, ItemRarity.UNCOMMON, ItemRarity.RARE, ItemRarity.EPIC,
+  ItemRarity.LEGENDARY, ItemRarity.MYTHIC, ItemRarity.HIDDEN,
+];
+const ELITE_FLOOR_IDX = WORLD_DROP_RARITY_FLOOR.indexOf(ItemRarity.UNCOMMON);
+const BOSS_FLOOR_IDX  = WORLD_DROP_RARITY_FLOOR.indexOf(ItemRarity.RARE);
+
+/** Pool générique indexé par rareté — construit une seule fois, à la demande. */
+let WORLD_POOL: Partial<Record<ItemRarity, Item[]>> | null = null;
+
+function getWorldPool(): Partial<Record<ItemRarity, Item[]>> {
+  if (WORLD_POOL) return WORLD_POOL;
+  const pool: Partial<Record<ItemRarity, Item[]>> = {};
+  for (const item of Object.values(ALL_ITEMS)) {
+    if (!item.id.startsWith('gen_')) continue;
+    (pool[item.rarity] ??= []).push(item);
+  }
+  WORLD_POOL = pool;
+  return pool;
+}
+
 export interface LootResult {
   items: { item: Item; quantity: number }[];
   gold: number;
@@ -57,6 +116,55 @@ export class LootSystem {
    * garanti de boss (première mort, cf. GameScene.onEnemyKilled), 0 sinon
    * (docs/design/LOOT_STAT_ROLLS.md §5).
    */
+  /**
+   * Tire un item du catalogue générique, ou `null`. La rareté est tirée selon les
+   * taux du jeu (RARITY_DROP_RATES), puis filtrée par le niveau de l'ennemi
+   * (WORLD_DROP_MIN_LEVEL) : on renormalise sur les seules raretés autorisées,
+   * plutôt que de retirer à vide — sinon un ennemi de bas niveau perdrait le plus
+   * clair de ses world drops au lieu de lâcher du COMMON.
+   */
+  static rollWorldDrop(enemyLevel: number, isElite: boolean, isBoss: boolean): Item | null {
+    let chance = WORLD_DROP_CHANCE;
+    if (isBoss) chance *= WORLD_DROP_BOSS_MULT;
+    else if (isElite) chance *= WORLD_DROP_ELITE_MULT;
+    if (Math.random() > chance) return null;
+
+    const pool = getWorldPool();
+    // Plancher de rareté : un boss ne lâche jamais de COMMON/UNCOMMON, une élite
+    // jamais de COMMON. Le plancher cède devant le verrou de niveau (un boss de
+    // niveau 2 n'ouvrira pas du RARE avant le niveau 6) : c'est le niveau qui
+    // gouverne la progression, le plancher ne fait qu'écrémer le bas de table.
+    const floorIdx = isBoss ? BOSS_FLOOR_IDX : isElite ? ELITE_FLOOR_IDX : 0;
+
+    const eligible = (Object.keys(RARITY_DROP_RATES) as ItemRarity[]).filter(r => {
+      const min = WORLD_DROP_MIN_LEVEL[r];
+      if (min === undefined || enemyLevel < min) return false;
+      if ((pool[r]?.length ?? 0) === 0) return false;
+      return WORLD_DROP_RARITY_FLOOR.indexOf(r) >= floorIdx;
+    });
+    // Si le plancher ne laisse rien (cible d'élite de très bas niveau), on rouvre
+    // le bas de table plutôt que d'annuler le drop — mieux vaut un COMMON que rien.
+    if (eligible.length === 0) {
+      const fallback = (Object.keys(RARITY_DROP_RATES) as ItemRarity[]).filter(r => {
+        const min = WORLD_DROP_MIN_LEVEL[r];
+        return min !== undefined && enemyLevel >= min && (pool[r]?.length ?? 0) > 0;
+      });
+      if (fallback.length === 0) return null;
+      eligible.push(...fallback);
+    }
+
+    const total = eligible.reduce((s, r) => s + RARITY_DROP_RATES[r], 0);
+    let r = Math.random() * total;
+    let chosen = eligible[0];
+    for (const rarity of eligible) {
+      r -= RARITY_DROP_RATES[rarity];
+      if (r <= 0) { chosen = rarity; break; }
+    }
+
+    const candidates = pool[chosen]!;
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
   static rollLoot(
     entries: LootEntry[],
     goldRange: { min: number; max: number },
@@ -64,6 +172,7 @@ export class LootSystem {
     enemyLevel: number,
     player: PlayerState,
     qFloor = 0,
+    opts: { isElite?: boolean; isBoss?: boolean } = {},
   ): LootResult {
     const items: { item: Item; quantity: number }[] = [];
     const scaledXp = Math.floor(baseXp * (1 + (enemyLevel - player.level) * 0.05));
@@ -108,6 +217,23 @@ export class LootSystem {
         if ([ItemRarity.LEGENDARY, ItemRarity.MYTHIC, ItemRarity.HIDDEN].includes(item.rarity)) {
           player.killsWithoutLegendary = 0;
         }
+      }
+    }
+
+    // ── World drop (catalogue générique) ──
+    // Tiré APRÈS la table fixe, et compté dans la pity comme n'importe quel drop :
+    // un LEGENDARY obtenu en world drop doit bien remettre le compteur à zéro,
+    // sinon la pity finirait par en garantir un second juste derrière.
+    const worldItem = LootSystem.rollWorldDrop(enemyLevel, !!opts.isElite, !!opts.isBoss);
+    if (worldItem) {
+      items.push({ item: StatRollSystem.rollItem(applyRandomElement(worldItem), qFloor), quantity: 1 });
+      if ([ItemRarity.EPIC, ItemRarity.LEGENDARY, ItemRarity.MYTHIC, ItemRarity.HIDDEN].includes(worldItem.rarity)) {
+        player.killsWithoutEpic = 0;
+        pityEpicForced = false;
+      }
+      if ([ItemRarity.LEGENDARY, ItemRarity.MYTHIC, ItemRarity.HIDDEN].includes(worldItem.rarity)) {
+        player.killsWithoutLegendary = 0;
+        pityLegendForced = false;
       }
     }
 
