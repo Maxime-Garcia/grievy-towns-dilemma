@@ -112,7 +112,9 @@ export class DialogueScene extends Phaser.Scene {
     this.accent = NPC_ROLE_COLORS[this.role];
 
     // ── Panneau : bande basse, zone de pouce ────────────────────
-    const PH = 180;
+    // Hauteur RELATIVE au canvas (l'ancien 180 en dur était calé sur 600px de
+    // haut) : ~28% ≈ 202px à 720 — un peu plus d'air pour le corps en BODY 14.
+    const PH = Math.round(H * 0.28);
     const PY = H - PH - 6;
     const PX = 8;
     const PW = W - 16;
@@ -121,8 +123,8 @@ export class DialogueScene extends Phaser.Scene {
     this.panel = this.add.graphics();
     drawGlowPanel(this.panel, PX, PY, PW, PH, this.accent, UI.PANEL_BG, 5);
 
-    // ── Portrait 80×80, haut-gauche du panneau ─────────────────
-    const PORTRAIT_SIZE = 80;
+    // ── Portrait 96×96, haut-gauche du panneau ─────────────────
+    const PORTRAIT_SIZE = 96;
     const PORTRAIT_X    = PX + 12;
     const PORTRAIT_Y    = PY + 14;
     this.portCX = PORTRAIT_X + PORTRAIT_SIZE / 2;
@@ -155,7 +157,7 @@ export class DialogueScene extends Phaser.Scene {
     this.speakerText = this.add.text(0, 0, '', uiStyle(13, UI.TXT_GOLD, { bold: true, stroke: true }))
       .setOrigin(0, 0.5);
 
-    this.bodyText = this.add.text(this.textX, PY + 44, '', uiStyle(13, UI.TXT_PARCHMENT, {
+    this.bodyText = this.add.text(this.textX, PY + 46, '', uiStyle(TYPE.BODY, UI.TXT_PARCHMENT, {
       wordWrapWidth: this.textW,
       lineSpacing: 6,
     }));
@@ -164,8 +166,10 @@ export class DialogueScene extends Phaser.Scene {
     const shopVisuals: Phaser.GameObjects.GameObject[] = [];
     const hasShop = (SHOP_INVENTORY[this.npc.id] ?? []).length > 0;
     if (hasShop) {
-      const SB_W = 128;
-      const SB_H = 36;
+      // 128×36 → 140×44 : bouton d'action fréquente en zone de pouce — le
+      // VISUEL atteint le minimum tactile, plus seulement sa hit zone invisible.
+      const SB_W = 140;
+      const SB_H = 44;
       const sbX  = PX + PW - SB_W - 12;
       const sbY  = PY + PH - SB_H - 10;
       this.shopBtnX = sbX;
@@ -181,11 +185,11 @@ export class DialogueScene extends Phaser.Scene {
       drawShopBtn(false);
 
       const sbLabel = this.role === 'blacksmith' ? t('dialogue.forge') : t('dialogue.shop');
-      const sbTxt = this.add.text(sbX + SB_W / 2, sbY + SB_H / 2, sbLabel, uiStyle(11, UI.TXT_GOLD, { bold: true }))
+      const sbTxt = this.add.text(sbX + SB_W / 2, sbY + SB_H / 2, sbLabel, uiStyle(TYPE.BODY, UI.TXT_GOLD, { bold: true }))
         .setOrigin(0.5);
 
       // Hit zone élargie (≥ 44 px de haut) — reste hors du container
-      const sbHit = this.add.rectangle(sbX + SB_W / 2, sbY + SB_H / 2, SB_W + 8, 44, 0, 0)
+      const sbHit = this.add.rectangle(sbX + SB_W / 2, sbY + SB_H / 2, SB_W + 8, Math.max(44, SB_H), 0, 0)
         .setInteractive({ useHandCursor: true }).setDepth(5);
       sbHit.on('pointerover', () => { drawShopBtn(true);  sbTxt.setStyle({ color: UI.TXT_PARCHMENT }); });
       sbHit.on('pointerout',  () => { drawShopBtn(false); sbTxt.setStyle({ color: UI.TXT_GOLD }); });
@@ -318,7 +322,7 @@ export class DialogueScene extends Phaser.Scene {
   private drawSpeakerBadge(speaker: string) {
     this.speakerText.setText(speaker);
     const bw = Math.ceil(this.speakerText.width) + 16;
-    const bh = 20;
+    const bh = 24; // 20 → 24 : le nom est en 14px depuis le recalage typo
     const bx = this.textX;
     const by = this.py + 12;
     this.badgeGfx.clear();
@@ -338,7 +342,7 @@ export class DialogueScene extends Phaser.Scene {
     ];
     const key = candidates.find(k => !!k && this.textures.exists(k));
     if (key) {
-      this.portrait.setTexture(key).setDisplaySize(80, 80).setVisible(true);
+      this.portrait.setTexture(key).setDisplaySize(96, 96).setVisible(true);
       this.placeholderGfx.setVisible(false);
       this.placeholderTxt.setVisible(false);
       return;
@@ -353,9 +357,9 @@ export class DialogueScene extends Phaser.Scene {
       .toUpperCase();
     this.placeholderGfx.clear();
     this.placeholderGfx.fillStyle(this.accent, 0.18);
-    this.placeholderGfx.fillCircle(this.portCX, this.portCY, 32);
+    this.placeholderGfx.fillCircle(this.portCX, this.portCY, 40);
     this.placeholderGfx.lineStyle(1, this.accent, 0.75);
-    this.placeholderGfx.strokeCircle(this.portCX, this.portCY, 32);
+    this.placeholderGfx.strokeCircle(this.portCX, this.portCY, 40);
     this.placeholderGfx.setVisible(true);
     this.placeholderTxt.setText(initials).setVisible(true);
   }
@@ -411,7 +415,10 @@ export class DialogueScene extends Phaser.Scene {
   private buildChoiceButtons(choices: NonNullable<DialogueLine['choices']>) {
     const COLS = choices.length > 1 ? 2 : 1;
     const rows = Math.ceil(choices.length / COLS);
-    const BH   = 36;
+    // 36 → 44 : le bouton VISIBLE atteint le minimum tactile (la hit zone
+    // élargie ne compensait qu'invisiblement) — et le panneau plus haut absorbe
+    // les deux rangées sans manger le texte.
+    const BH   = 44;
     const GAP  = 6;
     const areaLeft  = this.textX;
     const areaRight = this.shopBtnX > 0 ? this.shopBtnX - 10 : this.px + this.pw - 12;
@@ -446,15 +453,18 @@ export class DialogueScene extends Phaser.Scene {
       // Hint de touche [1..4] — bonus desktop, discret
       const num = this.add.text(bx + 8, by + BH / 2, `${i + 1}`, uiStyle(9, UI.TXT_HINT))
         .setOrigin(0, 0.5);
-      const txt = this.add.text(bx + 22, by + BH / 2, choice.text, uiStyle(11, UI.TXT_BLUE, {
+      // Texte de choix en TYPE.BODY (14) — c'est l'action primaire du joueur,
+      // l'ancien 11 tombait en police Minimal 10 (micro-texte).
+      const txt = this.add.text(bx + 22, by + BH / 2, choice.text, uiStyle(TYPE.BODY, UI.TXT_BLUE, {
         wordWrapWidth: bw - 32,
       })).setOrigin(0, 0.5);
 
       // Alignés au plan du panneau (container) pour suivre l'animation d'entrée
       this.panelRoot.add([g, num, txt]);
 
-      // Hit zone élargie : ≥ 44 px de haut quel que soit le visuel
-      const hit = this.add.rectangle(bx + bw / 2, by + BH / 2, bw + 6, Math.max(44, BH + 8), 0, 0)
+      // Hit zone ≥ 44 px — plafonnée à BH+4 : deux rangées espacées de BH+GAP
+      // ne doivent pas se chevaucher (tap ambigu en bord de bouton)
+      const hit = this.add.rectangle(bx + bw / 2, by + BH / 2, bw + 6, Math.max(44, BH + 4), 0, 0)
         .setInteractive({ useHandCursor: true });
       hit.on('pointerover', () => { drawBtn(true);  txt.setStyle({ color: UI.TXT_WHITE }); });
       hit.on('pointerout',  () => { drawBtn(false); txt.setStyle({ color: UI.TXT_BLUE }); });

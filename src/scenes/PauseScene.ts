@@ -1,7 +1,7 @@
 import { SaveSystem }  from '../systems/SaveSystem';
 import { GameScene }   from './GameScene';
 import { KeyBindings, DEFAULT_BINDINGS, loadBindings, saveBindings } from '../data/keybindings';
-import { UI, drawGlowPanel, drawDivider, uiStyle, addCloseButton, openScreenTransition } from '../utils/UITheme';
+import { UI, TYPE, drawGlowPanel, drawDivider, uiStyle, titleStyle, addCloseButton, openScreenTransition } from '../utils/UITheme';
 import { t, getLang, setLang, type Lang } from '../i18n';
 
 export type { KeyBindings };
@@ -43,24 +43,28 @@ export class PauseScene extends Phaser.Scene {
     // ── Overlay panel ─────────────────────────────
     this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.72);
     const frame = this.add.graphics();
-    // Panneau translucide arcane fresh : le jeu figé reste perceptible derrière
-    drawGlowPanel(frame, W / 2 - 200, 20, 400, H - 40, UI.ACCENT_ARCANE, UI.BG_DEEP, 10, 0.85);
+    // Panneau translucide arcane fresh : le jeu figé reste perceptible derrière.
+    // 400 → 440 : largeur calée sur l'ancienne typo — la nouvelle échelle (BODY 14)
+    // et le canvas 960 justifient un panneau qui respire.
+    const PANEL_W = 440;
+    drawGlowPanel(frame, W / 2 - PANEL_W / 2, 20, PANEL_W, H - 40, UI.ACCENT_ARCANE, UI.BG_DEEP, 10, 0.85);
 
-    // Title (or = identité) + bouton × standard (règle inter-écrans §7.1)
-    this.add.text(W / 2, 38, t('pause.title'), uiStyle(15, UI.TXT_GOLD, { bold: true, stroke: true })).setOrigin(0.5);
-    addCloseButton(this, W / 2 + 178, 40, () => this.resume());
+    // Title en police Boss (titleStyle — l'ancien uiStyle(15) retombait à la
+    // taille du corps) + bouton × standard (règle inter-écrans §7.1)
+    this.add.text(W / 2, 40, t('pause.title'), titleStyle(UI.TXT_GOLD, { stroke: true })).setOrigin(0.5);
+    addCloseButton(this, W / 2 + PANEL_W / 2 - 24, 42, () => this.resume());
 
     // Separator below title (cyan = structure)
     const sep = this.add.graphics();
-    drawDivider(sep, W / 2 - 190, 62, 380, UI.ACCENT_ARCANE, 0.35);
+    drawDivider(sep, W / 2 - PANEL_W / 2 + 12, 64, PANEL_W - 24, UI.ACCENT_ARCANE, 0.35);
 
     // ── Tab buttons (3 tabs) ──────────────────────
-    this.makeTabBtn(W / 2 - 110, 82, t('pause.tab.game'),     this.tab === 'main',     () => { this.tab = 'main';     this.renderUI(); });
-    this.makeTabBtn(W / 2,       82, t('pause.tab.keys'),     this.tab === 'keys',     () => { this.tab = 'keys';     this.renderUI(); });
-    this.makeTabBtn(W / 2 + 110, 82, t('pause.tab.settings'), this.tab === 'settings', () => { this.tab = 'settings'; this.renderUI(); });
+    this.makeTabBtn(W / 2 - 126, 86, t('pause.tab.game'),     this.tab === 'main',     () => { this.tab = 'main';     this.renderUI(); });
+    this.makeTabBtn(W / 2,       86, t('pause.tab.keys'),     this.tab === 'keys',     () => { this.tab = 'keys';     this.renderUI(); });
+    this.makeTabBtn(W / 2 + 126, 86, t('pause.tab.settings'), this.tab === 'settings', () => { this.tab = 'settings'; this.renderUI(); });
 
     const sep2 = this.add.graphics();
-    drawDivider(sep2, W / 2 - 190, 100, 380, UI.ACCENT_ARCANE, 0.2);
+    drawDivider(sep2, W / 2 - PANEL_W / 2 + 12, 108, PANEL_W - 24, UI.ACCENT_ARCANE, 0.2);
 
     if (this.tab === 'main')         this.renderMainTab(W, H);
     else if (this.tab === 'keys')    this.renderKeysTab(W, H);
@@ -82,8 +86,10 @@ export class PauseScene extends Phaser.Scene {
     ];
 
     items.forEach((item, i) => {
-      const y = 116 + i * 44;
-      this.makeMenuBtn(W / 2, y, 260, item.label, item.action, item.color);
+      // Pas de 52 (au lieu de 44) : les hit zones de 44px ne se touchent plus —
+      // 8px de respiration entre deux actions, plus de tap ambigu en bord de bouton.
+      const y = 132 + i * 52;
+      this.makeMenuBtn(W / 2, y, 280, item.label, item.action, item.color);
     });
   }
 
@@ -92,11 +98,14 @@ export class PauseScene extends Phaser.Scene {
       'up', 'down', 'left', 'right', 'attack', 'dash',
       'skill1', 'skill2', 'skill3', 'skill4', 'inventory', 'skills',
     ];
-    const rowH    = 30;
-    const startY  = 110;
+    // rowH 30 → 36 : libellés en BODY 14 (l'ancien 10 tombait en Minimal) +
+    // chips plus hautes. Les hit zones restent = rowH (non chevauchantes) :
+    // deux zones de 44px espacées de 30 se voleraient les taps en bord de ligne.
+    const rowH    = 36;
+    const startY  = 122;
 
-    this.add.text(W / 2 - 100, startY - 8, t('pause.keys.action'), uiStyle(9, UI.TXT_MUTED, { bold: true })).setOrigin(0.5);
-    this.add.text(W / 2 + 100, startY - 8, t('pause.keys.key'),    uiStyle(9, UI.TXT_MUTED, { bold: true })).setOrigin(0.5);
+    this.add.text(W / 2 - 110, startY - 10, t('pause.keys.action'), uiStyle(9, UI.TXT_MUTED, { bold: true })).setOrigin(0.5);
+    this.add.text(W / 2 + 110, startY - 10, t('pause.keys.key'),    uiStyle(9, UI.TXT_MUTED, { bold: true })).setOrigin(0.5);
 
     actions.forEach((action, i) => {
       const y = startY + i * rowH;
@@ -105,10 +114,10 @@ export class PauseScene extends Phaser.Scene {
       if (i % 2 === 0) {
         const zebra = this.add.graphics();
         zebra.fillStyle(0xffffff, 0.02);
-        zebra.fillRoundedRect(W / 2 - 186, y + 2, 372, rowH - 4, 3);
+        zebra.fillRoundedRect(W / 2 - 200, y + 2, 400, rowH - 4, 3);
       }
 
-      this.add.text(W / 2 - 100, y + rowH / 2, t(`action.${action}`), uiStyle(10, UI.TXT_PARCHMENT))
+      this.add.text(W / 2 - 110, y + rowH / 2, t(`action.${action}`), uiStyle(TYPE.BODY, UI.TXT_PARCHMENT))
         .setOrigin(0.5);
 
       const isWaiting = this.rebindTarget === action;
@@ -117,30 +126,30 @@ export class PauseScene extends Phaser.Scene {
       // Chip de touche : carte arrondie — en attente de rebind = liseré arcane
       const kbg = this.add.graphics();
       kbg.fillStyle(isWaiting ? 0x102028 : UI.SLOT_BG, 1);
-      kbg.fillRoundedRect(W / 2 + 55, y + 4, 90, rowH - 8, 4);
+      kbg.fillRoundedRect(W / 2 + 58, y + 4, 104, rowH - 8, 4);
       kbg.lineStyle(1, isWaiting ? UI.ACCENT_ARCANE : UI.SEPARATOR, isWaiting ? 0.9 : 1);
-      kbg.strokeRoundedRect(W / 2 + 55, y + 4, 90, rowH - 8, 4);
+      kbg.strokeRoundedRect(W / 2 + 58, y + 4, 104, rowH - 8, 4);
 
-      this.add.text(W / 2 + 100, y + rowH / 2, keyName,
-        uiStyle(10, isWaiting ? UI.TXT_BLUE : UI.TXT_GOLD, { bold: true }))
+      this.add.text(W / 2 + 110, y + rowH / 2, keyName,
+        uiStyle(TYPE.BODY, isWaiting ? UI.TXT_BLUE : UI.TXT_GOLD, { bold: true }))
         .setOrigin(0.5);
 
-      const hit = this.add.rectangle(W / 2 + 100, y + rowH / 2, 96, rowH, 0, 0)
+      const hit = this.add.rectangle(W / 2 + 110, y + rowH / 2, 110, rowH, 0, 0)
         .setInteractive({ useHandCursor: true });
       hit.on('pointerdown', () => this.startRebind(action));
     });
 
-    // Reset button (visuel 30 px arrondi, hit zone tactile 44 px)
+    // Reset button (visuel 36 px arrondi, hit zone tactile 44 px)
     const resetBg = this.add.graphics();
-    const resetY  = H - 64;
+    const resetY  = H - 68;
     resetBg.fillStyle(0x1a0808, 1);
-    resetBg.fillRoundedRect(W / 2 - 80, resetY, 160, 30, 4);
+    resetBg.fillRoundedRect(W / 2 - 90, resetY, 180, 36, 4);
     resetBg.lineStyle(1, 0x553333, 0.9);
-    resetBg.strokeRoundedRect(W / 2 - 80, resetY, 160, 30, 4);
+    resetBg.strokeRoundedRect(W / 2 - 90, resetY, 180, 36, 4);
 
-    const resetTxt = this.add.text(W / 2, resetY + 15, t('pause.keys.reset'), uiStyle(10, UI.TXT_RED, { bold: true }))
+    const resetTxt = this.add.text(W / 2, resetY + 18, t('pause.keys.reset'), uiStyle(TYPE.BODY, UI.TXT_RED, { bold: true }))
       .setOrigin(0.5);
-    const resetHit = this.add.rectangle(W / 2, resetY + 15, 166, 44, 0, 0)
+    const resetHit = this.add.rectangle(W / 2, resetY + 18, 186, 44, 0, 0)
       .setInteractive({ useHandCursor: true });
     resetHit.on('pointerover', () => resetTxt.setStyle({ color: UI.TXT_WHITE }));
     resetHit.on('pointerout',  () => resetTxt.setStyle({ color: UI.TXT_RED }));
@@ -153,15 +162,15 @@ export class PauseScene extends Phaser.Scene {
   }
 
   private renderSettingsTab(W: number, _H: number) {
-    let y = 118;
+    let y = 126;
 
     // ── Langue ──────────────────────────────────────
     this.addSectionTitle(W, y, t('settings.section.language'));
-    y += 22;
+    y += 28;
 
     const currentLang  = getLang();
     const langs: Lang[] = ['fr', 'en'];
-    const btnW = 60;
+    const btnW = 68;
     const gap  = 16;
     const totalW = langs.length * btnW + (langs.length - 1) * gap;
     const startX = W / 2 - totalW / 2 + btnW / 2;
@@ -171,12 +180,12 @@ export class PauseScene extends Phaser.Scene {
       const isActive = currentLang === lang;
       const lbg      = this.add.graphics();
       lbg.fillStyle(isActive ? UI.BG_MID : UI.SLOT_BG, 1);
-      lbg.fillRoundedRect(lx - btnW / 2, y - 14, btnW, 28, 4);
+      lbg.fillRoundedRect(lx - btnW / 2, y - 16, btnW, 32, 4);
       lbg.lineStyle(isActive ? 1.5 : 1, isActive ? UI.ACCENT_ARCANE : UI.SEPARATOR, isActive ? 0.9 : 1);
-      lbg.strokeRoundedRect(lx - btnW / 2, y - 14, btnW, 28, 4);
+      lbg.strokeRoundedRect(lx - btnW / 2, y - 16, btnW, 32, 4);
       // La valeur active reste dorée (or = valeur), l'inactive est muted
       const ltxt = this.add.text(lx, y, lang.toUpperCase(),
-        uiStyle(11, isActive ? UI.TXT_GOLD : UI.TXT_MUTED, { bold: isActive }))
+        uiStyle(TYPE.BODY, isActive ? UI.TXT_GOLD : UI.TXT_MUTED, { bold: isActive }))
         .setOrigin(0.5);
       if (!isActive) {
         const hit = this.add.rectangle(lx, y, btnW + 6, 44, 0, 0).setInteractive({ useHandCursor: true });
@@ -189,16 +198,16 @@ export class PauseScene extends Phaser.Scene {
         });
       }
     });
-    y += 48;
+    y += 52;
 
     // Séparateur
     const sepG = this.add.graphics();
-    drawDivider(sepG, W / 2 - 140, y, 280, UI.ACCENT_ARCANE, 0.2);
-    y += 20;
+    drawDivider(sepG, W / 2 - 160, y, 320, UI.ACCENT_ARCANE, 0.2);
+    y += 24;
 
     // ── Graphismes ──────────────────────────────────
     this.addSectionTitle(W, y, t('settings.section.graphics'));
-    y += 28;
+    y += 32;
 
     // Plein écran
     const isFs = !!this.scale.isFullscreen;
@@ -206,7 +215,7 @@ export class PauseScene extends Phaser.Scene {
       this.scale.toggleFullscreen();
       this.renderUI();
     }, isFs);
-    y += 46;
+    y += 50;
 
     // VFX toggle
     const vfxOn = localStorage.getItem(VFX_STORAGE_KEY) !== 'false';
@@ -218,21 +227,23 @@ export class PauseScene extends Phaser.Scene {
     }, vfxOn);
   }
 
-  /** Titre de section des réglages : pastille + label cyan (structure) + filets latéraux. */
+  /** Titre de section des réglages : label cyan (structure, TYPE.BODY) + filets latéraux. */
   private addSectionTitle(W: number, y: number, label: string) {
-    const txt = this.add.text(W / 2, y, label, uiStyle(10, UI.TXT_CYAN, { bold: true })).setOrigin(0.5);
+    const txt = this.add.text(W / 2, y, label, uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true })).setOrigin(0.5);
     const g = this.add.graphics();
     g.lineStyle(1, UI.ACCENT_ARCANE, 0.25);
     g.beginPath();
-    g.moveTo(W / 2 - 140, y);
+    g.moveTo(W / 2 - 160, y);
     g.lineTo(W / 2 - txt.width / 2 - 10, y);
     g.moveTo(W / 2 + txt.width / 2 + 10, y);
-    g.lineTo(W / 2 + 140, y);
+    g.lineTo(W / 2 + 160, y);
     g.strokePath();
   }
 
   private renderToggleRow(W: number, y: number, label: string, onToggle: () => void, current?: boolean) {
-    this.add.text(W / 2 - 80, y, label, uiStyle(11, UI.TXT_PARCHMENT)).setOrigin(0, 0.5);
+    // Libellé décalé à gauche (−150 au lieu de −80) : en BODY 14, il entrait en
+    // collision avec la chip de valeur.
+    this.add.text(W / 2 - 150, y, label, uiStyle(TYPE.BODY, UI.TXT_PARCHMENT)).setOrigin(0, 0.5);
 
     const valueLabel  = current === undefined ? '→' : current ? t('settings.on') : t('settings.off');
     const fillColor   = current === false ? 0x1a0808 : current === true ? 0x081a08 : UI.BTN_BG;
@@ -243,39 +254,41 @@ export class PauseScene extends Phaser.Scene {
     const drawChip = (hover: boolean) => {
       bg.clear();
       bg.fillStyle(hover ? UI.BTN_BG_HOVER : fillColor, 1);
-      bg.fillRoundedRect(W / 2 + 44, y - 14, 72, 28, 14);
+      bg.fillRoundedRect(W / 2 + 70, y - 16, 80, 32, 16);
       bg.lineStyle(1, hover ? UI.ACCENT_ARCANE : borderColor, hover ? 0.9 : 1);
-      bg.strokeRoundedRect(W / 2 + 44, y - 14, 72, 28, 14);
+      bg.strokeRoundedRect(W / 2 + 70, y - 16, 80, 32, 16);
     };
     drawChip(false);
 
-    this.add.text(W / 2 + 80, y, valueLabel, uiStyle(10, txtColor, { bold: true })).setOrigin(0.5);
-    const hit = this.add.rectangle(W / 2 + 80, y, 78, 44, 0, 0).setInteractive({ useHandCursor: true });
+    this.add.text(W / 2 + 110, y, valueLabel, uiStyle(TYPE.BODY, txtColor, { bold: true })).setOrigin(0.5);
+    const hit = this.add.rectangle(W / 2 + 110, y, 86, 44, 0, 0).setInteractive({ useHandCursor: true });
     hit.on('pointerover', () => drawChip(true));
     hit.on('pointerout',  () => drawChip(false));
     hit.on('pointerdown', onToggle);
   }
 
   private makeTabBtn(x: number, y: number, label: string, active: boolean, cb: () => void) {
+    // 104×24 → 120×30 : onglets calés sur l'ancienne typo — les libellés en
+    // BODY 14 y débordaient.
     const bg = this.add.graphics();
     bg.fillStyle(active ? UI.BG_MID : UI.BTN_BG, active ? 1 : 0.8);
-    bg.fillRoundedRect(x - 52, y - 12, 104, 24, 5);
+    bg.fillRoundedRect(x - 60, y - 15, 120, 30, 5);
     if (active) {
       bg.lineStyle(1, UI.ACCENT_ARCANE, 0.8);
-      bg.strokeRoundedRect(x - 52, y - 12, 104, 24, 5);
+      bg.strokeRoundedRect(x - 60, y - 15, 120, 30, 5);
       // Bande d'accent basse — même langage que les tabs de SkillScene
       bg.fillStyle(UI.ACCENT_ARCANE, 0.9);
-      bg.fillRoundedRect(x - 46, y + 9, 92, 3, 1.5);
+      bg.fillRoundedRect(x - 54, y + 12, 108, 3, 1.5);
     } else {
       bg.lineStyle(1, UI.SEPARATOR, 1);
-      bg.strokeRoundedRect(x - 52, y - 12, 104, 24, 5);
+      bg.strokeRoundedRect(x - 60, y - 15, 120, 30, 5);
     }
     const txt = this.add.text(x, y, label,
-      uiStyle(11, active ? UI.TXT_CYAN : UI.TXT_MUTED, { bold: active }))
+      uiStyle(TYPE.BODY, active ? UI.TXT_CYAN : UI.TXT_MUTED, { bold: active }))
       .setOrigin(0.5);
     if (!active) {
       // Hit zone tactile élargie (44 px de haut — résorption partielle dette D6)
-      const hit = this.add.rectangle(x, y, 110, 44, 0, 0).setInteractive({ useHandCursor: true });
+      const hit = this.add.rectangle(x, y, 124, 44, 0, 0).setInteractive({ useHandCursor: true });
       hit.on('pointerover', () => txt.setStyle({ color: UI.TXT_PARCHMENT }));
       hit.on('pointerout',  () => txt.setStyle({ color: UI.TXT_MUTED }));
       hit.on('pointerdown', cb);
@@ -283,7 +296,9 @@ export class PauseScene extends Phaser.Scene {
   }
 
   private makeMenuBtn(x: number, y: number, w: number, label: string, action: () => void, color?: string) {
-    const H   = 34;
+    // 34 → 40 : le bouton VISIBLE se rapproche du minimum tactile (la hit zone
+    // reste à 44) et loge le libellé BODY 14 avec de la marge.
+    const H   = 40;
     const bg  = this.add.graphics();
     const col = color ?? UI.TXT_PARCHMENT;
 

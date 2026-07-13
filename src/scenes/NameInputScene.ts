@@ -1,5 +1,5 @@
 import { SaveSystem } from '../systems/SaveSystem';
-import { UI, FONT, FONT_UI, drawGlowPanel, drawCard, drawDivider, uiStyle } from '../utils/UITheme';
+import { UI, TYPE, FONT_UI, drawGlowPanel, drawCard, drawDivider, uiStyle, titleStyle } from '../utils/UITheme';
 import { t } from '../i18n';
 
 export class NameInputScene extends Phaser.Scene {
@@ -29,28 +29,25 @@ export class NameInputScene extends Phaser.Scene {
     drawDivider(deco, 18, 70,     W - 36, UI.ACCENT_ARCANE, 0.25);
     drawDivider(deco, 18, H - 70, W - 36, UI.ACCENT_ARCANE, 0.25);
 
-    // ── Title — SEUL usage de la police pixel : identité du jeu
-    //    (guidelines §2.2 — mirror du titre de MainMenuScene) ────
-    this.add.text(W / 2, 26, "GRIEVY TOWN'S DILEMMA", {
-      fontFamily: FONT,
-      fontSize:   '16px',
-      color:      UI.TXT_GOLD,
-      stroke:     '#000000',
-      strokeThickness: 4,
-    }).setOrigin(0.5);
+    // ── Title — mirror du titre de MainMenuScene : police Boss via titleStyle
+    //    (l'ancien FONT Standard à 16px était HORS grille de 7 → glyphes flous)
+    this.add.text(W / 2, 28, "GRIEVY TOWN'S DILEMMA",
+      titleStyle(UI.TXT_GOLD, { stroke: true })).setOrigin(0.5);
 
-    this.add.text(W / 2, 52, t('menu.subtitle'), uiStyle(10, UI.TXT_MUTED)).setOrigin(0.5);
+    this.add.text(W / 2, 54, t('menu.subtitle'), uiStyle(10, UI.TXT_MUTED)).setOrigin(0.5);
 
     // ── Slot indicator (pilule arrondie — or = valeur) ─────────
     const slotGfx = this.add.graphics();
-    drawCard(slotGfx, W / 2 - 80, 82, 160, 24, { bg: UI.BG_MID, radius: 12, shadow: false });
-    this.add.text(W / 2, 94, `${t('menu.slot')} ${this.slot + 1}`, uiStyle(10, UI.TXT_GOLD, { bold: true })).setOrigin(0.5);
+    drawCard(slotGfx, W / 2 - 88, 82, 176, 28, { bg: UI.BG_MID, radius: 14, shadow: false });
+    this.add.text(W / 2, 96, `${t('menu.slot')} ${this.slot + 1}`, uiStyle(TYPE.BODY, UI.TXT_GOLD, { bold: true })).setOrigin(0.5);
 
     // ── Narrative ─────────────────────────────────
+    // L'accroche narrative passe en HEADING (21) : c'est le cœur émotionnel de
+    // l'écran — le reste (contexte, consigne) redescend en BODY/SMALL.
     const MID = H / 2 - 30;
-    this.add.text(W / 2, MID - 80, t('name_input.wake'),    uiStyle(14, UI.TXT_PARCHMENT, { bold: true, stroke: true })).setOrigin(0.5);
-    this.add.text(W / 2, MID - 52, t('name_input.no_name'), uiStyle(11, UI.TXT_MUTED)).setOrigin(0.5);
-    this.add.text(W / 2, MID - 28, t('name_input.choose'),  uiStyle(9,  UI.TXT_HINT)).setOrigin(0.5);
+    this.add.text(W / 2, MID - 92, t('name_input.wake'),    uiStyle(TYPE.HEADING, UI.TXT_PARCHMENT, { bold: true, stroke: true })).setOrigin(0.5);
+    this.add.text(W / 2, MID - 60, t('name_input.no_name'), uiStyle(TYPE.BODY, UI.TXT_MUTED)).setOrigin(0.5);
+    this.add.text(W / 2, MID - 34, t('name_input.choose'),  uiStyle(9,  UI.TXT_HINT)).setOrigin(0.5);
 
     // ── HTML input (style moderne, coins arrondis, focus arcane) ──
     const canvas = this.game.canvas;
@@ -58,8 +55,10 @@ export class NameInputScene extends Phaser.Scene {
     const scaleX = rect.width  / W;
     const scaleY = rect.height / H;
 
-    const INP_W = 280;
-    const INP_H = 36;
+    // 280×36 → 320×44 : le champ atteint la hauteur tactile minimale et
+    // respire pour du texte à 14px (grille de la police).
+    const INP_W = 320;
+    const INP_H = 44;
     const INP_X = W / 2 - INP_W / 2;
     const INP_Y = MID - INP_H / 2;
 
@@ -76,7 +75,8 @@ export class NameInputScene extends Phaser.Scene {
       top:           `${rect.top  + INP_Y * scaleY}px`,
       width:         `${INP_W * scaleX}px`,
       height:        `${INP_H * scaleY}px`,
-      fontSize:      `${13 * scaleX}px`,
+      // 14 = grille de Neatpixels (13 tombait entre les pixels → glyphes flous)
+      fontSize:      `${14 * scaleX}px`,
       textAlign:     'center',
       background:    '#0e1520',            // UI.BG_MID
       color:         UI.TXT_PARCHMENT,

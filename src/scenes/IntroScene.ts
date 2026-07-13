@@ -1,5 +1,5 @@
 import { GameState } from '../types';
-import { UI, drawGlowPanel, drawDivider, uiStyle } from '../utils/UITheme';
+import { UI, TYPE, drawGlowPanel, drawDivider, uiStyle } from '../utils/UITheme';
 import { t } from '../i18n';
 
 export class IntroScene extends Phaser.Scene {
@@ -62,27 +62,36 @@ export class IntroScene extends Phaser.Scene {
     this.panel.clear();
 
     const page   = this.pages[this.lineIndex];
-    const lineH  = 28;
-    const boxPad = 32;
-    const boxH   = boxPad * 2 + page.length * lineH;
-    const boxY   = H / 2 - boxH / 2;
+    const GAP    = 12;
+    const boxPad = 36;
+
+    // Crée et MESURE d'abord chaque ligne : le wordWrap peut produire plusieurs
+    // lignes rendues — l'ancien pas fixe de 28px faisait chevaucher toute ligne
+    // wrappée sur la suivante. Le panneau est ensuite dimensionné sur la somme
+    // mesurée (zéro débordement, quelle que soit la traduction).
+    // « — {name} — » = identité → HEADING or ; le récit reste en BODY parchemin.
+    const texts = page.map(line => {
+      const isName = line.startsWith('—');
+      return this.add.text(W / 2, 0, line,
+        uiStyle(isName ? TYPE.HEADING : TYPE.BODY, isName ? UI.TXT_GOLD : UI.TXT_PARCHMENT, {
+          bold: isName, align: 'center', wordWrapWidth: W - 200,
+        }),
+      ).setOrigin(0.5, 0).setDepth(2);
+    });
+    const contentH = texts.reduce((sum, txt) => sum + txt.height, 0) + GAP * Math.max(0, texts.length - 1);
+    const boxH = boxPad * 2 + contentH;
+    const boxY = H / 2 - boxH / 2;
+
+    let ty = boxY + boxPad;
+    texts.forEach(txt => { txt.setY(ty); ty += txt.height + GAP; });
+    this.textObjs = texts;
 
     // Panneau arrondi arcane fresh (structure cyan discrète sur fond noir)
     drawGlowPanel(this.panel, 60, boxY, W - 120, boxH, UI.ACCENT_ARCANE, UI.PANEL_BG, 10, 1);
 
     // Decorative separators inside panel
-    drawDivider(this.panel, 72, boxY + boxPad - 8,        W - 144, UI.ACCENT_ARCANE, 0.25);
-    drawDivider(this.panel, 72, boxY + boxH - boxPad + 4, W - 144, UI.ACCENT_ARCANE, 0.25);
-
-    page.forEach((line, i) => {
-      const isName = line.startsWith('—');   // « — {name} — » = identité → or gras
-      const txt = this.add.text(W / 2, boxY + boxPad + i * lineH, line,
-        uiStyle(12, isName ? UI.TXT_GOLD : UI.TXT_PARCHMENT, {
-          bold: isName, align: 'center', wordWrapWidth: W - 180,
-        }),
-      ).setOrigin(0.5, 0).setDepth(2);
-      this.textObjs.push(txt);
-    });
+    drawDivider(this.panel, 72, boxY + boxPad - 14,        W - 144, UI.ACCENT_ARCANE, 0.25);
+    drawDivider(this.panel, 72, boxY + boxH - boxPad + 14, W - 144, UI.ACCENT_ARCANE, 0.25);
 
     const isLast = this.lineIndex >= this.pages.length - 1;
     this.hintText.setText(isLast ? t('intro.hint_begin') : t('intro.hint_continue'));

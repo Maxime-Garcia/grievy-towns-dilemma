@@ -4,7 +4,7 @@ import { LootSystem } from '../systems/LootSystem';
 import { StatRollSystem } from '../systems/StatRollSystem';
 import { SHOP_INVENTORY, ShopEntry } from '../data/shops';
 import { RARITY_COLORS } from '../types';
-import { UI, drawGlowPanel, drawCard, drawDivider, uiStyle, addCloseButton, openScreenTransition } from '../utils/UITheme';
+import { UI, TYPE, drawGlowPanel, drawCard, drawDivider, uiStyle, titleStyle, fitText, addCloseButton, openScreenTransition } from '../utils/UITheme';
 import { t } from '../i18n';
 
 export class ShopScene extends Phaser.Scene {
@@ -34,10 +34,11 @@ export class ShopScene extends Phaser.Scene {
     const frame = this.add.graphics().setDepth(0);
     drawGlowPanel(frame, 20, 20, W - 40, H - 40, UI.ACCENT_ARCANE, UI.BG_DEEP, 10, 0.92);
 
-    // ── Title (or = identité) ────────────────────────────────────
+    // ── Title (or = identité) — police Boss (titleStyle), comme tous les
+    // titres d'écran depuis le recalage typo ─────────────────────
     const npcName = this.npcId.charAt(0).toUpperCase() + this.npcId.slice(1);
-    this.add.text(W / 2, 36, t('shop.title').replace('{name}', npcName),
-      uiStyle(15, UI.TXT_GOLD, { bold: true, stroke: true }),
+    this.add.text(W / 2, 38, t('shop.title').replace('{name}', npcName),
+      titleStyle(UI.TXT_GOLD, { stroke: true }),
     ).setOrigin(0.5).setDepth(1);
 
     // ── Close button × (règle inter-écrans §7.1) ─────────────────
@@ -45,26 +46,28 @@ export class ShopScene extends Phaser.Scene {
 
     // ── Gold display (pilule arrondie — or = valeur) ─────────────
     const gldGfx = this.add.graphics().setDepth(1);
-    drawCard(gldGfx, W - 200, 26, 130, 24, { bg: UI.BG_MID, radius: 12, shadow: false });
-    this.goldText = this.add.text(W - 135, 38,
+    drawCard(gldGfx, W - 224, 24, 150, 28, { bg: UI.BG_MID, radius: 14, shadow: false });
+    this.goldText = this.add.text(W - 149, 38,
       t('shop.gold').replace('{gold}', String(this.gameScene.gameState.player.gold)),
-      uiStyle(11, UI.TXT_GOLD, { bold: true }),
+      uiStyle(TYPE.BODY, UI.TXT_GOLD, { bold: true }),
     ).setOrigin(0.5).setDepth(2);
 
     // ── Column headers (cyan = structure) ────────────────────────
-    const headerY = 60;
+    const headerY = 64;
     this.add.text(46,      headerY, t('shop.col.item'),  uiStyle(9, UI.TXT_CYAN, { bold: true })).setDepth(1);
-    this.add.text(W - 158, headerY, t('shop.col.price'), uiStyle(9, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0).setDepth(1);
-    this.add.text(W - 58,  headerY, t('shop.col.stock'), uiStyle(9, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0).setDepth(1);
+    this.add.text(W - 170, headerY, t('shop.col.price'), uiStyle(9, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0).setDepth(1);
+    this.add.text(W - 62,  headerY, t('shop.col.stock'), uiStyle(9, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0).setDepth(1);
 
     // Separator line
     const sep = this.add.graphics().setDepth(1);
-    drawDivider(sep, 30, 76, W - 60, UI.ACCENT_ARCANE, 0.35);
+    drawDivider(sep, 30, 82, W - 60, UI.ACCENT_ARCANE, 0.35);
 
     // ── Item rows ────────────────────────────────────────────────
+    // rowH 44 → 52 : nom en BODY 14 + description en SMALL 10 + respiration —
+    // l'ancienne hauteur était calée sur du 11/9px.
     const entries: ShopEntry[] = SHOP_INVENTORY[this.npcId] ?? [];
-    const rowH   = 44;
-    const startY = 90;
+    const rowH   = 52;
+    const startY = 96;
 
     this.rowBgs    = [];
     this.rowNames  = [];
@@ -88,21 +91,25 @@ export class ShopScene extends Phaser.Scene {
       deco.lineStyle(1, rarHex, 0.5);
       deco.strokeRoundedRect(32, rowY + 2, W - 64, rowH - 8, 4);
 
-      const nameText = this.add.text(46, rowY + 6, item.name,
-        uiStyle(11, canBuy ? rarColor : UI.TXT_MUTED, { bold: true }))
+      // Largeur texte = jusqu'à la colonne prix — nom et description tronqués
+      // en PIXELS (fitText) au lieu de l'ancien slice(0, 55) au caractère.
+      const textMaxW = (W - 178) - 46;
+      const nameStyle = uiStyle(TYPE.BODY, canBuy ? rarColor : UI.TXT_MUTED, { bold: true });
+      const nameText = this.add.text(46, rowY + 7, fitText(this, item.name, nameStyle, textMaxW), nameStyle)
         .setDepth(2);
       this.rowNames.push(nameText);
 
-      this.add.text(46, rowY + 23, item.description.slice(0, 55), uiStyle(9, UI.TXT_MUTED, { italic: true }))
+      const descStyle = uiStyle(9, UI.TXT_MUTED, { italic: true });
+      this.add.text(46, rowY + 27, fitText(this, item.description, descStyle, textMaxW), descStyle)
         .setDepth(2);
 
-      const priceText = this.add.text(W - 153, rowY + rowH / 2, `${entry.price} G`,
-        uiStyle(11, canBuy ? UI.TXT_GOLD : UI.TXT_HINT, { bold: true }),
+      const priceText = this.add.text(W - 165, rowY + rowH / 2, `${entry.price} G`,
+        uiStyle(TYPE.BODY, canBuy ? UI.TXT_GOLD : UI.TXT_HINT, { bold: true }),
       ).setOrigin(0, 0.5).setDepth(2);
       this.rowPrices.push(priceText);
 
       const stockLabel = entry.stock !== undefined ? `${entry.stock}` : '∞';
-      this.add.text(W - 53, rowY + rowH / 2, stockLabel, uiStyle(11, UI.TXT_MUTED))
+      this.add.text(W - 57, rowY + rowH / 2, stockLabel, uiStyle(TYPE.BODY, UI.TXT_MUTED))
         .setOrigin(0, 0.5).setDepth(2);
 
       bg.on('pointerover', () => {

@@ -11,7 +11,8 @@
 
 import { WorldState, ElementType, ItemType, ItemRarity, RARITY_COLORS, Item, Weapon, Armor } from '../types';
 import {
-  UI, TYPE, drawGlowPanel, drawCard, drawBadge, uiStyle, addCloseButton, drawScrollbar,
+  UI, TYPE, drawGlowPanel, drawCard, drawBadge, uiStyle, titleStyle, fitText, drawDivider,
+  addCloseButton, drawScrollbar,
   renderScrollableText, formatDropRate, drawConfirmCancelButtons, ARCANE_CONFIRM_ACCENT,
   openScreenTransition, closeScreenTransition, portalRedirectTransition,
   formatRangedStatLine,
@@ -84,14 +85,17 @@ type RowDef =
   | { kind: 'header'; label: string }
   | { kind: 'item'; id: string };
 
-const ITEM_ROW_H   = 46;
-const HEADER_ROW_H = 22;
+// Rangée d'item : nom en TYPE.BODY (14) + rareté en TYPE.SMALL (10) + respiration.
+// L'ancienne valeur (46) était calée sur l'ancienne échelle typo (9/10px).
+const ITEM_ROW_H   = 50;
+const HEADER_ROW_H = 24;
 const ROW_GAP      = 2;
 
-/** Pixels par cran de molette dans le viewport lore/description. */
-const LORE_SCROLL_STEP = 28;
-/** Hauteur d'une rangée "monstre" dans la section Obtenu auprès de. */
-const DROP_SOURCE_ROW_H = 34;
+/** Pixels par cran de molette dans le viewport lore/description (≈ 2 lignes BODY). */
+const LORE_SCROLL_STEP = 36;
+/** Hauteur d'une rangée "monstre" dans la section Obtenu auprès de — rangée
+ *  INTERACTIVE (ouvre la mini-card) : alignée sur LAYOUT.TOUCH_MIN (44). */
+const DROP_SOURCE_ROW_H = 44;
 /** Nombre max de monstres affichés avant de replier en "+N autres". */
 const DROP_SOURCE_MAX_ROWS = 6;
 
@@ -103,8 +107,11 @@ const DROP_SOURCE_MAX_ROWS = 6;
  * lignes wrappées à la largeur de la colonne identité. Fixe et indépendante de
  * l'item sélectionné : LORE_Y doit rester la même géométrie pour tous les items
  * (panneau uniforme, cf. create()) — un item sans passif laisse juste un blanc.
+ * 36 → 44 : le bloc identité au-dessus a grandi (nom en HEADING 21, stats en
+ * BODY 14 au pas de 18) — la réserve suit pour que le passif ne mange jamais
+ * le titre "Description".
  */
-const PASSIVE_RESERVE_PX = 36;
+const PASSIVE_RESERVE_PX = 44;
 
 /**
  * Sous-titre du bloc fourchettes (§7.1) — hardcodé FR (pas de clé i18n) : la
@@ -163,7 +170,9 @@ export class ArsenalScene extends Phaser.Scene {
 
   private LIST_X = 0; private LIST_Y = 0; private LIST_W = 0; private LIST_H = 0;
   private DET_X = 0;  private DET_Y = 0;  private DET_W = 0;  private DET_H = 0;
-  private LORE_X = 0; private LORE_Y = 0; private LORE_W = 0; private readonly LORE_H = 100;
+  // 100 → 140 : le canvas 720px de haut offre la place d'un vrai bloc de lecture
+  // (≈ 7 lignes de BODY 14 visibles au lieu de ~5 lignes de micro-texte).
+  private LORE_X = 0; private LORE_Y = 0; private LORE_W = 0; private readonly LORE_H = 140;
   private rowsTop = 0; private rowsBottom = 0;
 
   constructor() { super({ key: 'ArsenalScene' }); }
@@ -197,26 +206,31 @@ export class ArsenalScene extends Phaser.Scene {
     const frame = this.add.graphics();
     drawGlowPanel(frame, 6, 6, W - 12, H - 12, UI.ACCENT_ARCANE, UI.BG_DEEP, 10, 0.92);
 
-    this.add.text(W / 2, 24, t('arsenal.title'), uiStyle(13, UI.TXT_GOLD, { bold: true, stroke: true })).setOrigin(0.5);
+    // Titre d'écran en police Boss (titleStyle) — même convention que
+    // InventoryScene : c'est ce qui redonne la hiérarchie (l'ancien uiStyle(13)
+    // tombait à la même taille que le corps de texte).
+    this.add.text(W / 2, 26, t('arsenal.title'), titleStyle(UI.TXT_GOLD, { stroke: true })).setOrigin(0.5);
 
     const counts = ArsenalSystem.counts(this.world);
     const progressLabel = t('arsenal.progress')
       .replace('{seen}',  String(counts.seen))
       .replace('{total}', String(counts.total));
-    this.add.text(20, 24, progressLabel, uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setOrigin(0, 0.5);
+    this.add.text(20, 26, progressLabel, uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setOrigin(0, 0.5);
 
-    addCloseButton(this, W - 28, 24, () => this.close());
+    addCloseButton(this, W - 28, 26, () => this.close());
 
     const sep = this.add.graphics();
-    sep.lineStyle(1, UI.ACCENT_ARCANE, 0.35);
-    sep.beginPath(); sep.moveTo(16, 42); sep.lineTo(W - 16, 42); sep.strokePath();
+    drawDivider(sep, 16, 48, W - 32, UI.ACCENT_ARCANE, 0.35);
 
-    this.LIST_X = 16;  this.LIST_Y = 50;
-    this.LIST_W = 212; this.LIST_H = H - 50 - 26;
+    this.LIST_X = 16;  this.LIST_Y = 56;
+    // Largeur de liste RELATIVE au canvas (l'ancien 212 en dur avait été calé
+    // sur 800px de large) — ~27% laisse un panneau détail confortable à droite.
+    this.LIST_W = Math.round(W * 0.27);
+    this.LIST_H = H - this.LIST_Y - 28;
     this.DET_X  = this.LIST_X + this.LIST_W + 8;
-    this.DET_Y  = 50;
+    this.DET_Y  = this.LIST_Y;
     this.DET_W  = W - this.DET_X - 16;
-    this.DET_H  = H - 50 - 26;
+    this.DET_H  = this.LIST_H;
     this.rowsTop    = this.LIST_Y + 24;
     this.rowsBottom = this.LIST_Y + this.LIST_H - 24;
 
@@ -431,28 +445,30 @@ export class ArsenalScene extends Phaser.Scene {
 
     // Icône 32×32 (ou silhouette "?" si non découvert)
     const iconKey = this.resolveIcon(item);
-    const icx = x + 24;
+    const icx = x + 25;
     if (entry.discovered) {
       this.listObjs.push(
-        this.add.image(icx, cy, iconKey).setDisplaySize(28, 28),
+        this.add.image(icx, cy, iconKey).setDisplaySize(32, 32),
       );
     } else {
       const ph = this.add.graphics();
       ph.fillStyle(0x232336, 1);
-      ph.fillCircle(icx, cy, 14);
+      ph.fillCircle(icx, cy, 15);
       this.listObjs.push(ph,
         this.add.text(icx, cy, '?', uiStyle(9, UI.TXT_WHITE, { bold: true })).setOrigin(0.5),
       );
     }
 
     const rawName = entry.discovered ? localizeItem(item).name : t('arsenal.unknown');
-    const name = rawName.length > 16 ? rawName.slice(0, 15) + '..' : rawName;
     const nameColor = entry.discovered ? (RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT) : UI.TXT_MUTED;
+    // Nom en TYPE.BODY (14) + troncature en PIXELS (fitText) — l'ancien
+    // slice(0, 15) tronquait au caractère, sans rien savoir de la police.
+    const nameStyle = uiStyle(TYPE.BODY, nameColor, { bold: entry.discovered });
     this.listObjs.push(
-      this.add.text(x + 44, y + 9, name, uiStyle(9, nameColor, { bold: entry.discovered })),
+      this.add.text(x + 46, y + 8, fitText(this, rawName, nameStyle, w - 46 - 6), nameStyle),
     );
     this.listObjs.push(
-      this.add.text(x + 44, y + 26, entry.discovered ? t(`rarity.${item.rarity}`) : t('arsenal.locked'),
+      this.add.text(x + 46, y + 27, entry.discovered ? t(`rarity.${item.rarity}`) : t('arsenal.locked'),
         uiStyle(TYPE.SMALL, UI.TXT_MUTED)),
     );
 
@@ -519,7 +535,9 @@ export class ArsenalScene extends Phaser.Scene {
     const loc = localizeItem(item);
     const displayName = entry.discovered ? loc.name : t('arsenal.unknown');
     const nameColor = entry.discovered ? (RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT) : UI.TXT_MUTED;
-    const nameTxt = this.add.text(ix, iy, displayName, uiStyle(13, nameColor, { bold: true, wordWrapWidth: iw }));
+    // Le nom est le héros du panneau : TYPE.HEADING (21), couleur de rareté —
+    // même convention que le panneau détail de l'inventaire.
+    const nameTxt = this.add.text(ix, iy, displayName, uiStyle(TYPE.HEADING, nameColor, { bold: true, wordWrapWidth: iw }));
     this.detailObjs.push(nameTxt);
     iy += nameTxt.height + 10;
 
@@ -536,9 +554,11 @@ export class ArsenalScene extends Phaser.Scene {
 
     // ── Stats principales (selon le type d'item) ───────────────
     if (entry.discovered) {
+      // Valeurs en TYPE.BODY (14) : « les valeurs importantes en grand » — le
+      // micro-texte reste réservé aux fourchettes/badges (TYPE.SMALL).
       for (const line of this.statLines(item)) {
-        this.detailObjs.push(this.add.text(ix, iy, line.text, uiStyle(9, line.muted ? UI.TXT_MUTED : UI.TXT_PARCHMENT)));
-        iy += 15;
+        this.detailObjs.push(this.add.text(ix, iy, line.text, uiStyle(TYPE.BODY, line.muted ? UI.TXT_MUTED : UI.TXT_PARCHMENT)));
+        iy += 18;
       }
 
       // Passif : en gras, couleur distincte (or) — sorti du bloc lore pour rester
@@ -581,10 +601,12 @@ export class ArsenalScene extends Phaser.Scene {
         `${RANGES_SUBTITLE}\n${rangeLines.join('\n')}`,
         uiStyle(TYPE.SMALL, UI.TXT_MUTED, { italic: true, lineSpacing: 4, wordWrapWidth: this.LORE_W }),
       );
-      const gapY = 8;
+      const gapY = 10;
+      // Corps de lecture en TYPE.BODY (14) — le lore est le contenu principal du
+      // viewport, il mérite la taille de lecture, pas du micro-texte.
       const loreTxt = this.add.text(
         this.LORE_X, rangesTxt.y + rangesTxt.height + gapY,
-        descText, uiStyle(9, descColor, { lineSpacing: 5, wordWrapWidth: this.LORE_W }),
+        descText, uiStyle(TYPE.BODY, descColor, { lineSpacing: 5, wordWrapWidth: this.LORE_W }),
       );
 
       maxScrollPx = Math.max(0, Math.ceil(rangesTxt.height + gapY + loreTxt.height) - this.LORE_H);
@@ -603,7 +625,7 @@ export class ArsenalScene extends Phaser.Scene {
     } else {
       const loreResult = renderScrollableText(
         this, this.LORE_X, this.LORE_Y, this.LORE_W, this.LORE_H,
-        descText, uiStyle(9, descColor, { lineSpacing: 5 }), this.loreScrollPx,
+        descText, uiStyle(TYPE.BODY, descColor, { lineSpacing: 5 }), this.loreScrollPx,
       );
       this.detailObjs.push(loreResult.text, loreResult.mask);
       maxScrollPx = loreResult.maxScrollPx;
@@ -688,13 +710,12 @@ export class ArsenalScene extends Phaser.Scene {
         );
         return;
       }
+      const vendorStyle = uiStyle(TYPE.BODY, UI.TXT_GOLD);
       vendors.slice(0, 4).forEach((v, i) => {
+        const line = `${v.name}${v.location ? ` — ${v.location}` : ''}   ${v.price} or`;
         this.detailObjs.push(
-          this.add.text(
-            contentX, contentY + i * 14,
-            `${v.name}${v.location ? ` — ${v.location}` : ''}   ${v.price} or`,
-            uiStyle(TYPE.SMALL, UI.TXT_GOLD),
-          ),
+          this.add.text(contentX, contentY + i * 20,
+            fitText(this, line, vendorStyle, contentW), vendorStyle),
         );
       });
       return;
@@ -735,14 +756,14 @@ export class ArsenalScene extends Phaser.Scene {
     const hit = this.add.rectangle(x + w / 2, cy, w, h, 0, 0).setInteractive({ useHandCursor: true });
     this.detailObjs.push(hit);
 
-    const pcx = x + 16;
+    const pcx = x + 18;
     const portraitKey = `enemy_${enemyId}_idle`;
     if (discovered && this.textures.exists(portraitKey)) {
-      this.detailObjs.push(this.add.image(pcx, cy, portraitKey, 0).setDisplaySize(28, 28));
+      this.detailObjs.push(this.add.image(pcx, cy, portraitKey, 0).setDisplaySize(32, 32));
     } else {
       const ph = this.add.graphics();
       ph.fillStyle(discovered ? 0x2a2a3a : 0x3a3a44, 0.9);
-      ph.fillCircle(pcx, cy, 14);
+      ph.fillCircle(pcx, cy, 16);
       const glyph = discovered ? data.name.split(' ').map(wd => wd[0] ?? '').join('').slice(0, 2).toUpperCase() : '?';
       this.detailObjs.push(ph,
         this.add.text(pcx, cy, glyph, uiStyle(discovered ? TYPE.SMALL : 10, UI.TXT_WHITE, { bold: true })).setOrigin(0.5),
@@ -750,10 +771,11 @@ export class ArsenalScene extends Phaser.Scene {
     }
 
     const name = discovered ? localizeBestiaryEntry(data).name : t('bestiary.unknown');
-    this.detailObjs.push(this.add.text(x + 34, y + 2, name, uiStyle(9, discovered ? UI.TXT_PARCHMENT : UI.TXT_MUTED, { bold: discovered })));
+    const nameStyle = uiStyle(TYPE.BODY, discovered ? UI.TXT_PARCHMENT : UI.TXT_MUTED, { bold: discovered });
+    this.detailObjs.push(this.add.text(x + 40, y + 5, fitText(this, name, nameStyle, w - 46), nameStyle));
     const rate = drop.dropRatePct / 100;
     this.detailObjs.push(
-      this.add.text(x + 34, y + 17, t('bestiary.drop_rate').replace('{rate}', formatDropRate(rate)),
+      this.add.text(x + 40, y + 24, t('bestiary.drop_rate').replace('{rate}', formatDropRate(rate)),
         uiStyle(TYPE.SMALL, UI.TXT_MUTED)),
     );
 
@@ -774,13 +796,15 @@ export class ArsenalScene extends Phaser.Scene {
     // visible — c'est un indice délibéré, cf. commentaire de BestiaryScene).
     const discovered = BestiarySystem.peekEntry(this.world, enemyId).discovered;
     const loc = localizeBestiaryEntry(data);
-    const CW = 260;
-    const padC = 12;
+    // 260 → 300 : la card contient deux boutons côte à côte de 44px de haut —
+    // l'ancienne largeur les rendait étriqués, et le canvas a la place.
+    const CW = 300;
+    const padC = 14;
     const parts: Phaser.GameObjects.GameObject[] = [];
     let cy = padC;
 
     const nameTxt = this.add.text(padC, cy, discovered ? loc.name : t('bestiary.unknown'),
-      uiStyle(11, discovered ? UI.TXT_GOLD : UI.TXT_MUTED, { bold: true, wordWrapWidth: CW - padC * 2 }));
+      uiStyle(TYPE.BODY, discovered ? UI.TXT_GOLD : UI.TXT_MUTED, { bold: true, wordWrapWidth: CW - padC * 2 }));
     parts.push(nameTxt);
     cy += nameTxt.height + 6;
 
@@ -795,9 +819,9 @@ export class ArsenalScene extends Phaser.Scene {
     cy += habitatTxt.height + 6;
 
     const descTxt = this.add.text(padC, cy, discovered ? loc.shortDesc : t('bestiary.not_discovered'),
-      uiStyle(9, discovered ? UI.TXT_PARCHMENT : UI.TXT_MUTED, { wordWrapWidth: CW - padC * 2, lineSpacing: 3 }));
+      uiStyle(TYPE.BODY, discovered ? UI.TXT_PARCHMENT : UI.TXT_MUTED, { wordWrapWidth: CW - padC * 2, lineSpacing: 4 }));
     parts.push(descTxt);
-    cy += descTxt.height + 10;
+    cy += descTxt.height + 12;
 
     const subtitleTxt = this.add.text(CW / 2, cy, t('arsenal.view_in_bestiary'),
       uiStyle(TYPE.SMALL, UI.TXT_CYAN)).setOrigin(0.5, 0);
@@ -914,22 +938,26 @@ export class ArsenalScene extends Phaser.Scene {
     return [];
   }
 
-  /** Badge d'info compact — retourne la largeur occupée (badge + marge). */
+  /** Badge d'info compact — retourne la largeur occupée (badge + marge).
+   *  La largeur est MESURÉE en pixels (probe Text, même style que drawBadge) :
+   *  l'ancienne estimation `length * 6` était une troncature au caractère
+   *  déguisée — fausse dès que la police ou la casse changeait. */
   private addInfoBadge(x: number, cy: number, label: string, bgColor: number, textColor: string): number {
-    const w = label.length * 6 + 12;
+    const probe = this.make.text({ text: label, style: uiStyle(9, textColor, { bold: true }) }, false);
+    const w = Math.ceil(probe.width) + 12;
+    probe.destroy();
     const badge = drawBadge(this, x + w / 2, cy, label, bgColor, textColor);
     this.detailObjs.push(badge);
     return w + 8;
   }
 
   private addSectionTitle(label: string, y: number) {
-    const txt = this.add.text(this.DET_X + 14, y, label, uiStyle(9, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0.5);
+    // Titre de section en TYPE.BODY cyan gras + drawDivider — même convention
+    // que les titres de panneaux de l'inventaire (un cran net sous HEADING).
+    const txt = this.add.text(this.DET_X + 14, y, label, uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0.5);
     const g = this.add.graphics();
-    g.lineStyle(1, UI.ACCENT_ARCANE, 0.25);
-    g.beginPath();
-    g.moveTo(this.DET_X + 14 + txt.width + 8, y);
-    g.lineTo(this.DET_X + this.DET_W - 14, y);
-    g.strokePath();
+    drawDivider(g, this.DET_X + 14 + txt.width + 8, y,
+      this.DET_X + this.DET_W - 14 - (this.DET_X + 14 + txt.width + 8), UI.ACCENT_ARCANE, 0.25);
     this.detailObjs.push(txt, g);
   }
 
