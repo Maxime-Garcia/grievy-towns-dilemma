@@ -272,11 +272,18 @@ export class PassiveSystem {
   }
 
   // ── 9. MOVE_25_DASH_ASPD_50_PCT (hidden_skyward_mantle) ───────────────
+  static readonly MOVE_SPEED_BONUS_PCT = 25; // bonus permanent de vitesse de déplacement
   static readonly DASH_ASPD_BUFF_PCT = 50;
   static readonly DASH_ASPD_BUFF_DURATION_MS = 2000;
 
   static hasDashAspdBuff(equipment: Equipment): boolean {
     return PassiveSystem.hasPassive(equipment, 'MOVE_25_DASH_ASPD_50_PCT');
+  }
+
+  /** Bonus de vitesse de déplacement permanent (%) de hidden_skyward_mantle. */
+  static getSkywardMoveSpeedPct(equipment: Equipment): number {
+    return PassiveSystem.hasPassive(equipment, 'MOVE_25_DASH_ASPD_50_PCT')
+      ? PassiveSystem.MOVE_SPEED_BONUS_PCT : 0;
   }
 
   // ── 10. BURNING_AURA_5_PCT_ATK (hidden_emberheart_carapace) ───────────
