@@ -95,6 +95,13 @@ export const FR: Record<string, string> = {
   'nav.go':     'Aller',
   'nav.cancel': 'Annuler',
 
+  // ── RECHERCHE (champ partagé Arsenal / Bestiaire / Sac — src/utils/SearchField.ts) ──
+  'search.placeholder_item':   'Rechercher un équipement…',
+  'search.placeholder_enemy':  'Rechercher une créature…',
+  'search.placeholder_bag':    'Rechercher dans le sac…',
+  'search.no_results':         'Aucun résultat',
+  'search.no_results_hint':    'Aucune entrée ne correspond à « {q} »',
+
   'element.FIRE': 'Feu',
   'element.EARTH': 'Terre',
   'element.WIND': 'Vent',
@@ -491,6 +498,9 @@ export const FR: Record<string, string> = {
   'quest.fq_03_liriascat.name': 'Le Chat de Liria',
   'quest.fq_04_ovanresearch.name': 'La Collecte de Frère Ovan',
   'quest.fq_05_kelvarsrounds.name': 'La Ronde de Kelvar',
+  'quest.fq_06_ysoldedeliver.name': 'La Livraison d\'Ysolde',
+  'quest.fq_07_feathers.name': 'La Collecte de Plumes',
+  'quest.fq_08_childstoy.name': 'Le Jouet Perdu',
 
   // ── ITEMS — ARMES ────────────────────────────────────────────
   'item.iron_sword.name': 'Épée de Fer',

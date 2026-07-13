@@ -17,11 +17,12 @@
 
 import { WorldState, ElementType, ItemRarity, RARITY_COLORS, SpawnRegion } from '../types';
 import {
-  UI, TYPE, drawGlowPanel, drawCard, drawSlot, drawBadge, uiStyle, titleStyle, fitText,
+  UI, TYPE, LAYOUT, drawGlowPanel, drawCard, drawSlot, drawBadge, uiStyle, titleStyle, fitText,
   drawDivider, addCloseButton, drawScrollbar, renderScrollableText, formatDropRate,
   drawConfirmCancelButtons,
   openScreenTransition, closeScreenTransition, portalRedirectTransition,
 } from '../utils/UITheme';
+import { SearchField, matchesSearch } from '../utils/SearchField';
 import { ENEMY_MAP } from '../data/enemies';
 import { BESTIARY_IDS, BESTIARY_RECORD, BestiaryDropData } from '../data/bestiary';
 import { BestiarySystem } from '../systems/BestiarySystem';
@@ -95,6 +96,11 @@ export class BestiaryScene extends Phaser.Scene {
   private lastVisibleIndex = 0;
   private selectedId: string | null = null;
 
+  /** Champ de recherche (saisie DOM + rendu Phaser — cf. utils/SearchField.ts).
+   *  `searchQuery` est la requête NORMALISÉE : c'est elle que buildRows() lit. */
+  private search: SearchField | null = null;
+  private searchQuery = '';
+
   private listObjs:   Phaser.GameObjects.GameObject[] = [];
   private detailObjs: Phaser.GameObjects.GameObject[] = [];
   private scrollbarGfx!: Phaser.GameObjects.Graphics;
@@ -143,6 +149,8 @@ export class BestiaryScene extends Phaser.Scene {
     this.enemyRowIndices = [];
     this.scrollOffset = 0;
     this.selectedId = null;
+    this.search = null;
+    this.searchQuery = '';
     this.listObjs = [];
     this.detailObjs = [];
     this.tooltip = null;
@@ -206,15 +214,21 @@ export class BestiaryScene extends Phaser.Scene {
     drawDivider(sep, 16, 48, W - 32, UI.ACCENT_ARCANE, 0.35);
 
     // ── Layout des panneaux ──────────────────────────────────
-    this.LIST_X = 16;  this.LIST_Y = 56;
+    this.LIST_X = 16;
     // Largeur de liste RELATIVE au canvas (l'ancien 212 en dur avait été calé
     // sur 800px de large) — même ratio que l'Arsenal (~27%).
     this.LIST_W = Math.round(W * 0.27);
+    // Champ de recherche AU-DESSUS de la liste (196 créatures) — miroir exact de
+    // l'Arsenal. Seule la LISTE recule : le panneau détail garde sa géométrie
+    // (DET_Y/DET_H inchangés — la section Butin se cale sur DET_Y + DET_H).
+    const SEARCH_Y = 56;
+    const SEARCH_H = LAYOUT.TOUCH_MIN;
+    this.LIST_Y = SEARCH_Y + SEARCH_H + 6;
     this.LIST_H = H - this.LIST_Y - 28;
     this.DET_X  = this.LIST_X + this.LIST_W + 8;
-    this.DET_Y  = this.LIST_Y;
+    this.DET_Y  = SEARCH_Y;
     this.DET_W  = W - this.DET_X - 16;
-    this.DET_H  = this.LIST_H;
+    this.DET_H  = H - this.DET_Y - 28;
     this.rowsTop    = this.LIST_Y + 24;
     this.rowsBottom = this.LIST_Y + this.LIST_H - 24;
 
@@ -230,6 +244,13 @@ export class BestiaryScene extends Phaser.Scene {
 
     const listBg = this.add.graphics();
     drawGlowPanel(listBg, this.LIST_X, this.LIST_Y, this.LIST_W, this.LIST_H, UI.ACCENT_ARCANE, UI.BG_MID, 8, 0.55);
+
+    this.search = new SearchField(this, {
+      x: this.LIST_X, y: SEARCH_Y, w: this.LIST_W, h: SEARCH_H,
+      placeholder: t('search.placeholder_enemy'),
+      onChange: (q) => this.applySearch(q),
+      onEscape: () => this.close(),
+    });
 
     // Depth explicite : sans ça, les lignes recréées à chaque renderList() finissent
     // plus tard dans la display list et passent PAR-DESSUS la scrollbar (bug reporté).
@@ -264,12 +285,35 @@ export class BestiaryScene extends Phaser.Scene {
   // DONNÉES DE LISTE
   // ════════════════════════════════════════════════════════════
 
+  /**
+   * Prédicat de recherche d'un monstre — sur le nom LOCALISÉ (`localizeEnemy`),
+   * plus la zone et l'élément : « ignis » liste toute la zone, « feu » tous les
+   * monstres de feu. Une créature NON DÉCOUVERTE ne matche jamais (son nom est
+   * masqué en « ??? » : la faire remonter par son vrai nom la divulguerait).
+   */
+  private matchesQuery(id: string, discovered: boolean): boolean {
+    if (this.searchQuery.length === 0) return true;
+    if (!discovered) return false;
+    const def = ENEMY_MAP[id];
+    if (!def) return false;
+    const zoneKey = ZONE_HABITAT_KEYS[def.element];
+    return matchesSearch(
+      this.searchQuery,
+      localizeEnemy(def).name,
+      zoneKey ? t(zoneKey) : undefined,
+      t(`element.${def.element}`),
+    );
+  }
+
   private buildRows() {
     let lastZoneKey = '';
     for (const id of BESTIARY_IDS) {
       const data = BESTIARY_RECORD[id];
       const def  = ENEMY_MAP[id];
       if (!data || !def) continue;
+      // Filtre AVANT le groupement : une zone entièrement filtrée ne pousse pas
+      // son en-tête (le header n'est émis que juste avant une ligne retenue).
+      if (!this.matchesQuery(id, BestiarySystem.peekEntry(this.world, id).discovered)) continue;
       const zoneKey = ZONE_HABITAT_KEYS[def.element] ?? 'zone.grievy_town';
       if (zoneKey !== lastZoneKey) {
         lastZoneKey = zoneKey;
@@ -286,6 +330,43 @@ export class BestiaryScene extends Phaser.Scene {
 
   private rowIndexOf(enemyId: string): number {
     return this.rows.findIndex(r => r.kind === 'enemy' && r.id === enemyId);
+  }
+
+  /**
+   * Recherche appliquée à la frappe : rangées reconstruites (les en-têtes de zone
+   * vidés disparaissent d'eux-mêmes, cf. buildRows), scroll remis à zéro, et
+   * sélection recalée sur le premier résultat si la créature affichée à droite
+   * n'est plus dans la liste filtrée.
+   */
+  private applySearch(query: string) {
+    this.searchQuery = query;
+    this.rows = [];
+    this.enemyRowIndices = [];
+    this.buildRows();
+    this.maxScrollOffset = this.computeMaxOffset();
+    this.scrollOffset = 0;
+    this.destroyTooltip();
+
+    if (this.enemyRowIndices.length > 0 && (this.selectedId === null || this.rowIndexOf(this.selectedId) === -1)) {
+      const firstRow = this.rows[this.enemyRowIndices[0]];
+      if (firstRow && firstRow.kind === 'enemy') {
+        this.selectedId = firstRow.id;
+        this.loreScrollPx = 0;
+      }
+    }
+    if (this.selectedId) this.ensureVisible(this.rowIndexOf(this.selectedId));
+
+    this.renderList();
+    this.renderDetail();
+  }
+
+  /**
+   * Échap : vide d'abord la recherche, ferme seulement si elle est déjà vide.
+   * Appelé par GameScene.escKey (propriétaire de l'ESC) ET par le champ lui-même
+   * quand il a le focus clavier. True = appui CONSOMMÉ (ne pas fermer l'écran).
+   */
+  handleEscape(): boolean {
+    return this.search?.clear() ?? false;
   }
 
   /** Dernier index de ligne entièrement visible depuis un offset donné. */
@@ -364,6 +445,9 @@ export class BestiaryScene extends Phaser.Scene {
     }
     this.lastVisibleIndex = i - 1;
 
+    // État vide — jamais un panneau blanc : on nomme la requête qui n'a rien donné.
+    if (this.rows.length === 0) this.renderEmptyState(x, w);
+
     if (this.scrollOffset > 0) {
       this.renderScrollArrow(this.LIST_Y + 11, '▲', () => this.scroll(-1));
     }
@@ -377,6 +461,20 @@ export class BestiaryScene extends Phaser.Scene {
       this.scrollbarGfx,
       this.LIST_X + this.LIST_W - 10, this.rowsTop, 4, this.rowsBottom - this.rowsTop,
       this.scrollOffset, this.maxScrollOffset, visibleCount / Math.max(1, this.rows.length),
+    );
+  }
+
+  /** « Aucun résultat » + rappel de la requête, centré dans le panneau de liste. */
+  private renderEmptyState(x: number, w: number) {
+    const cx = x + w / 2;
+    const cy = this.LIST_Y + this.LIST_H / 2;
+    const hintStyle = uiStyle(TYPE.SMALL, UI.TXT_HINT, { align: 'center', wordWrapWidth: w - 8 });
+    this.listObjs.push(
+      this.add.text(cx, cy - 12, t('search.no_results'),
+        uiStyle(TYPE.BODY, UI.TXT_MUTED, { bold: true })).setOrigin(0.5),
+      this.add.text(cx, cy + 12,
+        t('search.no_results_hint').replace('{q}', this.searchQuery),
+        hintStyle).setOrigin(0.5),
     );
   }
 
@@ -1091,6 +1189,9 @@ export class BestiaryScene extends Phaser.Scene {
     // `?.` : au moment où Phaser émet SHUTDOWN, son propre CameraManager.shutdown()
     // a déjà pu remettre `main` à undefined (crash reporté sans ce garde).
     this.cameras.main?.off(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE);
+    // Le champ de recherche possède un <input> DOM dans <body> et un listener de
+    // resize sur le Scale Manager : sans ce destroy(), l'input SURVIT à la scène.
+    if (this.search) { this.search.destroy(); this.search = null; }
     this.destroyTooltip();
     // Détruit explicitement (pas juste vidage de tableau) : le masque de scroll du
     // bloc lore (renderScrollableText) n'est jamais ajouté à la display list —

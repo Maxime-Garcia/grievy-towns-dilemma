@@ -11,12 +11,13 @@
 
 import { WorldState, ElementType, ItemType, ItemRarity, RARITY_COLORS, Item, Weapon, Armor } from '../types';
 import {
-  UI, TYPE, drawGlowPanel, drawCard, drawBadge, uiStyle, titleStyle, fitText, drawDivider,
+  UI, TYPE, LAYOUT, drawGlowPanel, drawCard, drawBadge, uiStyle, titleStyle, fitText, drawDivider,
   addCloseButton, drawScrollbar,
   formatDropRate, drawConfirmCancelButtons, ARCANE_CONFIRM_ACCENT,
   openScreenTransition, closeScreenTransition, portalRedirectTransition,
   formatRangedStatLine,
 } from '../utils/UITheme';
+import { SearchField, matchesSearch } from '../utils/SearchField';
 import { ALL_ITEMS } from '../data/items';
 import { getPassiveEffectLabel } from '../data/passiveEffects';
 import { ArsenalSystem } from '../systems/ArsenalSystem';
@@ -137,6 +138,11 @@ export class ArsenalScene extends Phaser.Scene {
   private lastVisibleIndex = 0;
   private selectedId: string | null = null;
 
+  /** Champ de recherche (saisie DOM + rendu Phaser — cf. utils/SearchField.ts).
+   *  `searchQuery` est la requête NORMALISÉE : c'est elle que buildRows() lit. */
+  private search: SearchField | null = null;
+  private searchQuery = '';
+
   private listObjs:   Phaser.GameObjects.GameObject[] = [];
   private detailObjs: Phaser.GameObjects.GameObject[] = [];
   private scrollbarGfx!: Phaser.GameObjects.Graphics;
@@ -185,6 +191,8 @@ export class ArsenalScene extends Phaser.Scene {
     this.itemRowIndices = [];
     this.scrollOffset = 0;
     this.selectedId = null;
+    this.search = null;
+    this.searchQuery = '';
     this.listObjs = [];
     this.detailObjs = [];
     this.loreScrollPx = 0;
@@ -222,15 +230,22 @@ export class ArsenalScene extends Phaser.Scene {
     const sep = this.add.graphics();
     drawDivider(sep, 16, 48, W - 32, UI.ACCENT_ARCANE, 0.35);
 
-    this.LIST_X = 16;  this.LIST_Y = 56;
+    this.LIST_X = 16;
     // Largeur de liste RELATIVE au canvas (l'ancien 212 en dur avait été calé
     // sur 800px de large) — ~27% laisse un panneau détail confortable à droite.
     this.LIST_W = Math.round(W * 0.27);
+    // Le champ de recherche s'insère AU-DESSUS de la liste (542 entrées : la
+    // recherche est le premier geste, pas une option). Seule la LISTE recule —
+    // le panneau détail garde exactement sa géométrie (DET_Y/DET_H inchangés :
+    // tout son layout interne, viewport de lore et section sources, en dépend).
+    const SEARCH_Y = 56;
+    const SEARCH_H = LAYOUT.TOUCH_MIN;
+    this.LIST_Y = SEARCH_Y + SEARCH_H + 6;
     this.LIST_H = H - this.LIST_Y - 28;
     this.DET_X  = this.LIST_X + this.LIST_W + 8;
-    this.DET_Y  = this.LIST_Y;
+    this.DET_Y  = SEARCH_Y;
     this.DET_W  = W - this.DET_X - 16;
-    this.DET_H  = this.LIST_H;
+    this.DET_H  = H - this.DET_Y - 28;
     this.rowsTop    = this.LIST_Y + 24;
     this.rowsBottom = this.LIST_Y + this.LIST_H - 24;
 
@@ -245,6 +260,13 @@ export class ArsenalScene extends Phaser.Scene {
 
     const listBg = this.add.graphics();
     drawGlowPanel(listBg, this.LIST_X, this.LIST_Y, this.LIST_W, this.LIST_H, UI.ACCENT_ARCANE, UI.BG_MID, 8, 0.55);
+
+    this.search = new SearchField(this, {
+      x: this.LIST_X, y: SEARCH_Y, w: this.LIST_W, h: SEARCH_H,
+      placeholder: t('search.placeholder_item'),
+      onChange: (q) => this.applySearch(q),
+      onEscape: () => this.close(),
+    });
 
     // Depth explicite : sans ça, les lignes recréées à chaque renderList() finissent
     // plus tard dans la display list et passent PAR-DESSUS la scrollbar (bug reporté).
@@ -279,6 +301,20 @@ export class ArsenalScene extends Phaser.Scene {
   // DONNÉES DE LISTE
   // ════════════════════════════════════════════════════════════
 
+  /**
+   * Prédicat de recherche d'un item — sur le nom LOCALISÉ (`localizeItem`), pas
+   * sur le nom brut de la data : le joueur cherche ce qu'il LIT à l'écran.
+   * La rareté est aussi indexée (« legendaire » liste les légendaires).
+   *
+   * Un item NON DÉCOUVERT ne matche jamais une requête : son nom est masqué
+   * (« ??? ») dans cette UI, le faire remonter par son vrai nom le divulguerait.
+   */
+  private matchesQuery(item: Item, discovered: boolean): boolean {
+    if (this.searchQuery.length === 0) return true;
+    if (!discovered) return false;
+    return matchesSearch(this.searchQuery, localizeItem(item).name, t(`rarity.${item.rarity}`));
+  }
+
   private buildRows() {
     for (const sectionType of SECTION_ORDER) {
       // Tri à DEUX niveaux : la section donne la catégorie (armes, casques…), et à
@@ -289,6 +325,9 @@ export class ArsenalScene extends Phaser.Scene {
       // item se retrouve à l'œil.
       const items = Object.values(ALL_ITEMS)
         .filter(i => i.type === sectionType)
+        // La recherche filtre AVANT le groupement : une section vidée par le
+        // filtre ne pousse pas d'en-tête (`items.length === 0` ci-dessous).
+        .filter(i => this.matchesQuery(i, ArsenalSystem.peekEntry(this.world, i.id).discovered))
         .sort((a, b) => {
           const dr = RARITY_RANK[a.rarity] - RARITY_RANK[b.rarity];
           return dr !== 0 ? dr : a.name.localeCompare(b.name, 'fr');
@@ -304,6 +343,46 @@ export class ArsenalScene extends Phaser.Scene {
 
   private rowIndexOf(itemId: string): number {
     return this.rows.findIndex(r => r.kind === 'item' && r.id === itemId);
+  }
+
+  /**
+   * Recherche appliquée à la frappe : on reconstruit les rangées (le filtre vit
+   * dans buildRows, donc les en-têtes de section vidés disparaissent d'eux-mêmes),
+   * on remet le scroll à zéro et on garde une sélection COHÉRENTE — si l'item
+   * affiché à droite n'est plus dans les résultats, on bascule sur le premier
+   * résultat. Le panneau détail n'est jamais vidé tant qu'un item reste
+   * sélectionnable : une recherche infructueuse ne doit pas effacer le contexte.
+   */
+  private applySearch(query: string) {
+    this.searchQuery = query;
+    this.rows = [];
+    this.itemRowIndices = [];
+    this.buildRows();
+    this.maxScrollOffset = this.computeMaxOffset();
+    this.scrollOffset = 0;
+    this.destroyMonsterCard();
+
+    if (this.itemRowIndices.length > 0 && (this.selectedId === null || this.rowIndexOf(this.selectedId) === -1)) {
+      const firstRow = this.rows[this.itemRowIndices[0]];
+      if (firstRow && firstRow.kind === 'item') {
+        this.selectedId = firstRow.id;
+        this.loreScrollPx = 0;
+      }
+    }
+    if (this.selectedId) this.ensureVisible(this.rowIndexOf(this.selectedId));
+
+    this.renderList();
+    this.renderDetail();
+  }
+
+  /**
+   * Échap : vide d'abord la recherche, ferme seulement si elle est déjà vide.
+   * Appelé par GameScene.escKey (l'ESC du jeu est central — cf. son commentaire)
+   * ET par le champ lui-même quand il a le focus clavier.
+   * Retourne true si l'appui a été CONSOMMÉ (ne pas fermer l'écran).
+   */
+  handleEscape(): boolean {
+    return this.search?.clear() ?? false;
   }
 
   private lastVisibleFrom(offset: number): number {
@@ -381,6 +460,9 @@ export class ArsenalScene extends Phaser.Scene {
     }
     this.lastVisibleIndex = i - 1;
 
+    // État vide — jamais un panneau blanc : on nomme la requête qui n'a rien donné.
+    if (this.rows.length === 0) this.renderEmptyState(x, w);
+
     if (this.scrollOffset > 0) {
       this.renderScrollArrow(this.LIST_Y + 11, '▲', () => this.scroll(-1));
     }
@@ -394,6 +476,20 @@ export class ArsenalScene extends Phaser.Scene {
       this.scrollbarGfx,
       this.LIST_X + this.LIST_W - 10, this.rowsTop, 4, this.rowsBottom - this.rowsTop,
       this.scrollOffset, this.maxScrollOffset, visibleCount / Math.max(1, this.rows.length),
+    );
+  }
+
+  /** « Aucun résultat » + rappel de la requête, centré dans le panneau de liste. */
+  private renderEmptyState(x: number, w: number) {
+    const cx = x + w / 2;
+    const cy = this.LIST_Y + this.LIST_H / 2;
+    const hintStyle = uiStyle(TYPE.SMALL, UI.TXT_HINT, { align: 'center', wordWrapWidth: w - 8 });
+    this.listObjs.push(
+      this.add.text(cx, cy - 12, t('search.no_results'),
+        uiStyle(TYPE.BODY, UI.TXT_MUTED, { bold: true })).setOrigin(0.5),
+      this.add.text(cx, cy + 12,
+        t('search.no_results_hint').replace('{q}', this.searchQuery),
+        hintStyle).setOrigin(0.5),
     );
   }
 
@@ -1067,6 +1163,10 @@ export class ArsenalScene extends Phaser.Scene {
     // `?.` : au moment où Phaser émet SHUTDOWN, son propre CameraManager.shutdown()
     // a déjà pu remettre `main` à undefined (crash reporté sans ce garde).
     this.cameras.main?.off(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE);
+    // Le champ de recherche possède un <input> DOM dans <body> et un listener de
+    // resize sur le Scale Manager : sans ce destroy(), l'input SURVIT à la scène
+    // (il resterait focalisable, invisible, par-dessus le jeu).
+    if (this.search) { this.search.destroy(); this.search = null; }
     this.destroyMonsterCard();
     // Détruit explicitement (pas juste vidage de tableau) : le masque de scroll du
     // bloc lore (renderScrollableText) n'est jamais ajouté à la display list —

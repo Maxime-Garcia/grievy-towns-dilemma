@@ -9,10 +9,11 @@ import { StatRollSystem, isEquipableItem } from '../systems/StatRollSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { getPassiveEffectLabel } from '../data/passiveEffects';
 import {
-  UI, TYPE, drawGlowPanel, drawCard, drawSlot, addUiFrame,
+  UI, TYPE, LAYOUT, drawGlowPanel, drawCard, drawSlot, addUiFrame,
   drawDivider, addCloseButton, uiStyle, titleStyle, fitText, openScreenTransition,
   resonanceColor, formatRangedStatBounds, lineQuality,
 } from '../utils/UITheme';
+import { SearchField, matchesSearch } from '../utils/SearchField';
 import { itemTextureKey } from '../utils/ItemAssets';
 import { t, localizeItem } from '../i18n';
 
@@ -63,6 +64,19 @@ const BAG_TABS: ReadonlyArray<{ id: BagFilter; label: string; icon: string; cats
 // 26 → 34 : les onglets portent un glyphe 32×32 (échelle ×2 ENTIÈRE de la
 // grille 16 px — tout autre facteur produirait des artefacts NEAREST).
 const BAG_TABS_H = 34; // hauteur visuelle d'un onglet (hit zone élargie à 44)
+
+// ── Recherche textuelle du sac (utils/SearchField.ts) ─────────────────────────
+// Rangée dédiée SOUS les onglets : onglet = catégorie (grossier), recherche =
+// nom (fin). Les deux se COMBINENT (cf. renderGrid) — un filtre ne remplace
+// jamais l'autre. Le champ est créé une seule fois dans create() et SURVIT aux
+// refresh() : le recréer à chaque frappe détruirait le <input> DOM qui a le
+// focus, et la saisie s'arrêterait au premier caractère.
+const BAG_SEARCH_H   = LAYOUT.TOUCH_MIN;  // le cadre EST la zone tactile
+const BAG_SEARCH_GAP = 6;
+/** Hauteur du bandeau de titre « SAC » — partagée par create() (qui pose le champ
+ *  de recherche) et renderGrid() (qui pose les onglets et la grille) : les deux
+ *  DOIVENT dériver du même chiffre, sinon le champ chevauche les onglets. */
+const BAG_TITLE_H    = 22;
 
 /** Bag category → i18n label key (mirrors ArsenalScene.SECTION_LABEL_KEYS style). */
 const CATEGORY_LABEL_KEYS: Record<InventoryCategory, string> = {
@@ -131,8 +145,12 @@ export class InventoryScene extends Phaser.Scene {
   // (cf. docs/design/LOOT_STAT_ROLLS.md §9 step 8 audit).
   private selectedItem: Item | null = null;
 
-  private keyEsc?: Phaser.Input.Keyboard.Key;
   private keyZ?: Phaser.Input.Keyboard.Key;
+
+  /** Recherche textuelle du sac — créée dans create(), détruite dans shutdown().
+   *  Hors de `dynamicObjs` : elle doit survivre aux refresh() (cf. BAG_SEARCH_H). */
+  private search: SearchField | null = null;
+  private searchQuery = '';
 
   // Long-press detection: single ref, cleared on pointerup / pointerout / shutdown
   private longPressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -159,6 +177,8 @@ export class InventoryScene extends Phaser.Scene {
     this.player      = data.gameScene.gameState.player;
     this.selectedItem = null;
     this.bagFilter    = 'ALL';
+    this.search       = null;
+    this.searchQuery  = '';
   }
 
   create() {
@@ -258,25 +278,64 @@ export class InventoryScene extends Phaser.Scene {
     const titleSepGfx = this.add.graphics();
     drawDivider(titleSepGfx, this.eqBounds.x + 10, this.eqBounds.y + 26, this.eqBounds.w - 20, UI.ACCENT_ARCANE, 0.22);
 
-    // ── Keyboard ──────────────────────────────────────────────────────────
-    this.keyEsc = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
-    this.keyEsc.on('down', () => {
-      if (this.consumePopupObjects.length > 0) { this.closeConsumePopup(); return; }
-      this.close();
+    // ── Recherche du sac (rangée sous les onglets) ────────────────────────
+    // Créée UNE FOIS ici, jamais dans renderGrid() : renderGrid est rejoué à
+    // chaque refresh (donc à chaque frappe), et recréer le <input> DOM lui
+    // ferait perdre le focus au premier caractère tapé.
+    const searchY = this.bagBounds.y + BAG_TITLE_H + BAG_TABS_H + 4;
+    this.search = new SearchField(this, {
+      x: this.bagBounds.x + 8,   // = GRID_X (GRID_PAD de renderGrid)
+      y: searchY,
+      w: INV_COLS * INV_SLOT,
+      h: BAG_SEARCH_H,
+      placeholder: t('search.placeholder_bag'),
+      onChange: (q) => {
+        this.searchQuery = q;
+        // refresh() détruit `dynamicObjs` — le champ n'y est PAS, il survit.
+        this.refresh();
+      },
+      onEscape: () => this.close(),
     });
 
+    // ── Keyboard ──────────────────────────────────────────────────────────
+    // Pas de touche ESC ici : GameScene.escKey est le propriétaire unique de
+    // l'ESC pour les overlays (il stoppe déjà cette scène de son côté). Deux
+    // handlers ESC concurrents rendaient impossible tout comportement
+    // « Échap vide la recherche AVANT de fermer » — GameScene passe désormais
+    // par handleEscape() ci-dessous.
+    //
     // Z → trigger main action on the currently selected item (equip / use).
     // Safe to use: GameScene.update() bails out early when menuOpen = true, so
-    // the ZQSD movement poll never runs while the inventory is open.
+    // the ZQSD movement poll never runs while the inventory is open. Pendant la
+    // saisie dans le champ de recherche, SearchField stoppe la propagation des
+    // touches : taper « zweihander » ne déclenche donc pas cette action.
     this.keyZ = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
     this.keyZ.on('down', () => {
       if (this.selectedItem !== null) this.doMainAction(this.selectedItem);
     });
 
+    // Phaser n'appelle PAS scene.shutdown() tout seul (cf. Systems.shutdown : il
+    // se contente d'émettre l'événement) — sans ce câblage, la scène ne nettoyait
+    // ni ses touches ni ses listeners, et le <input> DOM du champ de recherche
+    // survivrait à la fermeture de l'inventaire. Même câblage que
+    // Arsenal/Bestiary/Dialogue.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
+
     // ── Dynamic content ───────────────────────────────────────────────────
     this.renderEquipment();
     this.renderCenter();
     this.renderGrid();
+  }
+
+  /**
+   * Échap : ferme d'abord le popup s'il est ouvert, sinon vide la recherche,
+   * sinon laisse l'appelant fermer l'écran. Appelé par GameScene.escKey (unique
+   * propriétaire de l'ESC) et par le champ de recherche quand il a le focus.
+   * True = appui CONSOMMÉ, l'inventaire doit rester ouvert.
+   */
+  handleEscape(): boolean {
+    if (this.consumePopupObjects.length > 0) { this.closeConsumePopup(); return true; }
+    return this.search?.clear() ?? false;
   }
 
   // ── Equipment paperdoll (left panel, style Dofus) ─────────────────────────
@@ -747,25 +806,32 @@ export class InventoryScene extends Phaser.Scene {
     this.input.off('pointermove');
 
     const { x: PX, y: PY, w: PW, h: PH } = this.bagBounds;
-    const TITLE_H   = 22;
+    const TITLE_H   = BAG_TITLE_H;
     const GRID_PAD  = 8;
     const GRID_X    = PX + GRID_PAD;
 
     // ── Onglets de filtrage (D13) — rangée fixe entre le titre SAC et la grille
     this.renderBagTabs(GRID_X, PY + TITLE_H, INV_COLS * INV_SLOT);
 
-    const GRID_Y    = PY + TITLE_H + BAG_TABS_H + 4;
-    const VISIBLE_H = PH - TITLE_H - BAG_TABS_H - 4;
+    // Le champ de recherche (créé dans create(), pas ici) occupe la bande entre
+    // les onglets et la grille : la grille démarre sous lui.
+    const SEARCH_BAND = BAG_SEARCH_H + BAG_SEARCH_GAP;
+    const GRID_Y    = PY + TITLE_H + BAG_TABS_H + 4 + SEARCH_BAND;
+    const VISIBLE_H = PH - TITLE_H - BAG_TABS_H - 4 - SEARCH_BAND;
 
     // Grouped by category (weapons / armor / accessories / ...), rarity-sorted within
     // each group — see InventorySystem.groupForDisplay. A layout pass computes every
     // group's header/item pixel offsets up front so contentH (and thus the scroll
     // mask + max scroll) is known before anything is drawn.
-    // L'onglet actif filtre les groupes AVANT la passe de layout (le scroll et
-    // la hauteur de contenu se recalculent donc naturellement).
+    // Les DEUX filtres (onglet de catégorie + recherche textuelle) s'appliquent
+    // AVANT la passe de layout — c'est la condition pour que `contentH`, le masque
+    // de scroll et la virtualisation se recalculent sur le contenu RÉELLEMENT
+    // affiché. Ils se COMBINENT : la recherche cherche dans l'onglet actif.
     const activeTab = BAG_TABS.find(tb => tb.id === this.bagFilter) ?? BAG_TABS[0]!;
     const groups = InventorySystem.groupForDisplay(this.player.inventory)
-      .filter(g => activeTab.cats === null || activeTab.cats.includes(g.category));
+      .filter(g => activeTab.cats === null || activeTab.cats.includes(g.category))
+      .map(g => ({ ...g, slots: g.slots.filter(s => this.matchesQuery(s.item)) }))
+      .filter(g => g.slots.length > 0);
     interface GroupLayout { category: InventoryCategory; slots: InventorySlot[]; headerY: number; itemsY: number }
     let cursorY = 0;
     const layouts: GroupLayout[] = groups.map((g) => {
@@ -855,14 +921,27 @@ export class InventoryScene extends Phaser.Scene {
       for (const { obj, baseY } of scrollables) obj.setY(baseY - sy);
     };
 
-    // Empty state — inventaire vide OU onglet actif sans aucun item
+    // État vide — sac vide, onglet sans item, OU recherche sans résultat : on
+    // distingue les cas, sinon « Inventaire vide » sur une recherche infructueuse
+    // ferait croire à un sac réellement vidé.
     if (groups.length === 0) {
+      const hasQuery = this.searchQuery.length > 0;
       this.dynamicObjs.push(
         this.add.text(
-          PX + PW / 2, GRID_Y + VISIBLE_H / 2,
-          t('inventory.empty'), uiStyle(11, UI.TXT_HINT),
+          PX + PW / 2, GRID_Y + VISIBLE_H / 2 - (hasQuery ? 10 : 0),
+          hasQuery ? t('search.no_results') : t('inventory.empty'),
+          uiStyle(TYPE.BODY, UI.TXT_MUTED, { bold: hasQuery }),
         ).setOrigin(0.5),
       );
+      if (hasQuery) {
+        this.dynamicObjs.push(
+          this.add.text(
+            PX + PW / 2, GRID_Y + VISIBLE_H / 2 + 14,
+            t('search.no_results_hint').replace('{q}', this.searchQuery),
+            uiStyle(TYPE.SMALL, UI.TXT_HINT, { align: 'center', wordWrapWidth: PW - 20 }),
+          ).setOrigin(0.5),
+        );
+      }
     }
 
     renderWindow(0);
@@ -1126,6 +1205,17 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+
+  /**
+   * Prédicat de recherche d'un objet du sac — sur le nom LOCALISÉ (`localizeItem`),
+   * la rareté et la catégorie affichée : le joueur cherche ce qu'il LIT à l'écran,
+   * pas l'id de data. Insensible à la casse ET aux accents (« epee » → « Épée »),
+   * cf. normalizeSearch/matchesSearch.
+   */
+  private matchesQuery(item: Item): boolean {
+    if (this.searchQuery.length === 0) return true;
+    return matchesSearch(this.searchQuery, localizeItem(item).name, t(`rarity.${item.rarity}`));
+  }
 
   /** Returns a valid texture key for the item icon, or null (caller draws a colored square). */
   private resolveIcon(item: Item): string | null {
@@ -1708,8 +1798,7 @@ export class InventoryScene extends Phaser.Scene {
 
   shutdown() {
     const KB = this.input.keyboard;
-    if (KB && this.keyEsc) KB.removeKey(this.keyEsc);
-    if (KB && this.keyZ)   KB.removeKey(this.keyZ);
+    if (KB && this.keyZ) { this.keyZ.removeAllListeners(); KB.removeKey(this.keyZ); this.keyZ = undefined; }
     // Cancel any in-flight long-press timer to prevent stale callbacks
     if (this.longPressTimer !== null) {
       clearTimeout(this.longPressTimer);
@@ -1717,6 +1806,11 @@ export class InventoryScene extends Phaser.Scene {
     }
     this.input.off('wheel');
     this.input.off('pointermove');
+    // Le champ de recherche possède un <input> DOM dans <body> et un listener de
+    // resize sur le Scale Manager — Phaser n'en sait rien : sans ce destroy(),
+    // l'input survivrait à la fermeture de l'inventaire (invisible mais
+    // focalisable, il avalerait les frappes du jeu).
+    if (this.search) { this.search.destroy(); this.search = null; }
     // clearDynamic() calls closeConsumePopup() internally
     this.clearDynamic();
   }

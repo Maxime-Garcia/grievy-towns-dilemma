@@ -32,6 +32,7 @@ import { ArsenalSystem, ARSENAL_ITEM_TYPES } from '../systems/ArsenalSystem';
 import { getBestiaryEntry } from '../data/bestiary';
 import type { BestiaryScene } from './BestiaryScene';
 import type { ArsenalScene } from './ArsenalScene';
+import type { InventoryScene } from './InventoryScene';
 import { ENEMY_SPRITE_BBOX, NPC_SPRITE_BBOX, PLAYER_SPRITE_BBOX } from '../data/spriteGeometry';
 import { fitSpriteToContent } from '../utils/SpriteFit';
 import {
@@ -4460,13 +4461,29 @@ export class GameScene extends Phaser.Scene {
     this.escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     this.escKey.on('down', () => {
       if (this.isInDialogue) return;
-      if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); return; }
+      // handleEscape() : l'écran a une chance de CONSOMMER l'appui avant qu'on ne
+      // le ferme (popup ouvert, champ de recherche non vide → Échap vide d'abord).
+      // GameScene est le propriétaire UNIQUE de l'ESC des overlays : un second
+      // handler ESC dans la scène overlay la refermerait dans la foulée.
+      if (this.scene.isActive('InventoryScene')) {
+        const inv = this.scene.get('InventoryScene') as InventoryScene;
+        if (inv.handleEscape()) return;
+        this.setPaused(false); this.scene.stop('InventoryScene'); return;
+      }
       if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene');     return; }
       // Bestiaire/Arsenal sont toujours ouverts depuis PauseScene (mise en pause
       // dessous) — leur propre close() sait la reprendre correctement, contrairement
       // à un setPaused(false) qui la laisserait bloquée en pause indéfiniment.
-      if (this.scene.isActive('BestiaryScene')) { (this.scene.get('BestiaryScene') as BestiaryScene).close(); return; }
-      if (this.scene.isActive('ArsenalScene'))  { (this.scene.get('ArsenalScene')  as ArsenalScene).close(); return; }
+      if (this.scene.isActive('BestiaryScene')) {
+        const bes = this.scene.get('BestiaryScene') as BestiaryScene;
+        if (bes.handleEscape()) return;
+        bes.close(); return;
+      }
+      if (this.scene.isActive('ArsenalScene')) {
+        const ars = this.scene.get('ArsenalScene') as ArsenalScene;
+        if (ars.handleEscape()) return;
+        ars.close(); return;
+      }
       if (!this.scene.isActive('PauseScene')) {
         this.setPaused(true);
         this.scene.launch('PauseScene', { gameScene: this });
