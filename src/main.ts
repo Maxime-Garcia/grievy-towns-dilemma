@@ -54,6 +54,16 @@ const config: Phaser.Types.Core.GameConfig = {
     width: 800,
     height: 600,
     zoom: Phaser.Scale.MAX_ZOOM,
+    // Second facteur du flou : Scale.FIT étire le canvas 800×600 pour remplir la
+    // fenêtre, d'un facteur qui n'a aucune raison d'être ENTIER (ex. ×2,37). Même
+    // sous `image-rendering: pixelated`, un pixel source ne tombe alors pas sur un
+    // nombre entier de pixels écran : certains sont doublés, d'autres non, et les
+    // glyphes ressortent baveux et d'épaisseur irrégulière.
+    // `autoRound` force les dimensions du canvas à des entiers, ce qui supprime le
+    // placement sub-pixel. Ça ne rend pas le RATIO entier (impossible sans bandes
+    // noires), mais ça élimine la moitié du problème — l'autre moitié, c'était la
+    // rastérisation hors grille de la police, traitée dans UITheme.snapFontSize().
+    autoRound: true,
   },
   physics: {
     default: 'arcade',

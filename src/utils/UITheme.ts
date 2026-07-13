@@ -126,13 +126,35 @@ export function setTextResolution(_zoom: number): void {
  */
 export const FONT_UI = FONT;
 
-/** Échelle typographique officielle (px logiques 800×600) — voir UI_UX_GUIDELINES.md §2.2 */
+/**
+ * Échelle typographique — voir UI_UX_GUIDELINES.md §2.2.
+ *
+ * ⚠ TOUTES LES VALEURS SONT DES MULTIPLES DE 7. Ce n'est pas une coquetterie :
+ * c'est la condition pour que le texte soit NET.
+ *
+ * Neatpixels est dessinée sur une grille de 7 pixels par em (mesuré dans le TTF :
+ * ascendante = 2048 unités = 7 px, et toutes les avances de glyphe sont des
+ * multiples de 2048/7). Une police pixel n'est nette QUE rastérisée à sa taille de
+ * grille ou à un multiple entier : à 9, 10, 12, 13 ou 15 px — l'ancienne échelle —
+ * chaque glyphe tombait ENTRE les pixels, et le rastériseur du navigateur
+ * l'anti-aliasait. Ce flou est cuit dans le canvas 2D du Text AVANT que Phaser ne
+ * voie quoi que ce soit : aucun réglage de filtrage (pixelArt, NEAREST, résolution
+ * de texte) ne peut le rattraper après coup. C'est ce qui a fait tourner en rond
+ * toutes les tentatives précédentes.
+ *
+ * Le corollaire est une échelle plus grossière — trois tailles au lieu de cinq. Elle
+ * est native au pixel art : on ne peut pas avoir à la fois une grille de 7 px et
+ * cinq paliers distincts en dessous de 21 px.
+ *
+ * Si l'échelle devait redevenir plus fine, il faudrait changer de police (une police
+ * à grille de 8 px donnerait 8/16/24) ou passer les textes en BitmapText.
+ */
 export const TYPE = {
-  TITLE:   15,  // titre d'écran (INVENTAIRE, SKILLS…)
-  HEADING: 13,  // nom d'item / de talent / speaker
-  BODY:    12,  // corps de texte, dialogue, valeurs
-  LABEL:   10,  // labels de stats, texte secondaire
-  SMALL:    9,  // badges, hints, micro-texte — MINIMUM absolu
+  TITLE:   21,  // titre d'écran (INVENTAIRE, SKILLS…)     — 3 × grille
+  HEADING: 14,  // nom d'item / de talent / speaker         — 2 × grille
+  BODY:    14,  // corps de texte, dialogue, valeurs        — 2 × grille
+  LABEL:    7,  // labels de stats, texte secondaire        — 1 × grille
+  SMALL:    7,  // badges, hints, micro-texte               — 1 × grille (plancher)
 } as const;
 
 /** Constantes de layout réutilisables */
@@ -161,21 +183,42 @@ export interface UiStyleOpts {
  * `pxStyle` reste disponible pour la police pixel (titres identitaires,
  * scènes non migrées).
  */
+/**
+ * Grille de dessin de Neatpixels, en pixels (cf. la doc de TYPE).
+ * Toute taille de police DOIT être un multiple de cette valeur pour être nette.
+ */
+export const FONT_GRID_PX = 7;
+
+/**
+ * Recale une taille de police sur la grille de la police.
+ *
+ * C'est LE verrou du rendu net, et il est ici plutôt que dans TYPE parce que ~160
+ * appels dans les scènes passent une taille LITTÉRALE (`uiStyle(9, …)`,
+ * `uiStyle(11, …)`) sans passer par TYPE. Corriger seulement TYPE aurait laissé la
+ * grande majorité des textes du jeu hors grille — donc flous. En verrouillant au
+ * point de passage unique, tout texte du jeu est net, y compris ceux qu'on écrira
+ * demain sans y penser.
+ *
+ * Plancher à une case de grille : jamais de texte à 0.
+ */
+export function snapFontSize(size: number): number {
+  return Math.max(FONT_GRID_PX, Math.round(size / FONT_GRID_PX) * FONT_GRID_PX);
+}
+
 export function uiStyle(
   size: number,
   color: string = UI.TXT_PARCHMENT,
   opts: UiStyleOpts = {},
 ): Phaser.Types.GameObjects.Text.TextStyle {
   const s: Phaser.Types.GameObjects.Text.TextStyle = {
-    fontSize:   `${size}px`,
+    // Recalé sur la grille de 7 px de Neatpixels : hors grille, le rastériseur du
+    // navigateur anti-aliase le glyphe et le flou est cuit dans le canvas avant que
+    // Phaser ne le voie (cf. doc de TYPE).
+    fontSize:   `${snapFontSize(size)}px`,
     color,
     fontFamily: FONT_UI,
-    // Le jeu tourne en pixelArt:true (filtrage NEAREST global, cf. main.ts) — sans ça,
-    // ce texte "moderne" (Verdana) hérite du même rendu blocky que les sprites au lieu
-    // d'un rendu net. `resolution` fait générer le canvas de texte en interne à une
-    // densité plus élevée avant le zoom du jeu, ce qui le garde net même sous NEAREST.
-    // Valeur calibrée sur le zoom réel par setTextResolution() (voir sa doc) — un `3`
-    // fixe ne suffit pas sur un grand écran où le Scale Manager choisit un zoom élevé.
+    // resolution 1 : la police est déjà nette à l'échelle 1:1 ; sur-échantillonner
+    // puis ré-échantillonner en NEAREST la dégraderait (cf. doc de TEXT_RESOLUTION).
     resolution: TEXT_RESOLUTION,
   };
   const styleParts: string[] = [];
@@ -838,12 +881,11 @@ export function pxStyle(
   stroke = false,
 ): Phaser.Types.GameObjects.Text.TextStyle {
   const s: Phaser.Types.GameObjects.Text.TextStyle = {
-    fontSize: `${size}px`,
+    // Même verrou que uiStyle() : taille recalée sur la grille de 7 px de Neatpixels,
+    // sans quoi le glyphe est anti-aliasé à la rastérisation (cf. doc de TYPE).
+    fontSize: `${snapFontSize(size)}px`,
     color,
     fontFamily: FONT,
-    // Même raison que dans uiStyle() (voir sa doc) — "Press Start 2P" a des
-    // courbes/diagonales qui aliasent tout autant sous le zoom NEAREST du jeu ;
-    // ça ne rend pas la police moins "8-bit", juste ses bords moins déchiquetés.
     resolution: TEXT_RESOLUTION,
   };
   if (stroke) {
