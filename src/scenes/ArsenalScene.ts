@@ -114,15 +114,10 @@ const DROP_SOURCE_MAX_ROWS = 6;
  */
 const IDENTITY_RESERVE_PX = 44;
 
-/**
- * Sous-titre du bloc fourchettes (§7.1) — hardcodé FR (pas de clé i18n) : la
- * catégorie de contenu equipStats/equipRanges n'est pas encore localisée
- * ailleurs dans ce fichier (cf. StatsSystem.STAT_LABELS, même convention).
- */
+// Sous-titre du bloc fourchettes (§7.1) : cf. clé `arsenal.ranges_subtitle`.
 // « Fourchettes à l'obtention » sonnait comme une note de spécification. Ce bloc
 // annonce ce que l'objet PEUT rouler quand il tombe — c'est une promesse de butin,
 // pas une plage de tolérance industrielle.
-const RANGES_SUBTITLE = 'Jets possibles au butin';
 
 export class ArsenalScene extends Phaser.Scene {
   private gameScene!: GameScene;
@@ -700,7 +695,7 @@ export class ArsenalScene extends Phaser.Scene {
     const rangeLines = entry.discovered ? this.equipRangeLines(item) : [];
     if (rangeLines.length > 0) {
       blocks.push({
-        text: `${RANGES_SUBTITLE}\n${rangeLines.join('\n')}`,
+        text: `${t('arsenal.ranges_subtitle')}\n${rangeLines.join('\n')}`,
         style: uiStyle(TYPE.SMALL, UI.TXT_MUTED, { italic: true, lineSpacing: 4, wordWrapWidth: this.LORE_W }),
       });
     }

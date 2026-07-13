@@ -15,6 +15,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const BUNDLE = path.join(ROOT, 'assets', 'Bundle_extracted');
@@ -81,9 +82,62 @@ const armorPool = (type) => {
   const folders = type === 'HELM' ? ['Leather Helm', 'Steel Helm'] : ['Leather Armor', 'Steel Armor'];
   return pool(`armory|${type}`, () => folders.flatMap(f => inFolder('Armory Item Icons', f)));
 };
-// Fourre-tout : 990 icônes génériques (potions, gemmes, anneaux, capes, bottes…)
+// Fourre-tout : 990 icônes génériques — DERNIER recours uniquement (cf. TYPE_RANGES).
 const genericPool = () =>
   pool('generic', () => inFolder('Item Icons [Rogue Adventure]', 'Single Sprites'));
+
+// ── Pools par TYPE d'objet, tirés du pack Rogue Adventure ────────────────────
+//
+// Le pack « Single Sprites » n'est PAS un tas informe : ses 990 fichiers sont
+// numérotés (RA_Item_Icons_N.png) et rangés par blocs de 8 — une série de 8
+// gants, puis 8 bottes, puis 8 anneaux, etc., déclinés en 4 à 8 coloris.
+// L'ancienne version de ce script l'ignorait et piochait au HASARD dans les 990
+// pour tout ce qui n'était ni arme, ni casque, ni plastron. D'où le poisson sur
+// une paire de bottes et la sacoche sur une cape (bug reporté) : les poissons
+// (817-832) et les bourses (733-736, 665-672) sont dans le même tas.
+//
+// Les plages ci-dessous ont été relevées À L'ŒIL sur des planches de contact
+// générées depuis les PNG (cf. .tmp/blocks*.png) — pas devinées.
+//
+// Cas particuliers assumés :
+//  - LEGS : le pack n'a AUCUNE jambière. Faute de mieux, on prend la série des
+//    ceinturons/cuissards (taille basse) — c'est de l'équipement de bas du corps,
+//    donc lisible, là où une icône au hasard ne l'était pas.
+//  - CAPE : série des manteaux/robes ouverts à revers (les 5 dernières cases de
+//    chaque bloc d'armure), le plus proche d'une cape dans le pack.
+const TYPE_RANGES = {
+  GLOVES:     [[25, 32], [57, 64], [89, 96], [121, 128]],
+  LEGS:       [[145, 152], [177, 184], [209, 216], [241, 248]], // ceinturons
+  BOOTS:      [[153, 160], [185, 192], [217, 224], [249, 256]],
+  AMULET:     [[273, 280], [305, 312], [337, 344], [369, 376]],
+  RING:       [[281, 288], [313, 320], [345, 352], [377, 384]],
+  CAPE:       [[780, 784], [812, 816], [844, 848], [876, 880],
+               [908, 912], [940, 944], [972, 976], [1004, 1008]],
+  // Fioles : les blocs 401-416 et 433-448 — PAS 417-432, qui est une série de
+  // haches glissée au milieu (une plage 401-448 d'un bloc mettait des haches
+  // dans les consommables).
+  CONSUMABLE: [[401, 416], [433, 448]],
+  MATERIAL:   [[497, 512], [529, 544], [561, 576], [593, 608],   // gemmes
+               [625, 640], [657, 664], [689, 696], [721, 728]],  // minerais/lingots
+  KEY_ITEM:   [[465, 480]],                                      // clés
+};
+
+const SINGLES = path.join(
+  BUNDLE, 'Item Icons [Rogue Adventure]', 'Item Icons [Rogue Adventure]', 'Single Sprites',
+);
+/** Chemins existants d'une liste de plages [début, fin] inclusives. */
+const typePool = (type) => pool(`type|${type}`, () => {
+  const ranges = TYPE_RANGES[type];
+  if (!ranges) return [];
+  const out = [];
+  for (const [from, to] of ranges) {
+    for (let n = from; n <= to; n++) {
+      const p = path.join(SINGLES, `RA_Item_Icons_${n}.png`);
+      if (fs.existsSync(p)) out.push(p);
+    }
+  }
+  return out;
+});
 
 // ── Lecture du catalogue ───────────────────────────────────────────
 const src = fs.readFileSync(ITEMS_TS, 'utf8');
@@ -107,14 +161,26 @@ fs.mkdirSync(ICONS, { recursive: true });
 let filled = 0, skipped = 0;
 const byKind = {};
 
+// Les types qui ont GAGNÉ un pool dédié (TYPE_RANGES) portent aujourd'hui une
+// icône tirée du fourre-tout : il faut la REMPLACER, pas la conserver. On ne
+// réécrit que si le PNG en place vient effectivement du pool générique (hash du
+// contenu) — une icône dessinée à la main reste intouchable.
+const genericHashes = new Set(
+  genericPool().map(p => crypto.createHash('md5').update(fs.readFileSync(p)).digest('hex')),
+);
+const isGenericArtwork = (file) =>
+  genericHashes.has(crypto.createHash('md5').update(fs.readFileSync(file)).digest('hex'));
+
 for (const it of items) {
   const dest = path.join(ICONS, `${it.icon}.png`);
-  if (fs.existsSync(dest)) { skipped++; continue; }
+  const hasDedicatedPool = TYPE_RANGES[it.type] !== undefined;
+  if (fs.existsSync(dest) && !(hasDedicatedPool && isGenericArtwork(dest))) { skipped++; continue; }
 
   let p = [];
   let kind;
   if (it.type === 'WEAPON' && it.weaponType) { p = weaponPool(it.weaponType, it.element); kind = it.weaponType; }
   else if (it.type === 'HELM' || it.type === 'CHEST') { p = armorPool(it.type); kind = it.type; }
+  else if (hasDedicatedPool) { p = typePool(it.type); kind = it.type; }
   else { p = genericPool(); kind = it.type ?? 'AUTRE'; }
 
   if (p.length === 0) { p = genericPool(); kind = `${kind}(fallback)`; }

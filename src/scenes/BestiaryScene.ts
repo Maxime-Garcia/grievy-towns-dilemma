@@ -761,7 +761,10 @@ export class BestiaryScene extends Phaser.Scene {
       slot = 40; gap = 8;
       perRow = Math.floor((availW + gap) / (slot + gap));
     }
-    const rowPitch = slot + 18; // vignette + taux de drop affiché dessous
+    // 18 → 8 : le pas de rangée réservait la place du taux de drop écrit sous
+    // chaque vignette. Ce texte a disparu (cf. renderDropSlot) — la grille se
+    // resserre d'autant, et la section respire au lieu de s'étirer pour rien.
+    const rowPitch = slot + 8;
     const rowCount = drops.length > perRow ? 2 : 1;
     const dropsY = this.DET_Y + this.DET_H - (rowCount === 2 ? 22 + rowPitch * 2 + 6 : 130);
     this.addSectionTitle(t('bestiary.loot_title'), dropsY);
@@ -930,12 +933,12 @@ export class BestiaryScene extends Phaser.Scene {
       );
     }
 
-    // Taux de drop sous le slot — info immédiate sans tap (dropRatePct / 100 → ratio 0-1)
-    const rate = drop.dropRatePct / 100;
-    this.detailObjs.push(
-      this.add.text(sx + size / 2, sy + size + 10, formatDropRate(rate),
-        uiStyle(TYPE.SMALL, revealed ? UI.TXT_MUTED : UI.TXT_HINT)).setOrigin(0.5),
-    );
+    // Le taux de drop N'EST PLUS écrit sous chaque vignette : sur une table de
+    // 17 butins, ça faisait 17 pourcentages en petit gris sous une grille déjà
+    // dense — un mur de chiffres qui noyait ce qu'on vient lire (QUOI tombe),
+    // pour une info qu'on ne consulte que ponctuellement (À QUELLE FRÉQUENCE).
+    // Le taux vit désormais UNIQUEMENT dans le tooltip au clic (showDropTooltip)
+    // et dans la liste du slot « +N » (renderOverflowSlot).
 
     // Hit zone élargie : tap = tooltip détaillé
     const hit = this.add.rectangle(sx + size / 2, sy + size / 2, size + 6, size + 6, 0, 0)

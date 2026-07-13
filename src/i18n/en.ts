@@ -92,6 +92,7 @@ const EN_MANUAL: Record<string, string> = {
   'arsenal.not_discovered': 'Unknown equipment. Find it in-game to discover it.',
   'arsenal.description_title': 'DESCRIPTION',
   'arsenal.passive_label': 'Passive:',
+  'arsenal.ranges_subtitle': 'Possible rolls on drop',
   'arsenal.hint': '[↑↓] navigate · scroll/drag · [Esc] close',
   'arsenal.section_weapon': 'Weapons',
   'arsenal.section_helm': 'Helms',
@@ -246,6 +247,51 @@ const EN_MANUAL: Record<string, string> = {
   'inventory.category_material':   'Materials',
   'inventory.category_key_item':   'Key Items',
   'inventory.category_skin':       'Skins',
+
+  // Bag filter tabs — tooltip labels shown on icon hover. Distinct from the
+  // `category_*` keys above: a tab GROUPS categories ("Gear" = weapons + armor
+  // + accessories), it does not mirror them one-to-one.
+  'inventory.tab_all':        'All',
+  'inventory.tab_equip':      'Gear',
+  'inventory.tab_consumable': 'Consumables',
+  'inventory.tab_material':   'Materials',
+  'inventory.tab_misc':       'Quest & Misc',
+
+  // ── STAT LABELS (StatsSystem.formatStat) ─────────────────────
+  // Used everywhere a rolled stat or a loot range is shown: inventory,
+  // Arsenal, equipment comparison.
+  'stat.ATK_FLAT':          'ATK',
+  'stat.ATK_PCT':           'ATK',
+  'stat.MATK_FLAT':         'M.ATK',
+  'stat.MATK_PCT':          'M.ATK',
+  'stat.DEF_FLAT':          'DEF',
+  'stat.DEF_PCT':           'DEF',
+  'stat.HP_FLAT':           'HP',
+  'stat.HP_PCT':            'Max HP',
+  'stat.CRIT_RATE':         'Crit Rate',
+  'stat.CRIT_DMG':          'Crit DMG',
+  'stat.ASPD_PCT':          'Atk Speed',
+  'stat.SPD_FLAT':          'SPD',
+  'stat.ELEM_BONUS_PCT':    'Elem. DMG',
+  'stat.MANA_FLAT':         'Mana',
+  'stat.LIFESTEAL_PCT':     'Lifesteal',
+  'stat.MDEF_FLAT':         'M.DEF',
+  'stat.CDR_PCT':           'Cooldown Red.',
+  'stat.DODGE_PCT':         'Dodge',
+  'stat.BOSS_DMG_PCT':      'DMG vs Boss',
+  'stat.HP_ON_KILL_FLAT':   'HP on Kill',
+  'stat.MANA_ON_KILL_FLAT': 'Mana on Kill',
+
+  // ── RESONANCE (roll quality of an instance — UITheme.formatResonanceLine) ──
+  // The 5 tiers keep their French names as internal KEYS (StatRollSystem
+  // compares them literally to decide drop notifications): only the display
+  // string is translated.
+  'resonance.label':     'Resonance',
+  'resonance.Sourde':    'Dull',
+  'resonance.Stable':    'Steady',
+  'resonance.Claire':    'Clear',
+  'resonance.Vibrante':  'Vibrant',
+  'resonance.Parfaite':  'Perfect',
 
   // ── STATS PANEL (inventory) ──────────────────────────────────
   'stats.section_offense': 'OFFENSE',

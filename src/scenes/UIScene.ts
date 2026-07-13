@@ -1,7 +1,7 @@
 import { PlayerState, Item, ItemRarity, RARITY_COLORS } from '../types';
 import { GameScene } from './GameScene';
 import { SKILL_MAP } from '../data/skills';
-import { UI, drawGlowPanel, drawSlot, drawBar, addUiFrame, uiStyle, resonanceColor, TYPE, fitText } from '../utils/UITheme';
+import { UI, drawGlowPanel, drawSlot, drawBar, addUiFrame, uiStyle, resonanceColor, TYPE, fitText, formatResonanceLine } from '../utils/UITheme';
 import { StatRollSystem } from '../systems/StatRollSystem';
 import { t, localizeItem, localizeSkill } from '../i18n';
 
@@ -101,7 +101,7 @@ export class UIScene extends Phaser.Scene {
     // sur fond translucide. Exclue volontairement de la règle "toujours uiStyle()" :
     // c'est un badge de debug monospace (lisibilité console), pas un texte de jeu —
     // uiStyle() impose FONT_UI (Verdana), incompatible avec l'esthétique recherchée ici.
-    const BUILD_LABEL = 'Recherche + i18n complet (9e8f3c2)';
+    const BUILD_LABEL = 'Icones par slot + i18n stats (05e8a68)';
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',
@@ -700,7 +700,7 @@ export class UIScene extends Phaser.Scene {
       ? UI.GLOW_GOLD // halo « événement » — même or que le bandeau de zone (onZoneEntered)
       : parseInt(resonanceColor(q).slice(1), 16); // or de palier §4.3, seuils non dupliqués
     this.pushNotifEntry({
-      msg: `${name}  ×${quantity} — Résonance ${q}% (${label})`,
+      msg: `${name}  ×${quantity} — ${formatResonanceLine(q)}`,
       color: rarityColor,
       glow,
       // « Un Common parfait est un petit événement ; il doit se sentir » :

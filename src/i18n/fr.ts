@@ -72,6 +72,7 @@ export const FR: Record<string, string> = {
   'arsenal.not_discovered': 'Équipement inconnu. Trouvez-le en jeu pour le découvrir.',
   'arsenal.description_title': 'DESCRIPTION',
   'arsenal.passive_label': 'Passif :',
+  'arsenal.ranges_subtitle': 'Jets possibles au butin',
   'arsenal.hint': '[↑↓] naviguer · molette/glisser · [Échap] fermer',
   'arsenal.section_weapon': 'Armes',
   'arsenal.section_helm': 'Casques',
@@ -229,6 +230,50 @@ export const FR: Record<string, string> = {
   'inventory.category_material':   'Matériaux',
   'inventory.category_key_item':   'Objets clés',
   'inventory.category_skin':       'Skins',
+
+  // Onglets de filtrage du sac — libellés du tooltip au survol de l'icône.
+  // Distincts des `category_*` ci-dessus : un onglet REGROUPE des catégories
+  // (« Équipement » = armes + armures + accessoires), il ne les décalque pas.
+  'inventory.tab_all':        'Tous',
+  'inventory.tab_equip':      'Équipement',
+  'inventory.tab_consumable': 'Consommables',
+  'inventory.tab_material':   'Matériaux',
+  'inventory.tab_misc':       'Quête & divers',
+
+  // ── LIBELLÉS DE STATS (StatsSystem.formatStat) ───────────────
+  // Utilisés partout où une stat rollée ou une fourchette s'affiche :
+  // inventaire, Arsenal, comparaison d'équipement.
+  'stat.ATK_FLAT':          'ATK',
+  'stat.ATK_PCT':           'ATK',
+  'stat.MATK_FLAT':         'M.ATK',
+  'stat.MATK_PCT':          'M.ATK',
+  'stat.DEF_FLAT':          'DEF',
+  'stat.DEF_PCT':           'DEF',
+  'stat.HP_FLAT':           'PV',
+  'stat.HP_PCT':            'PV Max',
+  'stat.CRIT_RATE':         'Taux CRIT',
+  'stat.CRIT_DMG':          'DGT CRIT',
+  'stat.ASPD_PCT':          'Vit. d\'attaque',
+  'stat.SPD_FLAT':          'VIT',
+  'stat.ELEM_BONUS_PCT':    'Dégâts élém.',
+  'stat.MANA_FLAT':         'Mana',
+  'stat.LIFESTEAL_PCT':     'Vol de vie',
+  'stat.MDEF_FLAT':         'DEF Mag.',
+  'stat.CDR_PCT':           'Réd. Cooldown',
+  'stat.DODGE_PCT':         'Esquive',
+  'stat.BOSS_DMG_PCT':      'DGT vs Boss',
+  'stat.HP_ON_KILL_FLAT':   'PV au kill',
+  'stat.MANA_ON_KILL_FLAT': 'Mana au kill',
+
+  // ── RÉSONANCE (qualité de jet d'une instance — UITheme.formatResonanceLine) ──
+  // Les 5 paliers gardent leur nom FR comme CLÉ interne (StatRollSystem le
+  // compare en dur pour décider des notifications) : seul l'affichage est traduit.
+  'resonance.label':     'Résonance',
+  'resonance.Sourde':    'Sourde',
+  'resonance.Stable':    'Stable',
+  'resonance.Claire':    'Claire',
+  'resonance.Vibrante':  'Vibrante',
+  'resonance.Parfaite':  'Parfaite',
 
   // ── PANNEAU DE STATISTIQUES (inventaire) ─────────────────────
   'stats.section_offense': 'OFFENSE',

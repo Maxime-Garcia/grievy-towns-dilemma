@@ -9,6 +9,7 @@ import {
 } from '../types';
 import { ProgressionSystem } from './ProgressionSystem';
 import { CDR_CAP_PCT, DODGE_CAP_PCT, BOSS_DMG_CAP_PCT } from './StatRollSystem';
+import { t } from '../i18n';
 
 // ============================================================
 // StatsSystem — agrégation des stats joueur + équipement
@@ -68,30 +69,19 @@ const PERCENT_KEYS: ReadonlySet<SubstatKey> = new Set<SubstatKey>([
   'CDR_PCT', 'DODGE_PCT', 'BOSS_DMG_PCT',
 ]);
 
-/** Libellés lisibles par le joueur (UI panneaux d'items, comparaisons). */
-const STAT_LABELS: Record<SubstatKey, string> = {
-  ATK_FLAT: 'ATK',
-  ATK_PCT: 'ATK',
-  MATK_FLAT: 'M.ATK',
-  MATK_PCT: 'M.ATK',
-  DEF_FLAT: 'DEF',
-  DEF_PCT: 'DEF',
-  HP_FLAT: 'PV',
-  HP_PCT: 'PV Max',
-  CRIT_RATE: 'Taux CRIT',
-  CRIT_DMG: 'DGT CRIT',
-  ASPD_PCT: 'Vit. d\'attaque',
-  SPD_FLAT: 'VIT',
-  ELEM_BONUS_PCT: 'Dégâts élém.',
-  MANA_FLAT: 'Mana',
-  LIFESTEAL_PCT: 'Vol de vie',
-  MDEF_FLAT: 'DEF Mag.',
-  CDR_PCT: 'Réd. Cooldown',
-  DODGE_PCT: 'Esquive',
-  BOSS_DMG_PCT: 'DGT vs Boss',
-  HP_ON_KILL_FLAT: 'PV au kill',
-  MANA_ON_KILL_FLAT: 'Mana au kill',
-};
+/**
+ * Libellé joueur d'une stat (panneaux d'items, comparaisons, fourchettes de
+ * l'Arsenal) — LOCALISÉ.
+ *
+ * C'était une table `Record<SubstatKey, string>` figée en français. Comme le
+ * lore et les noms d'items, eux, passent par i18n, un joueur en anglais lisait
+ * « Vol de vie » sous une description anglaise (mélange FR/EN reporté). Le
+ * libellé est du texte d'interface : il appartient aux dictionnaires.
+ *
+ * `t()` retombe sur FR puis sur la clé elle-même — un `SubstatKey` ajouté sans
+ * traduction s'affiche donc en clair (`stat.NEW_KEY`) au lieu de planter.
+ */
+const statLabel = (key: SubstatKey): string => t(`stat.${key}`);
 
 const ZERO_TOTALS = (): Record<SubstatKey, number> => ({
   ATK_FLAT: 0, ATK_PCT: 0, MATK_FLAT: 0, MATK_PCT: 0,
@@ -205,7 +195,7 @@ export class StatsSystem {
   static formatStat(key: SubstatKey, value: number, isPercentage?: boolean): string {
     const pct = isPercentage ?? PERCENT_KEYS.has(key);
     const sign = value >= 0 ? '+' : '';
-    return `${sign}${value}${pct ? '%' : ''} ${STAT_LABELS[key]}`;
+    return `${sign}${value}${pct ? '%' : ''} ${statLabel(key)}`;
   }
 
   // ── Internes ──────────────────────────────────────────────

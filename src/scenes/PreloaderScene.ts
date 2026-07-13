@@ -103,13 +103,20 @@ export class PreloaderScene extends Phaser.Scene {
   // ── Icônes des onglets de filtrage du sac (InventoryScene.renderBagTabs) ──
   // Glyphes ui_icons_16 bakés en parchemin neutre : l'état actif/inactif se
   // joue à l'ALPHA (pas à la teinte), pour rester lisible sur les deux fonds
-  // d'onglet. Indices repérés sur la planche `Icons 32x32 Style 01.png` du pack
-  // (même ordre que la sheet) — mêmes conventions que SKILL_ICON_FRAME.
+  // d'onglet. Mêmes conventions que SKILL_ICON_FRAME.
+  //
+  // La sheet fait 16 colonnes × 21 rangées de glyphes 16 px : index = rangée×16
+  // + colonne. Les indices ci-dessous ont été relevés à l'œil sur un rendu
+  // agrandi de la planche. Une première passe les avait DEVINÉS, et posait un
+  // collier sur l'onglet Consommables (273 et 274 tombent dans la rangée des
+  // pendentifs) — d'où la vérification visuelle, désormais obligatoire ici.
+  //
+  // `bagtab_material` n'est PAS dans cette table : la planche ne contient
+  // aucune feuille, on la dessine (cf. generateLeafGlyph).
   private static readonly BAG_TAB_ICON_FRAME: Record<string, number> = {
-    bagtab_all:        138, // grille de cases — tout l'inventaire
-    bagtab_equip:      0,   // épée — armes & armures (index vérifié : echo_strike)
-    bagtab_consumable: 273, // fiole/calice — consommables (index vérifié : elaras_gift)
-    bagtab_material:   274, // gemme — matériaux (index vérifié : prism_burst)
+    bagtab_all:        335, // grille 2×2 — tout l'inventaire (dernière rangée, UI)
+    bagtab_equip:      0,   // épée — armes & armures
+    bagtab_consumable: 155, // fiole bouchonnée — consommables (rangée 9, fioles)
     bagtab_misc:       217, // clé — objets de quête & divers (rangée des clés)
   };
 
@@ -346,6 +353,62 @@ export class PreloaderScene extends Phaser.Scene {
     for (const [key, frame] of Object.entries(PreloaderScene.BAG_TAB_ICON_FRAME)) {
       this.bakeTintedGlyph(key, frame, 0xf0e8d8);
     }
+    this.generateLeafGlyph('bagtab_material', 0xf0e8d8);
+  }
+
+  /**
+   * Glyphe FEUILLE de l'onglet Matériaux — dessiné, pas extrait.
+   *
+   * La planche `ui_icons_16` (336 glyphes) n'a aucune feuille : ses seuls
+   * « matériaux » sont des gemmes et des lingots, et une gemme lit comme un
+   * objet précieux, pas comme une ressource. On construit donc la feuille au
+   * même format que les autres onglets (grille 16 px, upscalée ×2 en 32×32 —
+   * facteur ENTIER, sinon NEAREST bave) pour qu'elle s'aligne pixel pour pixel
+   * avec les glyphes bakés depuis la planche.
+   *
+   * Géométrie : lentille (intersection de deux disques de même rayon dont les
+   * centres sont posés de part et d'autre de l'axe de la feuille), nervure
+   * évidée le long de cet axe, tige prolongée sous la base.
+   */
+  private generateLeafGlyph(key: string, tint: number): void {
+    if (this.textures.exists(key)) {
+      const src = this.textures.get(key).source[0]?.image;
+      if (src instanceof HTMLImageElement) return; // vrai PNG dédié — prioritaire
+      this.textures.remove(key);
+    }
+
+    const G = 16;  // grille logique
+    const S = 2;   // upscale entier → texture 32×32, comme bakeTintedGlyph
+    const canvas = document.createElement('canvas');
+    canvas.width  = G * S;
+    canvas.height = G * S;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#' + tint.toString(16).padStart(6, '0');
+
+    // Axe de la feuille : la diagonale x + y = 16 (pointe en haut à droite,
+    // base en bas à gauche). Centres des deux disques posés symétriquement
+    // de part et d'autre de cet axe.
+    const R  = 9.3;
+    const C1 = { x: 12.2, y: 12.2 };
+    const C2 = { x: 3.8,  y: 3.8  };
+    const inDisk = (c: { x: number; y: number }, x: number, y: number) =>
+      Math.hypot(x - c.x, y - c.y) <= R;
+
+    for (let y = 0; y < G; y++) {
+      for (let x = 0; x < G; x++) {
+        // +0.5 : on teste le CENTRE du pixel, pas son coin
+        const px = x + 0.5;
+        const py = y + 0.5;
+        const body = inDisk(C1, px, py) && inDisk(C2, px, py);
+        // Nervure : on évide la bande le long de l'axe (lisible dès 16 px)
+        const onAxis = Math.abs(px + py - 16) < 1.1;
+        const stem   = onAxis && px >= 1 && px <= 4.5;
+        if ((body && !onAxis) || stem) ctx.fillRect(x * S, y * S, S, S);
+      }
+    }
+    this.textures.addCanvas(key, canvas);
   }
 
   /**

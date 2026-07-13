@@ -3,6 +3,8 @@
 
 import type { RangedStat } from '../types';
 import { StatsSystem } from '../systems/StatsSystem';
+import { StatRollSystem } from '../systems/StatRollSystem';
+import { t } from '../i18n';
 
 export const UI = {
   // Panel backgrounds
@@ -1079,4 +1081,18 @@ export function resonanceColor(pct: number): string {
   if (pct >= 60) return UI.TXT_CYAN;
   if (pct >= 30) return UI.TXT_WHITE;
   return UI.TXT_MUTED;
+}
+
+/**
+ * Ligne de Résonance affichée au joueur : `Résonance 72% — Claire`.
+ *
+ * `StatRollSystem.getResonanceLabel()` renvoie un libellé FRANÇAIS qui sert de
+ * CLÉ dans la logique (`label === 'Vibrante'` conditionne les notifications de
+ * drop) : on ne peut pas le traduire à la source sans casser ces comparaisons.
+ * On le traduit donc ICI, au point d'affichage — les trois sites qui montraient
+ * cette ligne la composaient chacun à la main, en français en dur.
+ */
+export function formatResonanceLine(quality: number): string {
+  const key = StatRollSystem.getResonanceLabel(quality);
+  return `${t('resonance.label')} ${quality}% — ${t(`resonance.${key}`)}`;
 }
