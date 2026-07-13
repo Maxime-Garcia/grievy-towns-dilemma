@@ -569,8 +569,20 @@ export class ArsenalScene extends Phaser.Scene {
         : undefined;
       if (passiveLabel) {
         iy += 4;
-        this.detailObjs.push(this.add.text(ix, iy, `${t('arsenal.passive_label')} ${passiveLabel}`,
-          uiStyle(9, UI.TXT_GOLD, { bold: true, wordWrapWidth: iw, lineSpacing: 4 })));
+        const passiveTxt = this.add.text(ix, iy, `${t('arsenal.passive_label')} ${passiveLabel}`,
+          uiStyle(TYPE.SMALL, UI.TXT_GOLD, { bold: true, wordWrapWidth: iw, lineSpacing: 4 }));
+        this.detailObjs.push(passiveTxt);
+
+        // Le titre « Description » est à une position FIXE (descY, ci-dessous) : la
+        // géométrie du panneau doit rester identique pour tous les items. Le bloc
+        // identité, lui, est en FLUX — et avec un nom qui wrappe sur 2 lignes ou un
+        // passif sur 3, il n'arrivait plus qu'à ~2 px du filet du titre, qu'il finissait
+        // par mordre. On borne donc le passif à l'espace réellement disponible plutôt
+        // que d'espérer qu'il tienne : il est tronqué en hauteur, pas empilé par-dessus.
+        const passiveLimit = this.DET_Y + pad + 96 + 18 + PASSIVE_RESERVE_PX - 10;
+        while (passiveTxt.text.length > 4 && iy + passiveTxt.height > passiveLimit) {
+          passiveTxt.setText(`${passiveTxt.text.slice(0, -6)}…`);
+        }
       }
     }
 

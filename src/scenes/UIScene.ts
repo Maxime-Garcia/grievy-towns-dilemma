@@ -45,6 +45,8 @@ export class UIScene extends Phaser.Scene {
   private nameMaxW = 160;
   /** Style du nom, conserve pour que fitText mesure avec EXACTEMENT la meme police. */
   private nameStyle!: Phaser.Types.GameObjects.Text.TextStyle;
+  /** Dernier nom BRUT passe a fitText — evite de le recalculer a chaque frame. */
+  private lastRawName = '';
 
   private HP_Y!: number;
   private MP_Y!: number;
@@ -99,7 +101,7 @@ export class UIScene extends Phaser.Scene {
     // sur fond translucide. Exclue volontairement de la règle "toujours uiStyle()" :
     // c'est un badge de debug monospace (lisibilité console), pas un texte de jeu —
     // uiStyle() impose FONT_UI (Verdana), incompatible avec l'esthétique recherchée ici.
-    const BUILD_LABEL = 'Refonte UI: 960x720 + hierarchie (4e61256)';
+    const BUILD_LABEL = 'Refonte UI complete (d76460e)';
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',
@@ -558,10 +560,18 @@ export class UIScene extends Phaser.Scene {
     if (!this.sys.isActive()) return;
     const { width: W, height: H } = this.cameras.main;
 
-    // Nom tronqué à la LARGEUR RÉELLE disponible (fitText mesure en pixels), plus à
-    // un nombre de caractères. Un nom de 16 lettres — le maximum autorisé à la
-    // création — entrait sinon dans le « Nv.XX » ancré à droite.
-    this.playerNameText.setText(fitText(this, player.name, this.nameStyle, this.nameMaxW));
+    // Nom tronqué à la LARGEUR RÉELLE disponible (fitText mesure en pixels), plus à un
+    // nombre de caractères. Un nom de 16 lettres — le maximum autorisé à la création —
+    // entrait sinon dans le « Nv.XX » ancré à droite.
+    //
+    // MIS EN CACHE : cette méthode est appelée à CHAQUE FRAME (GameScene.update émet
+    // `player_update` sans condition), et fitText alloue un canvas + une texture GPU à
+    // chaque appel. Le nom, lui, ne change jamais en cours de partie — on ne recalcule
+    // que s'il a bougé.
+    if (player.name !== this.lastRawName) {
+      this.lastRawName = player.name;
+      this.playerNameText.setText(fitText(this, player.name, this.nameStyle, this.nameMaxW));
+    }
     this.levelText.setText(`${t('ui.level')}${player.level}`);
 
     this.targetHp    = Math.max(0, player.stats.hp / player.stats.maxHp);

@@ -68,12 +68,26 @@ const ZONE_ENEMY_COLORS: Record<string, number> = {
 };
 
 /**
- * Zoom de la caméra du MONDE. Compense l'agrandissement du canvas (800×600 → 960×720,
- * soit ×1,2) pour que la zone de monde visible et la taille apparente des sprites
- * restent identiques à ce qu'elles étaient — le gamefeel est validé, il ne doit pas
- * bouger parce que l'UI avait besoin de place. Cf. setupCamera().
+ * Zoom de la caméra du MONDE. **Doit rester ENTIER.**
+ *
+ * Il a valu 1,2 un temps, pour compenser l'agrandissement du canvas (800×600 → 960×720)
+ * et garder un cadrage identique. C'était une erreur, et elle est instructive : le jeu
+ * tourne en `pixelArt: true`, donc en filtrage NEAREST. Un zoom de 1,2 ré-échantillonne
+ * TOUT le monde d'un facteur non entier À L'INTÉRIEUR du canvas — un sprite de 32 px
+ * est dessiné sur 38,4 px, donc une colonne de pixels sur cinq est doublée et les
+ * autres non. C'est exactement le défaut d'épaisseur irrégulière que toute la passe
+ * typographique venait d'éliminer : on rajoutait une étape de rééchantillonnage pour
+ * sauver un cadrage.
+ *
+ * À 1, le monde est dessiné 1:1 dans le canvas — net. Le canvas plus grand montre
+ * simplement 20 % de monde en plus. La PHYSIQUE est en unités monde (inertie, dash,
+ * portées d'armes, aggro) : elle est rigoureusement inchangée. Seul le champ de vision
+ * s'élargit.
+ *
+ * Si le cadrage devait absolument être restauré un jour, la seule voie propre est un
+ * zoom ENTIER (×2) avec un canvas doublé — pas un facteur fractionnaire.
  */
-const WORLD_CAMERA_ZOOM = 1.2;
+const WORLD_CAMERA_ZOOM = 1;
 
 // ── ATTACK PATTERNS ──────────────────────────────────────────────────────────
 // Pure data — each weapon has a sequence of hits (timing, range, arc, dmg mult)
@@ -3426,8 +3440,15 @@ export class GameScene extends Phaser.Scene {
   /** Position écran du joueur (pour le HUD combo de UIScene — caméra parallèle). */
   getPlayerScreenPosition(): { x: number; y: number } | null {
     if (!this.player || !this.player.active) return null;
-    const wv = this.cameras.main.worldView;
-    return { x: this.player.x - wv.x, y: this.player.y - wv.y };
+    // Conversion monde → ÉCRAN : le facteur de zoom est indispensable. `worldView` est
+    // en unités de monde ; l'appelant (UIScene, caméra à zoom 1) travaille en pixels
+    // écran. Sans le `* zoom`, les pips de combo se décalaient de tout le facteur de
+    // zoom dès qu'il n'était plus 1 — jusqu'à 160 px en bord d'écran.
+    const cam = this.cameras.main;
+    return {
+      x: (this.player.x - cam.worldView.x) * cam.zoom,
+      y: (this.player.y - cam.worldView.y) * cam.zoom,
+    };
   }
 
   private spawnFinisherVfx(weaponType: WeaponType | undefined, angle: number) {

@@ -54,7 +54,7 @@ Concrètement :
 | Paramètre | Valeur | Source |
 |-----------|--------|--------|
 | Résolution logique | **960×720 px**, fixe | `src/main.ts` (`scale.width/height`) |
-| Zoom caméra du MONDE | **1.2** (compense la montée de résolution) | `GameScene.WORLD_CAMERA_ZOOM` |
+| Zoom caméra du MONDE | **1** — doit rester ENTIER (voir ci-dessous) | `GameScene.WORLD_CAMERA_ZOOM` |
 | Scale mode | `Phaser.Scale.FIT` + `CENTER_BOTH` + `autoRound` | `src/main.ts` |
 | Rendu | `pixelArt: true` (nearest-neighbor, zéro anti-aliasing) | `src/main.ts` |
 | Polices | **Neatpixels** (Standard / Minimal / Boss / Blocks) | `UITheme.ts`, `public/assets/fonts/` |
@@ -65,10 +65,24 @@ Le canvas était à 800×600. Le passage à une police **pixel** a porté le cor
 (contre 11-12 avant), dans des panneaux aux largeurs **codées en dur** : le texte n'avait plus
 aucun exutoire, et l'UI est devenue illisible et sans air.
 
-960×720 = exactement **1,2 × 800×600** (même ratio 4:3). `GameScene` compense avec
-`cameras.main.setZoom(1.2)` : la caméra montre **exactement la même zone de monde** et les sprites
-ont la **même taille apparente** — le gamefeel est validé, il ne devait pas bouger parce que l'UI
-manquait de place. Seules les scènes d'UI (caméra à zoom 1) profitent des 20 % de pixels gagnés.
+960×720 donne à l'UI 20 % de pixels en plus. Le monde, lui, montre simplement 20 % de champ en plus.
+
+> ### ⚠️ Le zoom de la caméra du monde DOIT rester ENTIER
+>
+> Une tentative a consisté à mettre `setZoom(1.2)` pour compenser la montée de résolution et garder
+> un cadrage strictement identique. **C'était une erreur, et elle est instructive.**
+>
+> Le jeu tourne en `pixelArt: true`, donc en filtrage NEAREST. Un zoom de 1,2 ré-échantillonne
+> **tout le monde d'un facteur non entier À L'INTÉRIEUR du canvas** : un sprite de 32 px est dessiné
+> sur 38,4 px, donc une colonne de pixels sur cinq est doublée et les autres non. C'est exactement
+> le défaut d'épaisseur irrégulière que toute la passe typographique venait d'éliminer — on
+> rajoutait une étape de rééchantillonnage pour sauver un cadrage.
+>
+> À zoom 1, le monde est dessiné 1:1 : net. Et la **physique est en unités monde** (inertie, dash,
+> portées d'armes, aggro) : elle est rigoureusement inchangée. Seul le champ de vision s'élargit.
+>
+> Si le cadrage devait être restauré, la seule voie propre est un zoom **entier** (×2) avec un
+> canvas doublé — jamais un facteur fractionnaire.
 
 **Corollaire :** ne jamais coder 960/720 en dur non plus. Tout dérive de `cameras.main.width/height`.
 

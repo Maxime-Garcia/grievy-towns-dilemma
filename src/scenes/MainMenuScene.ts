@@ -237,6 +237,12 @@ export class MainMenuScene extends Phaser.Scene {
           if (state) {
             state.saveSlot = i;
             this.transitionTo('GameScene', { gameState: state });
+          } else {
+            // La carte affiche des métadonnées (listSlots) mais load() échoue :
+            // sauvegarde corrompue ou migration ratée. Sans ce chemin, le joueur
+            // tapait une carte visiblement pleine et RIEN ne se passait — cul-de-sac
+            // silencieux, d'autant plus déroutant que le feedback visuel, lui, jouait.
+            this.showLoadMenu(SaveSystem.listSlots());
           }
         } else {
           this.transitionTo('NameInputScene', { slot: i });

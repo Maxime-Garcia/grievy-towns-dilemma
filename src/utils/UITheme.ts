@@ -336,7 +336,13 @@ export function fitText(
   style: Phaser.Types.GameObjects.Text.TextStyle,
   maxWidth: number,
 ): string {
-  const probe = scene.make.text({ text, style }, false);
+  // `wordWrap` retiré de la sonde : avec lui, `probe.width` vaut la largeur de WRAP et
+  // non celle du texte — la recherche binaire mesurerait une constante et renverrait
+  // n'importe quoi. On mesure toujours sur une seule ligne.
+  const probeStyle = { ...style };
+  delete probeStyle.wordWrap;
+
+  const probe = scene.make.text({ text, style: probeStyle }, false);
   if (probe.width <= maxWidth) { probe.destroy(); return text; }
 
   // Recherche du plus long préfixe qui tient, ellipse comprise.
@@ -347,7 +353,10 @@ export function fitText(
     if (probe.width <= maxWidth) lo = mid; else hi = mid - 1;
   }
   probe.destroy();
-  return lo <= 0 ? '' : `${text.slice(0, lo)}…`;
+  // Même un seul caractère + ellipse ne tient pas : on rend l'ellipse seule plutôt
+  // qu'une chaîne vide. Un label qui DISPARAÎT est pire qu'un label tronqué — le
+  // joueur ne sait même plus qu'il y avait quelque chose là.
+  return lo <= 0 ? '…' : `${text.slice(0, lo)}…`;
 }
 
 /**

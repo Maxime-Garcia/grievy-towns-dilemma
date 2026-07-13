@@ -587,7 +587,12 @@ export class BestiaryScene extends Phaser.Scene {
       this.detailObjs.push(wkLabel, wkValue);
       iy += 18;
     }
-    if (entry.kills > 0) {
+    // Le titre « Histoire » est à une position FIXE (loreY, ci-dessous) — la géométrie
+    // du panneau doit rester identique pour tous les monstres. Le bloc identité, lui,
+    // est en FLUX : un nom d'ennemi qui wrappe sur 2 lignes (HEADING 21) poussait ce
+    // compteur SOUS le filet du titre. On ne l'affiche que s'il y a réellement la place.
+    const identityLimit = this.DET_Y + pad + 96 + 30 - 12;
+    if (entry.kills > 0 && iy + 16 <= identityLimit) {
       this.detailObjs.push(
         this.add.text(ix, iy, t('bestiary.kills').replace('{n}', String(entry.kills)), uiStyle(TYPE.BODY, UI.TXT_MUTED)),
       );
