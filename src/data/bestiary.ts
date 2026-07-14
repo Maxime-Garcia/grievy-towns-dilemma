@@ -13,10 +13,19 @@ import { GENERATED_BESTIARY } from './enemiesGenerated';
 // - Les items MYTHIC sont partagés entre 2-4 ennemis d'une même zone
 //   (toujours le boss + éventuellement des élites), taux 0.2-1%.
 //
-// Items hidden INVENTÉS ici (à créer dans items.ts, rareté HIDDEN) :
-//   wyrm_fang_shard, pilgrims_last_prayer, heart_of_the_mountain,
-//   sky_titans_oath, drowned_locket, tear_of_the_deep,
-//   engineers_final_schematic, primordial_ice_core, scholars_torn_page
+// ⚠️ RÈGLE ABSOLUE : un `itemId` de cette table DOIT exister dans le catalogue.
+//
+// Ce fichier a longtemps référencé neuf items hidden « inventés ici, à créer dans
+// items.ts » — wyrm_fang_shard, pilgrims_last_prayer, heart_of_the_mountain,
+// sky_titans_oath, drowned_locket, tear_of_the_deep, engineers_final_schematic,
+// primordial_ice_core, scholars_torn_page. Ils n'ont jamais été créés. Neuf gros
+// ennemis (dont trois boss) affichaient donc au joueur un « ??? » qui ne pouvait
+// être révélé par AUCUN nombre de kills : une promesse de butin que le jeu ne
+// pouvait pas tenir. Ces neuf drops ont été retirés (07/2026).
+//
+// Un `itemId` fantôme ne casse rien à la compilation et ne lève aucune erreur au
+// runtime — il se contente de mentir au joueur. Ne jamais en ajouter un « en
+// attendant » de créer l'item : créer l'item D'ABORD, le référencer ensuite.
 // ─────────────────────────────────────────────────────────────────
 
 export interface BestiaryEnemyData {
@@ -49,7 +58,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'volcanic_ash', dropRatePct: 60, isHidden: false },
       { itemId: 'iron_sword', dropRatePct: 8, isHidden: false },
       { itemId: 'flame_ring', dropRatePct: 1.5, isHidden: false },
-      { itemId: 'wyrm_fang_shard', dropRatePct: 1.5, isHidden: true },
     ],
   },
   {
@@ -87,7 +95,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'volcanic_ash', dropRatePct: 80, isHidden: false },
       { itemId: 'pilgrim_robe', dropRatePct: 4, isHidden: false },
       { itemId: 'fire_staff', dropRatePct: 1.2, isHidden: false },
-      { itemId: 'pilgrims_last_prayer', dropRatePct: 1, isHidden: true },
     ],
   },
   {
@@ -245,7 +252,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'gorvun_hammer', dropRatePct: 22, isHidden: false },
       { itemId: 'titan_earth_armor', dropRatePct: 12, isHidden: false },
       { itemId: 'fragment_of_permanence', dropRatePct: 3.5, isHidden: false },
-      { itemId: 'heart_of_the_mountain', dropRatePct: 0.8, isHidden: true },
     ],
   },
 
@@ -311,7 +317,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'sky_titan_bow', dropRatePct: 7, isHidden: false },
       { itemId: 'air_walker_boots', dropRatePct: 4, isHidden: false },
       { itemId: 'echo_blade', dropRatePct: 0.3, isHidden: false },
-      { itemId: 'sky_titans_oath', dropRatePct: 0.8, isHidden: true },
     ],
   },
   {
@@ -426,7 +431,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'drowned_relic', dropRatePct: 65, isHidden: false },
       { itemId: 'sea_glass', dropRatePct: 35, isHidden: false },
       { itemId: 'minor_health_potion', dropRatePct: 8, isHidden: false },
-      { itemId: 'drowned_locket', dropRatePct: 1, isHidden: true },
     ],
   },
   {
@@ -455,7 +459,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'leviathan_staff', dropRatePct: 22, isHidden: false },
       { itemId: 'abyssal_chest', dropRatePct: 13, isHidden: false },
       { itemId: 'tidal_ring', dropRatePct: 4, isHidden: false },
-      { itemId: 'tear_of_the_deep', dropRatePct: 0.8, isHidden: true },
     ],
   },
 
@@ -532,7 +535,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'charged_metal', dropRatePct: 75, isHidden: false },
       { itemId: 'thunder_rune', dropRatePct: 50, isHidden: false },
       { itemId: 'storm_shard', dropRatePct: 60, isHidden: false },
-      { itemId: 'engineers_final_schematic', dropRatePct: 1, isHidden: true },
     ],
   },
   {
@@ -627,7 +629,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'crystal_dragon_fang_staff', dropRatePct: 8, isHidden: false },
       { itemId: 'ice_dragon_scale_chest', dropRatePct: 5, isHidden: false },
       { itemId: 'frozen_heart_amulet', dropRatePct: 1.2, isHidden: false },
-      { itemId: 'primordial_ice_core', dropRatePct: 0.8, isHidden: true },
     ],
   },
   {
@@ -709,7 +710,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'dark_essence', dropRatePct: 75, isHidden: false },
       { itemId: 'corrupted_rune', dropRatePct: 55, isHidden: false },
       { itemId: 'void_shard', dropRatePct: 40, isHidden: false },
-      { itemId: 'scholars_torn_page', dropRatePct: 1, isHidden: true },
     ],
   },
   {
