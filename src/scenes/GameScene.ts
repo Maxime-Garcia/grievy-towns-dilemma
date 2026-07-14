@@ -12,11 +12,13 @@ import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { SkillSystem } from '../systems/SkillSystem';
 import { SaveSystem } from '../systems/SaveSystem';
 import { ENEMY_MAP } from '../data/enemies';
+import { elitePromotionAt, depthOfZone } from '../data/enemyScaling';
 import { ENEMY_SPAWN_REGIONS } from '../data/enemySpawnRegions';
 import { getSpawnRegionRect, pickSpawnRegion } from '../systems/SpawnRegionSystem';
 import { ZONE_MAP } from '../data/zones';
 import {
   PATTERNS,
+  resolvePattern,
   getEnemyPatternAssignment,
   type AttackPatternId,
 } from '../data/enemyPatterns';
@@ -192,6 +194,38 @@ const FISTS_PATTERN: AttackPattern = {
   ],
   cooldown: 500,
 };
+
+/**
+ * Dégâts de CONTACT — le coup que prend le joueur simplement parce qu'il se tient
+ * DANS l'ennemi (toutes les 1,2 s, tant que dist < 50 px).
+ *
+ * Ce coup n'a AUCUN telegraph : ni tint, ni windup, ni animation. Il tombe, point.
+ * La règle du projet est « telegraph before punish » — un coup qui touche sans
+ * prévenir est un vol. Il tapait pourtant à ×1,0 de l'ATK, y compris pour les BOSS :
+ * coller un boss coûtait donc son ATK pleine toutes les 1,2 s, sans aucune lecture
+ * possible et sans aucune parade autre que « avoir plus de PV ». C'est exactement le
+ * pattern raté que la spec interdit.
+ *
+ * Il devient un CHIP : la sanction d'un mauvais placement, pas une source de mort.
+ * La menace réelle passe par les patterns, qui sont télégraphiés, eux.
+ *   TRASH 0,6 — c'est la pression de meute, elle DOIT exister (cf. densité).
+ *   ELITE 0,5
+ *   BOSS  0,3 — un boss ne tue pas par du chip invisible. Il tue par ses patterns.
+ */
+const CONTACT_DAMAGE_MULT = (ae: ActiveEnemy): number =>
+  ae.isBoss ? 0.3 : ae.isElite ? 0.5 : 0.6;
+
+/**
+ * Promotion ÉLITE aléatoire d'un mob banal, au spawn.
+ *
+ * Était à 0,20. Mesuré sur les zones réelles : avec les élites de data, cela portait
+ * la population d'élites à ~27% (26 sur 97 à Ignis Reach). Une élite sur quatre
+ * ennemis n'est plus une élite — c'est la norme, et la couronne ne veut plus rien
+ * dire. Une élite doit PONCTUER la run.
+ * À 0,06 la population d'élites retombe à ~13% (élites de data comprises) : ~12 par
+ * zone, soit une rencontre notable toutes les ~45 s de terrain.
+ */
+const ELITE_PROMOTION_CHANCE = 0.06;
 
 // ── ALT ATTACK CONFIGS ────────────────────────────────────────────────────────
 // Pure cooldown / windup data per weapon. Execution logic lives in performAltAttack().
@@ -1569,7 +1603,7 @@ export class GameScene extends Phaser.Scene {
           // Pick the best pattern given context
           const chosenPatternId = this.pickEnemyPattern(ae, dist, assignment);
           sprite.setData('aiState', 'telegraph');
-          sprite.setData('aiStateUntil', now + PATTERNS[chosenPatternId].telegraphMs);
+          sprite.setData('aiStateUntil', now + resolvePattern(ae.enemyId, chosenPatternId).telegraphMs);
           sprite.setData('aiPattern', chosenPatternId);
           sprite.setData('chargeTargetX', px);
           sprite.setData('chargeTargetY', py);
@@ -1604,7 +1638,7 @@ export class GameScene extends Phaser.Scene {
         // Attack state is brief (execution fires via delayedCall)
         if (now >= aiStateUntil) {
           sprite.setData('aiState', 'cooldown');
-          const cfg = PATTERNS[(sprite.getData('aiPattern') as AttackPatternId | null) ?? 'melee_basic'];
+          const cfg = resolvePattern(ae.enemyId, (sprite.getData('aiPattern') as AttackPatternId | null) ?? 'melee_basic');
           sprite.setData('aiStateUntil', now + cfg.cooldownMs);
         }
 
@@ -1628,7 +1662,7 @@ export class GameScene extends Phaser.Scene {
       if (behavior !== 'ranged' && dist < 50 && aiState !== 'telegraph' && aiState !== 'attack') {
         const meleeCdKey = `melee_${instanceId}`;
         if (!this.cooldowns[meleeCdKey] || this.cooldowns[meleeCdKey] <= 0) {
-          this.applyEnemyMeleeDamage(ae, 1.0);
+          this.applyEnemyMeleeDamage(ae, CONTACT_DAMAGE_MULT(ae));
           this.cooldowns[meleeCdKey] = 1.2;
         }
       }
@@ -1709,10 +1743,10 @@ export class GameScene extends Phaser.Scene {
   /** Spawn the visual telegraph effect for the chosen pattern. */
   private startEnemyTelegraph(
     sprite: Phaser.Physics.Arcade.Sprite,
-    _ae: ActiveEnemy,
+    ae: ActiveEnemy,
     patternId: AttackPatternId,
   ) {
-    const cfg = PATTERNS[patternId];
+    const cfg = resolvePattern(ae.enemyId, patternId);
     const duration = cfg.telegraphMs;
     const tint = cfg.telegraphTint;
     // Real sprites rest at a scale far from 1.0 (upscaled so their padded native frame
@@ -1889,11 +1923,24 @@ export class GameScene extends Phaser.Scene {
     def: Enemy,
     patternId: AttackPatternId,
   ) {
-    const cfg = PATTERNS[patternId];
+    const cfg = resolvePattern(ae.enemyId, patternId);
     const px  = this.player.x;
     const py  = this.player.y;
     const body = sprite.body as Phaser.Physics.Arcade.Body;
-    const baseDmg = Math.round(ae.stats.baseAtk * (cfg.damageMult ?? 1.0));
+    // Dégâts des patterns À DISTANCE (burst_fan / circular_burst / homing) —
+    // désormais RÉDUITS par la défense du joueur, via CombatSystem.
+    //
+    // Avant : `Math.round(ae.stats.baseAtk * (cfg.damageMult ?? 1.0))`, envoyé tel
+    // quel à applyDamageToPlayer() — qui n'applique AUCUNE défense (seulement les
+    // boucliers de passifs). Tout projectile ennemi ignorait donc 100% de la DEF du
+    // joueur, sur 23 ennemis dont les 7 boss. La DEF n'était vraie que contre la
+    // mêlée, et personne ne le savait.
+    //
+    // Le canal suit `def.damageType` : les 26 lanceurs (sprites, spectres, revenants,
+    // et les 7 boss) tapent la MDEF avec `baseMagicAtk` — ce qui donne enfin un prix
+    // à MDEF_FLAT, qui valait rigoureusement zéro. Un boss est ainsi hybride : sa
+    // circular_burst passe par la MDEF, sa charge par la DEF.
+    const baseDmg = CombatSystem.enemyRangedDamage(ae, this.gameState.player, cfg.damageMult ?? 1.0);
 
     switch (patternId) {
 
@@ -2248,7 +2295,7 @@ export class GameScene extends Phaser.Scene {
       sprite.play(`enemy_${minionDef.id}_idle`);
     }
 
-    const active = CombatSystem.spawnEnemy(minionDef, this.gameState.player.level);
+    const active = CombatSystem.spawnEnemy(minionDef, this.gameState.player.currentZone);
     active.x = x;
     active.y = y;
     sprite.name = active.instanceId;
@@ -4179,7 +4226,7 @@ export class GameScene extends Phaser.Scene {
         // ×2.4 dans la data), ou par promotion aléatoire d'un mob banal. Avant, seul
         // le tirage comptait : une élite de data n'avait que 20% de chances d'être
         // traitée comme telle (couronne, XP ×2.5, bonus de world drop…).
-        const rolledElite = Math.random() < 0.20;
+        const rolledElite = Math.random() < ELITE_PROMOTION_CHANCE;
         const isElite = def.isElite || rolledElite;
         // Provisoire/approximatif : biaise le spawn vers un quadrant plausible de la zone
         // (ENEMY_SPAWN_REGIONS, cf. heatmap Bestiaire) au lieu d'un tirage uniforme sur
@@ -4228,17 +4275,27 @@ export class GameScene extends Phaser.Scene {
           sprite.play(`enemy_${enemyId}_idle`);
         }
 
-        const active = CombatSystem.spawnEnemy(def, this.gameState.player.level);
+        const active = CombatSystem.spawnEnemy(def, this.gameState.player.currentZone);
         active.x       = ex;
         active.y       = ey;
         active.isElite = isElite;
         // Le boost ne s'applique QU'À la promotion aléatoire : les élites de data
-        // portent déjà leurs stats renforcées (×2.4 dans genEnemies.mjs). Les
-        // re-multiplier ici en ferait des murs de 3.6×.
+        // sont déjà mises à l'échelle sur l'ancre ELITE par scaledEnemyStats().
+        // ELITE_PROMOTION est DÉRIVÉ de l'écart d'ancres TRASH→ELITE (cf.
+        // enemyScaling.ts) : un élite promu vaut désormais autant qu'une élite de
+        // data. Avant (×1.5 PV / ×1.4 ATK) il en valait moins du tiers, pour la même
+        // couronne, la même XP ×2,5 et le même butin.
         if (rolledElite && !def.isElite) {
-          active.currentHp = Math.floor(active.currentHp * 1.5);
-          active.maxHp     = Math.floor(active.maxHp     * 1.5);
-          active.stats     = { ...active.stats, baseAtk: Math.floor(active.stats.baseAtk * 1.4) };
+          const promo = elitePromotionAt(depthOfZone(this.gameState.player.currentZone));
+          const hp = Math.max(1, Math.floor(active.maxHp * promo.hp));
+          active.currentHp = hp;
+          active.maxHp     = hp;
+          active.stats     = {
+            ...active.stats,
+            baseHp:       hp,
+            baseAtk:      Math.max(1, Math.floor(active.stats.baseAtk      * promo.atk)),
+            baseMagicAtk: Math.max(1, Math.floor(active.stats.baseMagicAtk * promo.matk)),
+          };
         }
         sprite.name = active.instanceId;
         this.activeEnemies.set(active.instanceId, active);
@@ -4307,7 +4364,7 @@ export class GameScene extends Phaser.Scene {
         sprite.play(`enemy_${placement.id}_idle`);
       }
 
-      const active = CombatSystem.spawnEnemy(def, this.gameState.player.level);
+      const active = CombatSystem.spawnEnemy(def, this.gameState.player.currentZone);
       active.x = ex;
       active.y = ey;
       sprite.name = active.instanceId;
@@ -4356,7 +4413,7 @@ export class GameScene extends Phaser.Scene {
           bossSprite.play(`${bossTexKey}_idle`);
         }
 
-        const activeBoss = CombatSystem.spawnEnemy(bossDef, this.gameState.player.level);
+        const activeBoss = CombatSystem.spawnEnemy(bossDef, this.gameState.player.currentZone);
         activeBoss.x = bx;
         activeBoss.y = by;
         bossSprite.name = activeBoss.instanceId;

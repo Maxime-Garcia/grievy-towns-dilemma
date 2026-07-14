@@ -2,40 +2,44 @@ import {
   PlayerState, Enemy, ActiveEnemy, DamageResult,
   StatusEffect, ElementType, ELEMENT_WEAKNESS, DARK_MULTIPLIER, WEAKNESS_MULTIPLIER, Skill
 } from '../types';
-import { SCALED_ENEMY_LEVEL } from './ProgressionSystem';
 import { TalentModifiers } from './TalentSystem';
 import { StatsSystem, ComputedStats } from './StatsSystem';
 import { PassiveSystem } from './PassiveSystem';
 import { SKILL_MAP } from '../data/skills';
+import { scaledEnemyStats, depthOfZone } from '../data/enemyScaling';
 
 const ELEMENTAL_ADVANTAGE = WEAKNESS_MULTIPLIER;
 const ELEMENTAL_DISADVANTAGE = 0.80;
 
 export class CombatSystem {
 
-  // Instantiate a zone enemy scaled to player level
-  static spawnEnemy(enemy: Enemy, playerLevel: number): ActiveEnemy {
-    const level = SCALED_ENEMY_LEVEL(enemy.baseLevel, playerLevel);
-    const scale = 1 + (level - enemy.baseLevel) * 0.08;
+  /**
+   * Instancie un ennemi de zone, mis à l'échelle par la PROFONDEUR de la zone où
+   * on le rencontre — plus par le niveau du joueur.
+   *
+   * L'ancienne signature était `spawnEnemy(enemy, playerLevel)` et calculait
+   * `scale = 1 + (SCALED_ENEMY_LEVEL(baseLevel, playerLevel) - baseLevel) * 0.08`.
+   * Les niveaux ayant disparu, `playerLevel` valait 1 partout : pour un ennemi de
+   * `baseLevel` 30 le facteur tombait à -0,44 et `maxHp` devenait NÉGATIF (mesuré :
+   * 9 ennemis sur 57, dont 3 boss). Voir `src/data/enemyScaling.ts`.
+   *
+   * `level` n'est plus qu'un affichage : on garde `baseLevel` tel quel (le
+   * Bestiaire et l'XP le lisent), il ne pilote plus aucune statistique.
+   */
+  static spawnEnemy(enemy: Enemy, zoneId: string): ActiveEnemy {
+    const depth = depthOfZone(zoneId);
+    const stats = scaledEnemyStats(enemy, depth);
 
     return {
       ...enemy,
       enemyId: enemy.id,
       instanceId: `${enemy.id}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-      level,
-      currentHp:   Math.floor(enemy.stats.baseHp   * scale),
-      maxHp:       Math.floor(enemy.stats.baseHp   * scale),
-      currentMana: Math.floor(enemy.stats.baseMana * scale),
-      maxMana:     Math.floor(enemy.stats.baseMana * scale),
-      stats: {
-        baseHp:       Math.floor(enemy.stats.baseHp       * scale),
-        baseMana:     Math.floor(enemy.stats.baseMana     * scale),
-        baseAtk:      Math.floor(enemy.stats.baseAtk      * scale),
-        baseDef:      Math.floor(enemy.stats.baseDef      * scale),
-        baseSpd:      Math.floor(enemy.stats.baseSpd      * scale),
-        baseMagicAtk: Math.floor(enemy.stats.baseMagicAtk * scale),
-        baseMagicDef: Math.floor(enemy.stats.baseMagicDef * scale),
-      },
+      level: enemy.baseLevel,
+      currentHp:   stats.baseHp,
+      maxHp:       stats.baseHp,
+      currentMana: stats.baseMana,
+      maxMana:     stats.baseMana,
+      stats,
       statusEffects: [],
       x: 0,
       y: 0,
@@ -201,7 +205,10 @@ export class CombatSystem {
     return { damage: finalTotal, isCrit: critRoll, element: skill.element, isKill: target.currentHp <= 0, statusApplied };
   }
 
-  // Enemy attacks player
+  /**
+   * Un ennemi frappe le joueur (MÊLÉE — contact, charge, dash_melee, melee_basic).
+   * Toujours PHYSIQUE : `baseAtk` réduit par la DEF. Applique les dégâts.
+   */
   static enemyAttack(enemy: ActiveEnemy, player: PlayerState): DamageResult {
     const isStunned = enemy.statusEffects.some(e => e.type === 'STUN' || e.type === 'FREEZE');
     if (isStunned) return { damage: 0, isCrit: false, isKill: false };
@@ -213,11 +220,49 @@ export class CombatSystem {
       return { damage: 0, isCrit: false, isKill: false, wasDodged: true };
     }
 
-    const rawDmg = enemy.stats.baseAtk;
-    const reduced = rawDmg * (100 / (100 + player.stats.def));
-    const damage = Math.max(1, Math.floor(reduced * (0.85 + Math.random() * 0.3)));
+    const damage = CombatSystem.mitigatedEnemyDamage(enemy, player, false, 1.0);
     player.stats.hp = Math.max(0, player.stats.hp - damage);
     return { damage, isCrit: false, isKill: player.stats.hp <= 0 };
+  }
+
+  /**
+   * Dégâts d'une attaque À DISTANCE d'un ennemi (burst_fan, circular_burst,
+   * homing) — RÉDUITS par la défense correspondante. Ne les applique PAS :
+   * GameScene les fait passer par ses propres filtres (i-frames, garde, dash,
+   * boucliers de passifs) avant de toucher les PV.
+   *
+   * ⚠ C'EST UN TROU DE COMBAT QUI SE FERME ICI.
+   * Avant : `GameScene.executeEnemyAttackPattern` calculait `baseDmg =
+   * round(ae.stats.baseAtk × damageMult)` et l'envoyait TEL QUEL à
+   * `applyDamageToPlayer()`, qui n'applique aucune DEF (seulement les boucliers).
+   * Autrement dit : **tout projectile ennemi ignorait 100% de la défense du
+   * joueur.** 23 ennemis (dont les 7 boss) ont un pattern primaire à projectile.
+   * La DEF n'était donc vraie que contre la moitié du jeu, en silence.
+   *
+   * Le canal dépend du `damageType` de l'ennemi :
+   *   PHYSICAL → baseAtk      vs player.stats.def
+   *   MAGIC    → baseMagicAtk vs player.stats.magicDef
+   * C'est ce qui donne enfin une valeur à MDEF_FLAT (elle valait exactement 0).
+   */
+  static enemyRangedDamage(enemy: ActiveEnemy, player: PlayerState, damageMult = 1.0): number {
+    const magic = enemy.damageType === 'MAGIC';
+    return CombatSystem.mitigatedEnemyDamage(enemy, player, magic, damageMult);
+  }
+
+  /**
+   * Le calcul de dégâts ennemi, canal unique. `Math.max(1, …)` : un coup touche
+   * TOUJOURS pour au moins 1 — un ennemi ne doit jamais devenir décoratif.
+   */
+  private static mitigatedEnemyDamage(
+    enemy: ActiveEnemy,
+    player: PlayerState,
+    magic: boolean,
+    damageMult: number,
+  ): number {
+    const raw = magic ? enemy.stats.baseMagicAtk : enemy.stats.baseAtk;
+    const def = magic ? player.stats.magicDef : player.stats.def;
+    const reduced = raw * (100 / (100 + Math.max(0, def)));
+    return Math.max(1, Math.floor(reduced * damageMult * (0.85 + Math.random() * 0.3)));
   }
 
   // Tick DoT effects each second

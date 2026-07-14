@@ -11,10 +11,19 @@ export const ENEMY_XP = (enemyLevel: number): number =>
 export const BOSS_XP = (bossLevel: number): number =>
   Math.floor(80 * Math.pow(bossLevel, 1.3));
 
-export const SCALED_ENEMY_LEVEL = (baseLevel: number, playerLevel: number): number => {
-  const delta = playerLevel - baseLevel;
-  return Math.max(1, baseLevel + Math.floor(delta * 0.6));
-};
+/**
+ * `SCALED_ENEMY_LEVEL` A ÉTÉ SUPPRIMÉE — elle produisait des PV NÉGATIFS.
+ *
+ *     level = max(1, baseLevel + floor((playerLevel - baseLevel) * 0.6))
+ *     scale = 1 + (level - baseLevel) * 0.08      // ← CombatSystem.spawnEnemy
+ *
+ * Les niveaux étant supprimés, `playerLevel` vaut 1 partout. Pour un ennemi de
+ * `baseLevel` 30, `scale` tombait à -0,44 : `maxHp = floor(baseHp × -0,44)` était
+ * NÉGATIF. Mesuré : 9 ennemis sur 57, dont 3 boss (malachar_boss à -1760 PV).
+ *
+ * La mise à l'échelle se fait désormais par PROFONDEUR DE ZONE, la seule variable
+ * qui garde un sens dans un roguelite : `src/data/enemyScaling.ts`.
+ */
 
 export class ProgressionSystem {
   static computeBaseStats(level: number, attrs: Attributes): Stats {
