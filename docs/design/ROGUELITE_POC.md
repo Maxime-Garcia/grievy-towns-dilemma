@@ -33,6 +33,26 @@ Moonlighter pour le risque d'extraction.
 
 ---
 
+## 0 bis. Décisions du créateur (14/07/2026) — non rediscutables sans lui
+
+1. **Narration : tout supprimer sauf Grievy Town.** Les 91 PNJ, les ~28 quêtes et les dialogues des
+   autres villes disparaissent. On assume : un roguelite n'a pas de DAG de quêtes. Seuls survivent les
+   PNJ de Grievy Town — le lanceur de run, les marchands, l'artisan.
+   *(Décision coûteuse et lucide : c'est du contenu écrit qu'on jette. Elle est prise en connaissance de
+   cause, ne la re-litigez pas.)*
+2. **Zone pilote : le FEU (Ignis).** Le plus d'assets existants, et Pyrath fournit une base de boss.
+3. **Séquencement : l'équilibrage d'abord.** Le `balance-agent` simule l'exfiltration et le pity AVANT
+   qu'une ligne soit codée. Si l'exfiltration est mathématiquement cassée, on l'apprend en une heure au
+   lieu de trois semaines.
+
+**Conséquences à traiter :**
+- Supprimer les niveaux touche `PlayerState` → **bump obligatoire de `SAVE_VERSION` + `MIGRATION_MAP`**.
+  Les sauvegardes existantes ne survivront pas. Assumé (branche de PoC).
+- L'or est conservé, mais **les marchands vivent dans les villes qu'on supprime** : il faut les
+  rapatrier à Grievy Town, sinon l'économie n'a plus de robinet.
+
+---
+
 ## 1. La boucle
 
 ```
