@@ -84,22 +84,27 @@ const nextRarity = (bucket) => {
 
 // ── Profils d'armes ────────────────────────────────────────────────
 // Le coefficient de dégâts par type vit maintenant dans M.TYPE_COEF (modèle) ;
-// ici ne restent que l'ICONOGRAPHIE et l'aspd d'affichage.
+// ici ne reste que l'ICONOGRAPHIE.
 //
-// ⚠ `aspd` est de la DONNÉE MORTE pour le combat : GameScene calcule le cooldown
-// d'attaque avec `ATTACK_PATTERNS[weaponType].cooldown / cs.aspd` et ne lit
-// JAMAIS `weapon.attackSpeed` (seul ArsenalScene l'affiche). On la conserve pour
-// l'UI, mais elle n'a aucun effet mécanique — c'est un constat, pas un choix, et
-// c'est l'étape 3 (parité des armes) qui tranchera son sort.
+// ⚠ L'`aspd` d'affichage A ÉTÉ SUPPRIMÉE (étape 3, parité des armes) — ainsi que
+// le champ `attackSpeed` qu'elle alimentait sur les 395 armes du catalogue.
+// Elle n'était lue par AUCUNE formule de combat (GameScene calcule le cooldown
+// avec ATTACK_PATTERNS[weaponType].cooldown / cs.aspd) et seul l'Arsenal
+// l'affichait — où elle MENTAIT au joueur : il comparait deux armes sur un nombre
+// qui ne servait à rien. L'Arsenal affiche désormais une cadence DÉRIVÉE.
+//
+// La vitesse par TYPE d'arme est ATTACK_PATTERNS.cooldown ; la variation par ITEM
+// est la substat ASPD_PCT. Entre les deux, ce champ n'avait aucune place.
+// NE PAS LE RÉINTRODUIRE.
 const WEAPON_PROFILES = {
-  SWORD:      { pack: 'Sword Item Icons',  sub: 'Swords',  aspd: 1.0 },
-  GREATSWORD: { pack: 'Sword Item Icons',  sub: 'Swords',  aspd: 0.8 },
-  DAGGER:     { pack: 'Dagger Item Icons', sub: 'Daggers', aspd: 1.7 },
-  AXE:        { pack: 'Axe Item Icons',    sub: 'Axe',     aspd: 0.95 },
-  HAMMER:     { pack: 'Axe Item Icons',    sub: 'Axe',     aspd: 0.7 },
-  SPEAR:      { pack: 'Spear Icons 32x32 Pixelart', sub: 'Spears', aspd: 1.1 },
-  STAFF:      { pack: 'Staff Item Icons',  sub: 'Staff',   aspd: 1.0 },
-  BOW:        { pack: 'Bow Item Icons',    sub: null,      aspd: 1.35 },
+  SWORD:      { pack: 'Sword Item Icons',  sub: 'Swords' },
+  GREATSWORD: { pack: 'Sword Item Icons',  sub: 'Swords' },
+  DAGGER:     { pack: 'Dagger Item Icons', sub: 'Daggers' },
+  AXE:        { pack: 'Axe Item Icons',    sub: 'Axe' },
+  HAMMER:     { pack: 'Axe Item Icons',    sub: 'Axe' },
+  SPEAR:      { pack: 'Spear Icons 32x32 Pixelart', sub: 'Spears' },
+  STAFF:      { pack: 'Staff Item Icons',  sub: 'Staff' },
+  BOW:        { pack: 'Bow Item Icons',    sub: null },
 };
 
 // ── Substats ───────────────────────────────────────────────────────
@@ -418,7 +423,7 @@ for (const [wt, prof] of Object.entries(WEAPON_PROFILES)) {
       const descEn = `${nounEn} ${suffixEn}`.trim();
       enKeys.push([id, nameEn, `${descEn}.`, loreEn]);
 
-      weapons.push(`  { id: '${id}', name: '${esc(name)}', description: '${esc(desc)}.', rarity: ItemRarity.${rarity}, type: ItemType.WEAPON, icon: '${iconKey}', value: ${M.VALUE[rarity]}, ${element !== 'NEUTRAL' ? `element: ElementType.${element}, ` : ''}weaponType: WeaponType.${wt}, damage: ${dmg}, magicDamage: ${mdmg}, bonusStats: ${JSON.stringify(bonus)}, attackSpeed: ${prof.aspd}, lore: '${esc(lore)}', equipRanges: { mainStat: { key: '${mainKey}', min: ${lo}, max: ${hi} }, substats: [${subs.map(subLine).join(', ')}] } },`);
+      weapons.push(`  { id: '${id}', name: '${esc(name)}', description: '${esc(desc)}.', rarity: ItemRarity.${rarity}, type: ItemType.WEAPON, icon: '${iconKey}', value: ${M.VALUE[rarity]}, ${element !== 'NEUTRAL' ? `element: ElementType.${element}, ` : ''}weaponType: WeaponType.${wt}, damage: ${dmg}, magicDamage: ${mdmg}, bonusStats: ${JSON.stringify(bonus)}, lore: '${esc(lore)}', equipRanges: { mainStat: { key: '${mainKey}', min: ${lo}, max: ${hi} }, substats: [${subs.map(subLine).join(', ')}] } },`);
     }
   }
 }
