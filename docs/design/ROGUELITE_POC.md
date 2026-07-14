@@ -102,8 +102,16 @@ Règles posées par le créateur :
 
 C'est **celle de Moonlighter**, et son cœur est l'**arbitrage**, pas la punition.
 
-- **Pendant la run, on ramasse tout.** Le sac n'est pas limité en descente, et les objets sont
-  **jetables au sol** : on gère son sac en cours de route, on abandonne ce qu'on juge inférieur.
+**Il y a DEUX contraintes distinctes, et c'est ce qui fait la richesse du système. Ne pas les
+confondre — deux étages de décision, pas un.**
+
+**Étage 1 — le sac de run est LIMITÉ.** C'est l'arbitrage seconde par seconde.
+- Le sac a une **capacité**. Il se remplit.
+- Ramasser alors qu'il est plein est **impossible** → message **« Inventaire plein »**.
+- Les objets sont **jetables au sol**, à tout moment, pour faire de la place.
+- Question posée au joueur en permanence : *ce butin vaut-il plus que celui que je porte déjà ?*
+
+**Étage 2 — l'exfiltration.** C'est l'arbitrage global, une fois, au moment de partir.
 - **Aller au bout de toutes les zones → on conserve TOUT.** Sans limite, sans slot, sans condition.
   C'est la récompense de la foi, et le seul moyen de tout ramener.
 - **S'exfiltrer en route → on ne dispose que de N emplacements.** Le joueur **choisit** ce qu'il y met.
@@ -129,9 +137,24 @@ joueur perdrait des objets qu'il a *délibérément choisi de sauver*. Ça se vi
 pari — et ça détruit exactement l'agentivité qui fait tout le sel de la mécanique. Le risque est déjà
 là, et il est **choisi**.
 
+### L'objet au sol — demandes explicites du créateur (→ `ux-agent`)
+
+Le loot au sol devient un objet de première classe du jeu, plus un détail :
+
+1. **Une belle bulle d'item au sol** — à la **couleur de la rareté** de l'objet, avec **l'asset de
+   l'item dedans**. C'est ce que le joueur regarde en permanence : il doit pouvoir juger un butin *sans
+   le ramasser*.
+2. **Message « Inventaire plein »** quand on tente de ramasser alors qu'on n'a plus de place.
+3. **Une touche pour jeter**, ajoutée dans la **popup d'item**.
+
+Ces trois éléments forment la boucle de l'étage 1. Si jeter est pénible, le jeu entier est pénible :
+c'est le geste le plus répété de la run.
+
 ### Ce qui reste ouvert : le RÉGLAGE
 
 Le `balance-agent` doit établir, par simulation :
+0. **La capacité du sac de run** — c'est elle qui crée l'arbitrage seconde par seconde. Trop grande :
+   on ramasse tout sans réfléchir, l'étage 1 disparaît. Trop petite : on passe la run dans les menus.
 1. **N de départ** — le nombre d'emplacements d'exfiltration au premier run. Trop peu : on ne s'exfiltre
    jamais, autant mourir. Trop : on ne perd rien, il n'y a plus d'arbitrage.
 2. **La courbe d'upgrade chez le marchand** — coût en or de chaque emplacement supplémentaire, et
