@@ -1745,8 +1745,6 @@ const EN_MANUAL: Record<string, string> = {
   'item.skin_pilgrim_garb.description': 'Plain and unassuming. Those who travel light travel far.',
   'item.skin_divine_vestments.name': 'Divine Vestments',
   'item.skin_divine_vestments.description': 'Woven from the threads of light the divinities left behind.',
-  'item.skin_void_mantle.name': 'Void Mantle',
-  'item.skin_void_mantle.description': 'Absorbs light. Reflects nothing.',
   'item.skin_lightning_coil_helm.name': 'Lightning Coil Helm',
   'item.skin_lightning_coil_helm.description': 'A replica of the Volterra engineers\' helmets.',
   'item.skin_glaciem_crown.name': 'Crown of Glaciem',
