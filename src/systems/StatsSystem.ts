@@ -8,7 +8,7 @@ import {
   Accessory,
 } from '../types';
 import { ProgressionSystem } from './ProgressionSystem';
-import { CDR_CAP_PCT, DODGE_CAP_PCT, BOSS_DMG_CAP_PCT } from './StatRollSystem';
+import { CDR_SOFT_PCT, DODGE_SOFT_PCT, BOSS_DMG_SOFT_PCT, softcap } from './StatRollSystem';
 import { t } from '../i18n';
 
 // ============================================================
@@ -164,9 +164,13 @@ export class StatsSystem {
       spd,
       elemBonus: t.ELEM_BONUS_PCT,
       lifesteal: t.LIFESTEAL_PCT,
-      cdr: Math.min(CDR_CAP_PCT, t.CDR_PCT),
-      dodge: Math.min(DODGE_CAP_PCT, t.DODGE_PCT),
-      bossDmg: Math.min(BOSS_DMG_CAP_PCT, t.BOSS_DMG_PCT),
+      // Rendements DÉCROISSANTS, plus de plafonds durs (cf. StatRollSystem.softcap).
+      // Un mur rendait la ligne suivante rigoureusement nulle : 51% des points de
+      // CDR d'un set Mythique partaient à la poubelle, et une ligne d'esquive de
+      // plus valait 0,00. Une stat ne doit JAMAIS valoir exactement zéro.
+      cdr: softcap(t.CDR_PCT, CDR_SOFT_PCT),
+      dodge: softcap(t.DODGE_PCT, DODGE_SOFT_PCT),
+      bossDmg: softcap(t.BOSS_DMG_PCT, BOSS_DMG_SOFT_PCT),
       hpOnKill: t.HP_ON_KILL_FLAT,
       manaOnKill: t.MANA_ON_KILL_FLAT,
     };

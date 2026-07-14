@@ -45,18 +45,19 @@ export const SUBSTAT_COUNT = {
  * sa main stat tombait SOUS celle d'un Mythique (arme 112-174 contre 129-202).
  * Autrement dit, l'objet le plus rare du jeu pouvait être un DOWNGRADE. C'est la
  * pire faute possible — une promesse trahie, et le joueur ne pardonne pas ça.
- * HIDDEN vaut donc 1,30 × MYTHIC : une marche franche, PLUS le passif unique.
+ * HIDDEN vaut donc 1,45 × MYTHIC : une marche franche, PLUS le passif unique.
  *
- * Pourquoi 1,30 précisément, et pas 1,20 : la 7e substat coûte 0,864× sur la
- * main stat (mainShare passe de 0,55 à 0,475). Pour que TOUS les canaux — y
- * compris les PV, dont l'exposant est le plus mou (T^0.649) — restent au-dessus
- * du Mythique, il faut (T_H/T_M)^0.649 ≥ 1/0,864, soit T_H/T_M ≥ 1,25. À 1,20,
- * les PV d'un plastron Caché retombaient SOUS ceux d'un Mythique (912 contre
- * 940). Le seuil n'est pas un goût : il est imposé par le modèle.
+ * Pourquoi 1,45 et pas 1,20 : la 7e substat coûte 0,864× sur la main stat
+ * (mainShare passe de 0,55 à 0,475). Pour que TOUS les canaux restent au-dessus
+ * du Mythique — y compris les PV, dont l'exposant résolu est le plus mou
+ * (T^0.478) — il faut (T_H/T_M)^0.478 ≥ 1/0,864, soit T_H/T_M ≥ 1,36. En dessous,
+ * les PV d'un plastron CACHÉ retombent SOUS ceux d'un Mythique (mesuré : 607
+ * contre 620 à 1,30×). Le seuil n'est pas un goût, il est imposé par le modèle —
+ * et il se re-vérifie à chaque changement d'exposant.
  */
 export const TIER = {
   COMMON: 1.0, UNCOMMON: 1.5, RARE: 2.25, EPIC: 3.375,
-  LEGENDARY: 5.0625, MYTHIC: 7.59375, HIDDEN: 9.87,
+  LEGENDARY: 5.0625, MYTHIC: 7.59375, HIDDEN: 11.0,
 };
 
 // ── Stats de base du joueur, équipement retiré ────────────────────
@@ -101,9 +102,9 @@ export const ehpTarget = (r) => EHP_COMMON * TIER[r];
  * ×11,5 contre ×7,5 pour l'EHP. TOUTE modification d'un pool oblige à relancer le
  * solveur. Ce n'est pas une précaution : c'est une dépendance.
  */
-export const POOL_ATK = { COMMON: 55, UNCOMMON: 71, RARE: 91, EPIC: 118, LEGENDARY: 151, MYTHIC: 195, HIDDEN: 229 };
-export const POOL_HP  = { COMMON: 393, UNCOMMON: 519, RARE: 687, EPIC: 908, LEGENDARY: 1201, MYTHIC: 1588, HIDDEN: 1903 };
-export const POOL_DEF = { COMMON: 33, UNCOMMON: 48, RARE: 65, EPIC: 84, LEGENDARY: 103, MYTHIC: 122, HIDDEN: 156 };
+export const POOL_ATK = { COMMON: 58, UNCOMMON: 77, RARE: 103, EPIC: 138, LEGENDARY: 185, MYTHIC: 247, HIDDEN: 321 };
+export const POOL_HP  = { COMMON: 416, UNCOMMON: 512, RARE: 631, EPIC: 778, LEGENDARY: 959, MYTHIC: 1183, HIDDEN: 1432 };
+export const POOL_DEF = { COMMON: 37, UNCOMMON: 51, RARE: 70, EPIC: 96, LEGENDARY: 132, MYTHIC: 182, HIDDEN: 243 };
 
 /**
  * Budgets portés par les MAIN STATS (le reste du pool arrive par les substats).
@@ -115,9 +116,9 @@ export const POOL_DEF = { COMMON: 33, UNCOMMON: 48, RARE: 65, EPIC: 84, LEGENDAR
  * sur un budget de palier 1,30× supérieur : le net est donc positif sur CHAQUE
  * canal — ATK, PV, DEF. Un Caché ne peut jamais être un downgrade.
  */
-export const ATK_MAIN_TOTAL = { COMMON: 39.4, UNCOMMON: 50.5, RARE: 64.8, EPIC: 83.1, LEGENDARY: 106.7, MYTHIC: 136.9, HIDDEN: 138.9 };
-export const HP_MAIN_TOTAL  = { COMMON: 244.9, UNCOMMON: 317.7, RARE: 412.2, EPIC: 534.8, LEGENDARY: 693.8, MYTHIC: 900.0, HIDDEN: 919.8 };
-export const DEF_IMPL_TOTAL = { COMMON: 16.7, UNCOMMON: 19.6, RARE: 22.9, EPIC: 26.8, LEGENDARY: 31.3, MYTHIC: 36.6, HIDDEN: 40.5 };
+export const ATK_MAIN_TOTAL = { COMMON: 41.9, UNCOMMON: 56.0, RARE: 74.9, EPIC: 100.2, LEGENDARY: 134.0, MYTHIC: 179.2, HIDDEN: 201.9 };
+export const HP_MAIN_TOTAL  = { COMMON: 235.8, UNCOMMON: 286.1, RARE: 347.2, EPIC: 421.2, LEGENDARY: 511.1, MYTHIC: 620.2, HIDDEN: 639.1 };
+export const DEF_IMPL_TOTAL = { COMMON: 19.0, UNCOMMON: 21.5, RARE: 24.2, EPIC: 27.4, LEGENDARY: 30.9, MYTHIC: 34.9, HIDDEN: 39.0 };
 
 export const poolAtk = (r) => POOL_ATK[r];
 export const poolHp  = (r) => POOL_HP[r];
@@ -173,8 +174,62 @@ const REF_CRIT = 0.20;
 const REF_CDMG = 2.0;
 const CRIT_DENOM = 1 + REF_CRIT * (REF_CDMG - 1); // 1.20
 
-/** Valeur centrale d'une ligne de clé `key` au palier `r`. */
+/**
+ * CALIB — LA CORRECTION QUE LA MESURE IMPOSE À LA FORMULE.
+ * ==================================================================
+ * Les formules ci-dessous donnent la STRUCTURE (quelle grandeur dépend de quel
+ * pool, et comment elle croît avec le palier). Elles ne donnent pas le bon
+ * NOMBRE, parce qu'elles supposent toutes que les stats sont indépendantes.
+ * Elles ne le sont pas.
+ *
+ * Le cas d'école, et il est instructif : CRIT_RATE. La formule la tarife en
+ * supposant critDmg = 2.0. Mais CRIT_DMG est elle-même une substat, et un build
+ * réel en accumule assez pour monter à ×3.0. Or crit et critDmg se MULTIPLIENT.
+ * Résultat mesuré : une ligne de CRIT_RATE valait ×2,4 le barème — la substat
+ * impérative, celle qu'on prend toujours. Aucune formule linéaire ne peut prévoir
+ * ça : il faut le mesurer.
+ *
+ * CALIB est donc obtenu par RÉSOLUTION (harnais .tmp/calib) : pour chaque clé, on
+ * cherche la magnitude qui fait valoir la ligne exactement LINE_VALUE, en mesure
+ * APPARIÉE (même set, avec et sans la ligne) sur les vrais modules, offense
+ * (trash + boss pondéré par BOSS_SHARE) et survie (EHP + sustain) confondues.
+ *
+ * Lire CALIB, c'est lire de combien la formule se trompait :
+ *   CRIT_RATE 0.52 → elle surévaluait le crit d'un facteur 2 (synergie critDmg)
+ *   ATK_FLAT  0.61 → idem (l'ATK plate profite de TOUS les multiplicateurs)
+ *   HP_PCT    2.26 → elle sous-évaluait la défense d'un facteur 2
+ *   DODGE_PCT ...  → cf. note sur les rendements décroissants
+ */
+export const CALIB = {
+  ATK_FLAT: 0.649, ATK_PCT: 1.090, CRIT_RATE: 0.552, CRIT_DMG: 1.140,
+  ASPD_PCT: 1.010, ELEM_BONUS_PCT: 1.187, BOSS_DMG_PCT: 2.003,
+  HP_FLAT: 1.040, HP_PCT: 1.729, DEF_FLAT: 1.294, DEF_PCT: 1.295,
+  DODGE_PCT: 1.883, LIFESTEAL_PCT: 1.337, HP_ON_KILL_FLAT: 2.022,
+  // ⚠ NON CALIBRÉES — et je le dis plutôt que de faire semblant.
+  // Leur valeur est une fonction de l'équilibrage des SORTS (étape 4) : un point
+  // de CDR ne vaut quelque chose que si un sort vaut la peine d'être lancé, et je
+  // ne peux pas encore le mesurer. Elles gardent leur prix de formule (SKILL_SHARE
+  // = 35%), qui est une HYPOTHÈSE, pas une mesure. À recalibrer à l'étape 4.
+  MATK_FLAT: 1.000, MATK_PCT: 1.000, CDR_PCT: 1.000,
+  MANA_FLAT: 1.000, MANA_ON_KILL_FLAT: 1.000,
+  // MDEF_FLAT vaut RÉELLEMENT ZÉRO : aucun ennemi n'inflige de dégâts magiques
+  // (CombatSystem.enemyAttack ne lit que baseAtk). Aucun calibrage ne peut le
+  // réparer — c'est un trou de COMBAT, à combler à l'étape 2.
+  MDEF_FLAT: 1.000,
+  // SPD_FLAT : la SEULE valeur que je n'ai pas pu simuler, et je le dis.
+  // La vitesse de déplacement est une stat défensive dans un jeu d'action (on
+  // évite le coup au lieu de l'encaisser), mais mon harnais fait frapper l'ennemi
+  // sur une horloge : il ne sait pas mesurer l'esquive par le placement. Tarifée
+  // par DÉCRET. C'est le premier nombre à réfuter en playtest.
+  SPD_FLAT: 1.000,
+};
+
+/** Valeur centrale d'une ligne de clé `key` au palier `r` — CALIB inclus. */
 export function lineCenter(key, r) {
+  return rawLineCenter(key, r) * (CALIB[key] ?? 1);
+}
+
+function rawLineCenter(key, r) {
   const LV = LINE_VALUE;
   const A = poolAtk(r), H = poolHp(r), D = poolDef(r);
   switch (key) {
@@ -194,7 +249,21 @@ export function lineCenter(key, r) {
     case 'HP_FLAT':         return LV * H;
     case 'HP_PCT':          return LV * 100;
     case 'DEF_FLAT':        return LV * (100 + D);
-    case 'DODGE_PCT':       return LV * 100 * (1 - 0.10); // référence : 10% de dodge déjà porté
+    // DEF_PCT : tarifée sur une DEF de RÉFÉRENCE (celle de Rare), et non sur la DEF
+    // du palier. Sinon sa fourchette DÉCROÎT avec la rareté (12-19% à Rare, 9-13% à
+    // Mythic — un objet Mythique affichant MOINS qu'un Rare), parce qu'un point de
+    // DEF vaut d'autant plus cher qu'on en a déjà. C'est juste comptablement et
+    // absurde à l'écran. Comme toutes les substats en POURCENTAGE, elle ne dépend
+    // pas du palier : c'est le NOMBRE de lignes qui fait la marche.
+    case 'DEF_PCT':         return LV * 100 * (100 + POOL_DEF.RARE) / POOL_DEF.RARE;
+    // MDEF_FLAT : miroir de DEF_FLAT. ⚠ vaut RÉELLEMENT 0 tant qu'aucun ennemi
+    // n'inflige de dégâts magiques (CombatSystem.enemyAttack ne lit que baseAtk).
+    // Trou de COMBAT, pas de budget — à régler à l'étape 2.
+    case 'MDEF_FLAT':       return LV * (100 + D);
+    // DODGE_PCT : plus de plafond dur, des rendements décroissants
+    // (StatRollSystem.softcap, asymptote 75). La ligne rapporte donc toujours
+    // quelque chose, de moins en moins — jamais zéro.
+    case 'DODGE_PCT':       return LV * 100 * (1 - 0.10);
     // ── Sustain : soins convertis en EHP sur un engagement de FIGHT_SEC ──
     // Un point de lifesteal rend DPS×1% PV/s. Sur 20 s : DPS×0.2 PV.
     // Pour valoir LV × EHP, il faut : ls × DPS × FIGHT_SEC/100 = LV × H × (1+D/100)
@@ -348,64 +417,51 @@ export function armorMagicDefense(slot, r) {
 }
 
 // ── Pools de substats autorisés par slot ──────────────────────────
-// MDEF_FLAT est ABSENT, volontairement, des deux pools : CombatSystem.enemyAttack
-// ne lit que `enemy.stats.baseAtk` — aucun ennemi du jeu n'inflige de dégâts
-// magiques. magicDef ne réduit donc RIEN. Toute ligne MDEF_FLAT était un vol de
-// budget déguisé en défense (mesurée à 0,61 BP à Rare puis −1,91 à Legendary,
-// c'est-à-dire du bruit). On la réintroduira le jour où un ennemi lancera un
-// sort (étape 2), pas avant.
 //
-// DEF_PCT est ABSENT lui aussi, et pour une autre raison — instructive.
-// Sa valeur juste est LV × 100 × (100+DEF)/DEF : +24% à Common (DEF 33), +11% à
-// Mythic (DEF 122). Elle DÉPEND du pool qu'elle multiplie, donc elle ne peut pas
-// être tarifée une fois pour toutes. Pire : avec 60 lignes à Mythic, les lignes
-// DEF dépassaient la cible de DEF, ce qui forçait la `defense` implicite des
-// armures à DÉCROÎTRE avec la rareté (14 → 25 → 11) — un plastron Mythique
-// affichait moins de défense qu'un Épique. C'est exactement la progression
-// inversée qu'on répare. DEF_FLAT couvre déjà l'axe ; DEF_PCT est redondante.
+// LES 21 SUBSTATS SONT TOUTES DANS LE JEU. Aucune n'est retirée.
 //
-// MATK_FLAT / MATK_PCT sont réservées aux armes MAGIQUES (le bâton) — et à rien
-// d'autre. Une ligne peut être « au budget » et rester un PIÈGE si elle atterrit
-// sur le mauvais objet : la première régénération a sorti une ÉPÉE Rare dont les
-// trois substats étaient MATK_PCT, CDR_PCT et MATK_FLAT. Comptablement juste ;
-// concrètement, une épée qui ne tape pas. La valeur d'une ligne dépend du BUILD,
-// pas seulement du barème — les stats magiques ne valent leur prix que si les
-// sorts font 35% des dégâts (SKILL_SHARE), ce qui n'est vrai que pour un mage.
-// CombatSystem.playerAttack ne lit que cs.atk : sur une arme physique, MATK ne
-// fait strictement rien.
+// J'avais proposé d'en sortir trois (CDR_PCT, DODGE_PCT, MANA_*) parce que je ne
+// savais pas les tarifer : plafonnées, elles valaient zéro une fois le mur
+// atteint. Le diagnostic était juste, la solution était mauvaise — retirer une
+// substat est une décision de DESIGN, pas d'équilibrage, et une stat en moins,
+// c'est de la diversité de build en moins.
 //
-// CDR_PCT, MANA_FLAT et MANA_ON_KILL_FLAT sont EXCLUES à cette étape, et c'est
-// un refus assumé, pas un oubli. Leur valeur est une fonction de l'équilibrage
-// des SORTS (étape 4) : un point de CDR ne vaut quelque chose que si un sort
-// vaut la peine d'être lancé. Tant que je ne peux pas le mesurer, je ne peux pas
-// le tarifer — et un chiffre non vérifié est pire qu'une absence de chiffre.
+// La vraie réponse : ON A LEVÉ LES MURS (StatRollSystem.softcap). Une stat ne
+// doit jamais valoir exactement zéro ; elle a le droit de valoir de moins en
+// moins. Les rendements décroissants font le travail du plafond sans sa brutalité.
 //
-// Ce n'était pas théorique. Mesuré sur 3000 sets MYTHIC complets tirés du VRAI
-// catalogue : le CDR médian atteignait 65% pour un cap de 30. 100% des sets
-// dépassaient le cap et 51% des points de CDR rollés partaient à la poubelle.
-// C'est exactement la définition d'une taxe déguisée : le joueur « gagne » une
-// ligne qui ne lui rend rien, et rien à l'écran ne le lui dit.
-// (DODGE_PCT et BOSS_DMG_PCT, eux, ont été mesurés à 0% et 3% de gaspillage :
-//  leurs caps de 20 et 40 sont sains, on n'y touche pas.)
-// Elles reviendront à l'étape 4, avec un prix mesuré et un cap dimensionné.
+// MATK_FLAT / MATK_PCT restent réservées aux armes MAGIQUES (le bâton) — et ce
+// n'est pas un retrait, c'est un placement. Une ligne peut être « au budget » et
+// rester un PIÈGE si elle atterrit sur le mauvais objet : une régénération a sorti
+// une ÉPÉE dont les trois substats étaient MATK_PCT, CDR_PCT et MATK_FLAT.
+// Comptablement juste ; concrètement, une épée qui ne tape pas — CombatSystem.
+// playerAttack ne lit que cs.atk. Sur une arme physique, MATK ne fait rien.
+//
+// ⚠ MDEF_FLAT est dans les pools, mais elle vaut RÉELLEMENT ZÉRO aujourd'hui, et
+// je ne peux pas le corriger ici : CombatSystem.enemyAttack ne lit que
+// `enemy.stats.baseAtk` — AUCUN ennemi du jeu n'inflige de dégâts magiques, donc
+// magicDef ne réduit rien. Ce n'est pas un problème de budget, c'est un trou de
+// COMBAT. Il se règle à l'étape 2 (ennemis), en donnant enfin des attaques
+// magiques aux ennemis. Je le signale en gras plutôt que de le cacher.
 export const WEAPON_SUBS = [
   'ATK_PCT', 'CRIT_RATE', 'CRIT_DMG', 'ASPD_PCT', 'ELEM_BONUS_PCT',
-  'BOSS_DMG_PCT', 'LIFESTEAL_PCT',
+  'BOSS_DMG_PCT', 'LIFESTEAL_PCT', 'CDR_PCT',
 ];
 export const WEAPON_MAGIC_SUBS = [
-  'MATK_PCT', 'CRIT_RATE', 'CRIT_DMG', 'ASPD_PCT', 'ELEM_BONUS_PCT',
-  'BOSS_DMG_PCT', 'LIFESTEAL_PCT',
+  'MATK_PCT', 'MATK_FLAT', 'CRIT_RATE', 'CRIT_DMG', 'ASPD_PCT', 'ELEM_BONUS_PCT',
+  'BOSS_DMG_PCT', 'LIFESTEAL_PCT', 'CDR_PCT',
 ];
-export const WEAPON_DEF_SUBS = ['HP_FLAT', 'SPD_FLAT'];
+export const WEAPON_DEF_SUBS = ['HP_FLAT', 'SPD_FLAT', 'DEF_FLAT'];
 export const ARMOR_SUBS = [
-  'HP_PCT', 'DEF_FLAT', 'DODGE_PCT', 'SPD_FLAT',
+  'HP_PCT', 'DEF_FLAT', 'DEF_PCT', 'MDEF_FLAT', 'DODGE_PCT', 'SPD_FLAT',
   'HP_ON_KILL_FLAT', 'LIFESTEAL_PCT', 'ELEM_BONUS_PCT',
+  'MANA_FLAT', 'MANA_ON_KILL_FLAT', 'CDR_PCT',
 ];
 export const ARMOR_OFF_SUBS = ['ATK_FLAT', 'ATK_PCT', 'CRIT_RATE'];
 export const ACCESSORY_SUBS = [
   'ATK_PCT', 'CRIT_RATE', 'CRIT_DMG', 'ASPD_PCT', 'ELEM_BONUS_PCT', 'BOSS_DMG_PCT',
-  'LIFESTEAL_PCT', 'HP_FLAT', 'HP_PCT', 'DEF_FLAT', 'DODGE_PCT',
-  'HP_ON_KILL_FLAT', 'SPD_FLAT',
+  'LIFESTEAL_PCT', 'HP_FLAT', 'HP_PCT', 'DEF_FLAT', 'DODGE_PCT', 'CDR_PCT',
+  'HP_ON_KILL_FLAT', 'SPD_FLAT', 'MANA_FLAT', 'MANA_ON_KILL_FLAT',
 ];
 
 /** Clés affichées en pourcentage (miroir de PERCENT_KEYS, StatsSystem). */
