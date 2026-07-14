@@ -181,6 +181,14 @@ export interface EnemyPatternAssignment {
   summonMinionId?: string;
   /** Minimum distance to player before the primary pattern can trigger (px). */
   minRangeForPattern?: number;
+  /**
+   * Réglage FIN des fenêtres, par ennemi. Fusionné par-dessus le catalogue PATTERNS.
+   *
+   * Un boss ne peut pas partager ses temps avec un mob de base : un pattern se juge
+   * au temps qu'il LAISSE au joueur, pas aux dégâts qu'il enlève. C'est ici qu'on
+   * chiffre le telegraph, la fenêtre de riposte et le temps mort. Cf. `pyrath_boss`.
+   */
+  windows?: Partial<Record<AttackPatternId, Partial<PatternConfig>>>;
 }
 
 export const ENEMY_PATTERN_ASSIGNMENT: Record<string, EnemyPatternAssignment> = {
@@ -191,9 +199,56 @@ export const ENEMY_PATTERN_ASSIGNMENT: Record<string, EnemyPatternAssignment> = 
   cinder_sprite:     { primary: 'burst_fan',   secondary: 'homing',        minRangeForPattern: 60 },
   ash_revenant:      { primary: 'burst_fan',   secondary: 'homing' },
   magma_titan:       { primary: 'charge',      secondary: 'circular_burst' },
-  ember_broodmother: { primary: 'summon',      secondary: 'melee_basic',   summonMinionId: 'cinder_sprite' },
+  // secondary était `melee_basic` : la broodmother est un LANCEUR (damageType MAGIC),
+  // sa magie ne serait donc jamais sortie — summon + mêlée, aucun canal magique.
+  // Elle crache des braises entre deux pontes.
+  ember_broodmother: { primary: 'summon',      secondary: 'burst_fan',     summonMinionId: 'cinder_sprite' },
   scorch_sentinel:   { primary: 'melee_basic', secondary: 'charge' },
-  pyrath_boss:       { primary: 'circular_burst', secondary: 'charge',     summonMinionId: 'ember_wyrm' },
+
+  /**
+   * ── PYRATH — LE BOSS PILOTE. Ses fenêtres, en millisecondes. ────────────────
+   *
+   * Un boss se juge au TEMPS QU'IL LAISSE, pas à ce qu'il enlève. Voici le contrat,
+   * et il est vérifiable au chronomètre :
+   *
+   *   circular_burst — LE CHÂTIMENT (8 projectiles radiaux, magiques → MDEF)
+   *     telegraph ............ 900 ms   (le plus long du jeu ; il est IMMOBILE)
+   *     exécution ............ 600 ms
+   *     FENÊTRE DE RIPOSTE ... 2400 ms  ← le temps mort. ~4 coups d'épée.
+   *     cycle ................ 3900 ms
+   *
+   *   charge — LA PRESSION (physique → DEF)
+   *     telegraph ............ 500 ms   (plus long que les 400 ms d'un trash :
+   *                                      un boss annonce plus FORT, pas moins)
+   *     exécution ............ 600 ms
+   *     FENÊTRE DE RIPOSTE ... 1400 ms
+   *     cycle ................ 2500 ms
+   *     Parade : un pas LATÉRAL l'évite entièrement (la cible est gelée au départ
+   *     du telegraph). Ce n'est pas une question de PV, c'est une question de lecture.
+   *
+   *   summon — LE TOURNANT (à 50% PV, une seule fois)
+   *     telegraph ............ 1200 ms  ← le boss est VULNÉRABLE et immobile :
+   *                                      c'est une fenêtre de dégâts OFFERTE.
+   *
+   * Temps de réaction humain ≈ 250 ms. Le telegraph le plus court de Pyrath (500 ms)
+   * laisse donc 250 ms de déplacement après lecture — assez pour un pas de côté.
+   * Le plus long (900 ms) en laisse 650. Chaque coup pris est évitable, et le joueur
+   * peut le SAVOIR : c'est la définition du « difficile ET juste » de la spec.
+   *
+   * Cycle moyen (70% burst / 30% charge) ≈ 3480 ms → ~17 attaques télégraphiées sur
+   * les 60 s de combat visés. Le joueur en encaisse 8 avant de mourir : il a droit à
+   * 7 fautes. Ni 3 (injuste), ni 30 (sans enjeu).
+   */
+  pyrath_boss: {
+    primary: 'circular_burst',
+    secondary: 'charge',
+    summonMinionId: 'ember_wyrm',
+    windows: {
+      circular_burst: { telegraphMs: 900, cooldownMs: 2400, interruptMs: 600 },
+      charge:         { telegraphMs: 500, cooldownMs: 1400, interruptMs: 400 },
+      summon:         { telegraphMs: 1200 },
+    },
+  },
 
   // ── TERRAVAST ────────────────────────────────────────────────────────────
   stone_crawler:     { primary: 'dash_melee',  secondary: 'melee_basic' },
@@ -242,7 +297,71 @@ export const ENEMY_PATTERN_ASSIGNMENT: Record<string, EnemyPatternAssignment> = 
   malachar_boss:     { primary: 'circular_burst', secondary: 'summon',    summonMinionId: 'shadow_construct' },
 };
 
+// ── LES CRÉATURES QUI N'AVAIENT AUCUN PATTERN ───────────────────────────────
+//
+// Mesuré : 151 des 186 ennemis spawnables n'étaient dans AUCUNE assignation. Ils
+// retombaient tous sur `melee_basic` — un flash rouge de 150 ms et un coup de
+// contact. Cent cinquante et une créatures qui font TOUTES la même chose.
+//
+// Pire : 7 d'entre elles sont des LANCEURS (rune_shard_ghost, storm_caller,
+// cloudpiercer, tide_shaper, grid_architect, glacial_shaper, void_weaver). Sans
+// pattern à projectile, leur `baseMagicAtk` — la raison même de leur existence —
+// ne serait JAMAIS sorti. On leur aurait donné un canal magique qu'elles n'auraient
+// jamais pu utiliser.
+
+const HANDMADE_EXTRA: Record<string, EnemyPatternAssignment> = {
+  // Lanceurs (damageType: MAGIC) — il leur FAUT un pattern à projectile.
+  rune_shard_ghost:  { primary: 'homing',      secondary: 'burst_fan' },
+  storm_caller:      { primary: 'burst_fan',   secondary: 'homing' },
+  cloudpiercer:      { primary: 'burst_fan',   secondary: 'homing',      minRangeForPattern: 60 },
+  tide_shaper:       { primary: 'homing',      secondary: 'burst_fan' },
+  grid_architect:    { primary: 'circular_burst', secondary: 'homing' },
+  glacial_shaper:    { primary: 'homing',      secondary: 'burst_fan' },
+  void_weaver:       { primary: 'circular_burst', secondary: 'homing' },
+  // Traqueurs physiques.
+  stone_hound:       { primary: 'dash_melee',  secondary: 'melee_basic' },
+  abyssal_shade:     { primary: 'dash_melee',  secondary: 'melee_basic' },
+  arc_node:          { primary: 'burst_fan',   secondary: 'melee_basic' },
+  hoarfrost_stalker: { primary: 'dash_melee',  secondary: 'charge' },
+  void_stalker:      { primary: 'dash_melee',  secondary: 'charge' },
+};
+
+/**
+ * ARCHÉTYPES GÉNÉRÉS (`fd_*`, scripts/genEnemies.mjs) — un pattern par famille.
+ *
+ * 139 créatures partagent 4 archétypes lisibles dans leur id. Leur donner un
+ * pattern par famille coûte 4 lignes et rend 139 ennemis distincts d'un mob de base.
+ * La densité fait la difficulté : encore faut-il que les corps qui la composent ne
+ * fassent pas tous exactement la même chose.
+ */
+const ARCHETYPE_PATTERNS: { prefix: string; assignment: EnemyPatternAssignment }[] = [
+  // Nuées : rapides, fragiles, nombreuses — elles fondent sur le joueur.
+  { prefix: 'fd_swarm',  assignment: { primary: 'dash_melee', secondary: 'melee_basic' } },
+  // Bêtes : elles chargent en ligne droite. Un pas de côté suffit.
+  { prefix: 'fd_beast',  assignment: { primary: 'charge',     secondary: 'melee_basic' } },
+  // Seigneurs (élites) : charge + châtiment radial.
+  { prefix: 'fd_lord',   assignment: { primary: 'charge',     secondary: 'circular_burst' } },
+  // Tyrans (élites) : châtiment radial + fonte. Les plus lourds.
+  { prefix: 'fd_tyrant', assignment: { primary: 'circular_burst', secondary: 'dash_melee' } },
+];
+
 /** Returns the pattern assignment for a given enemy ID, or null if not configured. */
 export function getEnemyPatternAssignment(enemyId: string): EnemyPatternAssignment | null {
-  return ENEMY_PATTERN_ASSIGNMENT[enemyId] ?? null;
+  const direct = ENEMY_PATTERN_ASSIGNMENT[enemyId] ?? HANDMADE_EXTRA[enemyId];
+  if (direct) return direct;
+  const arch = ARCHETYPE_PATTERNS.find(a => enemyId.startsWith(a.prefix));
+  return arch ? arch.assignment : null;
+}
+
+/**
+ * Config EFFECTIVE d'un pattern pour un ennemi donné : le catalogue PATTERNS,
+ * fusionné avec les `windows` de cet ennemi s'il en déclare.
+ *
+ * C'est le SEUL point d'où GameScene doit lire les temps d'un pattern. Lire
+ * `PATTERNS[id]` directement ignorerait silencieusement les fenêtres du boss — et
+ * un boss réglé dans la data mais pas dans le moteur, c'est un boss non réglé.
+ */
+export function resolvePattern(enemyId: string, patternId: AttackPatternId): PatternConfig {
+  const w = getEnemyPatternAssignment(enemyId)?.windows?.[patternId];
+  return w ? { ...PATTERNS[patternId], ...w } : PATTERNS[patternId];
 }
