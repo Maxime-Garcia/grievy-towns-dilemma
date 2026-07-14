@@ -17,6 +17,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import * as M from './balanceModel.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const BUNDLE = path.join(ROOT, 'assets', 'Bundle_extracted');
@@ -47,57 +48,78 @@ const COLOR_ELEMENTS = {
   Normal: ['NEUTRAL', 'DIVINE'],
 };
 
-// ── Budget par rareté (docs/design/LOOT_STAT_ROLLS.md §2.1) ────────
-// substats = TOTAL de lignes − 1 (la mainStat n'est pas comptée ici).
-const RARITY = {
-  COMMON:    { substats: 1, dmg: 14,  value: 40,    spread: 0.10, weight: 26 },
-  UNCOMMON:  { substats: 2, dmg: 22,  value: 120,   spread: 0.15, weight: 24 },
-  RARE:      { substats: 3, dmg: 32,  value: 380,   spread: 0.20, weight: 20 },
-  EPIC:      { substats: 4, dmg: 46,  value: 1200,  spread: 0.25, weight: 14 },
-  LEGENDARY: { substats: 5, dmg: 66,  value: 5000,  spread: 0.30, weight: 9  },
-  MYTHIC:    { substats: 6, dmg: 88,  value: 12000, spread: 0.35, weight: 5  },
-  // Pas de HIDDEN ici, volontairement : dans ce projet HIDDEN ne veut pas dire
-  // « très rare », il veut dire « porte un passif unique game-breaking » (cf.
-  // src/data/passiveEffects.ts). Générer des HIDDEN sans passif diluerait le sens
-  // du palier rouge — les Hidden restent écrits à la main, un par un.
-};
-const RARITY_KEYS = Object.keys(RARITY);
-const rollRarity = () => {
-  const total = RARITY_KEYS.reduce((s, k) => s + RARITY[k].weight, 0);
-  let r = rnd() * total;
-  for (const k of RARITY_KEYS) { r -= RARITY[k].weight; if (r <= 0) return k; }
-  return 'COMMON';
+// ── Raretés ────────────────────────────────────────────────────────
+// Le BUDGET (main stat, substats, fourchettes, valeur) ne vit plus ici : il vit
+// dans scripts/balanceModel.mjs, que le recalage des items écrits à la main lit
+// AUSSI. C'est tout l'objet de la manœuvre : les deux moitiés du catalogue
+// avaient divergé au point que la progression était inversée (un Rare tuait
+// moins vite qu'un Uncommon). Deux fichiers ne peuvent plus se contredire s'ils
+// lisent le même.
+//
+// Pas de HIDDEN ici, volontairement : dans ce projet HIDDEN ne veut pas dire
+// « très rare », il veut dire « porte un passif unique » (src/data/passiveEffects.ts).
+// Générer des HIDDEN sans passif diluerait le sens du palier rouge — ils restent
+// écrits à la main, un par un.
+const RARITY_KEYS = ['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC'];
+
+/**
+ * La rareté est CYCLIQUE, plus tirée au sort.
+ *
+ * Avant : un tirage pondéré (26% Common … 5% Mythic). Résultat mesuré sur le
+ * catalogue réel : 6 slots sur 10 n'avaient AUCUN Mythique — un « full Mythique »
+ * était donc mathématiquement impossible, et personne ne s'en était aperçu.
+ * Le hasard ne garantit pas la couverture ; un cycle, si. Chaque type d'arme
+ * possède désormais exactement le même nombre d'objets de chaque rareté, à
+ * chaque régénération, sans exception silencieuse possible.
+ *
+ * La composition du catalogue n'est PAS le taux de drop : celui-ci vit dans les
+ * tables de butin des ennemis (LootSystem). Rééquilibrer l'un ne touche pas
+ * l'autre — c'est précisément pour ça qu'on peut se le permettre.
+ */
+const rarityCounters = {};
+const nextRarity = (bucket) => {
+  rarityCounters[bucket] = (rarityCounters[bucket] ?? 0) + 1;
+  return RARITY_KEYS[(rarityCounters[bucket] - 1) % RARITY_KEYS.length];
 };
 
 // ── Profils d'armes ────────────────────────────────────────────────
-// dmgMult : le budget de dégâts relatif du type (cf. ATTACK_PATTERNS — une masse
-// frappe fort et lentement, une dague vite et faible). magic : arme à MATK.
+// Le coefficient de dégâts par type vit maintenant dans M.TYPE_COEF (modèle) ;
+// ici ne restent que l'ICONOGRAPHIE et l'aspd d'affichage.
+//
+// ⚠ `aspd` est de la DONNÉE MORTE pour le combat : GameScene calcule le cooldown
+// d'attaque avec `ATTACK_PATTERNS[weaponType].cooldown / cs.aspd` et ne lit
+// JAMAIS `weapon.attackSpeed` (seul ArsenalScene l'affiche). On la conserve pour
+// l'UI, mais elle n'a aucun effet mécanique — c'est un constat, pas un choix, et
+// c'est l'étape 3 (parité des armes) qui tranchera son sort.
 const WEAPON_PROFILES = {
-  SWORD:      { pack: 'Sword Item Icons',  sub: 'Swords',  dmgMult: 1.00, aspd: 1.0, magic: 0.0, stats: ['str'] },
-  GREATSWORD: { pack: 'Sword Item Icons',  sub: 'Swords',  dmgMult: 1.55, aspd: 0.8, magic: 0.0, stats: ['str', 'vit'] },
-  DAGGER:     { pack: 'Dagger Item Icons', sub: 'Daggers', dmgMult: 0.78, aspd: 1.7, magic: 0.0, stats: ['agi', 'spd'] },
-  AXE:        { pack: 'Axe Item Icons',    sub: 'Axe',     dmgMult: 1.25, aspd: 0.95, magic: 0.0, stats: ['str', 'end'] },
-  HAMMER:     { pack: 'Axe Item Icons',    sub: 'Axe',     dmgMult: 1.65, aspd: 0.7, magic: 0.0, stats: ['str', 'end', 'vit'] },
-  SPEAR:      { pack: 'Spear Icons 32x32 Pixelart', sub: 'Spears', dmgMult: 1.08, aspd: 1.1, magic: 0.0, stats: ['agi', 'str'] },
-  STAFF:      { pack: 'Staff Item Icons',  sub: 'Staff',   dmgMult: 0.30, aspd: 1.0, magic: 1.55, stats: ['int', 'end'] },
-  BOW:        { pack: 'Bow Item Icons',    sub: null,      dmgMult: 0.92, aspd: 1.35, magic: 0.0, stats: ['agi', 'int'] },
+  SWORD:      { pack: 'Sword Item Icons',  sub: 'Swords',  aspd: 1.0 },
+  GREATSWORD: { pack: 'Sword Item Icons',  sub: 'Swords',  aspd: 0.8 },
+  DAGGER:     { pack: 'Dagger Item Icons', sub: 'Daggers', aspd: 1.7 },
+  AXE:        { pack: 'Axe Item Icons',    sub: 'Axe',     aspd: 0.95 },
+  HAMMER:     { pack: 'Axe Item Icons',    sub: 'Axe',     aspd: 0.7 },
+  SPEAR:      { pack: 'Spear Icons 32x32 Pixelart', sub: 'Spears', aspd: 1.1 },
+  STAFF:      { pack: 'Staff Item Icons',  sub: 'Staff',   aspd: 1.0 },
+  BOW:        { pack: 'Bow Item Icons',    sub: null,      aspd: 1.35 },
 };
 
-// ── Substats autorisées ────────────────────────────────────────────
-// Armes : offensif d'abord, max 1 ligne défensive (LOOT_STAT_ROLLS §3).
-const WEAPON_SUBS = [
-  ['ATK_PCT', 5, 9, true], ['MATK_FLAT', 11, 23, false], ['CRIT_RATE', 4, 8, true],
-  ['CRIT_DMG', 9, 19, true], ['ASPD_PCT', 7, 15, true], ['ELEM_BONUS_PCT', 7, 15, true],
-  ['BOSS_DMG_PCT', 5, 9, true], ['LIFESTEAL_PCT', 3, 6, true], ['SPD_FLAT', 4, 8, false],
-];
-const WEAPON_DEF_SUBS = [['HP_FLAT', 41, 85, false], ['DEF_FLAT', 7, 15, false]];
-// Armures : défensif d'abord, max 1 ligne offensive, jamais CRIT_DMG.
-const ARMOR_SUBS = [
-  ['MDEF_FLAT', 7, 15, false], ['HP_FLAT', 41, 85, false], ['HP_PCT', 5, 9, true],
-  ['DEF_PCT', 5, 9, true], ['DEF_FLAT', 7, 15, false], ['MANA_FLAT', 18, 38, false],
-  ['DODGE_PCT', 3, 6, true], ['SPD_FLAT', 4, 8, false], ['HP_ON_KILL_FLAT', 9, 19, false],
-];
-const ARMOR_OFF_SUBS = [['ATK_FLAT', 11, 23, false], ['MATK_FLAT', 11, 23, false], ['CRIT_RATE', 4, 8, true]];
+// ── Substats ───────────────────────────────────────────────────────
+// Les POOLS et les FOURCHETTES viennent du modèle (M.WEAPON_SUBS, M.substatRange…).
+// Elles ne sont plus écrites ici : une fourchette codée en dur dans le générateur
+// est une fourchette que le recalage des items manuels ne connaît pas.
+//
+// Biais par slot : chaque pièce garde une IDENTITÉ sans casser le budget. Une
+// ligne « signature » est garantie dès UNCOMMON, tirée dans une liste courte
+// propre au slot ; le reste du tirage est libre. Les bottes parlent de vitesse,
+// les gants de coups critiques — mais toutes les lignes valent le même budget,
+// donc aucun slot n'est mécaniquement supérieur à un autre.
+const SLOT_SIGNATURE = {
+  HELM:   ['ELEM_BONUS_PCT', 'HP_PCT'],
+  CHEST:  ['HP_PCT', 'DEF_FLAT', 'HP_ON_KILL_FLAT'],
+  LEGS:   ['DEF_FLAT', 'HP_PCT', 'SPD_FLAT'],
+  BOOTS:  ['SPD_FLAT', 'DODGE_PCT'],
+  GLOVES: ['CRIT_RATE', 'ATK_PCT', 'ASPD_PCT'],
+  CAPE:   ['DODGE_PCT', 'ELEM_BONUS_PCT', 'SPD_FLAT'],
+};
 
 // ══════════════════════════════════════════════════════════════════
 // TABLES ÉDITORIALES — FR et EN en PARALLÈLE (mêmes longueurs, mêmes index)
@@ -214,13 +236,21 @@ const LORE_TWIST = {
 };
 
 // ── Armures ────────────────────────────────────────────────────────
+// `def`/`mdef`/`stats` ont disparu du profil : la défense d'une pièce découle
+// désormais de son POIDS DE SLOT dans le modèle (M.armorDefense), pas d'un
+// coefficient écrit ici. Ne restent que l'iconographie et le vocabulaire.
+//
+// Seuls HELM et CHEST sont générés : les packs d'icônes du bundle ne couvrent
+// que ces deux pièces (Leather/Steel Armor + Helm). Jambières, bottes, gants,
+// capes, anneaux et amulettes n'ont pas d'icônes en pack — ils restent écrits à
+// la main. C'est exactement POURQUOI ce sont eux qui avaient des trous de rareté.
 const ARMOR_PROFILES = {
-  HELM:  { pack: 'Armory Item Icons', folders: ['Leather Helm', 'Steel Helm'],   def: 0.55, mdef: 0.60,
+  HELM:  { pack: 'Armory Item Icons', folders: ['Leather Helm', 'Steel Helm'],
            fr: ['Heaume', 'Casque', 'Salade', 'Bassinet'],
-           en: ['Helm', 'Helmet', 'Sallet', 'Bascinet'], stats: ['end', 'int'] },
-  CHEST: { pack: 'Armory Item Icons', folders: ['Leather Armor', 'Steel Armor'], def: 1.00, mdef: 0.85,
+           en: ['Helm', 'Helmet', 'Sallet', 'Bascinet'] },
+  CHEST: { pack: 'Armory Item Icons', folders: ['Leather Armor', 'Steel Armor'],
            fr: ['Cuirasse', 'Plastron', 'Broigne', 'Haubert'],
-           en: ['Cuirass', 'Breastplate', 'Byrnie', 'Hauberk'], stats: ['end', 'vit'] },
+           en: ['Cuirass', 'Breastplate', 'Byrnie', 'Hauberk'] },
 };
 
 /**
@@ -297,8 +327,9 @@ for (const [wt, prof] of Object.entries(WEAPON_PROFILES)) {
 
     for (let i = 0; i < PER_BUCKET; i++) {
       const element = pick(elements);
-      const rarity = rollRarity();
-      const R = RARITY[rarity];
+      // Rareté cyclique PAR TYPE D'ARME : chaque type reçoit exactement le même
+      // nombre d'objets de chaque rareté. Plus de type sans Mythique.
+      const rarity = nextRarity(wt);
       // Tirage par INDEX : la même case est lue dans la table FR et dans la table EN,
       // donc les deux langues sortent en phase, sans traduction manuelle.
       const nounI = pickI(WT_FR[wt]);
@@ -318,44 +349,55 @@ for (const [wt, prof] of Object.entries(WEAPON_PROFILES)) {
       const iconKey = `item_${id}`;
       copyIcon(pool[Math.floor(rnd() * pool.length)], iconKey);
 
-      const isMagic = prof.magic > 0;
-      const dmg = Math.max(1, Math.round(R.dmg * prof.dmgMult));
-      const mdmg = isMagic ? Math.round(R.dmg * prof.magic) : Math.round(dmg * 0.45);
+      // ── Main stat : le MODÈLE décide, plus le générateur ──────────
+      const isMagic = M.MAGIC_WEAPONS.has(wt);
       const mainKey = isMagic ? 'MATK_FLAT' : 'ATK_FLAT';
-      const mainVal = isMagic ? mdmg : dmg;
-      const lo = Math.max(1, Math.round(mainVal * (1 - R.spread)));
-      const hi = Math.round(mainVal * (1 + R.spread));
+      const { min: lo, max: hi } = M.weaponMainRange(wt, rarity);
+      const mainVal = Math.round((lo + hi) / 2);
+      // `damage`/`magicDamage` sont le MIROIR du centre de la main stat — règle
+      // absolue de CLAUDE.md, et StatRollSystem le réécrit de toute façon à
+      // chaque roll. On l'aligne ici pour que le catalogue au repos soit cohérent.
+      const dmg  = isMagic ? Math.round(mainVal * 0.45) : mainVal;
+      const mdmg = isMagic ? mainVal : Math.round(mainVal * 0.45);
 
-      // Substats : offensives, + au plus 1 défensive.
+      // ── Substats ──────────────────────────────────────────────────
       // JAMAIS la clé de la mainStat, ni deux fois la même clé : StatsSystem
       // additionne mainStat ET substats dans le même total (collectEquipTotals),
       // donc une clé dupliquée sort l'item de la fourchette annoncée (double-dip)
       // et StatRollSystem.validateItemRanges la signale comme une erreur de data.
+      const nSub = M.SUBSTAT_COUNT[rarity];
       const subs = [];
       const taken = new Set([mainKey]);
-      const takeFrom = (poolArr) => {
-        const cands = poolArr.filter(s => !taken.has(s[0]));
+      const takeFrom = (keys) => {
+        const cands = keys.filter(k => !taken.has(k));
         if (cands.length === 0) return null;
-        const s = cands[Math.floor(rnd() * cands.length)];
-        taken.add(s[0]);
-        return s;
+        const k = cands[Math.floor(rnd() * cands.length)];
+        taken.add(k);
+        return k;
       };
-      const nDef = R.substats >= 4 && rnd() < 0.6 ? 1 : 0;
-      for (let k = 0; k < R.substats - nDef; k++) {
-        const s = takeFrom(WEAPON_SUBS);
-        if (s) subs.push(s);
-      }
-      if (nDef) { const s = takeFrom(WEAPON_DEF_SUBS); if (s) subs.push(s); }
-      // Si le pool s'est épuisé (rareté haute), on complète pour tenir le compte
-      // exigé par SUBSTAT_COUNT_BY_RARITY.
-      while (subs.length < R.substats) {
-        const s = takeFrom([...WEAPON_SUBS, ...WEAPON_DEF_SUBS]);
+      // Pool PHYSIQUE ou MAGIQUE selon l'arme : jamais de MATK sur une épée.
+      const offPool = isMagic ? M.WEAPON_MAGIC_SUBS : M.WEAPON_SUBS;
+      const nDef = nSub >= 4 && rnd() < 0.6 ? 1 : 0;
+      for (let k = 0; k < nSub - nDef; k++) { const s = takeFrom(offPool); if (s) subs.push(s); }
+      if (nDef) { const s = takeFrom(M.WEAPON_DEF_SUBS); if (s) subs.push(s); }
+      while (subs.length < nSub) {
+        const s = takeFrom([...offPool, ...M.WEAPON_DEF_SUBS]);
         if (!s) break;
         subs.push(s);
       }
+      const subLine = (k) => {
+        const { min, max } = M.substatRange(k, rarity);
+        return `{ key: '${k}', min: ${min}, max: ${max}${M.PCT_KEYS.has(k) ? ', isPercentage: true' : ''} }`;
+      };
 
+      // `bonusStats` est VIDE, désormais, et c'est un correctif de fond.
+      // StatsSystem le lit encore (str×3 → atk, vit×8 → hp, end×2 → def…) :
+      // c'était un TROISIÈME canal de puissance, à côté de la main stat et des
+      // substats, qu'aucun budget ne comptait. Un item pouvait donc valoir
+      // beaucoup plus que sa rareté ne l'annonçait, sans que rien ne le montre.
+      // Toute la puissance passe maintenant par equipRanges — visible, rollable,
+      // budgétée. Le champ reste dans le type pour la compat des saves.
       const bonus = {};
-      for (const s of prof.stats) bonus[s] = Math.max(1, Math.round(R.dmg / 12));
 
       const oriI  = pickI(LORE_ORIGIN[rarity]);
       const twiI  = pickI(LORE_TWIST[element]);
@@ -365,7 +407,7 @@ for (const [wt, prof] of Object.entries(WEAPON_PROFILES)) {
       const descEn = `${nounEn} ${suffixEn}`.trim();
       enKeys.push([id, nameEn, `${descEn}.`, loreEn]);
 
-      weapons.push(`  { id: '${id}', name: '${esc(name)}', description: '${esc(desc)}.', rarity: ItemRarity.${rarity}, type: ItemType.WEAPON, icon: '${iconKey}', value: ${R.value}, ${element !== 'NEUTRAL' ? `element: ElementType.${element}, ` : ''}weaponType: WeaponType.${wt}, damage: ${dmg}, magicDamage: ${mdmg}, bonusStats: ${JSON.stringify(bonus)}, attackSpeed: ${prof.aspd}, lore: '${esc(lore)}', equipRanges: { mainStat: { key: '${mainKey}', min: ${lo}, max: ${hi} }, substats: [${subs.map(([k, a, b, p]) => `{ key: '${k}', min: ${ri(a, Math.round((a + b) / 2))}, max: ${ri(Math.round((a + b) / 2), b)}${p ? ', isPercentage: true' : ''} }`).join(', ')}] } },`);
+      weapons.push(`  { id: '${id}', name: '${esc(name)}', description: '${esc(desc)}.', rarity: ItemRarity.${rarity}, type: ItemType.WEAPON, icon: '${iconKey}', value: ${M.VALUE[rarity]}, ${element !== 'NEUTRAL' ? `element: ElementType.${element}, ` : ''}weaponType: WeaponType.${wt}, damage: ${dmg}, magicDamage: ${mdmg}, bonusStats: ${JSON.stringify(bonus)}, attackSpeed: ${prof.aspd}, lore: '${esc(lore)}', equipRanges: { mainStat: { key: '${mainKey}', min: ${lo}, max: ${hi} }, substats: [${subs.map(subLine).join(', ')}] } },`);
     }
   }
 }
@@ -374,9 +416,10 @@ for (const [wt, prof] of Object.entries(WEAPON_PROFILES)) {
 for (const [slot, prof] of Object.entries(ARMOR_PROFILES)) {
   const pool = prof.folders.flatMap(f => listPngs(prof.pack, f));
   if (pool.length === 0) { console.warn(`  ! aucun PNG pour l'armure ${slot}`); continue; }
-  for (let i = 0; i < 28; i++) {
-    const rarity = rollRarity();
-    const R = RARITY[rarity];
+  for (let i = 0; i < 30; i++) {
+    // Rareté cyclique par slot : 30 pièces / 6 raretés = 5 de chaque, garanti.
+    // Le tirage pondéré d'avant laissait HELM sans aucun Mythique.
+    const rarity = nextRarity(slot);
     const element = pick(['NEUTRAL', 'FIRE', 'ICE', 'WATER', 'LIGHTNING', 'EARTH', 'DARK']);
     const id = `gen_${slot.toLowerCase()}_${i + 1}`;
     if (usedIds.has(id)) continue;
@@ -394,37 +437,46 @@ for (const [slot, prof] of Object.entries(ARMOR_PROFILES)) {
     const sfxEn  = useEl ? EL_EN[element] : ADJ_EN[rarity][adjI];
     const name   = `${noun} ${sfx}`.trim().replace(/\s+/g, ' ');
     const nameEn = `${nounEn} ${sfxEn}`.trim().replace(/\s+/g, ' ');
-    const def = Math.max(1, Math.round(R.dmg * prof.def));
-    const mdef = Math.max(1, Math.round(R.dmg * prof.mdef));
-    const mainVal = Math.max(4, Math.round(def * 0.45));
-    const lo = Math.max(1, Math.round(mainVal * (1 - R.spread)));
-    const hi = Math.round(mainVal * (1 + R.spread));
 
-    // Même règle que pour les armes : jamais la clé de la mainStat (DEF_FLAT ici),
-    // jamais deux fois la même clé — sinon double-dip dans collectEquipTotals.
+    // ── Main stat d'armure : HP_FLAT, plus DEF_FLAT ────────────────
+    // La DEF était comptée DEUX FOIS par StatsSystem (le champ `defense` ET la
+    // main stat DEF_FLAT). D'où 438 de DEF en Legendary complet = 81% de
+    // réduction de dégâts = un joueur invulnérable. La DEF ne coule plus que par
+    // `defense` ; la main stat porte les PV — rollables, lisibles, et c'est le
+    // vrai axe de survie.
+    const def  = M.armorDefense(slot, rarity);
+    const mdef = M.armorMagicDefense(slot, rarity);
+    const { min: lo, max: hi } = M.armorMainRange(slot, rarity);
+
+    const nSub = M.SUBSTAT_COUNT[rarity];
     const subs = [];
-    const taken = new Set(['DEF_FLAT']);
-    const takeFrom = (poolArr) => {
-      const cands = poolArr.filter(s => !taken.has(s[0]));
+    const taken = new Set(['HP_FLAT']); // jamais la clé de la mainStat → pas de double-dip
+    const takeFrom = (keys) => {
+      const cands = keys.filter(k => !taken.has(k));
       if (cands.length === 0) return null;
-      const s = cands[Math.floor(rnd() * cands.length)];
-      taken.add(s[0]);
-      return s;
+      const k = cands[Math.floor(rnd() * cands.length)];
+      taken.add(k);
+      return k;
     };
-    const nOff = R.substats >= 4 && rnd() < 0.5 ? 1 : 0;
-    for (let k = 0; k < R.substats - nOff; k++) {
-      const s = takeFrom(ARMOR_SUBS);
-      if (s) subs.push(s);
-    }
-    if (nOff) { const s = takeFrom(ARMOR_OFF_SUBS); if (s) subs.push(s); }
-    while (subs.length < R.substats) {
-      const s = takeFrom([...ARMOR_SUBS, ...ARMOR_OFF_SUBS]);
+    // Ligne « signature » du slot dès UNCOMMON : l'identité de la pièce, à budget
+    // strictement égal (toute ligne vaut LINE_VALUE, quelle que soit sa clé).
+    if (nSub >= 2) { const s = takeFrom(SLOT_SIGNATURE[slot] ?? []); if (s) subs.push(s); }
+    const nOff = nSub >= 4 && rnd() < 0.5 ? 1 : 0;
+    while (subs.length < nSub - nOff) { const s = takeFrom(M.ARMOR_SUBS); if (!s) break; subs.push(s); }
+    if (nOff) { const s = takeFrom(M.ARMOR_OFF_SUBS); if (s) subs.push(s); }
+    while (subs.length < nSub) {
+      const s = takeFrom([...M.ARMOR_SUBS, ...M.ARMOR_OFF_SUBS]);
       if (!s) break;
       subs.push(s);
     }
+    const subLine = (k) => {
+      const { min, max } = M.substatRange(k, rarity);
+      return `{ key: '${k}', min: ${min}, max: ${max}${M.PCT_KEYS.has(k) ? ', isPercentage: true' : ''} }`;
+    };
 
+    // Vide : `bonusStats` était un troisième canal de puissance non budgété
+    // (end×2 → def, vit×8 → hp). Cf. la note dans la génération des armes.
     const bonus = {};
-    for (const s of prof.stats) bonus[s] = Math.max(1, Math.round(R.dmg / 14));
 
     const oriI = pickI(LORE_ORIGIN[rarity]);
     const twiI = pickI(LORE_TWIST[element]);
@@ -435,7 +487,7 @@ for (const [slot, prof] of Object.entries(ARMOR_PROFILES)) {
 
     // `element` était tiré mais jamais émis : le nom annonçait « de Givre » et l'item
     // sortait NEUTRAL (l'ELEM_BONUS_PCT ne se rattachait à rien de lisible).
-    armors.push(`  { id: '${id}', name: '${esc(name)}', description: '${esc(noun)} de facture ${rarity === 'COMMON' ? 'ordinaire' : 'soignée'}.', rarity: ItemRarity.${rarity}, type: ItemType.${slot}, icon: '${iconKey}', value: ${R.value}, ${element !== 'NEUTRAL' ? `element: ElementType.${element}, ` : ''}defense: ${def}, magicDefense: ${mdef}, bonusStats: ${JSON.stringify(bonus)}, lore: '${esc(lore)}', equipRanges: { mainStat: { key: 'DEF_FLAT', min: ${lo}, max: ${hi} }, substats: [${subs.map(([k, a, b, p]) => `{ key: '${k}', min: ${ri(a, Math.round((a + b) / 2))}, max: ${ri(Math.round((a + b) / 2), b)}${p ? ', isPercentage: true' : ''} }`).join(', ')}] } },`);
+    armors.push(`  { id: '${id}', name: '${esc(name)}', description: '${esc(noun)} de facture ${rarity === 'COMMON' ? 'ordinaire' : 'soignée'}.', rarity: ItemRarity.${rarity}, type: ItemType.${slot}, icon: '${iconKey}', value: ${M.VALUE[rarity]}, ${element !== 'NEUTRAL' ? `element: ElementType.${element}, ` : ''}defense: ${def}, magicDefense: ${mdef}, bonusStats: ${JSON.stringify(bonus)}, lore: '${esc(lore)}', equipRanges: { mainStat: { key: 'HP_FLAT', min: ${lo}, max: ${hi} }, substats: [${subs.map(subLine).join(', ')}] } },`);
   }
 }
 

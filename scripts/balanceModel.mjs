@@ -343,20 +343,49 @@ export function armorMagicDefense(slot, r) {
 // armures à DÉCROÎTRE avec la rareté (14 → 25 → 11) — un plastron Mythique
 // affichait moins de défense qu'un Épique. C'est exactement la progression
 // inversée qu'on répare. DEF_FLAT couvre déjà l'axe ; DEF_PCT est redondante.
+//
+// MATK_FLAT / MATK_PCT sont réservées aux armes MAGIQUES (le bâton) — et à rien
+// d'autre. Une ligne peut être « au budget » et rester un PIÈGE si elle atterrit
+// sur le mauvais objet : la première régénération a sorti une ÉPÉE Rare dont les
+// trois substats étaient MATK_PCT, CDR_PCT et MATK_FLAT. Comptablement juste ;
+// concrètement, une épée qui ne tape pas. La valeur d'une ligne dépend du BUILD,
+// pas seulement du barème — les stats magiques ne valent leur prix que si les
+// sorts font 35% des dégâts (SKILL_SHARE), ce qui n'est vrai que pour un mage.
+// CombatSystem.playerAttack ne lit que cs.atk : sur une arme physique, MATK ne
+// fait strictement rien.
+//
+// CDR_PCT, MANA_FLAT et MANA_ON_KILL_FLAT sont EXCLUES à cette étape, et c'est
+// un refus assumé, pas un oubli. Leur valeur est une fonction de l'équilibrage
+// des SORTS (étape 4) : un point de CDR ne vaut quelque chose que si un sort
+// vaut la peine d'être lancé. Tant que je ne peux pas le mesurer, je ne peux pas
+// le tarifer — et un chiffre non vérifié est pire qu'une absence de chiffre.
+//
+// Ce n'était pas théorique. Mesuré sur 3000 sets MYTHIC complets tirés du VRAI
+// catalogue : le CDR médian atteignait 65% pour un cap de 30. 100% des sets
+// dépassaient le cap et 51% des points de CDR rollés partaient à la poubelle.
+// C'est exactement la définition d'une taxe déguisée : le joueur « gagne » une
+// ligne qui ne lui rend rien, et rien à l'écran ne le lui dit.
+// (DODGE_PCT et BOSS_DMG_PCT, eux, ont été mesurés à 0% et 3% de gaspillage :
+//  leurs caps de 20 et 40 sont sains, on n'y touche pas.)
+// Elles reviendront à l'étape 4, avec un prix mesuré et un cap dimensionné.
 export const WEAPON_SUBS = [
   'ATK_PCT', 'CRIT_RATE', 'CRIT_DMG', 'ASPD_PCT', 'ELEM_BONUS_PCT',
-  'BOSS_DMG_PCT', 'LIFESTEAL_PCT', 'MATK_FLAT', 'MATK_PCT', 'CDR_PCT',
+  'BOSS_DMG_PCT', 'LIFESTEAL_PCT',
+];
+export const WEAPON_MAGIC_SUBS = [
+  'MATK_PCT', 'CRIT_RATE', 'CRIT_DMG', 'ASPD_PCT', 'ELEM_BONUS_PCT',
+  'BOSS_DMG_PCT', 'LIFESTEAL_PCT',
 ];
 export const WEAPON_DEF_SUBS = ['HP_FLAT', 'SPD_FLAT'];
 export const ARMOR_SUBS = [
   'HP_PCT', 'DEF_FLAT', 'DODGE_PCT', 'SPD_FLAT',
-  'HP_ON_KILL_FLAT', 'MANA_FLAT', 'MANA_ON_KILL_FLAT', 'CDR_PCT',
+  'HP_ON_KILL_FLAT', 'LIFESTEAL_PCT', 'ELEM_BONUS_PCT',
 ];
-export const ARMOR_OFF_SUBS = ['ATK_FLAT', 'ATK_PCT', 'MATK_FLAT', 'CRIT_RATE'];
+export const ARMOR_OFF_SUBS = ['ATK_FLAT', 'ATK_PCT', 'CRIT_RATE'];
 export const ACCESSORY_SUBS = [
   'ATK_PCT', 'CRIT_RATE', 'CRIT_DMG', 'ASPD_PCT', 'ELEM_BONUS_PCT', 'BOSS_DMG_PCT',
-  'LIFESTEAL_PCT', 'HP_FLAT', 'HP_PCT', 'DEF_FLAT', 'DODGE_PCT', 'CDR_PCT',
-  'MATK_FLAT', 'MATK_PCT', 'HP_ON_KILL_FLAT', 'SPD_FLAT',
+  'LIFESTEAL_PCT', 'HP_FLAT', 'HP_PCT', 'DEF_FLAT', 'DODGE_PCT',
+  'HP_ON_KILL_FLAT', 'SPD_FLAT',
 ];
 
 /** Clés affichées en pourcentage (miroir de PERCENT_KEYS, StatsSystem). */
