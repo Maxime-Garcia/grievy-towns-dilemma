@@ -579,7 +579,13 @@ export const ENEMIES: Enemy[] = [
     loot: [
       { itemId: 'cloudweave_silk', dropRate: 0.55, minQty: 1, maxQty: 2 },
       { itemId: 'zephyr_feather', dropRate: 0.30, minQty: 1, maxQty: 1 },
-      { itemId: 'wraith_amulet', dropRate: 0.012, minQty: 1, maxQty: 1 }
+      { itemId: 'wraith_amulet', dropRate: 0.012, minQty: 1, maxQty: 1 },
+      // echo_blade (MYTHIC) : le bestiaire l'annonçait déjà ici, à ce taux, mais
+      // aucune table de loot ne le contenait — sa SEULE source était le mannequin
+      // d'entraînement doré (spawnWeight: 0, outil de debug). L'arme emblématique
+      // du lore était donc inobtenable en jeu. Partagée entre 3 ennemis d'Aetheris,
+      // conformément à la règle « un MYTHIC pour 2-4 ennemis d'une même zone ».
+      { itemId: 'echo_blade', dropRate: 0.002, minQty: 1, maxQty: 1 }
     ],
     baseXp: 38,
     baseGold: { min: 5, max: 14 },
@@ -640,7 +646,8 @@ export const ENEMIES: Enemy[] = [
       { itemId: 'stormstone', dropRate: 0.80, minQty: 2, maxQty: 4 },
       { itemId: 'cloudweave_silk', dropRate: 0.70, minQty: 2, maxQty: 3 },
       { itemId: 'sky_titan_bow', dropRate: 0.07, minQty: 1, maxQty: 1 },
-      { itemId: 'air_walker_boots', dropRate: 0.04, minQty: 1, maxQty: 1 }
+      { itemId: 'air_walker_boots', dropRate: 0.04, minQty: 1, maxQty: 1 },
+      { itemId: 'echo_blade', dropRate: 0.003, minQty: 1, maxQty: 1 } // cf. wind_wraith
     ],
     baseXp: 220,
     baseGold: { min: 40, max: 100 },
@@ -730,7 +737,8 @@ export const ENEMIES: Enemy[] = [
       { itemId: 'zephyr_feather', dropRate: 1.0, minQty: 6, maxQty: 10 },
       { itemId: 'phoenix_bow', dropRate: 0.20, minQty: 1, maxQty: 1 },
       { itemId: 'tempest_cloak', dropRate: 0.12, minQty: 1, maxQty: 1 },
-      { itemId: 'ring_of_the_wind', dropRate: 0.04, minQty: 1, maxQty: 1 }
+      { itemId: 'ring_of_the_wind', dropRate: 0.04, minQty: 1, maxQty: 1 },
+      { itemId: 'echo_blade', dropRate: 0.005, minQty: 1, maxQty: 1 } // cf. wind_wraith
     ],
     baseXp: 1400,
     baseGold: { min: 165, max: 320 },

@@ -147,8 +147,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'dragonfang_sword', dropRatePct: 25, isHidden: false },
       { itemId: 'pyrath_armor', dropRatePct: 15, isHidden: false },
       { itemId: 'eternal_flame_ring', dropRatePct: 4, isHidden: false },
-      { itemId: 'pyrath_heart', dropRatePct: 1, isHidden: false },
-      { itemId: 'hidden_first_blade', dropRatePct: 0.07, isHidden: true },
     ],
   },
 
@@ -176,7 +174,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'terravast_crystal', dropRatePct: 75, isHidden: false },
       { itemId: 'ancient_stone_rune', dropRatePct: 30, isHidden: false },
       { itemId: 'crystal_chest', dropRatePct: 5, isHidden: false },
-      { itemId: 'hidden_mirror_helm', dropRatePct: 0.07, isHidden: true },
     ],
   },
   {
@@ -356,7 +353,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'tempest_cloak', dropRatePct: 12, isHidden: false },
       { itemId: 'ring_of_the_wind', dropRatePct: 4, isHidden: false },
       { itemId: 'echo_blade', dropRatePct: 0.5, isHidden: false },
-      { itemId: 'hidden_fate_amulet', dropRatePct: 0.07, isHidden: true },
     ],
   },
 
@@ -444,7 +440,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'drowned_knight_sword', dropRatePct: 9, isHidden: false },
       { itemId: 'seaguard_armor', dropRatePct: 6, isHidden: false },
       { itemId: 'thalymor_scale', dropRatePct: 2, isHidden: false },
-      { itemId: 'hidden_undying_plate', dropRatePct: 0.07, isHidden: true },
     ],
   },
   {
@@ -562,7 +557,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'volkran_hammer', dropRatePct: 23, isHidden: false },
       { itemId: 'storm_plate', dropRatePct: 13, isHidden: false },
       { itemId: 'eye_of_the_storm_ring', dropRatePct: 4, isHidden: false },
-      { itemId: 'hidden_temporal_blade', dropRatePct: 0.07, isHidden: true },
     ],
   },
 
@@ -654,7 +648,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'frozen_essence', dropRatePct: 55, isHidden: false },
       { itemId: 'frost_wolf_pelt', dropRatePct: 35, isHidden: false },
       { itemId: 'ancient_frost_rune', dropRatePct: 20, isHidden: false },
-      { itemId: 'hidden_soul_bow', dropRatePct: 0.07, isHidden: true },
     ],
   },
   {
@@ -669,7 +662,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'memory_staff', dropRatePct: 24, isHidden: false },
       { itemId: 'glaciem_guardian_chest', dropRatePct: 14, isHidden: false },
       { itemId: 'ring_of_preservation', dropRatePct: 4, isHidden: false },
-      { itemId: 'hidden_eternity_ring', dropRatePct: 0.07, isHidden: true },
     ],
   },
 
@@ -735,8 +727,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'dark_essence', dropRatePct: 80, isHidden: false },
       { itemId: 'sentinel_armor', dropRatePct: 7, isHidden: false },
       { itemId: 'sentinel_sword', dropRatePct: 5, isHidden: false },
-      { itemId: 'ring_of_the_unbound', dropRatePct: 0.3, isHidden: false },
-      { itemId: 'hidden_void_reaper', dropRatePct: 0.07, isHidden: true },
     ],
   },
   {
@@ -751,7 +741,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'malachars_staff', dropRatePct: 50, isHidden: false },
       { itemId: 'unbound_robe', dropRatePct: 40, isHidden: false },
       { itemId: 'ring_of_the_unbound', dropRatePct: 15, isHidden: false },
-      { itemId: 'hidden_world_eater_staff', dropRatePct: 0.07, isHidden: true },
     ],
   },
 
