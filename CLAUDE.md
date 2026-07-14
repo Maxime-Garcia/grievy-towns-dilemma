@@ -41,12 +41,15 @@ Texture keys : catégorie_id                    (ex: enemy_ember_wyrm, npc_aldri
 
 `src/scenes/UIScene.ts` contient un encadré vert en haut à gauche (variable `BUILD_LABEL`, ligne ~57) qui identifie la dernière feature en cours de test. Il sert à l'utilisateur pour savoir exactement quelle version tourne sans avoir à vider le cache manuellement.
 
-**Après chaque commit de code**, mettre à jour `BUILD_LABEL` avec :
-- Le nom court de la feature (≤ 50 caractères)
-- Le hash court du commit (`git rev-parse --short HEAD`)
+**Le hash ne s'écrit PLUS à la main.** Il est injecté à la compilation par Vite via `__BUILD_HASH__` (`define` dans `vite.config.ts`, déclaré dans `src/vite-env.d.ts`), et suffixé `-dirty` si l'arbre de travail a des modifications non committées.
 
-Format : `'<description courte> (<hash>)'`  
-Exemple : `'BOW: collision physique reelle (6e7f5a3)'`
+Motif : un hash n'existe qu'une fois le commit fait, mais l'écrire dans le code refait le commit — donc change le hash. Les badges collés à la main portaient tous le hash d'une version aussitôt remplacée, **introuvable dans l'historique**. Un badge censé identifier la build ne peut pas être maintenu à la main : il doit être dérivé.
+
+**Après chaque commit de code**, ne mettre à jour que la **description** de `BUILD_LABEL` — le nom court de la feature (≤ 50 caractères) :
+
+```ts
+const BUILD_LABEL = `BOW: collision physique reelle (${__BUILD_HASH__})`;
+```
 
 Cette mise à jour fait partie du commit final de chaque tâche — ce n'est pas un commit séparé. Ne jamais laisser un `BUILD_LABEL` qui décrit une feature précédente.
 

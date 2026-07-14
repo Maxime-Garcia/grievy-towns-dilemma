@@ -101,7 +101,11 @@ export class UIScene extends Phaser.Scene {
     // sur fond translucide. Exclue volontairement de la règle "toujours uiStyle()" :
     // c'est un badge de debug monospace (lisibilité console), pas un texte de jeu —
     // uiStyle() impose FONT_UI (Verdana), incompatible avec l'esthétique recherchée ici.
-    const BUILD_LABEL = 'Retrait 9 drops Hidden fantomes (f8671f0)';
+    // Seul le NOM de la feature est écrit ici. Le hash est injecté au build par
+    // Vite (__BUILD_HASH__, cf. vite.config.ts) : l'écrire à la main était voué
+    // à mentir, puisqu'un hash n'existe qu'une fois le commit fait — et l'écrire
+    // dans le code refait le commit.
+    const BUILD_LABEL = `Retrait 9 drops Hidden fantomes (${__BUILD_HASH__})`;
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',
