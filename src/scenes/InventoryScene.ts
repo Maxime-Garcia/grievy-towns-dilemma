@@ -1470,7 +1470,13 @@ export class InventoryScene extends Phaser.Scene {
     // Le passif est déjà à ce plancher.
     const LINE_H    = 14;
     const BLOCK_GAP = 12;   // respiration entre blocs (stats | lore | passif)
-    const ICON_SIZE = 40;   // 32 → 40 : l'icône doit tenir tête au nom en 14px
+    // La case de la popup a EXACTEMENT le gabarit d'une case du sac (INV_SLOT - 2),
+    // et l'art dedans la même taille (32) : c'est ce qui la rend indiscernable
+    // d'une case de la grille — le but même de la correction. Deux constantes et
+    // non une : le cadre pixel occupe la couronne entre les deux, il lui faut
+    // cette marge pour exister (un art à 46 dans une case de 46 le recouvrirait).
+    const ICON_SIZE = INV_SLOT - 2;  // case
+    const ICON_ART  = 32;            // icône
     const BTN_H     = 44;   // ≥44px touch target (Apple HIG)
 
     // Hauteur du panneau calculée depuis le contenu réel (plus de troncature à 90
@@ -1564,29 +1570,53 @@ export class InventoryScene extends Phaser.Scene {
     drawGlowPanel(panelGfx, px, py, PW, PH, 0x44cc66 /* green accent */, UI.PANEL_BG, 4, 0.97);
     this.consumePopupObjects.push(panelGfx);
 
-    // ── Item icon (left side), always framed in its rarity color ──────────
+    // ── Icône de l'item : une VRAIE case, identique à celles du sac ────────
+    //
+    // Elle n'avait qu'un trait rectangulaire à la couleur de rareté — pas le
+    // cadre pixel `ui_slot_frame` (le « liseré doré » du pack Retro Inventory),
+    // que seuls le paperdoll, la grille du sac et la barre de sorts posaient.
+    // Ouverte contre une rangée du sac, la popup exhibait donc une case nue au
+    // milieu de cases cernées d'or : le défaut lisait comme « cette arme-là n'a
+    // pas de liseré », alors que la différence était par ÉCRAN, jamais par item.
+    //
+    // Même vocabulaire et même ordre d'empilement que renderInventorySlot :
+    // fond arrondi → cadre pixel → anneau de rareté → icône par-dessus.
     const rarHexStr = RARITY_COLORS[item.rarity] ?? '#ffffff';
     const rarHex    = parseInt(rarHexStr.replace('#', ''), 16);
     const iconKey   = this.resolveIcon(item);
-    const iconX     = px + MARGIN + ICON_SIZE / 2;
-    const iconY     = py + MARGIN + ICON_SIZE / 2;
+    const slotX     = px + MARGIN;
+    const slotY     = py + MARGIN;
+    const iconX     = slotX + ICON_SIZE / 2;
+    const iconY     = slotY + ICON_SIZE / 2;
 
-    const frameGfx = this.add.graphics().setDepth(depth + 1);
-    frameGfx.lineStyle(2, rarHex, 1);
-    frameGfx.strokeRoundedRect(px + MARGIN - 2, py + MARGIN - 2, ICON_SIZE + 4, ICON_SIZE + 4, 4);
-    this.consumePopupObjects.push(frameGfx);
+    const slotGfx = this.add.graphics().setDepth(depth + 1);
+    drawSlot(slotGfx, slotX, slotY, ICON_SIZE, rarHex, { occupied: true, radius: 4 });
+    this.consumePopupObjects.push(slotGfx);
+
+    const slotFrame = addUiFrame(this, iconX, iconY, ICON_SIZE, ICON_SIZE, 'ui_slot_frame_empty');
+    if (slotFrame) {
+      slotFrame.setDepth(depth + 1);
+      this.consumePopupObjects.push(slotFrame);
+    }
+
+    // Anneau de rareté AU-DESSUS du cadre (sinon le cadre asset le recouvre) —
+    // même géométrie que la bordure de drawSlot.
+    const ringGfx = this.add.graphics().setDepth(depth + 1);
+    ringGfx.lineStyle(2, rarHex, 1);
+    ringGfx.strokeRoundedRect(slotX, slotY, ICON_SIZE, ICON_SIZE, 4);
+    this.consumePopupObjects.push(ringGfx);
 
     if (iconKey) {
       try {
         const img = this.add.image(iconX, iconY, iconKey)
-          .setDisplaySize(ICON_SIZE, ICON_SIZE)
-          .setDepth(depth + 1);
+          .setDisplaySize(ICON_ART, ICON_ART)
+          .setDepth(depth + 2);
         this.consumePopupObjects.push(img);
       } catch {
-        this.addColorSquareAbove(px + MARGIN, py + MARGIN, ICON_SIZE, 0x44cc66, depth + 1);
+        this.addColorSquareAbove(slotX, slotY, ICON_SIZE, 0x44cc66, depth + 2);
       }
     } else {
-      this.addColorSquareAbove(px + MARGIN, py + MARGIN, ICON_SIZE, 0x44cc66, depth + 1);
+      this.addColorSquareAbove(slotX, slotY, ICON_SIZE, 0x44cc66, depth + 2);
     }
 
     // ── Item name + element glyph (marks THIS instance's rolled element —

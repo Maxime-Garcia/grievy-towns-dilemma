@@ -17,7 +17,7 @@
 
 import { WorldState, ElementType, ItemRarity, RARITY_COLORS, SpawnRegion } from '../types';
 import {
-  UI, TYPE, LAYOUT, drawGlowPanel, drawCard, drawSlot, drawBadge, uiStyle, titleStyle, fitText,
+  UI, TYPE, LAYOUT, drawGlowPanel, drawCard, drawSlot, drawBadge, addUiFrame, uiStyle, titleStyle, fitText,
   drawDivider, addCloseButton, drawScrollbar, renderScrollableText, formatDropRate,
   drawConfirmCancelButtons,
   openScreenTransition, closeScreenTransition, portalRedirectTransition,
@@ -913,6 +913,20 @@ export class BestiaryScene extends Phaser.Scene {
       drawSlot(g, sx, sy, size, UI.SLOT_BORDER, { occupied: false, bg: 0x111111 });
     }
     this.detailObjs.push(g);
+
+    // Cadre pixel `ui_slot_frame` — le « liseré doré » du pack Retro Inventory.
+    // La grille de butin ne le posait pas : ses cases étaient nues à côté de
+    // celles du sac, qui l'ont. Une case d'item doit se ressembler partout, quel
+    // que soit l'écran (c'est précisément l'incohérence reportée sur la popup).
+    const dropFrame = addUiFrame(this, sx + size / 2, sy + size / 2, size, size, 'ui_slot_frame_empty');
+    if (dropFrame) this.detailObjs.push(dropFrame);
+
+    // Anneau de rareté PAR-DESSUS le cadre : le cadre asset recouvre la bordure
+    // tracée par drawSlot, et c'est elle qui porte l'information de rareté.
+    const ring = this.add.graphics();
+    ring.lineStyle(2, revealed ? rarityHex : UI.SLOT_BORDER, revealed ? 1 : 0.45);
+    ring.strokeRoundedRect(sx, sy, size, size, 5);
+    this.detailObjs.push(ring);
 
     if (revealed && item) {
       if (this.textures.exists(item.icon)) {
