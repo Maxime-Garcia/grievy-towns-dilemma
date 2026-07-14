@@ -85,16 +85,24 @@ export const ehpTarget = (r) => EHP_COMMON * TIER[r];
  * était littéralement immortel face au trash, et la seule difficulté restante
  * était la durée. On ne peut pas calibrer un ennemi contre un joueur invincible.
  *
- * POOL_ATK et POOL_HP sont RÉSOLUS (point fixe + ajustement d'une loi de
- * puissance, scripts .tmp/solve4) : ils sont ce qu'il FAUT pour que DPS et EHP
- * atteignent leurs cibles, une fois payé le multiplicatif apporté par les
- * substats en pourcentage — dont le nombre est multiplié par 6 entre Common
- * (10 lignes) et Mythic (60 lignes). C'est pourquoi les pools croissent en
- * T^0.85 et T^0.67, et non en T : le reste de la marche est déjà payé par les %.
- * Les tables sont dérivées, pas devinées — un successeur relance le solveur.
+ * POOL_ATK et POOL_HP sont RÉSOLUS (point fixe sur les vrais modules, puis
+ * ajustement d'une loi de puissance pour lisser le bruit d'échantillonnage) :
+ * ils sont ce qu'il FAUT pour que DPS et EHP atteignent leurs cibles, une fois
+ * payé le multiplicatif qu'apportent les substats en POURCENTAGE — dont le
+ * nombre est multiplié par 6 entre Common (10 lignes) et Mythic (60 lignes).
+ * C'est pourquoi les pools croissent en T^0.77 et T^0.69, et non en T : le reste
+ * de la marche est déjà payé par les %.
+ *
+ * ⚠ CES TABLES DÉPENDENT DES POOLS DE SUBSTATS. Retirer une clé d'un pool change
+ * la fréquence de toutes les autres, donc les totaux, donc ces tables. Je m'y
+ * suis fait prendre : après avoir sorti CDR/MANA des pools, le pool d'armure est
+ * passé de 8 à 7 clés — HP_PCT et DEF_FLAT se sont mis à sortir bien plus
+ * souvent, les PV ont dépassé leur cible de 39% à Legendary et le DPS a fini à
+ * ×11,5 contre ×7,5 pour l'EHP. TOUTE modification d'un pool oblige à relancer le
+ * solveur. Ce n'est pas une précaution : c'est une dépendance.
  */
-export const POOL_ATK = { COMMON: 62, UNCOMMON: 88, RARE: 123, EPIC: 174, LEGENDARY: 245, MYTHIC: 345, HIDDEN: 431 };
-export const POOL_HP  = { COMMON: 395, UNCOMMON: 519, RARE: 682, EPIC: 896, LEGENDARY: 1177, MYTHIC: 1546, HIDDEN: 1842 };
+export const POOL_ATK = { COMMON: 55, UNCOMMON: 71, RARE: 91, EPIC: 118, LEGENDARY: 151, MYTHIC: 195, HIDDEN: 229 };
+export const POOL_HP  = { COMMON: 393, UNCOMMON: 519, RARE: 687, EPIC: 908, LEGENDARY: 1201, MYTHIC: 1588, HIDDEN: 1903 };
 export const POOL_DEF = { COMMON: 33, UNCOMMON: 48, RARE: 65, EPIC: 84, LEGENDARY: 103, MYTHIC: 122, HIDDEN: 156 };
 
 /**
@@ -103,13 +111,13 @@ export const POOL_DEF = { COMMON: 33, UNCOMMON: 48, RARE: 65, EPIC: 84, LEGENDAR
  * condition binaire de réussite de l'étape : aucun palier ne doit être battu par
  * le précédent, sur AUCUN champ, y compris les champs affichés en UI.
  *
- * HIDDEN porte le MÊME budget total que MYTHIC, avec une main stat volontairement
- * plus basse (×0,864) : il troque de la stat brute contre une 7e substat ET un
- * passif unique. Le Caché est un palier — mais par son passif, pas par ses chiffres.
+ * HIDDEN porte une main stat pénalisée de ×0,864 (il paie sa 7e substat), mais
+ * sur un budget de palier 1,30× supérieur : le net est donc positif sur CHAQUE
+ * canal — ATK, PV, DEF. Un Caché ne peut jamais être un downgrade.
  */
-export const ATK_MAIN_TOTAL = { COMMON: 53.0, UNCOMMON: 75.2, RARE: 106.6, EPIC: 151.2, LEGENDARY: 214.4, MYTHIC: 304.1, HIDDEN: 329.3 };
-export const HP_MAIN_TOTAL  = { COMMON: 251.9, UNCOMMON: 327.8, RARE: 426.5, EPIC: 555.0, LEGENDARY: 722.2, MYTHIC: 939.8, HIDDEN: 961.3 };
-export const DEF_IMPL_TOTAL = { COMMON: 16.2, UNCOMMON: 20.3, RARE: 25.6, EPIC: 32.2, LEGENDARY: 40.4, MYTHIC: 50.9, HIDDEN: 58.9 };
+export const ATK_MAIN_TOTAL = { COMMON: 39.4, UNCOMMON: 50.5, RARE: 64.8, EPIC: 83.1, LEGENDARY: 106.7, MYTHIC: 136.9, HIDDEN: 138.9 };
+export const HP_MAIN_TOTAL  = { COMMON: 244.9, UNCOMMON: 317.7, RARE: 412.2, EPIC: 534.8, LEGENDARY: 693.8, MYTHIC: 900.0, HIDDEN: 919.8 };
+export const DEF_IMPL_TOTAL = { COMMON: 16.7, UNCOMMON: 19.6, RARE: 22.9, EPIC: 26.8, LEGENDARY: 31.3, MYTHIC: 36.6, HIDDEN: 40.5 };
 
 export const poolAtk = (r) => POOL_ATK[r];
 export const poolHp  = (r) => POOL_HP[r];
@@ -130,7 +138,19 @@ export const LINE_VALUE = 0.06;
 
 // Paramètres de conversion des stats situationnelles → offense effective.
 // Chacun est une HYPOTHÈSE explicite, à réfuter en playtest (cf. rapport).
-export const ELEM_UPTIME = 0.55; // part des armes portant un élément non-neutre
+//
+// ⚠ ELEM_UPTIME = 1.0, et c'est une correction, pas un oubli.
+// Il valait 0,55 (« seules 55% des armes portent un élément »). Erreur de
+// raisonnement : le joueur CHOISIT son arme. Une condition qu'il contrôle n'est
+// pas un risque, c'est une case à cocher. Résultat de la remise de 0,55 : chaque
+// ligne ELEM_BONUS_PCT valait 11% au lieu de 6% — presque le double d'ATK_PCT —
+// et comme la quasi-totalité des armes du catalogue sont élémentaires, elle était
+// TOUJOURS active. J'avais fabriqué la substat impérative que je suis censé
+// traquer : la taxe déguisée. Mesuré : le DPS d'un set Mythique montait à ×11,9
+// quand l'EHP ne faisait que ×6,7.
+// BOSS_SHARE, lui, reste une vraie condition SUBIE (on ne choisit pas de croiser
+// un boss) : sa remise est légitime.
+export const ELEM_UPTIME = 1.0;
 export const BOSS_SHARE  = 0.40; // part des dégâts d'une run infligés à un boss/élite
 export const SKILL_SHARE = 0.35; // part des dégâts d'une run infligés par les sorts
 export const FIGHT_SEC   = 20;   // durée d'un engagement de référence (sustain)
@@ -399,3 +419,93 @@ export const VALUE = {
   COMMON: 40, UNCOMMON: 120, RARE: 380, EPIC: 1200,
   LEGENDARY: 5000, MYTHIC: 12000, HIDDEN: 20000,
 };
+
+/**
+ * Ligne « signature » par slot : l'identité de la pièce. Une botte parle de
+ * vitesse, un gant de coups critiques. Budget strictement égal (toute ligne vaut
+ * LINE_VALUE) : c'est un GOÛT, pas un avantage.
+ */
+export const SLOT_SIGNATURE = {
+  HELM:   ['ELEM_BONUS_PCT', 'HP_PCT'],
+  CHEST:  ['HP_PCT', 'DEF_FLAT', 'HP_ON_KILL_FLAT'],
+  LEGS:   ['DEF_FLAT', 'HP_PCT', 'SPD_FLAT'],
+  BOOTS:  ['SPD_FLAT', 'DODGE_PCT'],
+  GLOVES: ['CRIT_RATE', 'ATK_PCT', 'ASPD_PCT'],
+  CAPE:   ['DODGE_PCT', 'ELEM_BONUS_PCT', 'SPD_FLAT'],
+  RING:   ['CRIT_DMG', 'ATK_PCT'],
+  AMULET: ['CRIT_RATE', 'ELEM_BONUS_PCT'],
+};
+
+const ACCESSORY_SLOTS = ['RING', 'AMULET'];
+
+/**
+ * buildTemplate — LA FABRIQUE D'ITEM, ET LA SEULE.
+ * ==================================================================
+ * Rend les CHIFFRES d'un item : main stat, substats, défense implicite, valeur.
+ * (L'éditorial — nom, lore, icône — reste chez l'appelant.)
+ *
+ * Pourquoi cette fonction existe : le générateur, le recalage des items manuels
+ * ET le solveur construisaient chacun leurs items, chacun à leur façon. Ils ont
+ * donc divergé — encore. Le générateur appliquait une ligne « signature » par
+ * slot que le solveur ignorait ; les tables résolues ne décrivaient donc pas les
+ * items réellement produits, et le DPS d'un set Mythique sortait à ×11,9 au lieu
+ * de ×7,6. Trois fabriques = trois vérités.
+ *
+ * Il n'y en a plus qu'une. Le solveur mesure EXACTEMENT ce que le générateur
+ * produit, par construction, et non parce que quelqu'un a pensé à synchroniser.
+ *
+ * @param {string} slot     WEAPON | HELM | CHEST | LEGS | BOOTS | GLOVES | CAPE | RING | AMULET
+ * @param {string} rarity   COMMON … HIDDEN
+ * @param {object} opts     { weaponType?, rnd?, forbidden? }
+ */
+export function buildTemplate(slot, rarity, opts = {}) {
+  const rnd = opts.rnd ?? Math.random;
+  const wt = opts.weaponType ?? 'SWORD';
+  const forbidden = new Set(opts.forbidden ?? []);
+  const isWeapon = slot === 'WEAPON';
+  const isAccessory = ACCESSORY_SLOTS.includes(slot);
+  const isArmor = ARMOR_SLOTS.includes(slot);
+  if (!isWeapon && !isAccessory && !isArmor) throw new Error(`buildTemplate: slot inconnu ${slot}`);
+
+  const magic = isWeapon && MAGIC_WEAPONS.has(wt);
+  const mainKey = isWeapon ? (magic ? 'MATK_FLAT' : 'ATK_FLAT')
+    : isAccessory ? 'ATK_FLAT' : 'HP_FLAT';
+  const mainRange = isWeapon ? weaponMainRange(wt, rarity)
+    : isAccessory ? accessoryMainRange(slot, rarity)
+      : armorMainRange(slot, rarity);
+
+  const nSub = SUBSTAT_COUNT[rarity];
+  const taken = new Set([mainKey]); // jamais la clé de la mainStat → pas de double-dip
+  const subs = [];
+  const takeFrom = (keys) => {
+    const cands = keys.filter(k => !taken.has(k) && !forbidden.has(k));
+    if (!cands.length) return null;
+    const k = cands[Math.floor(rnd() * cands.length)];
+    taken.add(k);
+    return k;
+  };
+
+  const basePool = isWeapon ? (magic ? WEAPON_MAGIC_SUBS : WEAPON_SUBS)
+    : isAccessory ? ACCESSORY_SUBS : ARMOR_SUBS;
+  const altPool = isWeapon ? WEAPON_DEF_SUBS : isArmor ? ARMOR_OFF_SUBS : [];
+
+  // Ligne signature dès UNCOMMON (les armes n'en ont pas : leur identité, c'est leur type).
+  if (nSub >= 2 && !isWeapon) { const s = takeFrom(SLOT_SIGNATURE[slot] ?? []); if (s) subs.push(s); }
+  const nAlt = nSub >= 4 && altPool.length && rnd() < 0.5 ? 1 : 0;
+  while (subs.length < nSub - nAlt) { const s = takeFrom(basePool); if (!s) break; subs.push(s); }
+  if (nAlt) { const s = takeFrom(altPool); if (s) subs.push(s); }
+  while (subs.length < nSub) { const s = takeFrom([...basePool, ...altPool]); if (!s) break; subs.push(s); }
+
+  const mainCenter = Math.round((mainRange.min + mainRange.max) / 2);
+  return {
+    mainKey,
+    mainStat: { key: mainKey, ...mainRange },
+    substats: subs.map(k => ({ key: k, ...substatRange(k, rarity), isPercentage: PCT_KEYS.has(k) })),
+    // Miroir arme (règle absolue CLAUDE.md) : damage/magicDamage = centre du mainStat.
+    damage:      isWeapon ? (magic ? Math.round(mainCenter * 0.45) : mainCenter) : undefined,
+    magicDamage: isWeapon ? (magic ? mainCenter : Math.round(mainCenter * 0.45)) : undefined,
+    defense:      isArmor ? armorDefense(slot, rarity) : undefined,
+    magicDefense: isArmor ? armorMagicDefense(slot, rarity) : undefined,
+    value: VALUE[rarity],
+  };
+}

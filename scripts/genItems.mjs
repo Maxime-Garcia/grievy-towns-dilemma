@@ -245,12 +245,51 @@ const LORE_TWIST = {
 // capes, anneaux et amulettes n'ont pas d'icônes en pack — ils restent écrits à
 // la main. C'est exactement POURQUOI ce sont eux qui avaient des trous de rareté.
 const ARMOR_PROFILES = {
-  HELM:  { pack: 'Armory Item Icons', folders: ['Leather Helm', 'Steel Helm'],
+  HELM:  { pack: 'Armory Item Icons', folders: ['Leather Helm', 'Steel Helm'], count: 30,
            fr: ['Heaume', 'Casque', 'Salade', 'Bassinet'],
            en: ['Helm', 'Helmet', 'Sallet', 'Bascinet'] },
-  CHEST: { pack: 'Armory Item Icons', folders: ['Leather Armor', 'Steel Armor'],
+  CHEST: { pack: 'Armory Item Icons', folders: ['Leather Armor', 'Steel Armor'], count: 30,
            fr: ['Cuirasse', 'Plastron', 'Broigne', 'Haubert'],
            en: ['Cuirass', 'Breastplate', 'Byrnie', 'Hauberk'] },
+
+  // ── Slots SANS pack d'icônes ──────────────────────────────────
+  // Jambières, bottes, gants, capes (et plus bas anneaux/amulettes) n'existent
+  // dans aucun pack du bundle : ils étaient donc écrits à la main, un par un — et
+  // c'est très exactement POURQUOI ce sont eux qui portaient les 13 trous de
+  // rareté. Personne ne les avait comptés.
+  //
+  // Boucher les trous avec UN item par trou ne suffisait pas : avec un seul objet
+  // par (slot × rareté), le tirage de substats de cet unique objet DEVIENT la
+  // statistique du palier — il n'y a plus de moyenne. Mesuré : les PV d'un set
+  // Mythique complet (1540) tombaient SOUS ceux d'un Legendary (1554), parce que
+  // les six objets Mythiques uniques n'avaient, par malchance de tirage, presque
+  // aucune ligne de PV. La couverture ne suffit pas : il faut de la PROFONDEUR.
+  //
+  // On réutilise donc les icônes déjà présentes (dette cosmétique assumée : des
+  // objets partagent une image) pour générer 24 pièces par slot, soit 4 par
+  // rareté. La moyenne existe à nouveau.
+  LEGS:   { icons: ['item_earth_legs', 'item_fire_legs', 'item_ice_legs', 'item_iron_legs', 'item_leather_legs', 'item_lightning_legs', 'item_water_legs', 'item_wind_legs'], count: 24,
+            fr: ['Jambières', 'Grèves', 'Cuissardes', 'Cuissots'],
+            en: ['Greaves', 'Legguards', 'Cuisses', 'Tassets'] },
+  BOOTS:  { icons: ['item_air_boots', 'item_fire_boots', 'item_iron_boots', 'item_leather_boots', 'item_serpent_boots', 'item_void_boots', 'item_voidwalker_boots', 'item_wind_boots'], count: 24,
+            fr: ['Bottes', 'Brodequins', 'Solerets', 'Chausses'],
+            en: ['Boots', 'Greaves', 'Sabatons', 'Treads'] },
+  GLOVES: { icons: ['item_frost_gauntlets', 'item_iron_gauntlets', 'item_leather_gloves', 'item_obsidian_gauntlets', 'item_serpentgrip_gauntlets', 'item_wind_gloves'], count: 24,
+            fr: ['Gantelets', 'Gants', 'Mitons', 'Poignes'],
+            en: ['Gauntlets', 'Gloves', 'Mitts', 'Grips'] },
+  CAPE:   { icons: ['item_dark_cape', 'item_divine_cape', 'item_eagle_cloak', 'item_earth_cape', 'item_fire_cape', 'item_ice_cape', 'item_tempest_cloak', 'item_tidal_cape', 'item_water_cape'], count: 24,
+            fr: ['Cape', 'Manteau', 'Mante', 'Chape'],
+            en: ['Cape', 'Cloak', 'Mantle', 'Shroud'] },
+};
+
+/** Anneaux et amulettes : type Accessory — PAS de champ `defense`. */
+const ACCESSORY_PROFILES = {
+  RING:   { icons: ['item_eternal_ring', 'item_flame_ring', 'item_frozen_sanctuary_ring', 'item_preservation_ring', 'item_revenant_ring', 'item_sailor_ring', 'item_shadow_ring', 'item_storm_ring', 'item_stormchain_ring', 'item_tidal_ring', 'item_tideheart_ring', 'item_wind_ring'], count: 24,
+            fr: ['Anneau', 'Bague', 'Chevalière', 'Jonc'],
+            en: ['Ring', 'Band', 'Signet', 'Circlet'] },
+  AMULET: { icons: ['item_blizzard_amulet', 'item_runebound_amulet', 'item_tempest_amulet'], count: 24,
+            fr: ['Amulette', 'Pendentif', 'Talisman', 'Médaillon'],
+            en: ['Amulet', 'Pendant', 'Talisman', 'Medallion'] },
 };
 
 /**
@@ -298,6 +337,7 @@ const esc = (s) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 const usedIds = new Set();
 const weapons = [];
 const armors = [];
+const accessories = [];
 /** [id, nameEn, descriptionEn, loreEn] — alimente src/i18n/generatedEn.ts. */
 const enKeys = [];
 let copied = 0;
@@ -349,46 +389,17 @@ for (const [wt, prof] of Object.entries(WEAPON_PROFILES)) {
       const iconKey = `item_${id}`;
       copyIcon(pool[Math.floor(rnd() * pool.length)], iconKey);
 
-      // ── Main stat : le MODÈLE décide, plus le générateur ──────────
-      const isMagic = M.MAGIC_WEAPONS.has(wt);
-      const mainKey = isMagic ? 'MATK_FLAT' : 'ATK_FLAT';
-      const { min: lo, max: hi } = M.weaponMainRange(wt, rarity);
-      const mainVal = Math.round((lo + hi) / 2);
-      // `damage`/`magicDamage` sont le MIROIR du centre de la main stat — règle
-      // absolue de CLAUDE.md, et StatRollSystem le réécrit de toute façon à
-      // chaque roll. On l'aligne ici pour que le catalogue au repos soit cohérent.
-      const dmg  = isMagic ? Math.round(mainVal * 0.45) : mainVal;
-      const mdmg = isMagic ? mainVal : Math.round(mainVal * 0.45);
-
-      // ── Substats ──────────────────────────────────────────────────
-      // JAMAIS la clé de la mainStat, ni deux fois la même clé : StatsSystem
-      // additionne mainStat ET substats dans le même total (collectEquipTotals),
-      // donc une clé dupliquée sort l'item de la fourchette annoncée (double-dip)
-      // et StatRollSystem.validateItemRanges la signale comme une erreur de data.
-      const nSub = M.SUBSTAT_COUNT[rarity];
-      const subs = [];
-      const taken = new Set([mainKey]);
-      const takeFrom = (keys) => {
-        const cands = keys.filter(k => !taken.has(k));
-        if (cands.length === 0) return null;
-        const k = cands[Math.floor(rnd() * cands.length)];
-        taken.add(k);
-        return k;
-      };
-      // Pool PHYSIQUE ou MAGIQUE selon l'arme : jamais de MATK sur une épée.
-      const offPool = isMagic ? M.WEAPON_MAGIC_SUBS : M.WEAPON_SUBS;
-      const nDef = nSub >= 4 && rnd() < 0.6 ? 1 : 0;
-      for (let k = 0; k < nSub - nDef; k++) { const s = takeFrom(offPool); if (s) subs.push(s); }
-      if (nDef) { const s = takeFrom(M.WEAPON_DEF_SUBS); if (s) subs.push(s); }
-      while (subs.length < nSub) {
-        const s = takeFrom([...offPool, ...M.WEAPON_DEF_SUBS]);
-        if (!s) break;
-        subs.push(s);
-      }
-      const subLine = (k) => {
-        const { min, max } = M.substatRange(k, rarity);
-        return `{ key: '${k}', min: ${min}, max: ${max}${M.PCT_KEYS.has(k) ? ', isPercentage: true' : ''} }`;
-      };
+      // ── Les CHIFFRES viennent de la fabrique unique du modèle ─────
+      // Le générateur ne décide plus d'aucune valeur : il fournit l'éditorial.
+      // C'est la MÊME fonction qu'appellent le recalage des items manuels et le
+      // solveur — ils ne peuvent donc plus décrire trois items différents.
+      const T = M.buildTemplate('WEAPON', rarity, { weaponType: wt, rnd });
+      const lo = T.mainStat.min, hi = T.mainStat.max;
+      const mainKey = T.mainKey;
+      const dmg = T.damage, mdmg = T.magicDamage;
+      const subs = T.substats;
+      const subLine = (s) =>
+        `{ key: '${s.key}', min: ${s.min}, max: ${s.max}${s.isPercentage ? ', isPercentage: true' : ''} }`;
 
       // `bonusStats` est VIDE, désormais, et c'est un correctif de fond.
       // StatsSystem le lit encore (str×3 → atk, vit×8 → hp, end×2 → def…) :
@@ -412,21 +423,33 @@ for (const [wt, prof] of Object.entries(WEAPON_PROFILES)) {
   }
 }
 
-// ── Génération des armures ─────────────────────────────────────────
-for (const [slot, prof] of Object.entries(ARMOR_PROFILES)) {
-  const pool = prof.folders.flatMap(f => listPngs(prof.pack, f));
-  if (pool.length === 0) { console.warn(`  ! aucun PNG pour l'armure ${slot}`); continue; }
-  for (let i = 0; i < 30; i++) {
-    // Rareté cyclique par slot : 30 pièces / 6 raretés = 5 de chaque, garanti.
-    // Le tirage pondéré d'avant laissait HELM sans aucun Mythique.
+// ── Génération des armures ET des accessoires ──────────────────────
+// Un seul corps de boucle : la seule différence entre une armure et un accessoire
+// est que l'accessoire ne porte PAS de `defense` (le type Accessory n'a pas le
+// champ), et que sa main stat est ATK_FLAT au lieu de HP_FLAT.
+const ALL_GEAR_PROFILES = { ...ARMOR_PROFILES, ...ACCESSORY_PROFILES };
+for (const [slot, prof] of Object.entries(ALL_GEAR_PROFILES)) {
+  const isAccessory = slot in ACCESSORY_PROFILES;
+  // Deux sources d'icônes : un PACK du bundle (on copie le PNG) ou une LISTE
+  // d'icônes déjà présentes dans public/ (on les réutilise, sans copie).
+  const pool = prof.icons ? null : prof.folders.flatMap(f => listPngs(prof.pack, f));
+  if (pool && pool.length === 0) { console.warn(`  ! aucun PNG pour ${slot}`); continue; }
+  for (let i = 0; i < prof.count; i++) {
+    // Rareté cyclique par slot : couverture garantie, à chaque régénération.
+    // Le tirage pondéré d'avant laissait 6 slots sur 10 sans aucun Mythique.
     const rarity = nextRarity(slot);
     const element = pick(['NEUTRAL', 'FIRE', 'ICE', 'WATER', 'LIGHTNING', 'EARTH', 'DARK']);
     const id = `gen_${slot.toLowerCase()}_${i + 1}`;
     if (usedIds.has(id)) continue;
     usedIds.add(id);
 
-    const iconKey = `item_${id}`;
-    copyIcon(pool[Math.floor(rnd() * pool.length)], iconKey);
+    let iconKey;
+    if (prof.icons) {
+      iconKey = prof.icons[Math.floor(rnd() * prof.icons.length)]; // icône réutilisée
+    } else {
+      iconKey = `item_${id}`;
+      copyIcon(pool[Math.floor(rnd() * pool.length)], iconKey);
+    }
 
     const nounI  = pickI(prof.fr);
     const adjI   = pickI(ADJ[rarity]);
@@ -438,41 +461,19 @@ for (const [slot, prof] of Object.entries(ARMOR_PROFILES)) {
     const name   = `${noun} ${sfx}`.trim().replace(/\s+/g, ' ');
     const nameEn = `${nounEn} ${sfxEn}`.trim().replace(/\s+/g, ' ');
 
-    // ── Main stat d'armure : HP_FLAT, plus DEF_FLAT ────────────────
-    // La DEF était comptée DEUX FOIS par StatsSystem (le champ `defense` ET la
-    // main stat DEF_FLAT). D'où 438 de DEF en Legendary complet = 81% de
-    // réduction de dégâts = un joueur invulnérable. La DEF ne coule plus que par
-    // `defense` ; la main stat porte les PV — rollables, lisibles, et c'est le
-    // vrai axe de survie.
-    const def  = M.armorDefense(slot, rarity);
-    const mdef = M.armorMagicDefense(slot, rarity);
-    const { min: lo, max: hi } = M.armorMainRange(slot, rarity);
-
-    const nSub = M.SUBSTAT_COUNT[rarity];
-    const subs = [];
-    const taken = new Set(['HP_FLAT']); // jamais la clé de la mainStat → pas de double-dip
-    const takeFrom = (keys) => {
-      const cands = keys.filter(k => !taken.has(k));
-      if (cands.length === 0) return null;
-      const k = cands[Math.floor(rnd() * cands.length)];
-      taken.add(k);
-      return k;
-    };
-    // Ligne « signature » du slot dès UNCOMMON : l'identité de la pièce, à budget
-    // strictement égal (toute ligne vaut LINE_VALUE, quelle que soit sa clé).
-    if (nSub >= 2) { const s = takeFrom(SLOT_SIGNATURE[slot] ?? []); if (s) subs.push(s); }
-    const nOff = nSub >= 4 && rnd() < 0.5 ? 1 : 0;
-    while (subs.length < nSub - nOff) { const s = takeFrom(M.ARMOR_SUBS); if (!s) break; subs.push(s); }
-    if (nOff) { const s = takeFrom(M.ARMOR_OFF_SUBS); if (s) subs.push(s); }
-    while (subs.length < nSub) {
-      const s = takeFrom([...M.ARMOR_SUBS, ...M.ARMOR_OFF_SUBS]);
-      if (!s) break;
-      subs.push(s);
-    }
-    const subLine = (k) => {
-      const { min, max } = M.substatRange(k, rarity);
-      return `{ key: '${k}', min: ${min}, max: ${max}${M.PCT_KEYS.has(k) ? ', isPercentage: true' : ''} }`;
-    };
+    // ── Les CHIFFRES viennent de la fabrique unique du modèle ───────
+    // ARMURE → main stat HP_FLAT (et non DEF_FLAT : StatsSystem comptait la DEF
+    // DEUX FOIS — le champ `defense` ET la main stat — d'où 438 de DEF en
+    // Legendary complet = 81% de réduction = un joueur invulnérable).
+    // ACCESSOIRE → main stat ATK_FLAT, et AUCUN champ `defense` (le type ne l'a pas).
+    const T = M.buildTemplate(slot, rarity, { rnd });
+    const mainKey = T.mainKey;
+    const lo = T.mainStat.min, hi = T.mainStat.max;
+    const def  = T.defense ?? 0;
+    const mdef = T.magicDefense ?? 0;
+    const subs = T.substats;
+    const subLine = (s) =>
+      `{ key: '${s.key}', min: ${s.min}, max: ${s.max}${s.isPercentage ? ', isPercentage: true' : ''} }`;
 
     // Vide : `bonusStats` était un troisième canal de puissance non budgété
     // (end×2 → def, vit×8 → hp). Cf. la note dans la génération des armes.
@@ -487,7 +488,15 @@ for (const [slot, prof] of Object.entries(ARMOR_PROFILES)) {
 
     // `element` était tiré mais jamais émis : le nom annonçait « de Givre » et l'item
     // sortait NEUTRAL (l'ELEM_BONUS_PCT ne se rattachait à rien de lisible).
-    armors.push(`  { id: '${id}', name: '${esc(name)}', description: '${esc(noun)} de facture ${rarity === 'COMMON' ? 'ordinaire' : 'soignée'}.', rarity: ItemRarity.${rarity}, type: ItemType.${slot}, icon: '${iconKey}', value: ${M.VALUE[rarity]}, ${element !== 'NEUTRAL' ? `element: ElementType.${element}, ` : ''}defense: ${def}, magicDefense: ${mdef}, bonusStats: ${JSON.stringify(bonus)}, lore: '${esc(lore)}', equipRanges: { mainStat: { key: 'HP_FLAT', min: ${lo}, max: ${hi} }, substats: [${subs.map(subLine).join(', ')}] } },`);
+    const common = `id: '${id}', name: '${esc(name)}', description: '${esc(noun)} de facture ${rarity === 'COMMON' ? 'ordinaire' : 'soignée'}.', rarity: ItemRarity.${rarity}, type: ItemType.${slot}, icon: '${iconKey}', value: ${M.VALUE[rarity]}, ${element !== 'NEUTRAL' ? `element: ElementType.${element}, ` : ''}`;
+    const ranges = `equipRanges: { mainStat: { key: '${mainKey}', min: ${lo}, max: ${hi} }, substats: [${subs.map(subLine).join(', ')}] }`;
+    if (isAccessory) {
+      // Accessory n'a NI `defense` NI `magicDefense` dans le type (src/types) :
+      // tout son budget passe par equipRanges.
+      accessories.push(`  { ${common}bonusStats: ${JSON.stringify(bonus)}, lore: '${esc(lore)}', ${ranges} },`);
+    } else {
+      armors.push(`  { ${common}defense: ${def}, magicDefense: ${mdef}, bonusStats: ${JSON.stringify(bonus)}, lore: '${esc(lore)}', ${ranges} },`);
+    }
   }
 }
 
@@ -497,7 +506,7 @@ const header = `// ⚠ FICHIER GÉNÉRÉ — ne pas éditer à la main.
 // Les six déclinaisons de couleur des packs sont mappées sur les éléments du jeu ;
 // stats, fourchettes de roll et budget de substats suivent docs/design/LOOT_STAT_ROLLS.md.
 // Pour modifier le catalogue : éditer les tables du script, puis le relancer.
-import { Weapon, Armor, ItemRarity, ItemType, WeaponType, ElementType } from '../types';
+import { Weapon, Armor, Accessory, ItemRarity, ItemType, WeaponType, ElementType } from '../types';
 
 export const GENERATED_WEAPONS: Weapon[] = [
 ${weapons.join('\n')}
@@ -505,6 +514,10 @@ ${weapons.join('\n')}
 
 export const GENERATED_ARMORS: Armor[] = [
 ${armors.join('\n')}
+];
+
+export const GENERATED_ACCESSORIES: Accessory[] = [
+${accessories.join('\n')}
 ];
 `;
 
@@ -530,5 +543,6 @@ fs.writeFileSync(path.join(ROOT, 'src', 'i18n', 'generatedItemsEn.ts'), enTs, 'u
 console.log(`traductions EN   : ${enKeys.length} items (× 3 clés)`);
 console.log(`armes générées   : ${weapons.length}`);
 console.log(`armures générées : ${armors.length}`);
+console.log(`accessoires gén. : ${accessories.length}`);
 console.log(`icônes copiées   : ${copied}`);
 console.log(`→ ${path.relative(ROOT, OUT_TS)}`);
