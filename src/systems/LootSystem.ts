@@ -136,7 +136,41 @@ export class LootSystem {
    * plutôt que de retirer à vide — sinon un ennemi de bas niveau perdrait le plus
    * clair de ses world drops au lieu de lâcher du COMMON.
    */
-  static rollWorldDrop(enemyLevel: number, isElite: boolean, isBoss: boolean): Item | null {
+  static rollWorldDrop(
+    enemyLevel: number, isElite: boolean, isBoss: boolean,
+    /**
+     * Rareté DUE au titre de la pitié (cf. rollLoot). Quand elle est fournie, le
+     * world drop est garanti et forcé sur cette rareté : c'est la pitié qui paie.
+     *
+     * Elle ne payait pas. La pitié ne savait forcer un drop que si la table de
+     * butin FIXE de l'ennemi contenait justement un item de la rareté due — or
+     * 136 ennemis sur 196 n'ont aucun EPIC dans leur table, et 155 sur 196 aucun
+     * LEGENDARY. Sur ces ennemis-là, le compteur atteignait 250 kills, ne trouvait
+     * rien à forcer… et se faisait remettre à zéro quand même. La pitié ne pouvait
+     * mathématiquement jamais payer, et détruisait 250 kills de progression à
+     * chaque fois. Le pool générique, lui, contient bien 51 EPIC et 31 LEGENDARY :
+     * c'est par là qu'elle doit passer.
+     */
+    owedRarity?: ItemRarity,
+  ): Item | null {
+    const pool = getWorldPool();
+
+    // Dette de pitié : drop garanti, rareté imposée. On court-circuite le tirage
+    // de chance ET le tirage de rareté — mais pas le verrou de niveau, qui reste
+    // la garantie qu'un rat de niveau 1 ne lâche pas une arme de fin de jeu.
+    //
+    // Ennemi trop bas pour la rareté due : on ne paie pas, la dette reste due
+    // (le compteur n'est pas remis à zéro, cf. rollLoot) — mais on RETOMBE sur le
+    // tirage normal, sinon le joueur perdrait aussi son world drop ordinaire, et
+    // se trouverait puni d'avoir une dette en cours.
+    if (owedRarity) {
+      const owedPool = pool[owedRarity];
+      const minLevel = WORLD_DROP_MIN_LEVEL[owedRarity];
+      if (owedPool?.length && minLevel !== undefined && enemyLevel >= minLevel) {
+        return owedPool[Math.floor(Math.random() * owedPool.length)]!;
+      }
+    }
+
     let chance = WORLD_DROP_CHANCE;
     if (isBoss) chance *= WORLD_DROP_BOSS_MULT;
     else if (isElite) chance *= WORLD_DROP_ELITE_MULT;
@@ -145,7 +179,6 @@ export class LootSystem {
     chance = Math.min(1, chance);
     if (Math.random() > chance) return null;
 
-    const pool = getWorldPool();
     // Plancher de rareté : un boss ne lâche jamais de COMMON/UNCOMMON, une élite
     // jamais de COMMON. Le plancher cède devant le verrou de niveau (un boss de
     // niveau 2 n'ouvrira pas du RARE avant le niveau 6) : c'est le niveau qui
@@ -240,7 +273,14 @@ export class LootSystem {
     // Tiré APRÈS la table fixe, et compté dans la pity comme n'importe quel drop :
     // un LEGENDARY obtenu en world drop doit bien remettre le compteur à zéro,
     // sinon la pity finirait par en garantir un second juste derrière.
-    const worldItem = LootSystem.rollWorldDrop(enemyLevel, !!opts.isElite, !!opts.isBoss);
+    //
+    // Si la table FIXE n'a pas pu honorer une dette de pitié (le cas courant : 136
+    // ennemis sur 196 n'ont aucun EPIC dans leur table), on la présente ICI. Le
+    // LEGENDARY prime sur l'EPIC : c'est la dette la plus ancienne et la plus chère.
+    const owed = pityLegendForced ? ItemRarity.LEGENDARY
+               : pityEpicForced   ? ItemRarity.EPIC
+               : undefined;
+    const worldItem = LootSystem.rollWorldDrop(enemyLevel, !!opts.isElite, !!opts.isBoss, owed);
     if (worldItem) {
       items.push({ item: StatRollSystem.rollItem(applyRandomElement(worldItem), qFloor), quantity: 1 });
       if ([ItemRarity.EPIC, ItemRarity.LEGENDARY, ItemRarity.MYTHIC, ItemRarity.HIDDEN].includes(worldItem.rarity)) {
@@ -253,9 +293,13 @@ export class LootSystem {
       }
     }
 
-    // Reset pity if no eligible item existed in this enemy's loot table
-    if (pityEpicForced)   player.killsWithoutEpic      = 0;
-    if (pityLegendForced) player.killsWithoutLegendary = 0;
+    // Une dette encore due ici n'est PAS effacée : le compteur reste à son niveau
+    // et la pitié retentera au kill suivant. Le code remettait au contraire les
+    // compteurs à zéro « si aucun item éligible n'existait dans la table » — il
+    // détruisait donc 250 kills de progression sans rien donner en échange, à
+    // chaque fois, sur la majorité des ennemis du jeu. Le seul cas où une dette
+    // reste due après un world drop forcé est le verrou de niveau (un ennemi trop
+    // bas pour la rareté due) : là aussi, la dette doit survivre au kill.
 
     return { items, gold, xp: Math.max(1, scaledXp) };
   }

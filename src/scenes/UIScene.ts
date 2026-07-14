@@ -94,6 +94,12 @@ export class UIScene extends Phaser.Scene {
   }
 
   create() {
+    // Phaser n'appelle PAS scene.shutdown() de lui-même : Systems.shutdown() se
+    // contente d'ÉMETTRE l'événement SHUTDOWN. Sans cette ligne, la méthode
+    // shutdown() ci-dessous est du CODE MORT — les listeners qu'elle est censée
+    // retirer survivent à la scène, et chaque create() en empile une couche de plus.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
+
     const { width: W, height: H } = this.cameras.main;
 
     // ── DEV: build badge (top-left) — retirer avant release ─────────
@@ -105,7 +111,7 @@ export class UIScene extends Phaser.Scene {
     // Vite (__BUILD_HASH__, cf. vite.config.ts) : l'écrire à la main était voué
     // à mentir, puisqu'un hash n'existe qu'une fois le commit fait — et l'écrire
     // dans le code refait le commit.
-    const BUILD_LABEL = `Retrait 9 drops Hidden fantomes (${__BUILD_HASH__})`;
+    const BUILD_LABEL = `Correctifs code-reviewer pre-merge (${__BUILD_HASH__})`;
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',

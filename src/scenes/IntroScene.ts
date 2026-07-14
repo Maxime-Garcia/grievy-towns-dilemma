@@ -22,6 +22,12 @@ export class IntroScene extends Phaser.Scene {
   }
 
   create() {
+    // Phaser n'appelle PAS scene.shutdown() de lui-même : Systems.shutdown() se
+    // contente d'ÉMETTRE l'événement SHUTDOWN. Sans cette ligne, la méthode
+    // shutdown() ci-dessous est du CODE MORT — les listeners qu'elle est censée
+    // retirer survivent à la scène, et chaque create() en empile une couche de plus.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
+
     this.cameras.main.fadeIn(400, 0, 0, 0);
     const name = this.gameState.player.name;
     this.pages = Array.from({ length: 9 }, (_, i) =>

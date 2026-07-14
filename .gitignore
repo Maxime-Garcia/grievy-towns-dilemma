@@ -12,3 +12,6 @@ npm-debug.log*
 # sont versionnes. Voir public/assets/ASSET_SOURCES.md pour la tracabilite.
 /assets/Bundle/
 /assets/Bundle_extracted/
+
+# Planches de contact et scripts jetables (analyse d'assets) — jamais versionnes
+.tmp/

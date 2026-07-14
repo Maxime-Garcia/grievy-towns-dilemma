@@ -292,6 +292,12 @@ export class InventoryScene extends Phaser.Scene {
       w: INV_COLS * INV_SLOT,
       h: BAG_SEARCH_H,
       placeholder: t('search.placeholder_bag'),
+      // Le sac s'OUVRE ET SE FERME avec `I`. Un champ auto-focalisé consomme
+      // chaque frappe : le `I` de fermeture s'écrivait dans la recherche au lieu
+      // de refermer le sac, et `Z` (l'action principale sur un item) était morte
+      // dès l'ouverture. Ici on clique le champ pour chercher — le sac se
+      // manipule d'abord au clic. Cf. SearchFieldOpts.autoFocus.
+      autoFocus: false,
       onChange: (q) => {
         this.searchQuery = q;
         // refresh() détruit `dynamicObjs` — le champ n'y est PAS, il survit.
@@ -323,6 +329,17 @@ export class InventoryScene extends Phaser.Scene {
     // survivrait à la fermeture de l'inventaire. Même câblage que
     // Arsenal/Bestiary/Dialogue.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
+
+    // Survol ré-évalué à CHAQUE frame, et pas seulement au mouvement du curseur.
+    //
+    // `MOUSE_WHEEL` est le seul type d'événement que Phaser traite sans appeler
+    // `processOverOutEvents()`. Or la grille scrolle à la molette : les slots
+    // glissent SOUS un curseur immobile, donc aucun `pointerout` n'est émis. Le
+    // slot survolé gardait son anneau blanc en partant, et celui qui arrivait sous
+    // le curseur ne s'allumait pas — jusqu'au prochain mouvement de souris.
+    // La grille étant virtualisée, la liste de hit-test reste courte : le poll
+    // permanent est ici sans coût mesurable.
+    this.input.setPollAlways();
 
     // ── Dynamic content ───────────────────────────────────────────────────
     this.renderEquipment();
@@ -982,6 +999,11 @@ export class InventoryScene extends Phaser.Scene {
       for (const go of windowObjs) { if (go.active) go.destroy(); }
       windowObjs = [];
       scrollables = [];
+      // `hitZones` référence les MÊMES objets : le vider aussi, sinon syncHitZones
+      // pourrait un jour être appelé sur des GameObjects détruits. Inoffensif
+      // aujourd'hui (clearDynamic retire les handlers de scroll avant d'appeler
+      // ceci), mais l'asymétrie piégerait le prochain appelant.
+      hitZones = [];
     };
 
     // Scroll : molette (desktop) + drag vertical (tactile — dette D2 résorbée)

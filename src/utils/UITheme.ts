@@ -560,7 +560,10 @@ export function strokeSlotHighlight(
 function slicedFrameTexture(
   scene: Phaser.Scene, texKey: string, w: number, h: number, slice: number,
 ): string | null {
-  const key = `${texKey}@${w}x${h}`;
+  // `slice` fait PARTIE de l'identité du bake : deux découpes différentes à la
+  // même taille produisent deux images différentes. Sans lui dans la clé, le
+  // second appelant récupérerait silencieusement le bake du premier.
+  const key = `${texKey}@${w}x${h}s${slice}`;
   if (scene.textures.exists(key)) return key;
 
   const src = scene.textures.get(texKey).getSourceImage();

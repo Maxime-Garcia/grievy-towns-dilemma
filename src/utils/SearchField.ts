@@ -78,6 +78,19 @@ export interface SearchFieldOpts {
   onChange: (query: string) => void;
   /** Échap alors que le champ est déjà vide ET focalisé (→ fermer l'écran). */
   onEscape?: () => void;
+  /**
+   * Prendre le focus clavier dès l'ouverture (défaut : true sur desktop).
+   *
+   * À passer à `false` sur tout écran dont la touche d'ouverture sert AUSSI à le
+   * refermer : le champ, une fois focalisé, consomme chaque frappe (sinon les
+   * lettres tapées déclencheraient les raccourcis de la scène). L'inventaire
+   * s'ouvre et se ferme avec `I` — auto-focalisé, il avalait le `I` de fermeture,
+   * qui s'écrivait dans la recherche au lieu de refermer le sac (et `Z`, l'action
+   * principale, était morte dès l'ouverture). On ne peut pas laisser passer ces
+   * touches : elles doivent rester saisissables quand on cherche « Iron sword ».
+   * Le sac se manipule d'abord au clic — on clique le champ pour y taper.
+   */
+  autoFocus?: boolean;
   depth?: number;
   maxLength?: number;
   /** Suffixe d'id du <input> DOM — unique par scène. */
@@ -245,10 +258,10 @@ export class SearchField {
     this.onResize = () => this.syncInputBox();
     scene.scale.on(Phaser.Scale.Events.RESIZE, this.onResize);
 
-    // Auto-focus au clavier UNIQUEMENT sur un appareil sans tactile : sur mobile,
-    // ça ferait surgir le clavier système à l'ouverture de l'écran, par-dessus la
-    // liste que le joueur vient d'ouvrir.
-    if (!scene.sys.game.device.input.touch) input.focus();
+    // Auto-focus au clavier UNIQUEMENT sur un appareil sans tactile (sur mobile,
+    // ça ferait surgir le clavier système par-dessus la liste qu'on vient
+    // d'ouvrir) ET si l'écran ne s'y oppose pas (cf. opts.autoFocus).
+    if ((opts.autoFocus ?? true) && !scene.sys.game.device.input.touch) input.focus();
   }
 
   /** Requête courante, NORMALISÉE (minuscules, sans accents). '' si vide. */
