@@ -98,13 +98,25 @@ Règles posées par le créateur :
 - Il doit y avoir **de l'aléatoire** dans ce qu'on ramène : partir tôt doit comporter un vrai risque,
   pas juste une taxe prévisible qu'on optimise.
 
-Piste (à valider par simulation) : des **slots sûrs** (façon Moonlighter) — un nombre restreint
-d'emplacements dont le contenu remonte **quoi qu'il arrive** ; le reste du sac est soumis à un tirage
-dont la générosité **croît avec la profondeur atteinte**. Plus on est descendu, plus l'exfiltration est
-clémente. Le joueur choisit donc consciemment ce qu'il sécurise **avant** de savoir s'il survivra.
+**La mécanique est TRANCHÉE, elle ne se rediscute pas :** des **slots sûrs** (façon Moonlighter) — un
+nombre restreint d'emplacements dont le contenu remonte **quoi qu'il arrive** ; le reste du sac est
+soumis à un tirage dont la générosité **croît avec la profondeur atteinte**. Plus on est descendu, plus
+l'exfiltration est clémente. Le joueur choisit donc consciemment ce qu'il sécurise **avant** de savoir
+s'il survivra.
 
-**Contrainte de design :** si s'exfiltrer immédiatement est mathématiquement optimal, la mécanique est
-morte. Le `balance-agent` doit le démontrer, chiffres à l'appui, avant qu'on code quoi que ce soit.
+**Ce qui reste ouvert n'est pas le principe, c'est le RÉGLAGE.** La récupération partielle est
+nécessaire mais pas suffisante : si les slots sûrs sont trop nombreux ou le tirage trop clément, le
+joueur s'exfiltrera quand même systématiquement au premier boss, et le choix mourra *malgré* la
+mécanique. Ce sont les nombres qui la font vivre.
+
+Le `balance-agent` doit établir, par simulation :
+1. le **nombre de slots sûrs** ;
+2. la **courbe de générosité** par profondeur, sur le reste du sac ;
+3. la **forme de l'aléatoire** — attention au piège : un tirage pondéré par rareté qui protégerait les
+   items rares annulerait le risque précisément là où il doit mordre ;
+4. le **point d'indifférence** — la profondeur à laquelle la valeur espérée de « pousser » rattrape
+   celle de « s'exfiltrer maintenant ». C'est lui qui produit le serrement de ventre. Il ne doit tomber
+   ni à la zone 1 (on partirait toujours) ni à la zone 5 (on pousserait toujours).
 
 ---
 
