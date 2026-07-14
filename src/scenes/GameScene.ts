@@ -352,9 +352,12 @@ export class GameScene extends Phaser.Scene {
     this.comboDeadline   = 0;
     this.critSurgeUntil  = 0;
     this.recentHitTimes  = [];
-    // Les textes agrégés référencent des GameObjects de la scène PRÉCÉDENTE :
-    // les garder ferait pointer une entrée sur un objet détruit au changement de zone.
+    this.comboGraceMs    = 0;
+    // Les textes agrégés et l'anneau référencent des GameObjects de la scène
+    // PRÉCÉDENTE : les garder ferait pointer une entrée sur un objet détruit au
+    // changement de zone.
     this.dmgAggregates.clear();
+    this.comboRing        = null;
     this.shakeWindowUntil = 0;
     this.shakeWindowPrio  = 0;
     this.comboRushed     = false;
@@ -487,6 +490,9 @@ export class GameScene extends Phaser.Scene {
     const dt = delta / 1000;
     this.playtimeAccumulator += dt;
     this.gameState.player.playtime += dt;
+
+    // L'anneau de combo suit le joueur et clignote à l'approche de l'expiration.
+    this.syncComboRing();
 
     // NPC proximity via distance (le collider empêche le vrai overlap physique)
     this.nearbyNPC = null;
@@ -854,7 +860,7 @@ export class GameScene extends Phaser.Scene {
 
     // ── CHANGEMENT D'ARME ────────────────────────────────────────
     if (weaponType !== this.comboWeaponType) {
-      if (this.comboCount > 0) this.events.emit('combo-broken');
+      if (this.comboCount > 0) { this.events.emit('combo-broken'); this.burstComboRing(); }
       this.comboCount = 0;
     }
 
@@ -877,6 +883,7 @@ export class GameScene extends Phaser.Scene {
     if (comboConfig && this.comboCount > 0 && now > this.comboDeadline) {
       this.comboCount = 0;
       this.events.emit('combo-broken');
+      this.burstComboRing();
     }
 
     this.comboWeaponType = weaponType;
@@ -916,6 +923,10 @@ export class GameScene extends Phaser.Scene {
       this.lastAttackEnd      = now + finisherCd;
       this.attackCooldownUntil = this.lastAttackEnd;
       // Après un finisher le combo est remis à zéro : aucune deadline à poser.
+      // L'anneau se vide (sans éclat : ce n'est pas une rupture, c'est un ABOUTISSEMENT).
+      this.comboGraceMs = 0;
+      this.redrawComboRing(0, 0, weaponType);
+      this.spawnSpeedTierVfx(aspd, this.facingAngle);
     } else {
       // ── ATTAQUE NORMALE ──────────────────────────────────────
       // Les temps d'ANIMATION se compressent avec l'aspd (planchers dans
@@ -959,9 +970,11 @@ export class GameScene extends Phaser.Scene {
       // Deadline posée MAINTENANT, sur les valeurs de BASE (aucune division par
       // l'aspd) et STOCKÉE — donc robuste à un buff qui expirerait entre deux coups.
       if (comboConfig) {
-        this.comboDeadline = now + pattern.cooldown
-          + comboConfig.graceMs * this.playerModifiers.comboGraceMult;
+        this.comboGraceMs  = comboConfig.graceMs * this.playerModifiers.comboGraceMult;
+        this.comboDeadline = now + pattern.cooldown + this.comboGraceMs;
+        this.redrawComboRing(this.comboCount, comboConfig.chainLength, weaponType);
       }
+      this.spawnSpeedTierVfx(aspd, this.facingAngle);
     }
 
     // ── ÉVÉNEMENT COMBO HUD ──────────────────────────────────────
@@ -3067,6 +3080,180 @@ export class GameScene extends Phaser.Scene {
         duration: 200,
         delay: i * 50,
         onComplete: () => ghost.destroy(),
+      });
+    }
+  }
+
+  // ── ANNEAU DE COMBO (AU SOL) ────────────────────────────────
+  /**
+   * Les pips de combo vivaient dans le HUD, en haut de l'écran. À 4 coups/s ils
+   * sont MORTS : l'œil du joueur ne quitte jamais le cône de danger autour de son
+   * personnage — il n'a ni le temps ni la raison de monter lire un compteur.
+   * Un signal que le joueur ne peut pas regarder n'est pas un signal.
+   *
+   * L'anneau vit donc AUX PIEDS du joueur, sous le sprite, exactement là où le
+   * regard est déjà posé. Il dit trois choses sans un mot : où en est la chaîne,
+   * que le prochain coup est le FINISHER (segments blanc-or, pulse), et qu'elle
+   * va EXPIRER (clignotement).
+   */
+  private static readonly COMBO_RING_RADIUS = 26;
+  private comboRing: Phaser.GameObjects.Container | null = null;
+  /** Grâce effective de la chaîne en cours — sert à décider si un clignotement est LISIBLE. */
+  private comboGraceMs = 0;
+
+  private static readonly WEAPON_RING_COLOR: Partial<Record<WeaponType, number>> = {
+    [WeaponType.DAGGER]: 0xcccccc,
+    [WeaponType.DUAL_DAGGER]: 0xcccccc,
+    [WeaponType.SWORD]: 0x88aaff,
+    [WeaponType.DUAL_SWORD]: 0x88aaff,
+    [WeaponType.GREATSWORD]: 0xffffff,
+    [WeaponType.AXE]: 0xff6600,
+    [WeaponType.HAMMER]: 0xffdd00,
+    [WeaponType.STAFF]: 0x9944ff,
+    [WeaponType.BOW]: 0xddcc77,
+    [WeaponType.SPEAR]: 0xdff2ff,
+  };
+
+  private ensureComboRing(): Phaser.GameObjects.Container {
+    if (!this.comboRing || !this.comboRing.active) {
+      // Depth 2 : SOUS le sprite du joueur (depth 10) — l'anneau ne doit jamais
+      // masquer le personnage ni ce qu'il y a devant lui.
+      this.comboRing = this.add.container(this.player.x, this.player.y).setDepth(2);
+    }
+    return this.comboRing;
+  }
+
+  private redrawComboRing(count: number, max: number, weaponType: WeaponType | undefined) {
+    const ring = this.ensureComboRing();
+    ring.removeAll(true);
+    ring.setAlpha(1);
+    if (count <= 0 || max <= 0) return;
+
+    const R = GameScene.COMBO_RING_RADIUS;
+    const baseColor = (weaponType !== undefined ? GameScene.WEAPON_RING_COLOR[weaponType] : undefined) ?? 0xffffff;
+    // Le coup SUIVANT est le finisher : l'anneau vire au blanc-or et pulse.
+    const preFinisher = count >= max - 1 && max > 1;
+    const color = preFinisher ? 0xffe58a : baseColor;
+
+    const step = (Math.PI * 2) / max;
+    const gap  = step * 0.16;
+
+    for (let i = 0; i < count; i++) {
+      const g = this.add.graphics();
+      g.lineStyle(3, color, 0.95);
+      g.beginPath();
+      g.arc(0, 0, R, -Math.PI / 2 + i * step + gap / 2, -Math.PI / 2 + (i + 1) * step - gap / 2);
+      g.strokePath();
+      ring.add(g);
+    }
+
+    // Pop du segment qui vient d'être gagné — la chaîne « encaisse » le coup.
+    const last = ring.list[ring.list.length - 1] as Phaser.GameObjects.Graphics | undefined;
+    if (last) {
+      last.setScale(1.4);
+      this.tweens.add({ targets: last, scale: 1, duration: 60, ease: 'Back.easeOut' });
+    }
+
+    if (preFinisher) {
+      // Pulse 2 Hz — « le prochain coup est LE coup ».
+      this.tweens.add({
+        targets: ring, alpha: 0.55,
+        duration: 250, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+      });
+    }
+  }
+
+  /** Rupture : les segments ÉCLATENT en fragments — aucun effet caméra (cf. budget de shake). */
+  private burstComboRing() {
+    const ring = this.comboRing;
+    if (!ring || !ring.active || ring.list.length === 0) return;
+    const cx = ring.x, cy = ring.y;
+    const n = ring.list.length;
+    this.tweens.killTweensOf(ring);
+
+    for (let i = 0; i < n; i++) {
+      const a = -Math.PI / 2 + (i + 0.5) * (Math.PI * 2 / Math.max(1, n));
+      const frag = this.add.rectangle(
+        cx + Math.cos(a) * GameScene.COMBO_RING_RADIUS,
+        cy + Math.sin(a) * GameScene.COMBO_RING_RADIUS,
+        4, 3, 0x99a0aa, 0.9,
+      ).setDepth(2).setRotation(a);
+      this.tweens.add({
+        targets: frag,
+        x: cx + Math.cos(a) * (GameScene.COMBO_RING_RADIUS + 14),
+        y: cy + Math.sin(a) * (GameScene.COMBO_RING_RADIUS + 14),
+        alpha: 0, duration: 220, ease: 'Power2',
+        onComplete: () => frag.destroy(),
+      });
+    }
+    ring.removeAll(true);
+    ring.setAlpha(1);
+  }
+
+  /**
+   * Suit le joueur, et fait CLIGNOTER l'anneau sur les derniers 40% de la grâce.
+   *
+   * Le clignotement n'est posé QUE si la grâce vaut au moins 250 ms. Pour la dague
+   * (grâce 160 ms), les 40% ne feraient que 64 ms de clignotement à 8 Hz : le
+   * joueur verrait une demi-alternance, c'est-à-dire rien. Mieux vaut aucun signal
+   * qu'un signal illisible — on ne ment pas au joueur avec une alerte qu'il n'a
+   * physiquement pas le temps de lire.
+   */
+  private static readonly COMBO_BLINK_MIN_GRACE_MS = 250;
+  private syncComboRing() {
+    const ring = this.comboRing;
+    if (!ring || !ring.active) return;
+    ring.setPosition(this.player.x, this.player.y);
+    if (ring.list.length === 0 || this.comboCount === 0) return;
+
+    if (this.comboGraceMs < GameScene.COMBO_BLINK_MIN_GRACE_MS) return;
+    const now = this.time.now;
+    const blinkFrom = this.comboDeadline - this.comboGraceMs * 0.4;
+    if (now < blinkFrom || now > this.comboDeadline) return;
+
+    // 8 Hz — piloté par l'horloge, pas par un tween : la deadline peut bouger (dash).
+    ring.setAlpha(Math.floor(now / 62.5) % 2 === 0 ? 1 : 0.25);
+  }
+
+  // ── FEEDBACK DE VITESSE — PALIERS DISCRETS ──────────────────
+  /**
+   * Le joueur doit SENTIR un cran quand sa build franchit un seuil. Une rampe
+   * continue ne se remarque pas : on ne perçoit pas +3% de cadence. Un palier, si.
+   *   1,25 → arc fantôme (l'arme laisse une trace)
+   *   1,50 → afterimage du joueur (même grammaire que le dash)
+   *   1,75 → pulse d'outline (le personnage « vibre » de vitesse)
+   */
+  private spawnSpeedTierVfx(aspd: number, angle: number) {
+    if (aspd < 1.25) return;
+
+    // 1,25 — arc fantôme : un 2e arc, décalé de 40 ms, très pâle.
+    this.time.delayedCall(40, () => {
+      if (!this.player?.active) return;
+      const g = this.add.graphics({ x: this.player.x, y: this.player.y }).setDepth(30);
+      g.lineStyle(3, 0xffffff, 0.30);
+      g.beginPath();
+      g.arc(0, 0, 52, angle - 0.6, angle + 0.6);
+      g.strokePath();
+      this.tweens.add({ targets: g, alpha: 0, duration: 120, onComplete: () => g.destroy() });
+    });
+
+    // 1,50 — afterimage du joueur à chaque attaque.
+    if (aspd >= 1.5) {
+      const ghost = this.add.rectangle(
+        this.player.x, this.player.y,
+        this.player.displayWidth, this.player.displayHeight,
+        0xffffff, 0.20,
+      ).setDepth(3).setOrigin(0.5);
+      this.tweens.add({ targets: ghost, alpha: 0, duration: 150, onComplete: () => ghost.destroy() });
+    }
+
+    // 1,75 — pulse d'outline : le personnage vibre.
+    if (aspd >= 1.75) {
+      const ring = this.add.circle(this.player.x, this.player.y, 16, 0x000000, 0)
+        .setStrokeStyle(2, 0xffffff, 0.25).setDepth(4);
+      this.tweens.add({
+        targets: ring, scale: 1.3, alpha: 0,
+        duration: 80, onComplete: () => ring.destroy(),
       });
     }
   }
