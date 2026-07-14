@@ -1,234 +1,250 @@
-# Inspirations — Grievy Town's Dilemma
+# Inspirations & État du projet — Grievy Town's Dilemma
 
-> **Usage agents :** Ce fichier est la référence thématique du projet. Tout contenu créé (zones, ennemis, NPCs, dialogues, skills, items, assets, effets visuels, sons) doit être cohérent avec ces inspirations. Consultez ce document avant de générer du contenu ou du code de gamefeel.
+> **Usage agents :** référence thématique ET état des lieux. Tout contenu créé (zones, ennemis, PNJ, dialogues, skills, items, assets, effets, sons) doit être cohérent avec ce document.
+>
+> **⚠️ Lisez le §0 avant tout.** Ce fichier a été périmé pendant plusieurs mois et a induit des agents en erreur : il décrivait un jeu qui n'existait plus. Les chiffres ci-dessous sont **vérifiés contre le code** (juillet 2026). En cas de contradiction entre ce document et le code, **le code gagne** — et il faut corriger ce document.
+
+---
+
+## 0. ÉTAT DU PROJET — juillet 2026
+
+### Ce que le jeu EST aujourd'hui
+
+Un **action-RPG top-down narratif**, jouable de bout en bout, avec une couche de loot **ARPG** (Diablo/PoE) nettement plus développée que ce que le projet visait à l'origine.
+
+| | Réel (vérifié) |
+|---|---|
+| **Items** | **649** — dont 392 générés procéduralement (lore, stats, raretés, `equipRanges`) |
+| **Ennemis** | **196** — dont 139 générés ; 7 divinités nommées |
+| **Zones** | 8 principales + routes et villages (`zones.ts`, `zoneMaps.ts` — layouts écrits à la main) |
+| **Quêtes / PNJ** | DAG de quêtes principales et secondaires, dialogues conditionnels, PNJ à position fixe |
+| **Compétences** | 24 skills · **87 talents** (`TALENT_MAP`, ~70 effets implémentés) · 23 recettes de craft |
+| **Langues** | FR + EN, **complet** (649/649 items, 196/196 ennemis, dialogues) |
+| **Écrans** | Jeu, Inventaire, Compétences, **Arsenal**, **Bestiaire**, Boutique, Dialogue, Pause, Menu |
+| **Canvas** | **960×720** (4:3), `pixelArt: true`, zoom monde entier (jamais fractionnaire) |
+
+### Les 5 dérives que ce document ne disait plus
+
+Corrigées ici. Elles étaient toutes des **pièges actifs** pour un agent :
+
+1. **7 raretés, pas 6.** `MYTHIC` s'est intercalé entre LEGENDARY et HIDDEN.
+2. **1 à 7 substats, pas 0 à 4.** COMMON en a **1**, HIDDEN en a **7** — le nombre de substats EST le signal de rareté.
+3. **9 `ElementType`, pas 7.** `DIVINE` et `NEUTRAL` se sont ajoutés aux 7 élémentaires.
+4. **Canvas 960×720, pas 800×600.** Et la police n'est plus Press Start 2P / Verdana mais **Neatpixels**.
+5. **La Résonance existe** — un système central, absent de toute version précédente de ce fichier (cf. §4).
 
 ---
 
 ## 1. STYLE VISUEL
 
-### Référence principale : Pokémon Gen 3/4 + Chrono Trigger (SNES)
-- **Vue :** Top-down 2D, caméra fixe sur le joueur, pas d'isométrique
-- **Résolution logique :** 800×600 px, canvas centré, rendu pixelisé (`image-rendering: pixelated`)
-- **Palette :** 16 couleurs max par sprite/tile, hard pixel edges, **zéro anti-aliasing**
-- **Taille des sprites :** 32×32 px joueur/ennemis/NPCs, 64×64 px bosses, 48×48 px divinités
-- **Taille des tiles :** 16×16 px, assemblés en tilesets
-- **Style général :** Chrono Trigger (SNES) — lisibilité de silhouette absolue, chaque créature reconnaissable en un coup d'œil même à 32×32
-- **Ton visuel :** Medieval Fantasy (Frieren) — pas enfantin malgré le pixel art. Couleurs sombres et saturées, ambiances oppressantes par zone.
-- **Carte du monde :** Style Pokémon — une map vue du ciel avec les zones reliées par des routes, le joueur se déplace dessus
+### Référence : Pokémon Gen 3/4 + Chrono Trigger (SNES)
+- **Vue :** top-down 2D, caméra qui suit le joueur. **Pas d'isométrique** — une passe 2.5D/élévation a été tentée puis **rejetée visuellement**, ne pas la reproposer.
+- **Canvas :** **960×720**, `pixelArt: true`, `image-rendering: pixelated`.
+- **Zoom caméra monde : ENTIER, jamais fractionnaire.** Un zoom 1,2 rééchantillonne le monde par un facteur non entier sous NEAREST → doublement inégal des pixels → flou. Contrainte dure.
+- **Sprites :** 32×32 joueur/ennemis/PNJ · 64×64 boss. **Tiles :** 16×16. **Icônes d'items :** 32×32.
+- **Palette :** hard pixel edges, zéro anti-aliasing.
+- **Ton :** medieval fantasy adulte (Frieren). Sombre, saturé, jamais enfantin.
+
+### Typographie — contrainte dure
+La police **Neatpixels** a quatre variantes, **chacune avec sa propre grille** :
+
+| Variante | Grille | Tailles nettes |
+|---|---|---|
+| Standard (corps) | **7 px** | 7 / 14 / 21 / 28 |
+| Minimal (HUD dense) | **10 px** | 10 / 20 / 30 |
+| Boss (titres) | **18 px** | 18 / 36 |
+| Blocks | 7 px | 7 / 14 / 21 |
+
+**Une police pixel n'est nette qu'aux multiples entiers de sa grille.** Hors grille, le rastériseur du navigateur anti-aliase le glyphe, et le flou est **cuit dans la texture** avant que Phaser ne la voie : aucun réglage de filtrage ne le rattrape après coup. C'était la vraie cause du « texte flou » — pas le filtre pixel art. Toute taille passe par `snapFontSize()` / `uiStyle()` (`src/utils/UITheme.ts`). Ne jamais écrire une taille en dur.
 
 ### Palettes par zone
 | Zone | Couleurs dominantes |
 |------|---------------------|
-| Grievy Town | Brun chaud, beige, gris pierre médiéval |
-| Ignis Reach | Rouge, orange, noir obsidienne, reflets de lave |
+| Grievy Town | Brun chaud, beige, gris pierre |
+| Ignis Reach | Rouge, orange, noir obsidienne, lave |
 | Terravast | Brun sombre, gris caverne, bleu cristal bioluminescent |
 | Zephyr Peaks | Bleu ciel pâle, blanc nuage, or céleste |
-| Abyssmar | Bleu nuit profond, teal, reflets bioluminescents cyan |
+| Abyssmar | Bleu nuit, teal, bioluminescence cyan |
 | Volterra | Violet sombre, gris métal, jaune électrique |
 | Glaciem | Blanc neige, bleu glace, argent givré |
-| Malachar's Spire | Noir quasi-absolu, violet fantôme, fissures lumineuses |
+| Malachar's Spire | Noir quasi absolu, violet fantôme, fissures lumineuses |
 
 ---
 
 ## 2. INTERFACE & HUD
 
-### Références : Sword Art Online (l'anime) + Alabaster Dawn
+**Références :** Sword Art Online (barres) + Alabaster Dawn (esthétique d'ensemble).
 
-#### Alabaster Dawn — référence HUD principale
-Alabaster Dawn (Radical Fish Games, 2026) est la référence esthétique de l'interface. Son HUD est pensé pour un combat rapide et lisible :
-- Interface intégrée à l'univers médiéval fantasy — jamais générique, jamais tech/sci-fi
-- Barres de vie claires mais **discrètes** : elles ne gênent pas la lecture de l'action en cours
-- Chaque élément d'interface a une raison d'être visible — rien n'est affiché en permanence si ce n'est pas utile en combat
-- Style pixel rétro avec personnalité — pas du HUD placeholder, du design d'UI cohérent avec le monde
+- Interface **intégrée à l'univers** — jamais générique, jamais sci-fi.
+- Barres HP/MP claires mais **discrètes** : elles ne mangent pas l'action.
+- HP : vert (>50 %) → orange (<50 %) → rouge (<25 %). MP : bleu. XP : bande basse.
+- Notifications montantes, courtes (~2 s) — level-up, drop, quête, zone.
+- Dialogues en bas d'écran, portrait PNJ à gauche (SNES).
 
-#### SAO — référence pour les barres de vie
-- **Barre HP :** Horizontale, dégradé progressif — **vert** (>50%) → **orange** (<50%) → **rouge** (<25%) avec surlignage lumineux
-- **Barre MP :** Bleue uniforme avec surlignage
-- **Barre XP :** Violette en bas d'écran
-- **Style général :** Propre, sobre, pas encombrant — minimaliste et lisible en combat rapide
-
-#### Notifications
-- File de notifications montantes (level-up, item rare, quête, zone) — courtes, percutantes, disparaissent vite
-- Drop d'item : nom + rareté colorée, icône à gauche — 2 secondes max
-
-### Polices & textes
-- Style pixel rétro, lisible sur fond sombre
-- Boîtes de dialogue en bas d'écran avec portrait NPC à gauche (style SNES RPG classique)
+**Règles d'UI acquises, non négociables** (`docs/design/UI_UX_GUIDELINES.md`) :
+- **Aucune troncature au nombre de caractères.** `fitText()` mesure en pixels. `slice(n)` est banni — c'était la cause structurelle des débordements.
+- Toute largeur de panneau **dérive de `cameras.main.width/height`**, jamais en dur.
+- `wordWrapWidth` partout. Zéro débordement horizontal, sur tous les écrans.
+- Toute scène d'overlay câble `this.events.once(SHUTDOWN, this.shutdown, this)` — **Phaser n'appelle pas `shutdown()` tout seul**, il se contente d'émettre l'événement. Sans ce câblage, la méthode est du code mort et les listeners fuient.
 
 ---
 
-## 3. GAMEFEEL & EFFETS VISUELS
+## 3. GAMEFEEL
 
-### Référence principale : Alabaster Dawn (Radical Fish Games, 2026)
+**Référence absolue : Alabaster Dawn** (Radical Fish Games — les auteurs de CrossCode).
 
-Alabaster Dawn est la référence de gamefeel **absolue** du projet. C'est un Action RPG 2.5D pixel art du studio Radical Fish Games (CrossCode). Ce que le joueur doit ressentir dans GTD doit s'en approcher le plus possible, adapté à la vue top-down 2D.
+- **Poids des coups** : une épée et un marteau ne se sentent pas pareil. Impact immédiat.
+- **Snappy** : zéro latence entre l'intention et l'action.
+- **Le dash a une personnalité** — ce n'est pas « aller plus vite ».
+- **Break gauge** : frapper remplit une jauge de stagger ; pleine → l'ennemi est vulnérable, fenêtre de combo.
+- Influences combat : Zelda (lisibilité, spatialité) + DMC/Kingdom Hearts (chaînes, mobilité).
 
-#### Ce qui définit le gamefeel d'Alabaster Dawn
-- **Poids des coups :** Chaque arme a un poids et un timing distincts — une frappe d'épée et un coup de masse ne se sentent pas pareil. L'impact est immédiat et satisfaisant, les critiques ont un effet visuel plus marqué.
-- **Fluidité des animations :** 16 directions d'animation (vs 8 dans la norme) — chaque mouvement et attaque se sent précis, coulant, vivant. Les transitions entre états (idle → walk → attack) sont invisibles.
-- **Le dash a de la personnalité :** Ce n'est pas juste "accélérer" — c'est une grande foulée distincte avec un suivi visuel différent. On voit que c'est un dash, pas juste du déplacement rapide.
-- **Break gauge (jauge de choc ennemi) :** Frapper un ennemi remplit une jauge de stagger. Quand elle est pleine, l'ennemi est étourdi et vulnérable — ouvre une fenêtre de combo. Ce feedback donne un sentiment de progression au sein même d'un combat.
-- **Combat snappy :** Pas de lag entre l'input et l'action. Le joueur ne doit jamais attendre — l'intention se traduit instantanément.
-- **Influences combat :** Zelda classique (lisibilité, spatialité) + Devil May Cry/Kingdom Hearts (chaînes de combos, mobilité, changement de style).
+### Acquis validés par le créateur — NE PAS RE-TUNER
+- **Mouvement inertiel**, **dash à momentum**, **blink azur** : validés « PARFAIT » après une passe de tuning dédiée. C'est le socle du mouvement. On construit **dessus**.
 
-#### Ce qu'on adapte pour GTD (top-down 2D)
-- Le poids des coups via screen shake léger + flash blanc + son distinct selon l'arme
-- Le dash avec micro-trainée visible (afterimage), iframes visuelles (légère transparence 0.3s)
-- Les nombres de dégâts colorés par élément qui s'envolent vers le haut
-- Les ennemis ont un état "stagger" visible (flash rouge / ralentissement bref) quand très touchés
-
----
-
-### Référence complémentaire : Vampire Survivors (orbes d'XP)
-- **Orbes d'XP :** À la mort d'un ennemi, spawn d'orbes verts magnétiques aimantés vers le joueur dans un rayon de 96px. Satisfaisant, jamais bloquant.
-- **Collecte :** Overlap direct, XP attribué instantanément — le ramassage est fluide et gratifiant
-
----
-
-### Effets visuels détaillés
-
+### Effets
 | Événement | Effet |
-|-----------|-------|
-| Hit physique | Flash blanc 1 frame sur l'ennemi + chiffre blanc qui monte |
-| Hit élémentaire | Flash couleur élément + chiffre coloré (feu = 0xff4400, eau = 0x2266ff, foudre = 0xffee00, glace = 0x88ddff, vent = 0xaaddff, terre = 0x88aa33) |
-| Coup critique | Flash jaune + chiffre plus grand + screen shake léger |
-| Dash joueur | Micro-trainée (afterimage), légère transparence 0.3s |
-| Mort d'ennemi | Dissolution sprite (flash → fondu, pas de ragdoll) |
-| Mort de boss | Séquence plus longue — aura qui s'effondre, fondu lent |
-| Entrée de boss | Annonce du nom en grand à l'écran, aura distinctive |
-| Zone dégradée | Désaturation progressive des couleurs (divinité tuée) |
+|---|---|
+| Hit physique | Flash blanc 1 frame + chiffre blanc montant |
+| Hit élémentaire | Flash de l'élément + chiffre coloré |
+| Critique | Flash jaune + chiffre plus grand + screen shake léger |
+| Dash | Afterimage + transparence brève (i-frames lisibles) |
+| Mort d'ennemi | Dissolution (flash → fondu), pas de ragdoll |
+| Mort de boss | Séquence longue — l'aura s'effondre. **C'est un moment, on prend le temps.** |
+| Orbes d'XP | Aimantés vers le joueur (Vampire Survivors) — fluide, jamais bloquant |
 
-### Transitions & monde
-- **Transitions de zone :** Fondu au noir propre (FADE_OUT_COMPLETE event Phaser)
-- **Dégradation du monde :** À mesure que les divinités meurent, les zones complétées se désaturent visuellement — le monde perd ses couleurs, perd sa magie
-
-### Principes gamefeel
-- Chaque action du joueur doit avoir un retour immédiat (son, flash, ou animation) — jamais de silence
-- La mort d'un boss est un moment — prendre le temps, ne pas juste despawn
-- La satisfaction vient autant du feedback que des chiffres
+**Principe :** chaque action du joueur a un retour immédiat. Jamais de silence.
 
 ---
 
-## 4. GAMEPLAY & MÉCANIQUES
+## 4. LOOT & PROGRESSION — le cœur ARPG
 
-### Références mélangées
-- **Exploration :** Pokémon Gen 3/4 — carte du monde visible, zones connectées par des routes avec ennemis, villes de repos entre les zones de combat
-- **Craft :** Sword Art Online — le joueur collecte des matériaux dans les zones et les **rapporte à un artisan** (Forgeron/Alchimiste/Costumier). Pas d'auto-craft, pas de menu flottant. L'artisan a ses recettes, le joueur lui apporte les ingrédients. Sentiment de dépendance aux NPCs.
-- **Dash :** Cooldown 1.5s, 0.3s d'iframes — mobile mais pas broken
-- **Skills :** 4 slots équipés (AZERTY : A/E/R/F), déblocage par zone — le joueur choisit sa build
-- **Pity system loot :** 250 kills → Epic garanti, 500 kills → Legendary garanti (évite la frustration infinie)
-- **Regen hors-combat :** Timestamp-based (une fois toutes les 2s), jamais frame-based
+> C'est **le système le plus développé du jeu**, et de loin celui qui a le plus grossi depuis la conception initiale. Influence : Diablo / Path of Exile.
 
-### Système de loot & items — ARPG (Diablo / Path of Exile influence)
+### Raretés — **7**, pas 6
+| Rareté | Couleur | Substats |
+|---|---|---|
+| Common | Gris `#b0b0b0` | 1 |
+| Uncommon | Vert `#4fc04f` | 2 |
+| Rare | Bleu `#4f9fff` | 3 |
+| Epic | Violet `#7722cc` | 4 |
+| Legendary | **Or `#ffd700`** | 5 |
+| **Mythic** | Rose `#ff4fc0` | 6 |
+| **Hidden** | Rouge `#ff4f4f` | 7 + **passif unique** |
 
-> **Différenciation d'Alabaster Dawn :** Alabaster Dawn utilise un système de gems avec slots fixes et pas de loot aléatoire. GTD choisit l'approche ARPG classique : **drops aléatoires avec raretés, stats principales fixes, substats aléatoires.**
+**Le nombre de substats EST le signal de rareté** (1 → 7). Ne jamais tronquer leur affichage : un Hidden à 7 lignes deviendrait indiscernable d'un Rare à 3.
 
-#### Raretés (du plus commun au plus rare)
-| Rareté | Couleur | Substats | Drops |
-|--------|---------|----------|-------|
-| Common | Gris | 0 | Fréquent |
-| Uncommon | Vert | 1 | Commun |
-| Rare | Bleu | 2 | Peu fréquent |
-| Epic | Violet | 3 | Rare |
-| Legendary | Orange/Doré | 4 | Très rare |
-| Hidden | Rouge/Noir | Passif unique | Exceptionnel |
+### Résonance — le système que ce document ignorait
+Chaque **instance** d'item est rollée à l'acquisition (`StatRollSystem`) : ses stats tombent dans une fourchette (`equipRanges`), et la qualité globale du jet donne une note **0-100**, la **Résonance**, en 5 paliers : Sourde · Stable · Claire · **Vibrante** · **Parfaite**.
 
-#### Stats principales (Main stat)
-- Fixées par le **type d'item** (arme → ATK, armure → DEF, accessoire → HP ou stats hybrides)
-- Scalent avec la rareté (un Epic a une valeur de main stat plus haute qu'un Rare du même type)
+- Deux exemplaires du même item ne se valent pas. C'est la tension de l'ouverture.
+- La rareté détermine le NOMBRE de substats, **jamais leur qualité maximale** : un Common peut rouler Parfait — et c'est un petit événement, qui déclenche sa propre notification.
+- Voir `docs/design/LOOT_STAT_ROLLS.md`.
 
-#### Substats aléatoires
-- Tirées d'un pool par type d'item au moment du drop
-- Exemples : % critique, vitesse d'attaque, résistance élémentaire (%), regain de HP/kill, réduction de cooldown, bonus de dégâts élémentaires
-- Le joueur ne sait pas quelles substats il aura avant d'identifier/ramasser l'item → tension de l'ouverture
-- **La rareté détermine le nombre de substats, jamais leur qualité maximale** — un Rare peut rouler une substat parfaite
+### Règles de loot acquises
+- **Pity system** : 250 kills → Epic garanti, 500 → Legendary garanti. **La dette passe par le world drop**, jamais effacée sans contrepartie (elle ne payait pas : 131 ennemis sur 196 n'ont aucun Epic dans leur table fixe).
+- **World drop** : pool des 392 items générés, 18 % de base (×2,5 élite, ×4 boss), verrouillé par niveau.
+- **Hidden : 0,07 %.** Les 27 sont lootables, un par gros ennemi.
+- **Le Bestiaire ne ment pas.** Un `itemId` de table de butin DOIT exister ET être dans la table de loot de CET ennemi. Un id fantôme ne casse ni la compilation ni le runtime — il se contente de mentir au joueur.
+- Toute nouvelle arme **doit** avoir un `equipStats.mainStat` (miroir ATK_FLAT/MATK_FLAT de `damage`/`magicDamage`) : `CombatSystem` ne lit jamais `weapon.damage` directement.
 
-#### Affichage dans l'UI
-- Nom de l'item coloré selon sa rareté dans toutes les interfaces
-- Panneau d'item : nom (coloré) → main stat → ligne de séparation → substats (chaque substat sur une ligne, valeur dorée)
-- Comparaison avec l'item équipé : flèches vertes/rouges pour chaque stat
+### Armes — 10 types
+SWORD · DUAL_SWORD · GREATSWORD · DAGGER · DUAL_DAGGER · AXE · HAMMER · STAFF · BOW · **SPEAR**
 
-### Système élémentaire
-- 7 éléments : Feu, Terre, Vent, Eau, Foudre, Glace, Sombre
-- Faiblesses classiques (Feu < Eau, Terre < Vent, Vent < Glace, etc.)
-- **DARK est super-effectif (×1.5) contre TOUS les éléments non-DARK/DIVINE**
-- NEUTRAL ne résiste à rien, ne prend pas de bonus/malus
+### Éléments — **9**
+FIRE · EARTH · WIND · WATER · LIGHTNING · ICE · DARK · **DIVINE** · **NEUTRAL**
+- **DARK est super-efficace (×1,5) contre tout ce qui n'est ni DARK ni DIVINE.**
+- NEUTRAL ne résiste à rien et ne prend aucun bonus.
+
+### Progression
+Niveaux, points d'attributs, **arbre de talents (87 nœuds, ~70 effets réels)**, combos, 4 skills équipés (touches **1-4**), craft par artisan PNJ (SAO — on rapporte les matériaux, pas d'auto-craft).
 
 ---
 
 ## 5. NARRATION & LORE
 
-### Références : Dragon Ball Super + Frieren (ton narratif)
+**Références : Frieren (ton) + Dragon Ball Super (révélation).**
 
-#### Structure narrative
-- **Ton :** Sobre, jamais grandiloquent. Le lore est dans les descriptions courtes, les dialogues directs, les petites phrases des NPCs. Style "show don't tell" — le monde parle à travers ses détails.
-- **Inspiré de Frieren :** Un monde medieval fantasy où la magie et les dieux sont réels, mais présentés avec une distance humaine et mélancolique. Le monde a une histoire longue et des blessures silencieuses. Les personnages sont fatigués, pas dramatiques. La profondeur vient des détails, pas des révélations spectaculaires.
-- **Aldric comme modèle de ton :** "You look better than when I found you. That's something." — voilà le style. Laconique, chaleureux, réel.
+- **Ton :** sobre, jamais grandiloquent. Le lore vit dans les descriptions courtes et les petites phrases. *Show, don't tell.* Les personnages sont **fatigués, pas dramatiques**.
+- **Aldric comme étalon :** « You look better than when I found you. That's something. » Laconique, chaleureux, réel.
+- **Le héros** est un fragment du Dieu Primordial, en forme humaine.
+- **Deux fins :** *Erase* (effacement de Velmara → New Game+) · *Restore* (sacrifice du pouvoir, le héros redevient humain et rentre à Grievy Town).
 
-#### Révélation finale : Dragon Ball Super / Zeno
-- Le héros n'est pas un humain ordinaire : c'est un **fragment du Dieu Primordial** (le "God of All"), envoyé en forme humaine quand l'équilibre a été brisé
-- Comme Zeno dans DBS : puissance absolue de création ET d'effacement, mais innocence/neutralité dans la façon d'exister
-- **Fin "Erase"** : effacement complet de Velmara → New Game+ — le monde se reconstruit, plus difficile, avec des échos du run précédent dans le lore
-- **Fin "Restore"** : sacrifice du pouvoir divin accumulé, résurrection des 6 divinités, le héros redevient humain et rentre à Grievy Town — fin mélancolique, monde rebâti mais héros ordinaire
+### Le Dilemme central — l'identité du jeu
+**Chaque boss tué est une divinité morte pour toujours.** Le monde perd sa magie et **se désature visuellement** à mesure. Chaque victoire est une perte. Le héros doit tuer les dieux pour sauver les gens des dieux.
 
-#### Le Dilemme central
-- Chaque boss tué = une divinité **morte pour toujours**. Le monde perd sa magie.
-- Chaque victoire est une perte. Le héros doit tuer les dieux pour sauver les gens des dieux.
-- Les couleurs de Velmara se ternissent visuellement au fil des boss vaincus.
-- Ce n'est pas un jeu où on gagne proprement. C'est un jeu de sacrifice.
+> Ce n'est pas un jeu où l'on gagne proprement. C'est un jeu de sacrifice.
 
-#### Malachar
-- Né à Grievy Town. Pas un démon — un homme, un érudit. Sa question était légitime : *pourquoi les dieux gardent-ils le pouvoir pour eux ?*
-- 30 ans d'isolement, de recherche interdite. La tour était là depuis le début. Personne n'a demandé.
-- Le vrai monstre du jeu c'est l'indifférence, pas Malachar lui-même.
+**Malachar** n'est pas un démon : un homme, un érudit de Grievy Town. Sa question était légitime — *pourquoi les dieux gardent-ils le pouvoir pour eux ?* Le vrai monstre du jeu, c'est l'indifférence.
 
 ---
 
-## 6. AUDIO (À DÉFINIR)
+## 6. DIRECTION ENVISAGÉE — le virage roguelite *(en évaluation, non décidé)*
 
-> Section à compléter quand les inspirations musicales seront précisées. Pour l'instant, les clés de musique sont définies par zone (`musicKey`) mais aucun fichier audio n'est intégré.
+> **Statut : à l'étude, juillet 2026.** Aucun code n'a été écrit dans ce sens. Cette section existe pour qu'un agent sache où le projet regarde — pas pour qu'il agisse dessus.
 
-### Pistes de travail proposées
-- **Grievy Town :** Acoustique, guitare ou luth, chaleureux et mélancolique — pas de thème épique, juste une ville ordinaire qui souffre
-- **Zones élémentaires :** Orchestral + synthétique par élément (cordes pour l'eau, cuivres pour le feu, percussions pour la terre, vent pour les flûtes, etc.)
-- **Boss :** Montée en intensité, thème unique par divinité
-- **Fin Restore :** Mélancolique, beau, lacunaire
-- **Fin Erase :** Silence progressif, puis le vide
+### L'intention du créateur
+Passer d'un jeu d'histoire linéaire à une boucle **roguelite façon Wizard of Legend** : une **run**, on tente de vaincre toutes les zones, on meurt, on recommence. Zones générées procéduralement par thème, quantité finie d'ennemis, loot conservé, upgrades de stats intra-run perdus à la mort.
 
----
+### Ce que l'analyse de design en dit — à lire avant de proposer quoi que ce soit
 
-## 7. PERSONNAGES — PRINCIPES DE DESIGN
+**Le pivot intégral détruirait l'identité du jeu.** Le Dilemme n'existe que si la partie est **persistante** : dans une run qui reset, tuer une divinité ne coûte rien, puisqu'on recommencera. La désaturation du monde n'a plus de sujet. Le DAG de quêtes, les PNJ, les dialogues conditionnels — tout cela suppose un monde qui dure.
 
-### NPCs
-- Chaque NPC doit exister en dehors de sa fonction (ne pas être juste "le forgeron"). Il a une vie, une peur, une petite phrase qui révèle son caractère.
-- Dialogues courts et directs — une révélation par échange, pas un roman.
-- Jamais de NPC générique "Can I help you?" — chaque ligne doit être unique à ce personnage dans cette situation.
+**Le procédural n'évite pas la galère des zones — il la déplace.** Wizard of Legend, Dead Cells et Hades **n'engendrent pas leurs niveaux** : ils recombinent des salles **dessinées à la main**. Le « procédural » des bons roguelites, c'est de l'assemblage de contenu authored. Il faut donc quand même dessiner les salles — et écrire, en plus, un générateur qui garantit connectivité, spawns valides, rythme et identité de zone.
 
-### Ennemis
-- Chaque ennemi porte l'histoire de sa zone dans son lore (une phrase, pas plus)
-- Concept de créature clairement lisible dans son comportement (chaser, patrol, ranged, summoner, charger) — le comportement IA doit refléter la personnalité de la créature
-- Élites et boss ont un sentiment de poids et de présence que les ennemis normaux n'ont pas
+**Le loot ARPG et la boucle roguelite ne portent pas la même chose.** Comparer 4 substats et une Résonance en plein combat est trop lent pour rythmer une run. La puissance intra-run doit venir d'un canal **rapide** (choisir 1 boon parmi 3 en 5 secondes), et les 649 items rester du **butin**, pas de la puissance de run.
 
-### Divinités (Bosses)
-- Avant corruption : protecteur, bienveillant, profondément lié à sa zone
-- Après corruption : la même essence, mais hors de contrôle. Pas maléfique — brisé.
-- Le joueur ne combat pas un ennemi. Il met fin à une souffrance.
+### Piste privilégiée : greffer, ne pas pivoter
+Instancier les zones **déjà mortes** en runs (une divinité tuée laisse une « faille » où sa zone rejoue un souvenir corrompu d'elle-même). Le mode run devient alors une **conséquence du Dilemme**, pas un mode annexe — et le thème le porte. Les upgrades de run se branchent sur le moteur de talents **existant** (~70 effets déjà implémentés) ; le loot devient une boucle d'**extraction** (banquer ou pousser ?), ce qui recycle la Résonance telle quelle.
+
+**Rien n'est tranché.** Un agent qui touche à ce sujet doit demander avant d'implémenter.
 
 ---
 
-## 8. MOTS-CLÉS THÉMATIQUES
+## 7. PERSONNAGES — PRINCIPES
 
-Pour guider toute création de contenu :
+- **PNJ :** chacun existe **en dehors de sa fonction**. Jamais de « Can I help you ? ». Une révélation par échange, pas un roman.
+- **Ennemis :** le lore de la zone tient en une phrase. Le comportement IA (chaser, patrol, ranged, summoner, charger) **est** la personnalité.
+- **Divinités :** avant la corruption, protectrices et liées à leur zone. Après, la même essence hors de contrôle. **Pas maléfiques — brisées.** Le joueur ne combat pas un ennemi : il met fin à une souffrance.
+
+---
+
+## 8. AUDIO — à définir
+
+Aucun fichier audio intégré. `musicKey` est défini par zone.
+Pistes : Grievy Town acoustique et mélancolique (pas de thème épique — une ville ordinaire qui souffre) · zones élémentaires orchestral + synthétique · boss à thème unique · fin *Restore* belle et lacunaire · fin *Erase* silence progressif, puis le vide.
+
+---
+
+## 9. MOTS-CLÉS
 
 ```
 sacrifice · identité · perte · dieux brisés · monde qui meurt
 lumière ternissante · douleur sans méchanceté · héros sans mémoire
-dilemme moral · victoire pyrrhique · dernier survivant
-pixel art medieval fantasy · Chrono Trigger · SAO · Vampire Survivors
-Pokémon · Dragon Ball Super · Frieren (ton narratif)
-Alabaster Dawn (gamefeel · HUD) · ARPG loot (Diablo/PoE)
+dilemme moral · victoire pyrrhique
+
+Chrono Trigger · Pokémon (exploration) · Frieren (ton)
+Alabaster Dawn (gamefeel, HUD) · SAO (barres, craft par artisan)
+Vampire Survivors (orbes) · Diablo / PoE (loot)
+Wizard of Legend (piste roguelite — à l'étude)
 ```
 
 ---
 
-*Ce fichier est une référence vivante — il doit être mis à jour quand de nouvelles inspirations sont mentionnées par le créateur du projet.*
+## 10. HISTORIQUE — d'où vient le projet
+
+À conserver : ça explique des choix qu'on ne comprend plus sans contexte, et ça évite de reproposer ce qui a déjà été rejeté.
+
+| Époque | Ce qui a changé |
+|---|---|
+| Conception | Action-RPG narratif, 6 raretés, loot simple. 800×600. Press Start 2P + Verdana. |
+| — | **Isométrique / 2.5D tenté puis REJETÉ** visuellement. Ne pas reproposer. |
+| — | Le loot devient un vrai ARPG : MYTHIC apparaît, les substats passent à 1-7, la **Résonance** est créée. C'est là que le jeu a le plus dérivé de son intention initiale. |
+| — | Génération de masse : +392 items, +139 ennemis. Le contenu écrit à la main devient minoritaire en nombre. |
+| — | Passe UI/UX complète : canvas 960×720, police **Neatpixels**, `fitText`, virtualisation de l'inventaire. |
+| — | i18n FR/EN complet, Arsenal et Bestiaire, recherche. |
+| 07/2026 | Le créateur envisage le **virage roguelite** (§6). |
+
+---
+
+*Référence vivante. **Ce fichier a menti pendant des mois** — il décrivait 6 raretés quand il y en avait 7, 800×600 quand le canvas faisait 960×720, et ignorait la Résonance. Un document qui ment coûte plus cher qu'un document absent : chaque agent qui le lit part avec une carte fausse. **Le mettre à jour fait partie de toute tâche qui change le jeu.***
