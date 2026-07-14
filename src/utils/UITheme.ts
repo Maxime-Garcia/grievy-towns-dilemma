@@ -536,29 +536,94 @@ export function strokeSlotHighlight(
 }
 
 /**
+ * Découpe neuf-tranches d'une texture, BAKÉE une fois pour toutes à la taille
+ * demandée, et mise en cache sous la clé `<texKey>@<w>x<h>`.
+ *
+ * Motif — le bug du cadre qui disparaît au scroll de l'inventaire :
+ * `addUiFrame` créait un `NineSlice`, qui est un GameObject à base de **Mesh**.
+ * La grille virtualisée en détruit et recrée des centaines par seconde pendant
+ * le scroll, sous masque géométrique. Dans ces conditions le Mesh lâchait : le
+ * cadre d'une case ne se dessinait plus, alors que le `Graphics` de fond et
+ * l'`Image` de l'icône de la MÊME case, eux, tenaient. Visuellement, la case
+ * perdait d'un coup son intérieur gris ET sa bordure dorée (les deux vivent dans
+ * cette unique texture) et laissait voir le bleu nuit de drawSlot dessous.
+ *
+ * En bakant la découpe en amont, une case n'affiche plus qu'une `Image` ordinaire
+ * à sa taille native — le chemin de rendu le plus robuste et le plus léger de
+ * Phaser. Zéro Mesh, zéro étirement au moment du rendu, et une seule texture
+ * partagée par toutes les cases d'une même taille.
+ *
+ * Le bake reproduit exactement la géométrie du NineSlice : les quatre coins
+ * (`slice`×`slice`) sont copiés à l'échelle 1:1 — donc restent nets — seuls les
+ * bords et le centre sont étirés, avec le lissage désactivé.
+ */
+function slicedFrameTexture(
+  scene: Phaser.Scene, texKey: string, w: number, h: number, slice: number,
+): string | null {
+  const key = `${texKey}@${w}x${h}`;
+  if (scene.textures.exists(key)) return key;
+
+  const src = scene.textures.get(texKey).getSourceImage();
+  if (!(src instanceof HTMLImageElement) && !(src instanceof HTMLCanvasElement)) return null;
+  const sw = src.width;
+  const sh = src.height;
+  // Cadre trop petit pour porter ses propres coins : la découpe n'a pas de sens.
+  if (sw <= slice * 2 || sh <= slice * 2 || w <= slice * 2 || h <= slice * 2) return null;
+
+  const canvas = document.createElement('canvas');
+  canvas.width  = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.imageSmoothingEnabled = false;
+
+  // Bandes source / destination : coin | milieu étiré | coin.
+  const sx = [0, slice, sw - slice];
+  const sy = [0, slice, sh - slice];
+  const sWid = [slice, sw - slice * 2, slice];
+  const sHei = [slice, sh - slice * 2, slice];
+  const dx = [0, slice, w - slice];
+  const dy = [0, slice, h - slice];
+  const dWid = [slice, w - slice * 2, slice];
+  const dHei = [slice, h - slice * 2, slice];
+
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      ctx.drawImage(
+        src,
+        sx[c]!, sy[r]!, sWid[c]!, sHei[r]!,
+        dx[c]!, dy[r]!, dWid[c]!, dHei[r]!,
+      );
+    }
+  }
+  scene.textures.addCanvas(key, canvas);
+  return key;
+}
+
+/**
  * Cadre UI en VRAI asset pixel art (packs GUI Kit / Retro Inventory — voir
  * ASSET_SOURCES.md §ui/), posé PAR-DESSUS le fond dessiné par drawSlot/drawCard.
  * (cx, cy) = CENTRE du cadre (aligné sur les conventions d'Image Phaser).
  *
- * - WebGL : NineSlice — les coins restent à l'échelle native (nets), seuls les
- *   bords/centre s'étirent. Canvas (NineSlice non supporté) : Image étirée.
- * - Texture absente (script scripts/copy-ui-assets.mjs pas lancé) : retourne
- *   null — l'appelant garde son rendu Graphics existant, rien ne casse.
+ * Renvoie une `Image` à sa taille native, découpée en neuf tranches EN AMONT
+ * (cf. slicedFrameTexture) — plus de `NineSlice` à l'exécution, dont le Mesh
+ * décrochait sous le scroll virtualisé de l'inventaire.
  *
- * Les deux types retournés exposent setY/setMask/setTint/setAlpha : compatibles
- * avec le pattern de scroll registré de InventoryScene.renderGrid.
+ * Texture absente (script scripts/copy-ui-assets.mjs pas lancé) : retourne null —
+ * l'appelant garde son rendu Graphics existant, rien ne casse.
  */
 export function addUiFrame(
   scene: Phaser.Scene,
   cx: number, cy: number, w: number, h: number,
   texKey = 'ui_slot_frame',
   slice = 8,
-): Phaser.GameObjects.Image | Phaser.GameObjects.NineSlice | null {
+): Phaser.GameObjects.Image | null {
   if (!scene.textures.exists(texKey)) return null;
-  if (scene.sys.game.renderer.type === Phaser.WEBGL) {
-    return scene.add.nineslice(cx, cy, texKey, undefined, w, h, slice, slice, slice, slice);
-  }
-  return scene.add.image(cx, cy, texKey).setDisplaySize(w, h);
+  const baked = slicedFrameTexture(scene, texKey, Math.round(w), Math.round(h), slice);
+  // Bake impossible (cadre dégénéré) : repli sur l'étirement direct, qui reste
+  // meilleur que pas de cadre du tout.
+  if (!baked) return scene.add.image(cx, cy, texKey).setDisplaySize(w, h);
+  return scene.add.image(cx, cy, baked);
 }
 
 /** Séparateur horizontal discret — remplace les lineStyle/moveTo/lineTo répétés. */
