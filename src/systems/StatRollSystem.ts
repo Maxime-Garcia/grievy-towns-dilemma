@@ -47,6 +47,21 @@ const LINE_JITTER = 0.30;
 export const CDR_SOFT_PCT = 70;        // esquive de recharge : plafond effectif ~45%
 export const DODGE_SOFT_PCT = 75;      // esquive : plafond effectif ~55%
 export const BOSS_DMG_SOFT_PCT = 150;  // dégâts vs boss : plafond effectif ~+90%
+/**
+ * Vitesse d'attaque : l'aspd PERMANENTE tend vers ×1,8 sans jamais l'atteindre.
+ *
+ * Pourquoi un plafond ici alors que l'ASPD_PCT était jusqu'ici linéaire : au-delà
+ * de ×2, ce n'est pas la mécanique qui casse en premier, c'est la LISIBILITÉ. Le
+ * telegraph de l'ennemi et le flash de coup vivent dans le même canal (setTintFill) ;
+ * à cadence élevée le sprite est blanc une bonne partie du temps et l'ennemi ne
+ * peut plus annoncer son coup. Sur un jeu dont la règle est « telegraph before
+ * punish », c'est la faute capitale — donc le plafond est un plafond de SENSATION.
+ *
+ * Les buffs TEMPORAIRES (dash, critSurge) s'appliquent APRÈS ce softcap, pleins :
+ * un burst doit se sentir plein. Le plafond borne ce qu'on PORTE, pas ce qu'on
+ * DÉCLENCHE.
+ */
+export const ASPD_SOFT_PCT = 80;
 
 /**
  * Rendements décroissants. `raw` = somme brute des substats ; `soft` = asymptote.

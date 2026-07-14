@@ -8,7 +8,8 @@ import {
   Accessory,
 } from '../types';
 import { ProgressionSystem } from './ProgressionSystem';
-import { CDR_SOFT_PCT, DODGE_SOFT_PCT, BOSS_DMG_SOFT_PCT, softcap } from './StatRollSystem';
+import { TalentSystem } from './TalentSystem';
+import { CDR_SOFT_PCT, DODGE_SOFT_PCT, BOSS_DMG_SOFT_PCT, ASPD_SOFT_PCT, softcap } from './StatRollSystem';
 import { t } from '../i18n';
 
 // ============================================================
@@ -25,8 +26,15 @@ import { t } from '../i18n';
  *   ne doit PAS ré-ajouter weapon.damage dans sa formule de dégâts.
  * - `crit` est un pourcentage total (ex: 9.5 → 9.5% de chance).
  * - `critDmg` est un multiplicateur (1.5 = +50% de dégâts en critique).
- * - `aspd` est un multiplicateur GLOBAL (1.1 = +10%) à appliquer PAR-DESSUS
- *   le `attackSpeed` propre à l'arme équipée.
+ * - `aspd` est LE multiplicateur de vitesse d'attaque, et le SEUL. Il divise
+ *   `ATTACK_PATTERNS[weaponType].cooldown` (la cadence propre au TYPE d'arme) et
+ *   compresse les temps d'animation (cf. src/data/attackPatterns.ts). Il agrège
+ *   les substats ASPD_PCT ET les talents de vitesse d'attaque, à RENDEMENTS
+ *   DÉCROISSANTS (asymptote 80 → l'aspd permanente tend vers ×1,8).
+ *   ⚠ Il n'y a plus de `weapon.attackSpeed` : ce champ n'était lu par AUCUNE
+ *   formule de combat, seulement AFFICHÉ dans l'Arsenal. Il mentait au joueur.
+ *   Les buffs TEMPORAIRES (dash, critSurge) se multiplient APRÈS le softcap,
+ *   côté GameScene — le plafond borne ce qu'on PORTE, pas ce qu'on DÉCLENCHE.
  * - `elemBonus` / `lifesteal` sont des pourcentages totaux.
  * - `cdr` / `dodge` / `bossDmg` : pourcentages totaux à RENDEMENTS DÉCROISSANTS
  *   (`softcap`, cf. StatRollSystem) — plus de plafonds durs. Un mur rendait la
@@ -165,7 +173,18 @@ export class StatsSystem {
       mana,
       crit: BASE_CRIT_PCT + player.attributes.agi * CRIT_PER_AGI_PCT + t.CRIT_RATE,
       critDmg: BASE_CRIT_MULT + t.CRIT_DMG / 100,
-      aspd: Math.max(0.1, 1 + t.ASPD_PCT / 100),
+      // VITESSE D'ATTAQUE — le POINT D'ENTRÉE UNIQUE.
+      //
+      // Trois canaux portaient ce nom, DEUX étaient morts : `weapon.attackSpeed`
+      // (dague 1,7 · marteau 0,7) n'était jamais lu par le combat mais AFFICHÉ
+      // dans l'Arsenal — il mentait au joueur ; et `TalentSystem.attackSpeedMult`
+      // n'était consommé nulle part. Les deux se déversent désormais ici, ou
+      // n'existent plus.
+      //
+      // Substats d'équipement + talents s'ADDITIONNENT en points de %, puis
+      // passent au softcap ensemble : sans quoi un joueur pourrait empiler les
+      // deux canaux pour contourner le plafond de l'un par l'autre.
+      aspd: Math.max(0.1, 1 + softcap(t.ASPD_PCT + TalentSystem.getAspdPct(player), ASPD_SOFT_PCT) / 100),
       spd,
       elemBonus: t.ELEM_BONUS_PCT,
       lifesteal: t.LIFESTEAL_PCT,
