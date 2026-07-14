@@ -72,6 +72,7 @@ export const FR: Record<string, string> = {
   'arsenal.not_discovered': 'Équipement inconnu. Trouvez-le en jeu pour le découvrir.',
   'arsenal.description_title': 'DESCRIPTION',
   'arsenal.passive_label': 'Passif :',
+  'arsenal.ranges_subtitle': 'Jets possibles au butin',
   'arsenal.hint': '[↑↓] naviguer · molette/glisser · [Échap] fermer',
   'arsenal.section_weapon': 'Armes',
   'arsenal.section_helm': 'Casques',
@@ -82,7 +83,11 @@ export const FR: Record<string, string> = {
   'arsenal.section_cape': 'Capes',
   'arsenal.section_ring': 'Anneaux',
   'arsenal.section_amulet': 'Amulettes',
-  'arsenal.dropped_by_title': 'OBTENU AUPRÈS DE',
+  // Titre de la section sources — suit le contenu réel (« Obtenu auprès de »
+  // suivi d'un monstre sonnait comme un achat chez un PNJ, retour utilisateur) :
+  'arsenal.dropped_by_title': 'LÂCHÉ PAR',
+  'arsenal.sold_by_title': 'EN VENTE CHEZ',
+  'arsenal.source_title': 'PROVENANCE',
   'arsenal.loot_unknown': 'Source inconnue',
   'arsenal.dropped_by_more': '+{n} autres',
   'arsenal.view_in_bestiary': 'Voir dans le Bestiaire →',
@@ -90,6 +95,13 @@ export const FR: Record<string, string> = {
   // ── NAVIGATION (popups de confirmation cross-link Arsenal ↔ Bestiaire) ──
   'nav.go':     'Aller',
   'nav.cancel': 'Annuler',
+
+  // ── RECHERCHE (champ partagé Arsenal / Bestiaire / Sac — src/utils/SearchField.ts) ──
+  'search.placeholder_item':   'Rechercher un équipement…',
+  'search.placeholder_enemy':  'Rechercher une créature…',
+  'search.placeholder_bag':    'Rechercher dans le sac…',
+  'search.no_results':         'Aucun résultat',
+  'search.no_results_hint':    'Aucune entrée ne correspond à « {q} »',
 
   'element.FIRE': 'Feu',
   'element.EARTH': 'Terre',
@@ -184,6 +196,19 @@ export const FR: Record<string, string> = {
   'inventory.slot.ring1': 'Bague 1',
   'inventory.slot.ring2': 'Bague 2',
   'inventory.slot.amulet': 'Amulette',
+  // Libellés COURTS des slots vides du paperdoll (≤ 7 caractères : la case fait
+  // 48 px, la police Minimal 10 ≈ 6 px/caractère — « Poitrine »/« Amulette »
+  // sortaient tronqués en « POITRI… »). Mesure interim avant les icônes de slot.
+  'inventory.slot_short.weapon': 'Arme',
+  'inventory.slot_short.helm': 'Casque',
+  'inventory.slot_short.chest': 'Torse',
+  'inventory.slot_short.legs': 'Jambes',
+  'inventory.slot_short.boots': 'Bottes',
+  'inventory.slot_short.gloves': 'Gants',
+  'inventory.slot_short.cape': 'Cape',
+  'inventory.slot_short.ring1': 'Bague 1',
+  'inventory.slot_short.ring2': 'Bague 2',
+  'inventory.slot_short.amulet': 'Collier',
   'inventory.use_item':    'Utiliser',
   'inventory.equip_item':  'Équiper',
   'inventory.cancel':      'Annuler',
@@ -205,6 +230,50 @@ export const FR: Record<string, string> = {
   'inventory.category_material':   'Matériaux',
   'inventory.category_key_item':   'Objets clés',
   'inventory.category_skin':       'Skins',
+
+  // Onglets de filtrage du sac — libellés du tooltip au survol de l'icône.
+  // Distincts des `category_*` ci-dessus : un onglet REGROUPE des catégories
+  // (« Équipement » = armes + armures + accessoires), il ne les décalque pas.
+  'inventory.tab_all':        'Tous',
+  'inventory.tab_equip':      'Équipement',
+  'inventory.tab_consumable': 'Consommables',
+  'inventory.tab_material':   'Matériaux',
+  'inventory.tab_misc':       'Quête & divers',
+
+  // ── LIBELLÉS DE STATS (StatsSystem.formatStat) ───────────────
+  // Utilisés partout où une stat rollée ou une fourchette s'affiche :
+  // inventaire, Arsenal, comparaison d'équipement.
+  'stat.ATK_FLAT':          'ATK',
+  'stat.ATK_PCT':           'ATK',
+  'stat.MATK_FLAT':         'M.ATK',
+  'stat.MATK_PCT':          'M.ATK',
+  'stat.DEF_FLAT':          'DEF',
+  'stat.DEF_PCT':           'DEF',
+  'stat.HP_FLAT':           'PV',
+  'stat.HP_PCT':            'PV Max',
+  'stat.CRIT_RATE':         'Taux CRIT',
+  'stat.CRIT_DMG':          'DGT CRIT',
+  'stat.ASPD_PCT':          'Vit. d\'attaque',
+  'stat.SPD_FLAT':          'VIT',
+  'stat.ELEM_BONUS_PCT':    'Dégâts élém.',
+  'stat.MANA_FLAT':         'Mana',
+  'stat.LIFESTEAL_PCT':     'Vol de vie',
+  'stat.MDEF_FLAT':         'DEF Mag.',
+  'stat.CDR_PCT':           'Réd. Cooldown',
+  'stat.DODGE_PCT':         'Esquive',
+  'stat.BOSS_DMG_PCT':      'DGT vs Boss',
+  'stat.HP_ON_KILL_FLAT':   'PV au kill',
+  'stat.MANA_ON_KILL_FLAT': 'Mana au kill',
+
+  // ── RÉSONANCE (qualité de jet d'une instance — UITheme.formatResonanceLine) ──
+  // Les 5 paliers gardent leur nom FR comme CLÉ interne (StatRollSystem le
+  // compare en dur pour décider des notifications) : seul l'affichage est traduit.
+  'resonance.label':     'Résonance',
+  'resonance.Sourde':    'Sourde',
+  'resonance.Stable':    'Stable',
+  'resonance.Claire':    'Claire',
+  'resonance.Vibrante':  'Vibrante',
+  'resonance.Parfaite':  'Parfaite',
 
   // ── PANNEAU DE STATISTIQUES (inventaire) ─────────────────────
   'stats.section_offense': 'OFFENSE',
@@ -474,6 +543,9 @@ export const FR: Record<string, string> = {
   'quest.fq_03_liriascat.name': 'Le Chat de Liria',
   'quest.fq_04_ovanresearch.name': 'La Collecte de Frère Ovan',
   'quest.fq_05_kelvarsrounds.name': 'La Ronde de Kelvar',
+  'quest.fq_06_ysoldedeliver.name': 'La Livraison d\'Ysolde',
+  'quest.fq_07_feathers.name': 'La Collecte de Plumes',
+  'quest.fq_08_childstoy.name': 'Le Jouet Perdu',
 
   // ── ITEMS — ARMES ────────────────────────────────────────────
   'item.iron_sword.name': 'Épée de Fer',

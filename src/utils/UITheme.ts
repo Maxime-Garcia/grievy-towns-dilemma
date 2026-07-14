@@ -3,6 +3,8 @@
 
 import type { RangedStat } from '../types';
 import { StatsSystem } from '../systems/StatsSystem';
+import { StatRollSystem } from '../systems/StatRollSystem';
+import { t } from '../i18n';
 
 export const UI = {
   // Panel backgrounds
@@ -71,62 +73,99 @@ export const UI = {
   TXT_CYAN:      '#7fe8d8',  // titres de sections / panneaux (contraste ≥ 9:1 sur BG_MID)
 } as const;
 
-export const FONT = "'Press Start 2P', monospace";
+// ── Polices Neatpixels (ElvGames) — déclarées en @font-face dans index.html ──
+// Une seule famille pixel dans TOUT le jeu (FONT), au lieu de l'ancien duo
+// 'Press Start 2P' (monde) + Verdana (UI) qui juraient l'un avec l'autre.
+/** Corps de texte : dialogues, menus, HUD, tooltips. */
+export const FONT = "'Neatpixels', monospace";
+/** Titres, noms de boss, écrans d'entrée de boss — plus lourde, plus solennelle. */
+export const FONT_TITLE = "'Neatpixels Boss', 'Neatpixels', monospace";
+/** HUD dense / petites valeurs chiffrées — la plus étroite des quatre. */
+export const FONT_HUD = "'Neatpixels Minimal', 'Neatpixels', monospace";
+/** Accents typographiques massifs (logo, chapitrage). */
+export const FONT_DISPLAY = "'Neatpixels Blocks', 'Neatpixels', monospace";
 
 /**
- * Résolution de rendu du texte (cf. `uiStyle`/`pxStyle`). Valeur par défaut
- * sûre pour SSR/tests ; `setTextResolution()` la recalibre une seule fois au
- * boot (`main.ts`) d'après le zoom RÉEL choisi par le Scale Manager.
+ * Résolution de rendu du texte (cf. `uiStyle`/`pxStyle`).
  *
- * Pourquoi ce n'est pas un `3` fixe : le jeu tourne en `pixelArt:true` +
- * `image-rendering: pixelated` (index.html) — indispensable pour que les
- * sprites restent nets en gros pixels. Mais `Scale.FIT` + `zoom: MAX_ZOOM`
- * ne change QUE la taille CSS du canvas ; le canvas lui-même reste rendu à
- * 800×600 (cf. ScaleManager.resize — `canvas.width/height` = baseSize, jamais
- * multiplié par le zoom). Le navigateur agrandit donc tout le canvas déjà
- * rendu — texte compris — via un filtrage "plus proche voisin" d'un facteur
- * ÉGAL AU ZOOM. Un texte fin (8-10px) survit mal à ça, même généré à une
- * résolution interne fixe de 3× : sur un grand écran (zoom 3-4+), l'agrandissement
- * final blockifie quand même les glyphes. Fournir plus de détail source
- * (résolution ≥ zoom × un facteur confortable) neutralise l'essentiel de cet
- * effet sans toucher au Scale Manager ni au mapping des coordonnées d'input —
- * seule la police en profite, tout le reste du jeu (sprites, caméra, clics)
- * est inchangé.
+ * Vaut 1 — c'est-à-dire : AUCUN supersampling. Ça mérite une explication, parce que
+ * ce réglage a longtemps valu 4 à 10.
+ *
+ * Le jeu tourne en `pixelArt: true` : la texture d'un Text est affichée en NEAREST.
+ * Avec les anciennes polices (Press Start 2P, Verdana), qui sont LISSES, le glyphe
+ * rasterisé en canvas était anti-aliasé — et un anti-aliasing échantillonné en
+ * NEAREST ressort grignoté. On compensait en rasterisant à ×4-×10 pour donner au
+ * filtre « assez de matière ». Un pansement sur une incompatibilité de fond entre
+ * une police lisse et un rendu pixel.
+ *
+ * Neatpixels est une police PIXEL : ses glyphes sont déjà des grilles de pixels
+ * pleins, nets à l'échelle 1:1. Supersampler puis ré-échantillonner en NEAREST ne
+ * l'améliore pas — ça la DÉGRADE (la minification ne retient qu'une fraction des
+ * pixels rasterisés, et les traits d'un pixel de large disparaissent par endroits).
+ * À résolution 1, le glyphe est écrit tel quel dans le canvas, et le navigateur
+ * agrandit ensuite le tout par duplication de pixels (`image-rendering: pixelated`).
+ * Net à tous les zooms, et des canvas de texte 16 à 100× plus petits au passage.
  */
-let TEXT_RESOLUTION = 4;
+let TEXT_RESOLUTION = 1;
 
-/** À appeler une seule fois au boot (`main.ts`), après `new Phaser.Game()`,
- *  une fois que `game.scale.zoom` reflète la valeur réellement choisie. */
-export function setTextResolution(zoom: number): void {
-  // Plafond à 10 : la texture de texte est affichée sous filtrage NEAREST
-  // (pixelArt:true) — quand sa densité dépasse largement le zoom réel, la
-  // minification ne retient qu'une fraction des pixels rasterisés et les
-  // micro-glyphes (9-10px) ressortent "grignotés" (bruit de sous-échantillonnage,
-  // aggravé par le hinting du navigateur aux toutes petites tailles de police).
-  // 10 couvre les zooms réels desktop (FIT plafonne en pratique vers 2-4 →
-  // marge ≥ 2.5× au pire) : assez de détail source pour garder les gros textes
-  // nets (l'acquis de cette passe), sans sur-échantillonner à l'excès ni faire
-  // exploser la taille des canvas de texte.
-  TEXT_RESOLUTION = Math.min(10, Math.max(4, Math.ceil(zoom * 3)));
+/** À appeler une seule fois au boot (`main.ts`), après `new Phaser.Game()`.
+ *  Conservé (l'appel existe dans main.ts) mais désormais sans effet : avec une
+ *  police pixel, la bonne résolution est 1 quel que soit le zoom — voir ci-dessus. */
+export function setTextResolution(_zoom: number): void {
+  TEXT_RESOLUTION = 1;
 }
 
 /**
- * Police UI moderne — lisible sans zoom, même après le downscale Scale.FIT
- * sur mobile (×0.47 à 375 CSS px). Verdana est large et très lisible aux
- * petites tailles, disponible partout sans chargement externe.
+ * Police de l'interface. Historiquement Verdana : un choix de LISIBILITÉ, assumé
+ * contre l'identité pixel, parce que 'Press Start 2P' était illisible aux petites
+ * tailles. Neatpixels règle le dilemme — c'est une police pixel dessinée pour du
+ * corps de texte, lisible là où Press Start 2P ne l'était pas.
  *
- * Règle : FONT (pixel) = identité — titre du jeu, gros titres d'écran.
- *         FONT_UI (moderne) = TOUT le reste : corps, labels, stats, boutons.
+ * Conservé comme alias de FONT (plutôt que supprimé) : ~200 usages dans les scènes
+ * s'appuient dessus, et un import unique évite un rename massif à faible valeur.
+ * Le jeu n'a désormais plus qu'UNE famille de texte — cf. FONT_TITLE/FONT_HUD pour
+ * les variantes de hiérarchie.
  */
-export const FONT_UI = "Verdana, 'Segoe UI', Tahoma, Geneva, sans-serif";
+export const FONT_UI = FONT;
 
-/** Échelle typographique officielle (px logiques 800×600) — voir UI_UX_GUIDELINES.md §2.2 */
+/**
+ * Échelle typographique — voir UI_UX_GUIDELINES.md §2.2.
+ *
+ * ⚠ TOUTES LES VALEURS SONT DES MULTIPLES DE 7. Ce n'est pas une coquetterie :
+ * c'est la condition pour que le texte soit NET.
+ *
+ * Neatpixels est dessinée sur une grille de 7 pixels par em (mesuré dans le TTF :
+ * ascendante = 2048 unités = 7 px, et toutes les avances de glyphe sont des
+ * multiples de 2048/7). Une police pixel n'est nette QUE rastérisée à sa taille de
+ * grille ou à un multiple entier : à 9, 10, 12, 13 ou 15 px — l'ancienne échelle —
+ * chaque glyphe tombait ENTRE les pixels, et le rastériseur du navigateur
+ * l'anti-aliasait. Ce flou est cuit dans le canvas 2D du Text AVANT que Phaser ne
+ * voie quoi que ce soit : aucun réglage de filtrage (pixelArt, NEAREST, résolution
+ * de texte) ne peut le rattraper après coup. C'est ce qui a fait tourner en rond
+ * toutes les tentatives précédentes.
+ *
+ * Le corollaire est une échelle plus grossière — trois tailles au lieu de cinq. Elle
+ * est native au pixel art : on ne peut pas avoir à la fois une grille de 7 px et
+ * cinq paliers distincts en dessous de 21 px.
+ *
+ * Si l'échelle devait redevenir plus fine, il faudrait changer de police (une police
+ * à grille de 8 px donnerait 8/16/24) ou passer les textes en BitmapText.
+ */
 export const TYPE = {
-  TITLE:   15,  // titre d'écran (INVENTAIRE, SKILLS…)
-  HEADING: 13,  // nom d'item / de talent / speaker
-  BODY:    12,  // corps de texte, dialogue, valeurs
-  LABEL:   10,  // labels de stats, texte secondaire
-  SMALL:    9,  // badges, hints, micro-texte — MINIMUM absolu
+  /** Titres d'écran — rendus en police BOSS (cf. titleStyle), grille 18. */
+  TITLE:   18,
+  /** Titres de section, noms d'items — Standard, 3 × grille. */
+  HEADING: 21,
+  /** Corps de texte, dialogues, valeurs — Standard, 2 × grille. */
+  BODY:    14,
+  /** Libellés secondaires — MÊME taille que BODY : on les distingue par la COULEUR
+   *  (UI.TXT_MUTED) et non par la taille. Une police à grille de 7 n'offre pas de
+   *  palier intermédiaire entre 7 et 14, et 7 serait illisible pour un libellé. */
+  LABEL:   14,
+  /** Micro-texte, HUD dense, badges — rendus en police MINIMAL (cf. hudStyle),
+   *  grille 10. C'est le seul moyen d'avoir un palier lisible sous 14 px : Standard
+   *  n'offre que 7, trop petit. Minimal est justement dessinée pour ça. */
+  SMALL:   10,
 } as const;
 
 /** Constantes de layout réutilisables */
@@ -155,21 +194,91 @@ export interface UiStyleOpts {
  * `pxStyle` reste disponible pour la police pixel (titres identitaires,
  * scènes non migrées).
  */
+/**
+ * Grille de dessin de CHAQUE variante Neatpixels, en pixels — mesurée dans les TTF
+ * (toutes les avances de glyphe sont des multiples de `unitsPerEm / grille`).
+ *
+ * C'est le point qu'on avait manqué : les quatre polices n'ont PAS la même grille.
+ * Une police pixel n'est nette qu'à sa taille de grille ou à un multiple entier ;
+ * arrondir Boss au multiple de 7 le plus proche (18 → 21) la rendrait floue, alors
+ * même qu'on l'utilise pour les titres. C'est aussi ce qui débloque la hiérarchie
+ * typographique : trois polices, trois grilles, donc plus de paliers nets
+ * disponibles qu'avec une seule.
+ */
+const FONT_GRIDS: { match: string; grid: number }[] = [
+  { match: 'Neatpixels Boss',    grid: 18 }, // titres — 18 / 36
+  { match: 'Neatpixels Minimal', grid: 10 }, // HUD dense — 10 / 20 / 30
+  { match: 'Neatpixels Blocks',  grid: 7  },
+  { match: 'Neatpixels',         grid: 7  }, // Standard (corps) — 7 / 14 / 21 / 28
+];
+
+/** Grille par défaut (Neatpixels Standard). */
+export const FONT_GRID_PX = 7;
+
+/** Grille de dessin de la famille de police donnée. */
+export function fontGrid(fontFamily: string): number {
+  // Ordre important : 'Neatpixels Boss' contient 'Neatpixels', donc on teste du plus
+  // spécifique au plus générique.
+  for (const { match, grid } of FONT_GRIDS) {
+    if (fontFamily.includes(match)) return grid;
+  }
+  return FONT_GRID_PX;
+}
+
+/**
+ * Recale une taille de police sur la grille de SA police.
+ *
+ * C'est LE verrou du rendu net, et il est ici plutôt que dans TYPE parce que ~160
+ * appels dans les scènes passent une taille LITTÉRALE (`uiStyle(9, …)`,
+ * `uiStyle(11, …)`) sans passer par TYPE. Corriger seulement TYPE aurait laissé la
+ * grande majorité des textes du jeu hors grille — donc flous. En verrouillant au
+ * point de passage unique, tout texte du jeu est net, y compris ceux qu'on écrira
+ * demain sans y penser.
+ *
+ * Plancher à une case de grille : jamais de texte à 0.
+ */
+export function snapFontSize(size: number, fontFamily: string = FONT): number {
+  const grid = fontGrid(fontFamily);
+  return Math.max(grid, Math.round(size / grid) * grid);
+}
+
+/**
+ * Choisit la POLICE et la TAILLE nette les plus proches de la taille demandée.
+ *
+ * C'est le cœur du système. Standard (grille 7) n'offre que 7, 14, 21, 28 : entre
+ * 7 (illisible pour un libellé) et 14, il n'y a rien. Or ~87 appels dans les scènes
+ * demandent 9 ou 10 px — du micro-texte parfaitement légitime (badges, hints,
+ * valeurs de HUD). Les rabattre sur 7 px les aurait rendus minuscules ; les monter à
+ * 14 px aurait fait exploser tous les layouts denses.
+ *
+ * La réponse est dans le pack lui-même : Neatpixels Minimal est dessinée sur une
+ * grille de 10 px, précisément pour ce registre. On route donc les petites tailles
+ * vers Minimal (10 px, net) et les autres vers Standard (14/21/28, net).
+ *
+ * Faire ce choix ICI plutôt que dans chaque scène, c'est ce qui permet de corriger
+ * les 87 appels sans en toucher un seul — et de garantir que tout texte écrit demain
+ * tombera lui aussi sur une grille.
+ */
+export function resolveFont(size: number): { family: string; size: number } {
+  if (size <= 11) return { family: FONT_HUD, size: 10 };            // Minimal — micro-texte
+  return { family: FONT, size: snapFontSize(size, FONT) };          // Standard — 14 / 21 / 28
+}
+
 export function uiStyle(
   size: number,
   color: string = UI.TXT_PARCHMENT,
   opts: UiStyleOpts = {},
 ): Phaser.Types.GameObjects.Text.TextStyle {
+  const { family, size: px } = resolveFont(size);
   const s: Phaser.Types.GameObjects.Text.TextStyle = {
-    fontSize:   `${size}px`,
+    // Taille ET police choisies ensemble : hors grille, le rastériseur du navigateur
+    // anti-aliase le glyphe, et ce flou est cuit dans le canvas avant même que Phaser
+    // ne le voie — aucun filtrage ne le rattrape après coup (cf. doc de TYPE).
+    fontSize:   `${px}px`,
     color,
-    fontFamily: FONT_UI,
-    // Le jeu tourne en pixelArt:true (filtrage NEAREST global, cf. main.ts) — sans ça,
-    // ce texte "moderne" (Verdana) hérite du même rendu blocky que les sprites au lieu
-    // d'un rendu net. `resolution` fait générer le canvas de texte en interne à une
-    // densité plus élevée avant le zoom du jeu, ce qui le garde net même sous NEAREST.
-    // Valeur calibrée sur le zoom réel par setTextResolution() (voir sa doc) — un `3`
-    // fixe ne suffit pas sur un grand écran où le Scale Manager choisit un zoom élevé.
+    fontFamily: family,
+    // resolution 1 : la police est déjà nette à l'échelle 1:1 ; sur-échantillonner
+    // puis ré-échantillonner en NEAREST la dégraderait (cf. doc de TEXT_RESOLUTION).
     resolution: TEXT_RESOLUTION,
   };
   const styleParts: string[] = [];
@@ -184,6 +293,72 @@ export function uiStyle(
   if (opts.align !== undefined)         s.align = opts.align;
   if (opts.lineSpacing !== undefined)   s.lineSpacing = opts.lineSpacing;
   return s;
+}
+
+/**
+ * Style de TITRE D'ÉCRAN — police Neatpixels Boss (grille 18).
+ *
+ * Une police différente, plus lourde, plutôt qu'un simple palier de taille au-dessus :
+ * c'est ce qui redonne au titre sa domination. Depuis le recalage sur grille, un titre
+ * en Standard tombait à la même taille que le corps de texte — la hiérarchie avait
+ * purement et simplement disparu.
+ */
+export function titleStyle(
+  color: string = UI.TXT_GOLD,
+  opts: UiStyleOpts = {},
+): Phaser.Types.GameObjects.Text.TextStyle {
+  const s: Phaser.Types.GameObjects.Text.TextStyle = {
+    fontSize:   `${snapFontSize(TYPE.TITLE, FONT_TITLE)}px`,
+    color,
+    fontFamily: FONT_TITLE,
+    resolution: TEXT_RESOLUTION,
+  };
+  if (opts.bold)   s.fontStyle = 'bold';
+  if (opts.stroke) { s.stroke = '#000000'; s.strokeThickness = 3; }
+  if (opts.wordWrapWidth !== undefined) s.wordWrap = { width: opts.wordWrapWidth };
+  if (opts.align !== undefined)         s.align = opts.align;
+  return s;
+}
+
+/**
+ * Tronque un texte pour qu'il tienne dans `maxWidth` PIXELS, avec une ellipse.
+ *
+ * Remplace les troncatures au nombre de CARACTÈRES (`slice(0, 4)`, `slice(0, 15)`…)
+ * qui parsèment les scènes. Une troncature au caractère ne veut rien dire : « MMMM »
+ * et « iiii » n'ont pas la même largeur, et surtout elle ne sait rien de la police ni
+ * de sa taille. C'est la cause structurelle des débordements — chaque changement de
+ * typo les faisait tous réapparaître ailleurs.
+ *
+ * Mesure réelle via un Text jetable (même coût que ce que font déjà `drawBadge` et le
+ * calcul de hauteur du popup d'inventaire).
+ */
+export function fitText(
+  scene: Phaser.Scene,
+  text: string,
+  style: Phaser.Types.GameObjects.Text.TextStyle,
+  maxWidth: number,
+): string {
+  // `wordWrap` retiré de la sonde : avec lui, `probe.width` vaut la largeur de WRAP et
+  // non celle du texte — la recherche binaire mesurerait une constante et renverrait
+  // n'importe quoi. On mesure toujours sur une seule ligne.
+  const probeStyle = { ...style };
+  delete probeStyle.wordWrap;
+
+  const probe = scene.make.text({ text, style: probeStyle }, false);
+  if (probe.width <= maxWidth) { probe.destroy(); return text; }
+
+  // Recherche du plus long préfixe qui tient, ellipse comprise.
+  let lo = 0, hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    probe.setText(`${text.slice(0, mid)}…`);
+    if (probe.width <= maxWidth) lo = mid; else hi = mid - 1;
+  }
+  probe.destroy();
+  // Même un seul caractère + ellipse ne tient pas : on rend l'ellipse seule plutôt
+  // qu'une chaîne vide. Un label qui DISPARAÎT est pire qu'un label tronqué — le
+  // joueur ne sait même plus qu'il y avait quelque chose là.
+  return lo <= 0 ? '…' : `${text.slice(0, lo)}…`;
 }
 
 /**
@@ -360,6 +535,100 @@ export function strokeSlotHighlight(
   g.strokeRoundedRect(x, y, size, size, radius);
 }
 
+/**
+ * Découpe neuf-tranches d'une texture, BAKÉE une fois pour toutes à la taille
+ * demandée, et mise en cache sous la clé `<texKey>@<w>x<h>`.
+ *
+ * Motif — le bug du cadre qui disparaît au scroll de l'inventaire :
+ * `addUiFrame` créait un `NineSlice`, qui est un GameObject à base de **Mesh**.
+ * La grille virtualisée en détruit et recrée des centaines par seconde pendant
+ * le scroll, sous masque géométrique. Dans ces conditions le Mesh lâchait : le
+ * cadre d'une case ne se dessinait plus, alors que le `Graphics` de fond et
+ * l'`Image` de l'icône de la MÊME case, eux, tenaient. Visuellement, la case
+ * perdait d'un coup son intérieur gris ET sa bordure dorée (les deux vivent dans
+ * cette unique texture) et laissait voir le bleu nuit de drawSlot dessous.
+ *
+ * En bakant la découpe en amont, une case n'affiche plus qu'une `Image` ordinaire
+ * à sa taille native — le chemin de rendu le plus robuste et le plus léger de
+ * Phaser. Zéro Mesh, zéro étirement au moment du rendu, et une seule texture
+ * partagée par toutes les cases d'une même taille.
+ *
+ * Le bake reproduit exactement la géométrie du NineSlice : les quatre coins
+ * (`slice`×`slice`) sont copiés à l'échelle 1:1 — donc restent nets — seuls les
+ * bords et le centre sont étirés, avec le lissage désactivé.
+ */
+function slicedFrameTexture(
+  scene: Phaser.Scene, texKey: string, w: number, h: number, slice: number,
+): string | null {
+  // `slice` fait PARTIE de l'identité du bake : deux découpes différentes à la
+  // même taille produisent deux images différentes. Sans lui dans la clé, le
+  // second appelant récupérerait silencieusement le bake du premier.
+  const key = `${texKey}@${w}x${h}s${slice}`;
+  if (scene.textures.exists(key)) return key;
+
+  const src = scene.textures.get(texKey).getSourceImage();
+  if (!(src instanceof HTMLImageElement) && !(src instanceof HTMLCanvasElement)) return null;
+  const sw = src.width;
+  const sh = src.height;
+  // Cadre trop petit pour porter ses propres coins : la découpe n'a pas de sens.
+  if (sw <= slice * 2 || sh <= slice * 2 || w <= slice * 2 || h <= slice * 2) return null;
+
+  const canvas = document.createElement('canvas');
+  canvas.width  = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.imageSmoothingEnabled = false;
+
+  // Bandes source / destination : coin | milieu étiré | coin.
+  const sx = [0, slice, sw - slice];
+  const sy = [0, slice, sh - slice];
+  const sWid = [slice, sw - slice * 2, slice];
+  const sHei = [slice, sh - slice * 2, slice];
+  const dx = [0, slice, w - slice];
+  const dy = [0, slice, h - slice];
+  const dWid = [slice, w - slice * 2, slice];
+  const dHei = [slice, h - slice * 2, slice];
+
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      ctx.drawImage(
+        src,
+        sx[c]!, sy[r]!, sWid[c]!, sHei[r]!,
+        dx[c]!, dy[r]!, dWid[c]!, dHei[r]!,
+      );
+    }
+  }
+  scene.textures.addCanvas(key, canvas);
+  return key;
+}
+
+/**
+ * Cadre UI en VRAI asset pixel art (packs GUI Kit / Retro Inventory — voir
+ * ASSET_SOURCES.md §ui/), posé PAR-DESSUS le fond dessiné par drawSlot/drawCard.
+ * (cx, cy) = CENTRE du cadre (aligné sur les conventions d'Image Phaser).
+ *
+ * Renvoie une `Image` à sa taille native, découpée en neuf tranches EN AMONT
+ * (cf. slicedFrameTexture) — plus de `NineSlice` à l'exécution, dont le Mesh
+ * décrochait sous le scroll virtualisé de l'inventaire.
+ *
+ * Texture absente (script scripts/copy-ui-assets.mjs pas lancé) : retourne null —
+ * l'appelant garde son rendu Graphics existant, rien ne casse.
+ */
+export function addUiFrame(
+  scene: Phaser.Scene,
+  cx: number, cy: number, w: number, h: number,
+  texKey = 'ui_slot_frame',
+  slice = 8,
+): Phaser.GameObjects.Image | null {
+  if (!scene.textures.exists(texKey)) return null;
+  const baked = slicedFrameTexture(scene, texKey, Math.round(w), Math.round(h), slice);
+  // Bake impossible (cadre dégénéré) : repli sur l'étirement direct, qui reste
+  // meilleur que pas de cadre du tout.
+  if (!baked) return scene.add.image(cx, cy, texKey).setDisplaySize(w, h);
+  return scene.add.image(cx, cy, baked);
+}
+
 /** Séparateur horizontal discret — remplace les lineStyle/moveTo/lineTo répétés. */
 export function drawDivider(
   g: Phaser.GameObjects.Graphics,
@@ -403,7 +672,13 @@ export function drawScrollbar(
  *  les taux rares (ex. 0.4% plutôt que 0%). Partagé entre ArsenalScene/BestiaryScene. */
 export function formatDropRate(rate: number): string {
   const pct = rate * 100;
-  return pct >= 10 ? `${Math.round(pct)}%` : pct >= 1 ? `${pct.toFixed(1)}%` : `${pct.toFixed(2)}%`;
+  if (pct >= 10) return `${Math.round(pct)}%`;
+  if (pct >= 1)  return `${pct.toFixed(1)}%`;
+  // Un taux non nul ne doit JAMAIS s'afficher « 0.00% » : le joueur en conclurait
+  // que le drop est impossible, alors qu'il est simplement très rare (un Hidden est
+  // à 0,07%). En dessous du seuil affichable, on le dit explicitement.
+  if (pct > 0 && pct < 0.01) return '<0.01%';
+  return `${pct.toFixed(2)}%`;
 }
 
 /** Result of {@link renderScrollableText} — caller owns both objects and must push
@@ -800,12 +1075,11 @@ export function pxStyle(
   stroke = false,
 ): Phaser.Types.GameObjects.Text.TextStyle {
   const s: Phaser.Types.GameObjects.Text.TextStyle = {
-    fontSize: `${size}px`,
+    // Même verrou que uiStyle() : taille recalée sur la grille de 7 px de Neatpixels,
+    // sans quoi le glyphe est anti-aliasé à la rastérisation (cf. doc de TYPE).
+    fontSize: `${snapFontSize(size, FONT)}px`,
     color,
     fontFamily: FONT,
-    // Même raison que dans uiStyle() (voir sa doc) — "Press Start 2P" a des
-    // courbes/diagonales qui aliasent tout autant sous le zoom NEAREST du jeu ;
-    // ça ne rend pas la police moins "8-bit", juste ses bords moins déchiquetés.
     resolution: TEXT_RESOLUTION,
   };
   if (stroke) {
@@ -875,4 +1149,18 @@ export function resonanceColor(pct: number): string {
   if (pct >= 60) return UI.TXT_CYAN;
   if (pct >= 30) return UI.TXT_WHITE;
   return UI.TXT_MUTED;
+}
+
+/**
+ * Ligne de Résonance affichée au joueur : `Résonance 72% — Claire`.
+ *
+ * `StatRollSystem.getResonanceLabel()` renvoie un libellé FRANÇAIS qui sert de
+ * CLÉ dans la logique (`label === 'Vibrante'` conditionne les notifications de
+ * drop) : on ne peut pas le traduire à la source sans casser ces comparaisons.
+ * On le traduit donc ICI, au point d'affichage — les trois sites qui montraient
+ * cette ligne la composaient chacun à la main, en français en dur.
+ */
+export function formatResonanceLine(quality: number): string {
+  const key = StatRollSystem.getResonanceLabel(quality);
+  return `${t('resonance.label')} ${quality}% — ${t(`resonance.${key}`)}`;
 }

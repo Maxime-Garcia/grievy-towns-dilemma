@@ -1,5 +1,6 @@
 import { Weapon, Armor, Accessory, Consumable, Material, KeyItem, Skin, ItemRarity, ItemType, WeaponType, ElementType } from '../types';
 import { StatRollSystem } from '../systems/StatRollSystem';
+import { GENERATED_WEAPONS, GENERATED_ARMORS } from './itemsGenerated';
 
 // ── WEAPONS ────────────────────────────────────────────────────
 
@@ -996,6 +997,9 @@ const ALL_ITEM_DEFS: import('../types').Item[] = [
   ...WEAPONS, ...ARMORS, ...ACCESSORIES, ...CONSUMABLES, ...MATERIALS, ...KEY_ITEMS,
   ...HIDDEN_WEAPONS, ...HIDDEN_ARMORS, ...HIDDEN_ACCESSORIES,
   ...SKINS, ...EXTRA_WEAPONS, ...EXTRA_ARMORS, ...EXTRA_MATERIALS, ...SHOP_ARMORS,
+  // Catalogue généré depuis les packs d'icônes 32x32 (cf. scripts/genItems.mjs) —
+  // ~390 armes/armures qui donnent au loot de quoi varier réellement.
+  ...GENERATED_WEAPONS, ...GENERATED_ARMORS,
 ] as import('../types').Item[];
 
 // Génère equipStats (centre de equipRanges) + valide la data en dev — no-op

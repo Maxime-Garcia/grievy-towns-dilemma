@@ -1,5 +1,5 @@
 import { SaveSystem } from '../systems/SaveSystem';
-import { UI, drawGlowPanel, pxStyle, uiStyle } from '../utils/UITheme';
+import { UI, TYPE, drawCard, drawGlowPanel, uiStyle, titleStyle, fitText } from '../utils/UITheme';
 import { t } from '../i18n';
 
 const GAME_VERSION = 'v0.7.0';
@@ -105,24 +105,25 @@ export class MainMenuScene extends Phaser.Scene {
     frame.lineStyle(1, UI.BORDER_LIT, 0.3);
     frame.strokeRoundedRect(8, 8, W - 16, H - 16, 4);
 
-    const deco = this.add.graphics().setDepth(85).setScrollFactor(0);
-    deco.lineStyle(1, UI.SEPARATOR, 1);
-    deco.beginPath(); deco.moveTo(18, 96);     deco.lineTo(W - 18, 96);     deco.strokePath();
-    deco.beginPath(); deco.moveTo(18, H - 70); deco.lineTo(W - 18, H - 70); deco.strokePath();
-    deco.lineStyle(1, UI.GLOW_GOLD, 0.18);
-    deco.beginPath(); deco.moveTo(W / 2 - 120, 96); deco.lineTo(W / 2 + 120, 96); deco.strokePath();
-
-    // ── Titre ── halo doré derrière le texte
-    const titleGlow = this.add.graphics().setAlpha(0).setDepth(90).setScrollFactor(0);
-    titleGlow.fillStyle(UI.GLOW_GOLD, 0.06); titleGlow.fillEllipse(W / 2, 40, 520, 60);
-    titleGlow.fillStyle(UI.GLOW_GOLD, 0.10); titleGlow.fillEllipse(W / 2, 40, 400, 44);
-    titleGlow.fillStyle(UI.GLOW_GOLD, 0.15); titleGlow.fillEllipse(W / 2, 40, 300, 32);
-
-    const title = this.add.text(W / 2, 36, "GRIEVY TOWN'S DILEMMA", {
-      ...pxStyle(24, UI.TXT_GOLD, true),
-      stroke: '#000000',
-      strokeThickness: 5,
+    // ── Titre — niveau de lecture 1, seul élément identitaire de l'écran ──
+    // Police Boss via titleStyle, à 36 px = 2× sa grille de 18 (multiple entier
+    // → rendu net). wordWrap de sécurité : le titre ne peut plus déborder du cadre.
+    const titleY = Math.round(H * 0.13);
+    const title = this.add.text(W / 2, titleY, "GRIEVY TOWN'S DILEMMA", {
+      ...titleStyle(UI.TXT_GOLD, { stroke: true, wordWrapWidth: W - 80, align: 'center' }),
+      fontSize: '36px',
+      strokeThickness: 5, // contour renforcé : le titre flotte sur le diorama clair
     }).setOrigin(0.5).setAlpha(0).setDepth(91).setScrollFactor(0);
+
+    // Halo doré derrière le titre — dimensionné sur le TEXTE MESURÉ, plus des
+    // valeurs en dur : le halo suit la largeur réelle du rendu, quelle que soit
+    // la police ou la taille (fini le titre qui déborde de son halo).
+    const titleGlow = this.add.graphics().setAlpha(0).setDepth(90).setScrollFactor(0);
+    const titleW = title.width;
+    const titleH = title.height;
+    titleGlow.fillStyle(UI.GLOW_GOLD, 0.06); titleGlow.fillEllipse(W / 2, titleY, titleW + 150, titleH + 42);
+    titleGlow.fillStyle(UI.GLOW_GOLD, 0.10); titleGlow.fillEllipse(W / 2, titleY, titleW + 90,  titleH + 26);
+    titleGlow.fillStyle(UI.GLOW_GOLD, 0.15); titleGlow.fillEllipse(W / 2, titleY, titleW + 40,  titleH + 12);
 
     this.tweens.add({
       targets: [title, titleGlow], alpha: 1, duration: 500, ease: 'Quad.easeOut',
@@ -136,48 +137,85 @@ export class MainMenuScene extends Phaser.Scene {
       },
     });
 
-    this.add.text(W / 2, 64, t('menu.subtitle'), uiStyle(11, UI.TXT_MUTED))
-      .setOrigin(0.5).setDepth(91).setScrollFactor(0);
-    this.add.text(W / 2, 82, '« Chaque victoire est une perte. »', uiStyle(10, UI.TXT_HINT, { italic: true }))
-      .setOrigin(0.5).setDepth(91).setScrollFactor(0);
+    // ── Lignes décoratives — dérivées du titre mesuré et du bas d'écran ──
+    const decoY = titleY + Math.round(titleH / 2) + 22;
+    const deco = this.add.graphics().setDepth(85).setScrollFactor(0);
+    deco.lineStyle(1, UI.SEPARATOR, 1);
+    deco.beginPath(); deco.moveTo(18, decoY);  deco.lineTo(W - 18, decoY);  deco.strokePath();
+    deco.beginPath(); deco.moveTo(18, H - 70); deco.lineTo(W - 18, H - 70); deco.strokePath();
+    deco.lineStyle(1, UI.GLOW_GOLD, 0.18);
+    deco.beginPath(); deco.moveTo(W / 2 - titleW / 2, decoY); deco.lineTo(W / 2 + titleW / 2, decoY); deco.strokePath();
 
-    // ── Boutons ──
+    // ── Boutons — niveau de lecture 2 : les deux seules ACTIONS de l'écran ──
     const slots      = SaveSystem.listSlots();
     const hasAnySave = slots.some(s => s !== null);
 
-    this.makeBtn(W / 2, 160, t('menu.new_game'), UI.ACCENT_VIOLET, 0,
+    const btnY = Math.round(H * 0.30);
+    this.makeBtn(W / 2, btnY, t('menu.new_game'), UI.ACCENT_VIOLET, 0,
       () => this.showNewGameMenu(slots));
     if (hasAnySave) {
-      this.makeBtn(W / 2, 216, t('menu.load_save'), UI.GLOW_GOLD, 80,
+      this.makeBtn(W / 2, btnY + 62, t('menu.load_save'), UI.GLOW_GOLD, 80,
         () => this.showLoadMenu(slots));
     }
 
-    // ── Save slot cards ──
-    this.add.text(W / 2, 276, t('menu.save_slots'), uiStyle(10, UI.TXT_HINT))
+    // ── Cartes de sauvegarde — niveau de lecture 3 : l'ÉTAT des trois slots.
+    // Tappables (action en un geste) : carte remplie = charger directement la
+    // partie, carte vide = nouvelle partie sur ce slot. Les modales des boutons
+    // restent le chemin explicite.
+    const CARD_W   = 440;
+    const CARD_H   = 56;   // ≥ 44 px : toute la carte est la zone tactile
+    const CARD_GAP = 14;
+    const sectionY = Math.round(H * 0.53);
+    const cardsTop = sectionY + 18;
+
+    this.add.text(W / 2, sectionY, t('menu.save_slots'), uiStyle(TYPE.SMALL, UI.TXT_MUTED, { bold: true }))
       .setOrigin(0.5).setDepth(91).setScrollFactor(0);
 
     for (let i = 0; i < 3; i++) {
-      const s    = slots[i];
-      const cy   = 298 + i * 56;
+      const s     = slots[i];
+      const cy    = cardsTop + i * (CARD_H + CARD_GAP);
+      const cardX = W / 2 - CARD_W / 2;
+
       const card = this.add.graphics().setAlpha(0).setDepth(90).setScrollFactor(0);
-      drawGlowPanel(card, W / 2 - 200, cy, 400, 44, UI.SEPARATOR, UI.BG_MID, 4);
+      const drawCardBg = (hover: boolean) => {
+        card.clear();
+        drawCard(card, cardX, cy, CARD_W, CARD_H, {
+          bg:     hover ? UI.BTN_BG_HOVER : UI.BG_MID,
+          accent: s ? UI.CORNER : undefined,  // barre dorée = slot occupé
+          radius: 5,
+        });
+        if (hover) {
+          card.lineStyle(1, s ? UI.CORNER : UI.ACCENT_ARCANE, 0.8);
+          card.strokeRoundedRect(cardX, cy, CARD_W, CARD_H, 5);
+        }
+      };
+      drawCardBg(false);
 
       const cardTexts: Phaser.GameObjects.Text[] = [];
+      let nameTxt: Phaser.GameObjects.Text | null = null;
       if (s) {
+        // Nom clampé en PIXELS (fitText) — jusqu'à 16 caractères de largeur
+        // imprévisible. Niveau et métadonnées vivent à droite, jamais tronqués.
+        const nameStyle = uiStyle(14, UI.TXT_PARCHMENT, { bold: true });
+        nameTxt = this.add.text(cardX + 16, cy + 27,
+          fitText(this, s.playerName, nameStyle, CARD_W - 32 - 150), nameStyle)
+          .setDepth(91).setScrollFactor(0);
         cardTexts.push(
-          this.add.text(W / 2 - 188, cy + 6,
-            `${t('menu.slot')} ${i + 1}`, uiStyle(10, UI.TXT_GOLD, { bold: true })).setDepth(91).setScrollFactor(0),
-          this.add.text(W / 2 - 188, cy + 23,
-            `${s.playerName}  Lv.${s.level}`, uiStyle(11, UI.TXT_PARCHMENT)).setDepth(91).setScrollFactor(0),
-          this.add.text(W / 2 + 190, cy + 6,
-            `${s.clearedZones}/6 zones`, uiStyle(10, UI.TXT_MUTED)).setOrigin(1, 0).setDepth(91).setScrollFactor(0),
-          this.add.text(W / 2 + 190, cy + 23,
-            SaveSystem.formatPlaytime(s.playtime), uiStyle(10, UI.TXT_MUTED)).setOrigin(1, 0).setDepth(91).setScrollFactor(0),
+          this.add.text(cardX + 16, cy + 9,
+            `${t('menu.slot')} ${i + 1}`.toUpperCase(), uiStyle(TYPE.SMALL, UI.TXT_GOLD, { bold: true }))
+            .setDepth(91).setScrollFactor(0),
+          nameTxt,
+          this.add.text(cardX + CARD_W - 16, cy + 9,
+            `Lv.${s.level} — ${s.clearedZones}/6 zones`, uiStyle(TYPE.SMALL, UI.TXT_MUTED))
+            .setOrigin(1, 0).setDepth(91).setScrollFactor(0),
+          this.add.text(cardX + CARD_W - 16, cy + 30,
+            SaveSystem.formatPlaytime(s.playtime), uiStyle(TYPE.SMALL, UI.TXT_MUTED))
+            .setOrigin(1, 0).setDepth(91).setScrollFactor(0),
         );
       } else {
         cardTexts.push(
-          this.add.text(W / 2, cy + 22,
-            `${t('menu.slot')} ${i + 1}  —  ${t('menu.slot.empty')}`, uiStyle(10, UI.TXT_HINT))
+          this.add.text(W / 2, cy + CARD_H / 2,
+            `${t('menu.slot')} ${i + 1}  —  ${t('menu.slot.empty')}`, uiStyle(TYPE.SMALL, UI.TXT_HINT))
             .setOrigin(0.5).setDepth(91).setScrollFactor(0),
         );
       }
@@ -186,11 +224,38 @@ export class MainMenuScene extends Phaser.Scene {
         targets: [card, ...cardTexts], alpha: 1, duration: 350,
         delay: 400 + i * 100, ease: 'Quad.easeOut',
       });
+
+      const hit = this.add.rectangle(W / 2, cy + CARD_H / 2, CARD_W, CARD_H, 0, 0)
+        .setInteractive({ useHandCursor: true }).setDepth(92).setScrollFactor(0);
+      hit.on('pointerover', () => { drawCardBg(true); nameTxt?.setColor(UI.TXT_GOLD); });
+      hit.on('pointerout',  () => { drawCardBg(false); nameTxt?.setColor(UI.TXT_PARCHMENT); });
+      hit.on('pointerdown', () => {
+        // Feedback immédiat (< 100 ms) avant la transition
+        this.tweens.add({ targets: [card, ...cardTexts], alpha: 0.7, duration: 60, yoyo: true });
+        if (s) {
+          const state = SaveSystem.load(i);
+          if (state) {
+            state.saveSlot = i;
+            this.transitionTo('GameScene', { gameState: state });
+          } else {
+            // La carte affiche des métadonnées (listSlots) mais load() échoue :
+            // sauvegarde corrompue ou migration ratée. Sans ce chemin, le joueur
+            // tapait une carte visiblement pleine et RIEN ne se passait — cul-de-sac
+            // silencieux, d'autant plus déroutant que le feedback visuel, lui, jouait.
+            this.showLoadMenu(SaveSystem.listSlots());
+          }
+        } else {
+          this.transitionTo('NameInputScene', { slot: i });
+        }
+      });
     }
 
-    // ── Footer ──
-    this.add.text(W / 2, H - 14, t('menu.controls'), uiStyle(9, UI.TXT_HINT))
-      .setOrigin(0.5, 1).setDepth(91).setScrollFactor(0);
+    // Affordance des cartes — hardcodé FR comme les onglets du sac (BAG_TABS)
+    this.add.text(W / 2, cardsTop + 3 * CARD_H + 2 * CARD_GAP + 10,
+      'Touchez une carte pour jouer', uiStyle(TYPE.SMALL, UI.TXT_HINT))
+      .setOrigin(0.5, 0).setDepth(91).setScrollFactor(0);
+
+    // ── Footer — version uniquement (le rappel des touches vit dans Pause > Touches)
     this.add.text(W - 14, H - 14, GAME_VERSION, uiStyle(9, UI.TXT_HINT))
       .setOrigin(1, 1).setDepth(91).setScrollFactor(0);
   }
@@ -288,10 +353,11 @@ export class MainMenuScene extends Phaser.Scene {
     g.fillRect(0, 0, W, H);
 
     // Corridor central : la zone occupée par le titre/boutons/cartes de
-    // sauvegarde va de x≈190 à x≈610 (colonne 400±200 + marge). Au-delà,
-    // l'assombrissement retombe à ~0 pour préserver la vivacité des flancs.
+    // sauvegarde (colonne centrale ±26 % de W — couvre les cartes de 440 px
+    // + marge). Au-delà, l'assombrissement retombe à ~0 pour préserver la
+    // vivacité des flancs.
     const cx      = W / 2;
-    const halfHot = W * 0.26;   // bords du corridor ≈ 190 / 610 sur 800px
+    const halfHot = W * 0.26;
     const step    = 10;
     for (let x = 0; x < W; x += step) {
       const dist  = Math.abs((x + step / 2) - cx);
@@ -303,9 +369,8 @@ export class MainMenuScene extends Phaser.Scene {
       }
     }
 
-    // Bande pied de page — les libellés footer (contrôles + version) sont
-    // en TXT_HINT (très sombre) sur l'herbe déjà sombre : renforcer là aussi,
-    // y compris sur les flancs (le texte version est collé au coin droit).
+    // Bande pied de page — le libellé de version est en TXT_HINT (très sombre)
+    // sur l'herbe déjà sombre : renforcer là aussi (il est collé au coin droit).
     const footerH = 34;
     g.fillStyle(0x000000, 0.28);
     g.fillRect(0, H - footerH, W, footerH);
@@ -860,8 +925,8 @@ export class MainMenuScene extends Phaser.Scene {
     entryDelay: number,
     action: () => void,
   ) {
-    const BW = 240;
-    const BH = 44;   // hauteur tactile standard (≥ 44 px)
+    const BW = 280;  // élargi avec le canvas 960 — présence de niveau 2
+    const BH = 48;   // hauteur tactile standard (≥ 44 px)
     const bg = this.add.graphics().setScrollFactor(0);
 
     const draw = (hover: boolean) => {
@@ -929,11 +994,14 @@ export class MainMenuScene extends Phaser.Scene {
       drawGlowPanel(card, W / 2 - 200, by, 400, 48, UI.SEPARATOR, UI.BG_MID, 4);
       elems.push(card);
 
+      const col   = s ? UI.TXT_RED : UI.TXT_GREEN;
+      const style = uiStyle(11, col, { bold: true });
+      // Nom clampé en pixels (fitText) — un pseudo de 16 caractères larges
+      // débordait de la carte. La clé i18n overwrite porte déjà ses crochets.
       const label = s
-        ? `${t('menu.slot')} ${i + 1}  [${t('menu.slot.overwrite')}]  ${s.playerName} Lv.${s.level}`
+        ? `${t('menu.slot')} ${i + 1}  ${t('menu.slot.overwrite')}  ${fitText(this, s.playerName, style, 160)} Lv.${s.level}`
         : `${t('menu.slot')} ${i + 1}  —  ${t('menu.new_game')}`;
-      const col = s ? UI.TXT_RED : UI.TXT_GREEN;
-      const btn = this.add.text(W / 2, by + 24, label, uiStyle(11, col, { bold: true }))
+      const btn = this.add.text(W / 2, by + 24, label, style)
         .setOrigin(0.5).setDepth(97);
       // Hit zone = toute la carte (400×48 ≥ 44 px), pas seulement le texte
       const hit = this.add.rectangle(W / 2, by + 24, 400, 48, 0, 0)
@@ -984,8 +1052,10 @@ export class MainMenuScene extends Phaser.Scene {
       const card = this.add.graphics().setDepth(96);
       drawGlowPanel(card, W / 2 - 200, by, 400, 48, UI.SEPARATOR, UI.BG_MID, 4);
       elems.push(card);
-      const label = `${t('menu.slot')} ${i + 1}  ${s.playerName}  Lv.${s.level}  |  ${s.clearedZones}/6 zones`;
-      const btn   = this.add.text(W / 2, by + 24, label, uiStyle(11, UI.TXT_GREEN, { bold: true }))
+      const style = uiStyle(11, UI.TXT_GREEN, { bold: true });
+      // Nom clampé en pixels (fitText) — cf. showNewGameMenu
+      const label = `${t('menu.slot')} ${i + 1}  ${fitText(this, s.playerName, style, 160)}  Lv.${s.level}  |  ${s.clearedZones}/6 zones`;
+      const btn   = this.add.text(W / 2, by + 24, label, style)
         .setOrigin(0.5).setDepth(97);
       // Hit zone = toute la carte (400×48 ≥ 44 px), pas seulement le texte
       const hit = this.add.rectangle(W / 2, by + 24, 400, 48, 0, 0)

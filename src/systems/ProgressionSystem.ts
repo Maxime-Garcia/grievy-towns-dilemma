@@ -108,13 +108,16 @@ export class ProgressionSystem {
       attributes: attrs,
       attributePoints: 0,
       equipment: {},
-      // DEV: uniquement des armes — TOUTES celles du jeu, générées dynamiquement
-      // depuis ALL_ITEMS (mirror de GameScene.debugGiveAllWeapons()) plutôt qu'une
-      // liste maintenue à la main, pour rester à jour avec toute arme ajoutée plus
-      // tard sans oubli (l'ancienne liste ratait déjà les légendaires/mythiques/
-      // hidden). Plus d'armure/anneaux/potions ici, à la demande du joueur.
+      // DEV: uniquement des armes — celles ÉCRITES À LA MAIN (armes de zone, boss,
+      // Hidden…), pas le catalogue généré (`gen_*`, ~336 armes) : les inclure
+      // remplissait le sac à 395 entrées pour un cap de 60, et TOUT le loot suivant
+      // était alors silencieusement jeté (addToInventory refuse au-delà du cap) —
+      // le Mannequin d'Essai lui-même ne rendait plus rien. Les `gen_*` restent
+      // accessibles via la touche debug G.
+      // Plus d'armure/anneaux/potions ici, à la demande du joueur.
       inventory: Object.values(ALL_ITEMS)
-        .filter((item): item is Weapon => 'weaponType' in item && !!(item as Weapon).weaponType)
+        .filter((item): item is Weapon =>
+          'weaponType' in item && !!(item as Weapon).weaponType && !item.id.startsWith('gen_'))
         .map(item => ({ item, quantity: 1 })),
       gold: 50,
       unlockedSkills: ['dash', 'echo_strike'],

@@ -1,11 +1,11 @@
 import { PlayerState, Item, ItemRarity, RARITY_COLORS } from '../types';
 import { GameScene } from './GameScene';
 import { SKILL_MAP } from '../data/skills';
-import { UI, drawGlowPanel, drawSlot, drawBar, uiStyle, resonanceColor } from '../utils/UITheme';
+import { UI, drawGlowPanel, drawSlot, drawBar, addUiFrame, uiStyle, resonanceColor, TYPE, fitText, formatResonanceLine } from '../utils/UITheme';
 import { StatRollSystem } from '../systems/StatRollSystem';
 import { t, localizeItem, localizeSkill } from '../i18n';
 
-const BAR_W = 178;
+const BAR_W = 210;
 const HP_H  = 16;
 const MP_H  = 11;
 const BAR_X = 42;
@@ -41,6 +41,12 @@ export class UIScene extends Phaser.Scene {
   private levelText!: Phaser.GameObjects.Text;
   private xpBar!: Phaser.GameObjects.Graphics;
   private playerNameText!: Phaser.GameObjects.Text;
+  /** Largeur max du nom du joueur (px) — calculee dans create(), appliquee via fitText. */
+  private nameMaxW = 160;
+  /** Style du nom, conserve pour que fitText mesure avec EXACTEMENT la meme police. */
+  private nameStyle!: Phaser.Types.GameObjects.Text.TextStyle;
+  /** Dernier nom BRUT passe a fitText — evite de le recalculer a chaque frame. */
+  private lastRawName = '';
 
   private HP_Y!: number;
   private MP_Y!: number;
@@ -88,6 +94,12 @@ export class UIScene extends Phaser.Scene {
   }
 
   create() {
+    // Phaser n'appelle PAS scene.shutdown() de lui-même : Systems.shutdown() se
+    // contente d'ÉMETTRE l'événement SHUTDOWN. Sans cette ligne, la méthode
+    // shutdown() ci-dessous est du CODE MORT — les listeners qu'elle est censée
+    // retirer survivent à la scène, et chaque create() en empile une couche de plus.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
+
     const { width: W, height: H } = this.cameras.main;
 
     // ── DEV: build badge (top-left) — retirer avant release ─────────
@@ -95,7 +107,11 @@ export class UIScene extends Phaser.Scene {
     // sur fond translucide. Exclue volontairement de la règle "toujours uiStyle()" :
     // c'est un badge de debug monospace (lisibilité console), pas un texte de jeu —
     // uiStyle() impose FONT_UI (Verdana), incompatible avec l'esthétique recherchée ici.
-    const BUILD_LABEL = 'HIDDEN Wave 2: 15 passifs + 15 items (5afd17f)';
+    // Seul le NOM de la feature est écrit ici. Le hash est injecté au build par
+    // Vite (__BUILD_HASH__, cf. vite.config.ts) : l'écrire à la main était voué
+    // à mentir, puisqu'un hash n'existe qu'une fois le commit fait — et l'écrire
+    // dans le code refait le commit.
+    const BUILD_LABEL = `Correctifs code-reviewer pre-merge (${__BUILD_HASH__})`;
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',
@@ -109,11 +125,21 @@ export class UIScene extends Phaser.Scene {
     badgeText.setPosition(badgePad + 10, badgePad + 3);
 
     // ── Player stat panel (bottom-left) ─────────
-    const PANEL_H   = 66;
-    const PANEL_W   = BAR_X + BAR_W + 8;
-    const PANEL_TOP = H - PANEL_H - 4;
-    this.HP_Y = PANEL_TOP + 22;
-    this.MP_Y = PANEL_TOP + 44;
+    // Le panneau est reconstruit sur une BANDE DE TITRE dimensionnée pour le texte
+    // réel. Avant : le nom démarrait à PANEL_TOP+5 et, rendu en 14 px, descendait
+    // jusqu'à +24 — alors que la barre HP commençait à +22. Le nom mordait la barre.
+    // Le budget de la bande n'était que de 17 px pour un texte qui en fait 18.
+    const TITLE_BAND = 24;                 // nom + niveau (14 px) + respiration
+    const BAR_GAP    = 6;
+    const PANEL_H    = TITLE_BAND + HP_H + BAR_GAP + MP_H + 12;
+    const PANEL_W    = BAR_X + BAR_W + 12;
+    const PANEL_TOP  = H - PANEL_H - 4;
+    this.HP_Y = PANEL_TOP + TITLE_BAND;
+    this.MP_Y = this.HP_Y + HP_H + BAR_GAP;
+    // Largeur disponible pour le nom : tout ce qui reste à gauche du « Nv.XX ».
+    // Mesurée, pas devinée — c'est ce qui manquait (aucun clamp : un nom de 16
+    // caractères, le maximum autorisé par NameInputScene, entrait dans le niveau).
+    this.nameMaxW = PANEL_W - 10 - 44;
 
     // Glow panel : accent vert (vie) sur le cadre, ticks colorés par barre
     const panelGfx = this.add.graphics();
@@ -128,11 +154,12 @@ export class UIScene extends Phaser.Scene {
     this.add.text(10, this.HP_Y + 3, t('ui.hp'), uiStyle(10, UI.TXT_GREEN, { bold: true }));
     this.add.text(10, this.MP_Y + 1, t('ui.mp'), uiStyle(10, UI.TXT_BLUE, { bold: true }));
 
-    // Player name (top of panel)
-    this.playerNameText = this.add.text(10, PANEL_TOP + 5, '', uiStyle(11, UI.TXT_GOLD, { bold: true }));
+    // Player name (top of panel) — tronqué à la largeur réelle dans updateStats()
+    this.nameStyle = uiStyle(TYPE.BODY, UI.TXT_GOLD, { bold: true });
+    this.playerNameText = this.add.text(10, PANEL_TOP + 4, '', this.nameStyle);
 
     // Level (top-right of panel)
-    this.levelText = this.add.text(PANEL_W, PANEL_TOP + 5, '', uiStyle(11, UI.TXT_PARCHMENT))
+    this.levelText = this.add.text(PANEL_W - 4, PANEL_TOP + 5, '', uiStyle(TYPE.SMALL, UI.TXT_PARCHMENT))
       .setOrigin(1, 0);
 
     // HP bar + centred text
@@ -166,6 +193,9 @@ export class UIScene extends Phaser.Scene {
       const slotGfx = this.add.graphics();
       // Slot arrondi moderne (arcane fresh) — même primitive que l'inventaire
       drawSlot(slotGfx, sx, SY, SLOT_SZ, UI.SLOT_BORDER, { occupied: true, radius: 6 });
+      // Cadre pixel art réel (Retro Inventory) — même asset que les slots de
+      // l'inventaire (cohérence §7 guidelines) ; null si non copié, sans effet.
+      addUiFrame(this, sx + SLOT_SZ / 2, SY + SLOT_SZ / 2, SLOT_SZ, SLOT_SZ);
 
       const icon = this.add.image(sx + SLOT_SZ / 2, SY + SLOT_SZ / 2, 'skill_dash')
         .setDisplaySize(34, 34);
@@ -540,7 +570,18 @@ export class UIScene extends Phaser.Scene {
     if (!this.sys.isActive()) return;
     const { width: W, height: H } = this.cameras.main;
 
-    this.playerNameText.setText(player.name);
+    // Nom tronqué à la LARGEUR RÉELLE disponible (fitText mesure en pixels), plus à un
+    // nombre de caractères. Un nom de 16 lettres — le maximum autorisé à la création —
+    // entrait sinon dans le « Nv.XX » ancré à droite.
+    //
+    // MIS EN CACHE : cette méthode est appelée à CHAQUE FRAME (GameScene.update émet
+    // `player_update` sans condition), et fitText alloue un canvas + une texture GPU à
+    // chaque appel. Le nom, lui, ne change jamais en cours de partie — on ne recalcule
+    // que s'il a bougé.
+    if (player.name !== this.lastRawName) {
+      this.lastRawName = player.name;
+      this.playerNameText.setText(fitText(this, player.name, this.nameStyle, this.nameMaxW));
+    }
     this.levelText.setText(`${t('ui.level')}${player.level}`);
 
     this.targetHp    = Math.max(0, player.stats.hp / player.stats.maxHp);
@@ -669,7 +710,7 @@ export class UIScene extends Phaser.Scene {
       ? UI.GLOW_GOLD // halo « événement » — même or que le bandeau de zone (onZoneEntered)
       : parseInt(resonanceColor(q).slice(1), 16); // or de palier §4.3, seuils non dupliqués
     this.pushNotifEntry({
-      msg: `${name}  ×${quantity} — Résonance ${q}% (${label})`,
+      msg: `${name}  ×${quantity} — ${formatResonanceLine(q)}`,
       color: rarityColor,
       glow,
       // « Un Common parfait est un petit événement ; il doit se sentir » :

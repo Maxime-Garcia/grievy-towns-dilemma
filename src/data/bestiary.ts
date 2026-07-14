@@ -1,3 +1,4 @@
+import { GENERATED_BESTIARY } from './enemiesGenerated';
 // ─────────────────────────────────────────────────────────────────
 // BESTIAIRE — Grievy Town's Dilemma
 //
@@ -12,10 +13,19 @@
 // - Les items MYTHIC sont partagés entre 2-4 ennemis d'une même zone
 //   (toujours le boss + éventuellement des élites), taux 0.2-1%.
 //
-// Items hidden INVENTÉS ici (à créer dans items.ts, rareté HIDDEN) :
-//   wyrm_fang_shard, pilgrims_last_prayer, heart_of_the_mountain,
-//   sky_titans_oath, drowned_locket, tear_of_the_deep,
-//   engineers_final_schematic, primordial_ice_core, scholars_torn_page
+// ⚠️ RÈGLE ABSOLUE : un `itemId` de cette table DOIT exister dans le catalogue.
+//
+// Ce fichier a longtemps référencé neuf items hidden « inventés ici, à créer dans
+// items.ts » — wyrm_fang_shard, pilgrims_last_prayer, heart_of_the_mountain,
+// sky_titans_oath, drowned_locket, tear_of_the_deep, engineers_final_schematic,
+// primordial_ice_core, scholars_torn_page. Ils n'ont jamais été créés. Neuf gros
+// ennemis (dont trois boss) affichaient donc au joueur un « ??? » qui ne pouvait
+// être révélé par AUCUN nombre de kills : une promesse de butin que le jeu ne
+// pouvait pas tenir. Ces neuf drops ont été retirés (07/2026).
+//
+// Un `itemId` fantôme ne casse rien à la compilation et ne lève aucune erreur au
+// runtime — il se contente de mentir au joueur. Ne jamais en ajouter un « en
+// attendant » de créer l'item : créer l'item D'ABORD, le référencer ensuite.
 // ─────────────────────────────────────────────────────────────────
 
 export interface BestiaryEnemyData {
@@ -48,7 +58,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'volcanic_ash', dropRatePct: 60, isHidden: false },
       { itemId: 'iron_sword', dropRatePct: 8, isHidden: false },
       { itemId: 'flame_ring', dropRatePct: 1.5, isHidden: false },
-      { itemId: 'wyrm_fang_shard', dropRatePct: 1.5, isHidden: true },
     ],
   },
   {
@@ -86,7 +95,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'volcanic_ash', dropRatePct: 80, isHidden: false },
       { itemId: 'pilgrim_robe', dropRatePct: 4, isHidden: false },
       { itemId: 'fire_staff', dropRatePct: 1.2, isHidden: false },
-      { itemId: 'pilgrims_last_prayer', dropRatePct: 1, isHidden: true },
     ],
   },
   {
@@ -140,7 +148,7 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'pyrath_armor', dropRatePct: 15, isHidden: false },
       { itemId: 'eternal_flame_ring', dropRatePct: 4, isHidden: false },
       { itemId: 'pyrath_heart', dropRatePct: 1, isHidden: false },
-      { itemId: 'hidden_first_blade', dropRatePct: 1, isHidden: true },
+      { itemId: 'hidden_first_blade', dropRatePct: 0.07, isHidden: true },
     ],
   },
 
@@ -168,7 +176,7 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'terravast_crystal', dropRatePct: 75, isHidden: false },
       { itemId: 'ancient_stone_rune', dropRatePct: 30, isHidden: false },
       { itemId: 'crystal_chest', dropRatePct: 5, isHidden: false },
-      { itemId: 'hidden_mirror_helm', dropRatePct: 0.5, isHidden: true },
+      { itemId: 'hidden_mirror_helm', dropRatePct: 0.07, isHidden: true },
     ],
   },
   {
@@ -244,7 +252,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'gorvun_hammer', dropRatePct: 22, isHidden: false },
       { itemId: 'titan_earth_armor', dropRatePct: 12, isHidden: false },
       { itemId: 'fragment_of_permanence', dropRatePct: 3.5, isHidden: false },
-      { itemId: 'heart_of_the_mountain', dropRatePct: 0.8, isHidden: true },
     ],
   },
 
@@ -310,7 +317,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'sky_titan_bow', dropRatePct: 7, isHidden: false },
       { itemId: 'air_walker_boots', dropRatePct: 4, isHidden: false },
       { itemId: 'echo_blade', dropRatePct: 0.3, isHidden: false },
-      { itemId: 'sky_titans_oath', dropRatePct: 0.8, isHidden: true },
     ],
   },
   {
@@ -350,7 +356,7 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'tempest_cloak', dropRatePct: 12, isHidden: false },
       { itemId: 'ring_of_the_wind', dropRatePct: 4, isHidden: false },
       { itemId: 'echo_blade', dropRatePct: 0.5, isHidden: false },
-      { itemId: 'hidden_fate_amulet', dropRatePct: 1, isHidden: true },
+      { itemId: 'hidden_fate_amulet', dropRatePct: 0.07, isHidden: true },
     ],
   },
 
@@ -425,7 +431,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'drowned_relic', dropRatePct: 65, isHidden: false },
       { itemId: 'sea_glass', dropRatePct: 35, isHidden: false },
       { itemId: 'minor_health_potion', dropRatePct: 8, isHidden: false },
-      { itemId: 'drowned_locket', dropRatePct: 1, isHidden: true },
     ],
   },
   {
@@ -439,7 +444,7 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'drowned_knight_sword', dropRatePct: 9, isHidden: false },
       { itemId: 'seaguard_armor', dropRatePct: 6, isHidden: false },
       { itemId: 'thalymor_scale', dropRatePct: 2, isHidden: false },
-      { itemId: 'hidden_undying_plate', dropRatePct: 0.8, isHidden: true },
+      { itemId: 'hidden_undying_plate', dropRatePct: 0.07, isHidden: true },
     ],
   },
   {
@@ -454,7 +459,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'leviathan_staff', dropRatePct: 22, isHidden: false },
       { itemId: 'abyssal_chest', dropRatePct: 13, isHidden: false },
       { itemId: 'tidal_ring', dropRatePct: 4, isHidden: false },
-      { itemId: 'tear_of_the_deep', dropRatePct: 0.8, isHidden: true },
     ],
   },
 
@@ -531,7 +535,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'charged_metal', dropRatePct: 75, isHidden: false },
       { itemId: 'thunder_rune', dropRatePct: 50, isHidden: false },
       { itemId: 'storm_shard', dropRatePct: 60, isHidden: false },
-      { itemId: 'engineers_final_schematic', dropRatePct: 1, isHidden: true },
     ],
   },
   {
@@ -559,7 +562,7 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'volkran_hammer', dropRatePct: 23, isHidden: false },
       { itemId: 'storm_plate', dropRatePct: 13, isHidden: false },
       { itemId: 'eye_of_the_storm_ring', dropRatePct: 4, isHidden: false },
-      { itemId: 'hidden_temporal_blade', dropRatePct: 1, isHidden: true },
+      { itemId: 'hidden_temporal_blade', dropRatePct: 0.07, isHidden: true },
     ],
   },
 
@@ -626,7 +629,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'crystal_dragon_fang_staff', dropRatePct: 8, isHidden: false },
       { itemId: 'ice_dragon_scale_chest', dropRatePct: 5, isHidden: false },
       { itemId: 'frozen_heart_amulet', dropRatePct: 1.2, isHidden: false },
-      { itemId: 'primordial_ice_core', dropRatePct: 0.8, isHidden: true },
     ],
   },
   {
@@ -652,7 +654,7 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'frozen_essence', dropRatePct: 55, isHidden: false },
       { itemId: 'frost_wolf_pelt', dropRatePct: 35, isHidden: false },
       { itemId: 'ancient_frost_rune', dropRatePct: 20, isHidden: false },
-      { itemId: 'hidden_soul_bow', dropRatePct: 0.6, isHidden: true },
+      { itemId: 'hidden_soul_bow', dropRatePct: 0.07, isHidden: true },
     ],
   },
   {
@@ -667,7 +669,7 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'memory_staff', dropRatePct: 24, isHidden: false },
       { itemId: 'glaciem_guardian_chest', dropRatePct: 14, isHidden: false },
       { itemId: 'ring_of_preservation', dropRatePct: 4, isHidden: false },
-      { itemId: 'hidden_eternity_ring', dropRatePct: 1, isHidden: true },
+      { itemId: 'hidden_eternity_ring', dropRatePct: 0.07, isHidden: true },
     ],
   },
 
@@ -708,7 +710,6 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'dark_essence', dropRatePct: 75, isHidden: false },
       { itemId: 'corrupted_rune', dropRatePct: 55, isHidden: false },
       { itemId: 'void_shard', dropRatePct: 40, isHidden: false },
-      { itemId: 'scholars_torn_page', dropRatePct: 1, isHidden: true },
     ],
   },
   {
@@ -735,7 +736,7 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'sentinel_armor', dropRatePct: 7, isHidden: false },
       { itemId: 'sentinel_sword', dropRatePct: 5, isHidden: false },
       { itemId: 'ring_of_the_unbound', dropRatePct: 0.3, isHidden: false },
-      { itemId: 'hidden_void_reaper', dropRatePct: 0.8, isHidden: true },
+      { itemId: 'hidden_void_reaper', dropRatePct: 0.07, isHidden: true },
     ],
   },
   {
@@ -750,7 +751,7 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'malachars_staff', dropRatePct: 50, isHidden: false },
       { itemId: 'unbound_robe', dropRatePct: 40, isHidden: false },
       { itemId: 'ring_of_the_unbound', dropRatePct: 15, isHidden: false },
-      { itemId: 'hidden_world_eater_staff', dropRatePct: 1.5, isHidden: true },
+      { itemId: 'hidden_world_eater_staff', dropRatePct: 0.07, isHidden: true },
     ],
   },
 
@@ -779,16 +780,28 @@ export const BESTIARY_DATA: BestiaryEnemyData[] = [
       { itemId: 'echo_blade', dropRatePct: 100, isHidden: false },
     ],
   },
+  {
+    enemyId: 'training_dummy_arsenal',
+    name: 'Mannequin d\'Essai',
+    habitat: 'Cour de la caserne, Grievy Town',
+    shortDesc: 'Rend un exemplaire neuf de l\'arme que vous portez.',
+    lore: 'Deux épées sorties de la même forge ne se valent jamais tout à fait. Kelvar le sait depuis qu\'il a survécu grâce à la meilleure des deux, un matin, sans savoir pourquoi.',
+    // Drop dynamique (l'arme équipée) — aucune table figée à annoncer.
+    drops: [],
+  },
 ];
 
+/** Bestiaire complet : entrées écrites à la main + les 139 créatures générées. */
+export const ALL_BESTIARY: BestiaryEnemyData[] = [...BESTIARY_DATA, ...GENERATED_BESTIARY];
+
 export function getBestiaryEntry(enemyId: string): BestiaryEnemyData | undefined {
-  return BESTIARY_DATA.find(e => e.enemyId === enemyId);
+  return ALL_BESTIARY.find(e => e.enemyId === enemyId);
 }
 
 /** IDs dans l'ordre canonique du bestiaire (même ordre que BESTIARY_DATA). */
-export const BESTIARY_IDS: string[] = BESTIARY_DATA.map(e => e.enemyId);
+export const BESTIARY_IDS: string[] = ALL_BESTIARY.map(e => e.enemyId);
 
 /** Lookup rapide par enemyId — même données que BESTIARY_DATA. */
 export const BESTIARY_RECORD: Record<string, BestiaryEnemyData> = Object.fromEntries(
-  BESTIARY_DATA.map(e => [e.enemyId, e]),
+  ALL_BESTIARY.map(e => [e.enemyId, e]),
 );

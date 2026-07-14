@@ -3,15 +3,22 @@ import { GameScene } from './GameScene';
 import { PlayerState, TalentNode, TalentEffectKey } from '../types';
 import { TALENT_MAP } from '../data/talents';
 import { TalentSystem } from '../systems/TalentSystem';
-import { UI, drawGlowPanel, uiStyle, openScreenTransition } from '../utils/UITheme';
+import { UI, TYPE, drawGlowPanel, uiStyle, fitText, openScreenTransition } from '../utils/UITheme';
 
 // ── Layout constants ──────────────────────────────────────────────────────────
-const TAB_H    = 36;   // height of one tab row (px)
+// TAB_H = 44 (au lieu de 36) : les hit zones étaient étirées à 44px par-dessus
+// des rangées de 36px — les 4px de chevauchement créaient une bande ambiguë où
+// le tap touchait la mauvaise rangée. À 44, hit = rangée, zéro chevauchement.
+const TAB_H    = 44;   // height of one tab row (px) — = LAYOUT.TOUCH_MIN
 const CLOSE_W  = 44;   // width reserved at end of row-1 for the × button
-const HDR_H    = 28;   // branch header height (name + points counter)
-const BOTTOM_H = 148;  // bottom-sheet panel height
+const HDR_H    = 32;   // branch header height (name + desc inline + points)
+const BOTTOM_H = 150;  // bottom-sheet panel height
 const NODE_SZ  = 60;   // node square size (px)
-const TIER_GAP = 90;   // vertical distance between tier centres
+// 90 → 78 : calé pour que les branches à 5 TIERS (7 branches en ont) tiennent
+// entre le header et la bottom sheet — l'ancien 90 faisait déborder le label du
+// tier 5 sous la sheet. LABEL_ZONE réserve la place du libellé sous le dernier nœud.
+const TIER_GAP = 78;   // vertical distance between tier centres
+const LABEL_ZONE = 18; // hauteur réservée au libellé sous chaque nœud
 const NODE_HIT = 7;    // extra px on each side to enlarge touch target
 
 const TAB_ROW1 = ['VIGOR', 'INSTINCT', 'ARCANE'] as const;
@@ -74,7 +81,9 @@ function getNodeStatus(player: PlayerState, nodeId: string): NodeStatus {
 // ── Tier vertical centre ──────────────────────────────────────────────────────
 function tierCenterY(tier: number, screenH: number, maxTier = 4): number {
   const contentTop    = TAB_TOTAL_H + HDR_H;
-  const contentBottom = screenH - BOTTOM_H;
+  // -LABEL_ZONE : le libellé du DERNIER tier vit sous son nœud — sans cette
+  // réserve, le centrage le poussait sous la bottom sheet (débordement tier 5).
+  const contentBottom = screenH - BOTTOM_H - LABEL_ZONE;
   const available     = contentBottom - contentTop;
   const topMax        = Math.max(4, maxTier);
   const totalSpan     = (topMax - 1) * TIER_GAP + NODE_SZ;
@@ -83,7 +92,9 @@ function tierCenterY(tier: number, screenH: number, maxTier = 4): number {
 }
 
 // ── Node X positions for a tier with `count` nodes ───────────────────────────
-function tierNodeXs(count: number, centerX: number, spacing = 110): number[] {
+// 110 → 140 : profite des 960px de large — les libellés sous les nœuds ont de
+// la place au lieu d'être tronqués à 12 caractères.
+function tierNodeXs(count: number, centerX: number, spacing = 140): number[] {
   return Array.from({ length: count }, (_, i) =>
     centerX + (i - (count - 1) / 2) * spacing,
   );
@@ -222,6 +233,12 @@ export class SkillScene extends Phaser.Scene {
   }
 
   create() {
+    // Phaser n'appelle PAS scene.shutdown() de lui-même : Systems.shutdown() se
+    // contente d'ÉMETTRE l'événement SHUTDOWN. Sans cette ligne, la méthode
+    // shutdown() ci-dessous est du CODE MORT — les listeners qu'elle est censée
+    // retirer survivent à la scène, et chaque create() en empile une couche de plus.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
+
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
 
@@ -275,11 +292,12 @@ export class SkillScene extends Phaser.Scene {
         this.paintTab(bg, x, y, tabW, TAB_H, branchKey);
 
         const isActive = branchKey === this.activeBranch;
+        // Onglets = navigation primaire : TYPE.BODY (14), pas du micro-texte.
         const txt = this.add.text(
           x + tabW / 2,
           y + TAB_H / 2,
           meta?.label ?? branchKey,
-          uiStyle(11, isActive ? UI.TXT_WHITE : UI.TXT_MUTED, { bold: true }),
+          uiStyle(TYPE.BODY, isActive ? UI.TXT_WHITE : UI.TXT_MUTED, { bold: true }),
         ).setOrigin(0.5).setDepth(3);
         this.tabTextObjs.push(txt);
 
@@ -352,22 +370,24 @@ export class SkillScene extends Phaser.Scene {
     sep.lineStyle(1, UI.BORDER_LIT, 0.45);
     sep.lineBetween(8, y, W - 8, y);
 
+    // Nom de branche en HEADING (21) + description en BODY muted SUR LA MÊME
+    // LIGNE (au lieu d'empilées) : hiérarchie nette sans grossir le header.
     this.branchNameTxt = this.add.text(
-      14, y + 3,
+      14, y + 5,
       meta?.label ?? this.activeBranch,
-      uiStyle(13, UI.TXT_GOLD, { bold: true, stroke: true }),
+      uiStyle(TYPE.HEADING, UI.TXT_GOLD, { bold: true, stroke: true }),
     ).setDepth(2);
 
     this.branchDescTxt = this.add.text(
-      14, y + 18,
+      14 + this.branchNameTxt.width + 12, y + 11,
       meta?.desc ?? '',
-      uiStyle(9, UI.TXT_MUTED),
+      uiStyle(TYPE.BODY, UI.TXT_MUTED),
     ).setDepth(2);
 
     this.pointsText = this.add.text(
-      W - 52, y + 6,
+      W - 14, y + 9,
       this.buildPointsLabel(),
-      uiStyle(11, UI.TXT_PARCHMENT, { bold: true }),
+      uiStyle(TYPE.BODY, UI.TXT_PARCHMENT, { bold: true }),
     ).setOrigin(1, 0).setDepth(2);
   }
 
@@ -380,6 +400,11 @@ export class SkillScene extends Phaser.Scene {
     const meta = BRANCH_META[this.activeBranch];
     this.branchNameTxt?.setText(meta?.label ?? this.activeBranch);
     this.branchDescTxt?.setText(meta?.desc ?? '');
+    // La description est inline à droite du nom — recaler son X sur la
+    // nouvelle largeur du nom.
+    if (this.branchNameTxt && this.branchDescTxt) {
+      this.branchDescTxt.setX(14 + this.branchNameTxt.width + 12);
+    }
     this.pointsText?.setText(this.buildPointsLabel());
   }
 
@@ -606,13 +631,14 @@ export class SkillScene extends Phaser.Scene {
       }
     }
 
-    // Label below node — lisible (9px moderne, tronqué à 13 caractères)
-    const rawName    = node.name;
-    const label      = rawName.length > 13 ? rawName.slice(0, 12) + '…' : rawName;
+    // Label below node — tronqué en PIXELS (fitText) sur l'entraxe des nœuds,
+    // au lieu de l'ancien slice(0, 12) aveugle à la largeur réelle des glyphes.
     const labelColor = status === 'unlocked' ? UI.TXT_GOLD
                      : status === 'available' ? UI.TXT_PARCHMENT
                      : UI.TXT_HINT;
-    const labelTxt = this.add.text(cx, cy + NODE_SZ / 2 + 4, label, uiStyle(9, labelColor, { stroke: true }))
+    const labelStyle = uiStyle(9, labelColor, { stroke: true });
+    const labelTxt = this.add.text(cx, cy + NODE_SZ / 2 + 4,
+      fitText(this, node.name, labelStyle, 132), labelStyle)
       .setOrigin(0.5, 0).setDepth(7);
     this.dynamicObjs.push(labelTxt);
 
@@ -661,8 +687,8 @@ export class SkillScene extends Phaser.Scene {
     const canAfford = this.player.gold >= cost;
     const canRespec = hasSpent && canAfford;
 
-    const btnW = 160;
-    const btnH = 26;
+    const btnW = 176;
+    const btnH = 30;
     const btnX = W - 8 - btnW;
     const btnY = H - BOTTOM_H - btnH - 8;
 
@@ -728,7 +754,7 @@ export class SkillScene extends Phaser.Scene {
       const hint = this.add.text(
         W / 2, sy + sh / 2 - 8,
         'Sélectionne un talent pour voir ses détails',
-        uiStyle(11, UI.TXT_HINT),
+        uiStyle(TYPE.BODY, UI.TXT_HINT),
       ).setOrigin(0.5).setDepth(21);
       this.sheetObjs.push(hint);
       return;
@@ -740,38 +766,36 @@ export class SkillScene extends Phaser.Scene {
     const status = getNodeStatus(this.player, nodeId);
 
     // ── Left column (name, description, effects) ──────────────────────────
+    // Layout en FLUX (chaque bloc sous le précédent) : les anciens y fixes
+    // (sy+30/sy+50) faisaient chevaucher desc et effets dès 2 lignes.
     const lx  = sx + 12;
-    const ly0 = sy + 10;
-    const ly1 = sy + 30;
-    const ly2 = sy + 50;
     const colW = Math.floor(sw * 0.52) - 10;
 
-    const nameTxt = this.add.text(lx, ly0, node.name, uiStyle(13, UI.TXT_GOLD, { bold: true, stroke: true })).setDepth(21);
+    const nameTxt = this.add.text(lx, sy + 10, node.name,
+      uiStyle(TYPE.HEADING, UI.TXT_GOLD, { bold: true, stroke: true })).setDepth(21);
     this.sheetObjs.push(nameTxt);
 
-    const descTxt = this.add.text(lx, ly1, node.description, uiStyle(10, UI.TXT_MUTED, {
-      wordWrapWidth: colW,
-    })).setDepth(21);
+    const descTxt = this.add.text(lx, nameTxt.y + nameTxt.height + 6, node.description,
+      uiStyle(TYPE.BODY, UI.TXT_MUTED, { wordWrapWidth: colW })).setDepth(21);
     this.sheetObjs.push(descTxt);
 
-    const effTxt = this.add.text(lx, ly2, formatEffects(node.effects), uiStyle(10, UI.TXT_PARCHMENT, {
-      wordWrapWidth: colW, lineSpacing: 3,
-    })).setDepth(21);
+    const effTxt = this.add.text(lx, descTxt.y + descTxt.height + 6, formatEffects(node.effects),
+      uiStyle(TYPE.BODY, UI.TXT_PARCHMENT, { wordWrapWidth: colW, lineSpacing: 3 })).setDepth(21);
     this.sheetObjs.push(effTxt);
 
     // ── Right column (cost, status, lore, unlock button) ─────────────────
     const rx   = sx + Math.floor(sw * 0.54);
-    let   ry   = sy + 10;
+    let   ry   = sy + 12;
     const rColW = sw - Math.floor(sw * 0.54) - 10;
 
     // Cost
     const costTxt = this.add.text(
       rx, ry,
       `Coût : ${node.cost} point${node.cost !== 1 ? 's' : ''}`,
-      uiStyle(11, UI.TXT_GOLD, { bold: true }),
+      uiStyle(TYPE.BODY, UI.TXT_GOLD, { bold: true }),
     ).setDepth(21);
     this.sheetObjs.push(costTxt);
-    ry += 18;
+    ry += costTxt.height + 6;
 
     // Status
     let statusStr: string;
@@ -810,22 +834,32 @@ export class SkillScene extends Phaser.Scene {
         break;
     }
 
-    const statusTxt = this.add.text(rx, ry, statusStr, uiStyle(10, statusColor)).setDepth(21);
+    const statusTxt = this.add.text(rx, ry, statusStr,
+      uiStyle(TYPE.BODY, statusColor, { wordWrapWidth: rColW })).setDepth(21);
     this.sheetObjs.push(statusTxt);
-    ry += 20;
+    ry += statusTxt.height + 8;
 
-    // Lore snippet (if vertical space allows)
-    if (node.lore && ry < sy + sh - 50) {
-      const loreSnip = node.lore.length > 72 ? node.lore.slice(0, 71) + '…' : node.lore;
-      const loreTxt  = this.add.text(rx, ry, `"${loreSnip}"`, uiStyle(9, UI.TXT_HINT, {
-        italic: true, wordWrapWidth: rColW,
-      })).setDepth(21);
-      this.sheetObjs.push(loreTxt);
+    // Lore snippet — tronqué par HAUTEUR MESURÉE (l'ancien slice(0, 71)
+    // tronquait au caractère, aveugle au wrap réel) : on coupe jusqu'à ce que
+    // le bloc tienne au-dessus du bouton Débloquer / du bas de la sheet.
+    if (node.lore && ry < sy + sh - 30) {
+      const willShowButton = status === 'available' && this.player.talentPoints >= node.cost;
+      const maxLoreH = (sy + sh - (willShowButton ? 56 : 10)) - ry;
+      if (maxLoreH > 14) {
+        const loreStyle = uiStyle(TYPE.SMALL, UI.TXT_HINT, { italic: true, wordWrapWidth: rColW, lineSpacing: 3 });
+        let loreStr = `"${node.lore}"`;
+        const loreTxt = this.add.text(rx, ry, loreStr, loreStyle).setDepth(21);
+        while (loreTxt.height > maxLoreH && loreStr.length > 14) {
+          loreStr = `${loreStr.slice(0, loreStr.length - 14).trimEnd()}…"`;
+          loreTxt.setText(loreStr);
+        }
+        this.sheetObjs.push(loreTxt);
+      }
     }
 
     // Unlock button (only when available + enough points)
     if (status === 'available' && this.player.talentPoints >= node.cost) {
-      const btnW = 136;
+      const btnW = 150;
       const btnH = 40;
       const btnX = sx + sw - btnW - 8;
       const btnY = sy + sh - btnH - 8;

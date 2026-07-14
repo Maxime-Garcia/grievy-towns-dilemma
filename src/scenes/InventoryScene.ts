@@ -9,10 +9,11 @@ import { StatRollSystem, isEquipableItem } from '../systems/StatRollSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { getPassiveEffectLabel } from '../data/passiveEffects';
 import {
-  UI, TYPE, drawGlowPanel, drawCard, drawSlot,
-  drawDivider, addCloseButton, uiStyle, openScreenTransition,
-  resonanceColor, formatRangedStatBounds, lineQuality,
+  UI, TYPE, LAYOUT, drawGlowPanel, drawCard, drawSlot, addUiFrame,
+  drawDivider, addCloseButton, uiStyle, titleStyle, fitText, openScreenTransition,
+  resonanceColor, formatRangedStatBounds, lineQuality, formatResonanceLine,
 } from '../utils/UITheme';
+import { SearchField, matchesSearch } from '../utils/SearchField';
 import { itemTextureKey } from '../utils/ItemAssets';
 import { t, localizeItem } from '../i18n';
 
@@ -32,17 +33,53 @@ const ELEMENT_GLYPHS: Partial<Record<ElementType, string>> = {
 };
 
 // ── Layout constants ──────────────────────────────────────────────────────────
+// Les LARGEURS de panneaux ne sont plus des constantes : elles sont dérivées de
+// la largeur caméra dans create() (seule la grille du sac, 7 col × 48 px, est
+// une contrainte rigide — cf. renderGrid).
 const MARGIN     = 8;
-const HEADER_H   = 36;
+const HEADER_H   = 40;    // titre d'écran en police Boss (18 px) + respiration
 const FOOTER_H   = 20;
 const GAP        = 6;
-const EQ_PAN_W   = 180;   // left panel: equipment paperdoll
-const STAT_PAN_W = 220;   // center panel: stats / item detail
-const EQ_SLOT    = 44;    // equipment slot size
+const EQ_SLOT    = 48;    // slot d'équipement — aligné sur la grille du sac (48 px)
 const INV_SLOT   = 48;    // inventory slot size
 const INV_COLS   = 7;     // inventory grid columns
 const GROUP_HEADER_H = 20; // bag category header band height
 const GROUP_GAP      = 6;  // breathing room after a category's last row
+
+// ── Onglets de filtrage du sac (dette D13 des guidelines, résorbée) ──────────
+// 5 onglets au-dessus de la grille : réduisent le scroll dès que le loot ARPG
+// multiplie les instances. Depuis la passe 07/2026 : ICÔNES cliquables (glyphes
+// `bagtab_*` bakés au boot, cf. PreloaderScene.BAG_TAB_ICON_FRAME) au lieu des
+// labels texte — `labelKey` reste la source du TOOLTIP au survol et le fallback
+// affiché si la sheet d'icônes n'est pas chargée.
+//
+// `labelKey` et non `label` : les libellés étaient hardcodés en français, donc le
+// tooltip d'un onglet restait « Consommables » en jeu anglais, à côté d'un panneau
+// d'item traduit — le mélange FR/EN reporté par l'utilisateur.
+type BagFilter = 'ALL' | 'EQUIP' | 'CONSUMABLE' | 'MATERIAL' | 'MISC';
+const BAG_TABS: ReadonlyArray<{ id: BagFilter; labelKey: string; icon: string; cats: readonly InventoryCategory[] | null }> = [
+  { id: 'ALL',        labelKey: 'inventory.tab_all',        icon: 'bagtab_all',        cats: null },
+  { id: 'EQUIP',      labelKey: 'inventory.tab_equip',      icon: 'bagtab_equip',      cats: ['WEAPON', 'ARMOR', 'ACCESSORY'] },
+  { id: 'CONSUMABLE', labelKey: 'inventory.tab_consumable', icon: 'bagtab_consumable', cats: ['CONSUMABLE'] },
+  { id: 'MATERIAL',   labelKey: 'inventory.tab_material',   icon: 'bagtab_material',   cats: ['MATERIAL'] },
+  { id: 'MISC',       labelKey: 'inventory.tab_misc',       icon: 'bagtab_misc',       cats: ['KEY_ITEM', 'SKIN'] },
+];
+// 26 → 34 : les onglets portent un glyphe 32×32 (échelle ×2 ENTIÈRE de la
+// grille 16 px — tout autre facteur produirait des artefacts NEAREST).
+const BAG_TABS_H = 34; // hauteur visuelle d'un onglet (hit zone élargie à 44)
+
+// ── Recherche textuelle du sac (utils/SearchField.ts) ─────────────────────────
+// Rangée dédiée SOUS les onglets : onglet = catégorie (grossier), recherche =
+// nom (fin). Les deux se COMBINENT (cf. renderGrid) — un filtre ne remplace
+// jamais l'autre. Le champ est créé une seule fois dans create() et SURVIT aux
+// refresh() : le recréer à chaque frappe détruirait le <input> DOM qui a le
+// focus, et la saisie s'arrêterait au premier caractère.
+const BAG_SEARCH_H   = LAYOUT.TOUCH_MIN;  // le cadre EST la zone tactile
+const BAG_SEARCH_GAP = 6;
+/** Hauteur du bandeau de titre « SAC » — partagée par create() (qui pose le champ
+ *  de recherche) et renderGrid() (qui pose les onglets et la grille) : les deux
+ *  DOIVENT dériver du même chiffre, sinon le champ chevauche les onglets. */
+const BAG_TITLE_H    = 22;
 
 /** Bag category → i18n label key (mirrors ArsenalScene.SECTION_LABEL_KEYS style). */
 const CATEGORY_LABEL_KEYS: Record<InventoryCategory, string> = {
@@ -91,6 +128,10 @@ export class InventoryScene extends Phaser.Scene {
   // Dynamic objects are destroyed and recreated on every refresh
   private dynamicObjs: Phaser.GameObjects.GameObject[] = [];
   private scrollMaskGfx?: Phaser.GameObjects.Graphics;
+  /** Détruit les objets de la fenêtre virtualisée courante de la grille (cf.
+   *  renderGrid) — ils vivent hors de dynamicObjs puisqu'ils sont reconstruits au
+   *  fil du scroll, pas seulement au refresh. */
+  private gridWindowDispose: (() => void) | null = null;
 
   // Static objects set once in create(), updated in refresh()
   private goldText!: Phaser.GameObjects.Text;
@@ -107,11 +148,20 @@ export class InventoryScene extends Phaser.Scene {
   // (cf. docs/design/LOOT_STAT_ROLLS.md §9 step 8 audit).
   private selectedItem: Item | null = null;
 
-  private keyEsc?: Phaser.Input.Keyboard.Key;
   private keyZ?: Phaser.Input.Keyboard.Key;
+
+  /** Recherche textuelle du sac — créée dans create(), détruite dans shutdown().
+   *  Hors de `dynamicObjs` : elle doit survivre aux refresh() (cf. BAG_SEARCH_H). */
+  private search: SearchField | null = null;
+  private searchQuery = '';
 
   // Long-press detection: single ref, cleared on pointerup / pointerout / shutdown
   private longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  // Onglet de filtrage actif du sac (D13) — reset à 'ALL' à chaque ouverture
+  private bagFilter: BagFilter = 'ALL';
+  // Tooltip transient du survol d'un onglet à icône (accessibilité : le glyphe
+  // seul ne suffit pas) — détruit sur pointerout / refresh / shutdown.
+  private tabTooltip: Phaser.GameObjects.Container | null = null;
   // Which paperdoll slot to flash after a successful tap-equip
   private lastFlashSlotKey: EquipSlotKey | null = null;
 
@@ -129,6 +179,9 @@ export class InventoryScene extends Phaser.Scene {
     this.gameScene   = data.gameScene;
     this.player      = data.gameScene.gameState.player;
     this.selectedItem = null;
+    this.bagFilter    = 'ALL';
+    this.search       = null;
+    this.searchQuery  = '';
   }
 
   create() {
@@ -140,15 +193,22 @@ export class InventoryScene extends Phaser.Scene {
     const CONT_Y = HEADER_H + 4;
     const CONT_H = H - CONT_Y - FOOTER_H - MARGIN;
 
-    // Compute the three panel bounds once
+    // ── Largeurs de panneaux DÉRIVÉES de l'écran (plus aucune largeur en dur) ──
+    // Le sac est dimensionné sur sa grille FIXE (INV_COLS × INV_SLOT, + 8 px de
+    // marge de chaque côté, cf. GRID_PAD dans renderGrid) : c'est la seule
+    // contrainte rigide. Équipement et stats se partagent le reste — le panneau
+    // de LECTURE (stats/détail) reçoit la plus grande part.
+    const bagW  = INV_COLS * INV_SLOT + 16;
+    const sideW = W - (MARGIN + 2) * 2 - bagW - GAP * 2;
+    const eqW   = Math.round(sideW * 0.42);
+    const stW   = sideW - eqW;
     const eqX   = MARGIN + 2;
-    const stX   = eqX  + EQ_PAN_W   + GAP;
-    const bagX  = stX  + STAT_PAN_W + GAP;
-    const bagW  = W - MARGIN - 2 - bagX;
+    const stX   = eqX + eqW + GAP;
+    const bagX  = stX + stW + GAP;
 
-    this.eqBounds  = { x: eqX,  y: CONT_Y, w: EQ_PAN_W,   h: CONT_H };
-    this.stBounds  = { x: stX,  y: CONT_Y, w: STAT_PAN_W, h: CONT_H };
-    this.bagBounds = { x: bagX, y: CONT_Y, w: bagW,        h: CONT_H };
+    this.eqBounds  = { x: eqX,  y: CONT_Y, w: eqW,  h: CONT_H };
+    this.stBounds  = { x: stX,  y: CONT_Y, w: stW,  h: CONT_H };
+    this.bagBounds = { x: bagX, y: CONT_Y, w: bagW, h: CONT_H };
 
     // ── Background overlay (0.88 standard — le jeu reste visible derrière) ─
     this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88);
@@ -157,8 +217,8 @@ export class InventoryScene extends Phaser.Scene {
     const frameGfx = this.add.graphics();
     drawGlowPanel(frameGfx, MARGIN, MARGIN, W - MARGIN * 2, H - MARGIN * 2, UI.ACCENT_ARCANE, UI.BG_DEEP, 10, 0.92);
 
-    // ── Header title ──────────────────────────────────────────────────────
-    this.add.text(W / 2, MARGIN + 8, t('inventory.title'), uiStyle(15, UI.TXT_GOLD, { bold: true, stroke: true }))
+    // ── Header title — police Boss (titre d'écran, cf. TYPE.TITLE) ────────
+    this.add.text(W / 2, MARGIN + 6, t('inventory.title'), titleStyle(UI.TXT_GOLD, { stroke: true }))
       .setOrigin(0.5, 0);
 
     // ── Header separator ──────────────────────────────────────────────────
@@ -166,15 +226,21 @@ export class InventoryScene extends Phaser.Scene {
     drawDivider(sepGfx, MARGIN + 4, HEADER_H, W - (MARGIN + 4) * 2, UI.ACCENT_ARCANE, 0.35);
 
     // ── Close button × (haut-droite, hit 48×48) ───────────────────────────
-    addCloseButton(this, W - MARGIN - 20, MARGIN + 14, () => this.close());
+    addCloseButton(this, W - MARGIN - 20, MARGIN + 16, () => this.close());
 
     // ── Gold display (pilule arrondie, à gauche du bouton ×) ──────────────
+    // 26 px de haut pour un texte de 14 px — l'ancienne pilule 130×24 écrasait
+    // la valeur. Posée à gauche de la hit zone 48 px du bouton ×.
+    const PILL_W = 150;
+    const PILL_H = 26;
+    const pillX  = W - MARGIN - 52 - PILL_W;
+    const pillY  = MARGIN + 5;
     const goldBg = this.add.graphics();
-    drawCard(goldBg, W - MARGIN - 178, MARGIN + 4, 130, 24, { bg: UI.BG_MID, radius: 12, shadow: false });
+    drawCard(goldBg, pillX, pillY, PILL_W, PILL_H, { bg: UI.BG_MID, radius: 13, shadow: false });
     this.goldText = this.add.text(
-      W - MARGIN - 113, MARGIN + 16,
+      pillX + PILL_W / 2, pillY + PILL_H / 2,
       `${this.player.gold} ${t('inventory.gold')}`,
-      uiStyle(11, UI.TXT_GOLD, { bold: true }),
+      uiStyle(TYPE.BODY, UI.TXT_GOLD, { bold: true }),
     ).setOrigin(0.5);
 
     // ── Footer close hint ─────────────────────────────────────────────────
@@ -195,40 +261,101 @@ export class InventoryScene extends Phaser.Scene {
 
     // ── Static panel titles (cyan arcane = structure ; l'or reste réservé
     //    à l'identité et à la valeur — titre d'écran, monnaie, raretés) ─────
+    // Titres de panneaux en TYPE.BODY (14) cyan gras : un cran net sous le
+    // titre d'écran (Boss 18) et un cran au-dessus des libellés muted — la
+    // hiérarchie se lit à la taille ET à la couleur.
     this.add.text(
       this.eqBounds.x  + this.eqBounds.w  / 2, this.eqBounds.y  + 6,
-      t('inventory.equipment'), uiStyle(11, UI.TXT_CYAN, { bold: true }),
+      t('inventory.equipment'), uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true }),
     ).setOrigin(0.5, 0);
 
+    // Le titre SAC est calé plus haut : les onglets de filtrage (renderBagTabs,
+    // posés à y + 22 par renderGrid) servent eux-mêmes de séparateur visuel —
+    // pas de filet supplémentaire qui doublerait leur bordure.
     this.add.text(
-      this.bagBounds.x + this.bagBounds.w / 2, this.bagBounds.y + 6,
-      t('inventory.bag'), uiStyle(11, UI.TXT_CYAN, { bold: true }),
+      this.bagBounds.x + this.bagBounds.w / 2, this.bagBounds.y + 4,
+      t('inventory.bag'), uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true }),
     ).setOrigin(0.5, 0);
 
-    // Filets discrets sous les titres ÉQUIPEMENT et SAC (cohérence §7.7)
+    // Filet discret sous le titre ÉQUIPEMENT (cohérence §7.7)
     const titleSepGfx = this.add.graphics();
-    drawDivider(titleSepGfx, this.eqBounds.x  + 10, this.eqBounds.y  + 20, this.eqBounds.w  - 20, UI.ACCENT_ARCANE, 0.22);
-    drawDivider(titleSepGfx, this.bagBounds.x + 10, this.bagBounds.y + 20, this.bagBounds.w - 20, UI.ACCENT_ARCANE, 0.22);
+    drawDivider(titleSepGfx, this.eqBounds.x + 10, this.eqBounds.y + 26, this.eqBounds.w - 20, UI.ACCENT_ARCANE, 0.22);
 
-    // ── Keyboard ──────────────────────────────────────────────────────────
-    this.keyEsc = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
-    this.keyEsc.on('down', () => {
-      if (this.consumePopupObjects.length > 0) { this.closeConsumePopup(); return; }
-      this.close();
+    // ── Recherche du sac (rangée sous les onglets) ────────────────────────
+    // Créée UNE FOIS ici, jamais dans renderGrid() : renderGrid est rejoué à
+    // chaque refresh (donc à chaque frappe), et recréer le <input> DOM lui
+    // ferait perdre le focus au premier caractère tapé.
+    const searchY = this.bagBounds.y + BAG_TITLE_H + BAG_TABS_H + 4;
+    this.search = new SearchField(this, {
+      x: this.bagBounds.x + 8,   // = GRID_X (GRID_PAD de renderGrid)
+      y: searchY,
+      w: INV_COLS * INV_SLOT,
+      h: BAG_SEARCH_H,
+      placeholder: t('search.placeholder_bag'),
+      // Le sac s'OUVRE ET SE FERME avec `I`. Un champ auto-focalisé consomme
+      // chaque frappe : le `I` de fermeture s'écrivait dans la recherche au lieu
+      // de refermer le sac, et `Z` (l'action principale sur un item) était morte
+      // dès l'ouverture. Ici on clique le champ pour chercher — le sac se
+      // manipule d'abord au clic. Cf. SearchFieldOpts.autoFocus.
+      autoFocus: false,
+      onChange: (q) => {
+        this.searchQuery = q;
+        // refresh() détruit `dynamicObjs` — le champ n'y est PAS, il survit.
+        this.refresh();
+      },
+      onEscape: () => this.close(),
     });
 
+    // ── Keyboard ──────────────────────────────────────────────────────────
+    // Pas de touche ESC ici : GameScene.escKey est le propriétaire unique de
+    // l'ESC pour les overlays (il stoppe déjà cette scène de son côté). Deux
+    // handlers ESC concurrents rendaient impossible tout comportement
+    // « Échap vide la recherche AVANT de fermer » — GameScene passe désormais
+    // par handleEscape() ci-dessous.
+    //
     // Z → trigger main action on the currently selected item (equip / use).
     // Safe to use: GameScene.update() bails out early when menuOpen = true, so
-    // the ZQSD movement poll never runs while the inventory is open.
+    // the ZQSD movement poll never runs while the inventory is open. Pendant la
+    // saisie dans le champ de recherche, SearchField stoppe la propagation des
+    // touches : taper « zweihander » ne déclenche donc pas cette action.
     this.keyZ = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
     this.keyZ.on('down', () => {
       if (this.selectedItem !== null) this.doMainAction(this.selectedItem);
     });
 
+    // Phaser n'appelle PAS scene.shutdown() tout seul (cf. Systems.shutdown : il
+    // se contente d'émettre l'événement) — sans ce câblage, la scène ne nettoyait
+    // ni ses touches ni ses listeners, et le <input> DOM du champ de recherche
+    // survivrait à la fermeture de l'inventaire. Même câblage que
+    // Arsenal/Bestiary/Dialogue.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
+
+    // Survol ré-évalué à CHAQUE frame, et pas seulement au mouvement du curseur.
+    //
+    // `MOUSE_WHEEL` est le seul type d'événement que Phaser traite sans appeler
+    // `processOverOutEvents()`. Or la grille scrolle à la molette : les slots
+    // glissent SOUS un curseur immobile, donc aucun `pointerout` n'est émis. Le
+    // slot survolé gardait son anneau blanc en partant, et celui qui arrivait sous
+    // le curseur ne s'allumait pas — jusqu'au prochain mouvement de souris.
+    // La grille étant virtualisée, la liste de hit-test reste courte : le poll
+    // permanent est ici sans coût mesurable.
+    this.input.setPollAlways();
+
     // ── Dynamic content ───────────────────────────────────────────────────
     this.renderEquipment();
     this.renderCenter();
     this.renderGrid();
+  }
+
+  /**
+   * Échap : ferme d'abord le popup s'il est ouvert, sinon vide la recherche,
+   * sinon laisse l'appelant fermer l'écran. Appelé par GameScene.escKey (unique
+   * propriétaire de l'ESC) et par le champ de recherche quand il a le focus.
+   * True = appui CONSOMMÉ, l'inventaire doit rester ouvert.
+   */
+  handleEscape(): boolean {
+    if (this.consumePopupObjects.length > 0) { this.closeConsumePopup(); return true; }
+    return this.search?.clear() ?? false;
   }
 
   // ── Equipment paperdoll (left panel, style Dofus) ─────────────────────────
@@ -239,12 +366,12 @@ export class InventoryScene extends Phaser.Scene {
   //            | bottes  |
   private renderEquipment() {
     const { x: PX, y: PY, w: PW, h: PH } = this.eqBounds;
-    const TITLE_H = 24;
-    const GAP_Y   = 14;
+    const TITLE_H = 28;   // titre 14 px + filet à y + 26
+    const GAP_Y   = 16;   // respiration verticale (le canvas 720 la permet)
     const colX: [number, number, number] = [
-      PX + 10,                       // gauche
+      PX + 12,                       // gauche
       PX + (PW - EQ_SLOT) / 2,       // centre (sur la silhouette)
-      PX + PW - 10 - EQ_SLOT,        // droite
+      PX + PW - 12 - EQ_SLOT,        // droite
     ];
     const rowY = (r: number) => PY + TITLE_H + 10 + r * (EQ_SLOT + GAP_Y);
 
@@ -281,6 +408,26 @@ export class InventoryScene extends Phaser.Scene {
       drawSlot(bg, sx, sy, EQ_SLOT, rarHex, { occupied: !!item });
       this.dynamicObjs.push(bg);
 
+      // Cadre pixel art réel (Retro Inventory) par-dessus le fond — cf. grille.
+      // Slot VIDE → variante `ui_slot_frame_empty` (bakée au boot) : même cadre,
+      // même gris, mais SANS l'emblème d'épée gravé au centre de l'asset — sur
+      // un slot vide il se lisait comme une arme déjà équipée et noyait le
+      // libellé fantôme (bug UX reporté). Cf. PreloaderScene.generateEmptySlotFrame.
+      const frame = addUiFrame(this, sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, EQ_SLOT, EQ_SLOT,
+        item ? 'ui_slot_frame' : 'ui_slot_frame_empty');
+      if (frame) this.dynamicObjs.push(frame);
+
+      // Anneau de rareté/survol au-dessus du cadre (slots occupés uniquement —
+      // un slot vide garde la bordure discrète de drawSlot sous le cadre).
+      const ring = this.add.graphics();
+      const drawRing = (color: number) => {
+        ring.clear();
+        ring.lineStyle(2, color, 1);
+        ring.strokeRoundedRect(sx, sy, EQ_SLOT, EQ_SLOT, 5);
+      };
+      if (item) drawRing(rarHex);
+      this.dynamicObjs.push(ring);
+
       if (item) {
         const iconKey = this.resolveIcon(item);
         if (iconKey) {
@@ -294,11 +441,19 @@ export class InventoryScene extends Phaser.Scene {
           this.addColorSquare(sx + 4, sy + 4, EQ_SLOT - 8, rarHex);
         }
       } else {
-        // Slot vide : abréviation lisible centrée à l'intérieur (ghost label)
-        const abbr = t(`inventory.slot.${key}`).slice(0, 4).toUpperCase();
+        // Slot vide : libellé fantôme COURT (`inventory.slot_short.*`, ≤ 7
+        // caractères — « Poitrine »/« Amulette » sortaient tronqués en
+        // « POITRI… ») + fitText en filet de sécurité (jamais de slice(n)).
+        // Les slots numérotés passent sur deux lignes : le numéro survit toujours.
+        // Mesure INTERIM en attendant les icônes de slot (assets à fournir).
+        const style    = uiStyle(TYPE.SMALL, UI.TXT_HINT, { bold: true, align: 'center' });
+        const full     = t(`inventory.slot_short.${key}`).toUpperCase();
+        const numbered = full.match(/^(.*\S)\s+(\d+)$/);
+        const label    = numbered
+          ? `${fitText(this, numbered[1]!, style, EQ_SLOT - 6)}\n${numbered[2]}`
+          : fitText(this, full, style, EQ_SLOT - 6);
         this.dynamicObjs.push(
-          this.add.text(sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, abbr, uiStyle(9, UI.TXT_HINT, { bold: true }))
-            .setOrigin(0.5),
+          this.add.text(sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, label, style).setOrigin(0.5),
         );
       }
 
@@ -308,10 +463,10 @@ export class InventoryScene extends Phaser.Scene {
           sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, EQ_SLOT + 8, EQ_SLOT + 8, 0x000000, 0,
         ).setInteractive({ useHandCursor: true });
         this.dynamicObjs.push(hit);
-        // clear() + redraw complet (pas juste un stroke par-dessus) : sinon chaque
-        // survol empile une nouvelle commande de tracé sur le même Graphics (fuite).
-        hit.on('pointerover', () => { bg.clear(); drawSlot(bg, sx, sy, EQ_SLOT, 0xffffff, { occupied: true }); });
-        hit.on('pointerout',  () => { bg.clear(); drawSlot(bg, sx, sy, EQ_SLOT, rarHex,    { occupied: true }); });
+        // Survol : seul l'anneau est redessiné (clear + stroke) — fond et cadre
+        // asset intacts, aucune commande de tracé ne s'empile.
+        hit.on('pointerover', () => drawRing(0xffffff));
+        hit.on('pointerout',  () => drawRing(rarHex));
         hit.on('pointerdown', () => this.showDetail(item));
 
         // White flash overlay — confirmation visuelle après un tap-equip.
@@ -338,15 +493,18 @@ export class InventoryScene extends Phaser.Scene {
     drawDivider(sepG, PX + 10, infoY, PW - 20, UI.ACCENT_ARCANE, 0.22);
     this.dynamicObjs.push(sepG);
 
+    const nameStyle = uiStyle(TYPE.BODY, UI.TXT_GOLD, { bold: true });
     this.dynamicObjs.push(
-      this.add.text(PX + PW / 2, infoY + 10, this.player.name, uiStyle(12, UI.TXT_GOLD, { bold: true }))
+      this.add.text(PX + PW / 2, infoY + 12,
+        fitText(this, this.player.name, nameStyle, PW - 24), nameStyle)
         .setOrigin(0.5, 0),
       this.add.text(
-        PX + PW / 2, infoY + 28,
+        PX + PW / 2, infoY + 32,
         t('inventory.level').replace('{level}', String(this.player.level)),
-        uiStyle(10, UI.TXT_PARCHMENT),
+        uiStyle(TYPE.SMALL, UI.TXT_PARCHMENT),
       ).setOrigin(0.5, 0),
-      this.add.text(PX + PW / 2, PY + PH - 10, t('inventory.slot_hint'), uiStyle(9, UI.TXT_HINT))
+      this.add.text(PX + PW / 2, PY + PH - 10, t('inventory.slot_hint'),
+        uiStyle(TYPE.SMALL, UI.TXT_HINT, { wordWrapWidth: PW - 20, align: 'center' }))
         .setOrigin(0.5, 1),
     );
   }
@@ -367,11 +525,11 @@ export class InventoryScene extends Phaser.Scene {
     const { x: PX, y: PY, w: PW, h: PH } = this.stBounds;
 
     this.dynamicObjs.push(
-      this.add.text(PX + PW / 2, PY + 6, t('inventory.stats'), uiStyle(11, UI.TXT_CYAN, { bold: true })).setOrigin(0.5, 0),
+      this.add.text(PX + PW / 2, PY + 6, t('inventory.stats'), uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true })).setOrigin(0.5, 0),
     );
 
     const sepTop = this.add.graphics();
-    drawDivider(sepTop, PX + 8, PY + 20, PW - 16, UI.ACCENT_ARCANE, 0.22);
+    drawDivider(sepTop, PX + 8, PY + 26, PW - 16, UI.ACCENT_ARCANE, 0.22);
     this.dynamicObjs.push(sepTop);
 
     // TOUTES les valeurs viennent de StatsSystem.computeAll (source de vérité) :
@@ -423,47 +581,51 @@ export class InventoryScene extends Phaser.Scene {
       },
     ];
 
-    const COL1  = PX + 14;
-    const COL2  = PX + PW - 14;
-    const ROW_H = 22;
-    let   y     = PY + 30;
+    const COL1  = PX + 16;
+    const COL2  = PX + PW - 16;
+    // 26 px de ligne pour un texte de 14 px : 12 px d'air. L'ancien ROW_H = 22
+    // datait d'un texte de 10/11 px et collait les lignes les unes aux autres.
+    const ROW_H = 26;
+    let   y     = PY + 36;
 
     for (const sec of sections) {
       // En-tête de section : pastille d'accent + label coloré + filet
       const hdrGfx = this.add.graphics();
       hdrGfx.fillStyle(sec.accent, 0.9);
-      hdrGfx.fillRoundedRect(PX + 10, y + 2, 3, 10, 1.5);
+      hdrGfx.fillRoundedRect(PX + 10, y + 1, 3, 10, 1.5);
       this.dynamicObjs.push(hdrGfx);
 
-      const title = this.add.text(PX + 18, y, sec.title, uiStyle(9, sec.titleColor, { bold: true }));
+      const title = this.add.text(PX + 18, y, sec.title, uiStyle(TYPE.SMALL, sec.titleColor, { bold: true }));
       this.dynamicObjs.push(title);
-      drawDivider(hdrGfx, PX + 24 + title.width, y + 7, COL2 - (PX + 24 + title.width), sec.accent, 0.18);
+      drawDivider(hdrGfx, PX + 24 + title.width, y + 6, COL2 - (PX + 24 + title.width), sec.accent, 0.18);
 
-      y += 20;
+      y += 22;
 
       sec.rows.forEach((row, i) => {
         // Zébrage discret une ligne sur deux — lecture rapide en colonne
         if (i % 2 === 0) {
           const zebra = this.add.graphics();
           zebra.fillStyle(0xffffff, 0.02);
-          zebra.fillRoundedRect(PX + 8, y - 3, PW - 16, ROW_H - 2, 3);
+          zebra.fillRoundedRect(PX + 8, y - 4, PW - 16, ROW_H - 2, 3);
           this.dynamicObjs.push(zebra);
         }
-        // Une stat réellement boostée par l'équipement (vs. la baseline sans
-        // gear) ressort en gras doré — sinon poids normal, couleur parchemin.
+        // Libellé et valeur à la MÊME taille (TYPE.LABEL/BODY = 14 : la grille
+        // de 7 px n'offre pas de palier entre 10 et 14) — la hiérarchie passe
+        // par la couleur et la graisse : libellé muted maigre, valeur grasse
+        // (or si un équipement la booste réellement, parchemin sinon).
         this.dynamicObjs.push(
-          this.add.text(COL1, y, row.label, uiStyle(10, UI.TXT_MUTED)),
-          this.add.text(COL2, y, row.value, uiStyle(11, row.boosted ? UI.TXT_GOLD : UI.TXT_PARCHMENT, { bold: row.boosted }))
+          this.add.text(COL1, y, row.label, uiStyle(TYPE.LABEL, UI.TXT_MUTED)),
+          this.add.text(COL2, y, row.value, uiStyle(TYPE.BODY, row.boosted ? UI.TXT_GOLD : UI.TXT_PARCHMENT, { bold: true }))
             .setOrigin(1, 0),
         );
         y += ROW_H;
       });
 
-      y += 10; // respiration entre sections
+      y += 12; // respiration entre sections
     }
 
     this.dynamicObjs.push(
-      this.add.text(PX + PW / 2, PY + PH - 12, t('inventory.tap_hint'), uiStyle(9, UI.TXT_HINT)).setOrigin(0.5, 1),
+      this.add.text(PX + PW / 2, PY + PH - 12, t('inventory.tap_hint'), uiStyle(TYPE.SMALL, UI.TXT_HINT)).setOrigin(0.5, 1),
     );
   }
 
@@ -479,31 +641,39 @@ export class InventoryScene extends Phaser.Scene {
     const rarColor = RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT;
 
     // ── Header ───────────────────────────────────────────────────────────
-    const back = this.add.text(PX + 10, PY + 6, t('inventory.back_stats'), uiStyle(10, UI.TXT_BLUE, { bold: true }))
+    // Lien retour avec hit zone élargie à 44 px de haut — le texte seul
+    // (10 px) était très en dessous de la norme tactile.
+    const back = this.add.text(PX + 12, PY + 8, t('inventory.back_stats'), uiStyle(TYPE.SMALL, UI.TXT_BLUE, { bold: true }));
+    const backHit = this.add.rectangle(
+      PX + 12 + back.width / 2, PY + 8 + back.height / 2,
+      back.width + 24, 44, 0x000000, 0,
+    )
       .setInteractive({ useHandCursor: true })
       .on('pointerover', () => back.setColor(UI.TXT_GOLD))
       .on('pointerout',  () => back.setColor(UI.TXT_BLUE))
       .on('pointerdown', () => { this.selectedItem = null; this.refresh(); });
-    this.dynamicObjs.push(back);
+    this.dynamicObjs.push(back, backHit);
 
     this.dynamicObjs.push(
-      this.add.text(PX + PW / 2, PY + 6, t('inventory.detail'), uiStyle(11, UI.TXT_CYAN, { bold: true })).setOrigin(0.5, 0),
+      this.add.text(PX + PW / 2, PY + 6, t('inventory.detail'), uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true })).setOrigin(0.5, 0),
     );
 
     const sepTop = this.add.graphics();
-    drawDivider(sepTop, PX + 8, PY + 22, PW - 16, UI.ACCENT_ARCANE, 0.22);
+    drawDivider(sepTop, PX + 8, PY + 26, PW - 16, UI.ACCENT_ARCANE, 0.22);
     this.dynamicObjs.push(sepTop);
 
     // ── Item identity ─────────────────────────────────────────────────────
-    let curY = PY + 32;
+    let curY = PY + 38;
 
     this.dynamicObjs.push(
-      this.add.text(PX + PW / 2, curY, `[${t(`rarity.${item.rarity}`)}]`, uiStyle(9, rarColor, { bold: true })).setOrigin(0.5, 0),
+      this.add.text(PX + PW / 2, curY, `[${t(`rarity.${item.rarity}`)}]`, uiStyle(TYPE.SMALL, rarColor, { bold: true })).setOrigin(0.5, 0),
     );
-    curY += 16;
+    curY += 18;
 
-    const nameTxt = this.add.text(PX + PW / 2, curY, locItem.name, uiStyle(13, rarColor, {
-      bold: true, stroke: true, wordWrapWidth: PW - 20, align: 'center',
+    // Le NOM est le héros du panneau : TYPE.HEADING (21), couleur de rareté —
+    // un vrai cran au-dessus des stats (14) et de la description (10).
+    const nameTxt = this.add.text(PX + PW / 2, curY, locItem.name, uiStyle(TYPE.HEADING, rarColor, {
+      bold: true, stroke: true, wordWrapWidth: PW - 24, align: 'center',
     })).setOrigin(0.5, 0);
     this.dynamicObjs.push(nameTxt);
     curY += nameTxt.height + 10;
@@ -513,7 +683,7 @@ export class InventoryScene extends Phaser.Scene {
     const resonance = this.getResonance(item);
     if (resonance !== null) {
       const resTxt = this.add.text(
-        PX + PW / 2, curY, `Résonance ${resonance}% — ${StatRollSystem.getResonanceLabel(resonance)}`,
+        PX + PW / 2, curY, formatResonanceLine(resonance),
         uiStyle(9, resonanceColor(resonance), { bold: true }),
       ).setOrigin(0.5, 0);
       this.dynamicObjs.push(resTxt);
@@ -524,7 +694,7 @@ export class InventoryScene extends Phaser.Scene {
     // fourchette catalogue en petit gris juste après — §7.2) ───────────────
     const mainView = this.getMainStatLineView(item);
     if (mainView) {
-      const valueTxt = this.add.text(0, curY, mainView.text, uiStyle(12, mainView.color, { bold: true, stroke: true }));
+      const valueTxt = this.add.text(0, curY, mainView.text, uiStyle(TYPE.BODY, mainView.color, { bold: true, stroke: true }));
       let pairW = valueTxt.width;
       let rangeTxt: Phaser.GameObjects.Text | undefined;
       if (mainView.rangeText) {
@@ -548,20 +718,35 @@ export class InventoryScene extends Phaser.Scene {
     // ── Substats (teinte de qualité locale par ligne + fourchette en petit
     // gris — §7.2) ──────────────────────────────────────────────────────────
     for (const view of this.getSubstatLineViews(item)) {
-      const bulletTxt = this.add.text(PX + 14, curY, `• ${view.text}`, uiStyle(10, view.color));
+      const bulletTxt = this.add.text(PX + 16, curY, `• ${view.text}`, uiStyle(TYPE.BODY, view.color));
       this.dynamicObjs.push(bulletTxt);
       if (view.rangeText) {
         this.dynamicObjs.push(
-          this.add.text(PX + 14 + bulletTxt.width + 4, curY + 1, view.rangeText, uiStyle(TYPE.SMALL, UI.TXT_MUTED)),
+          this.add.text(PX + 16 + bulletTxt.width + 6, curY + 3, view.rangeText, uiStyle(TYPE.SMALL, UI.TXT_MUTED)),
         );
       }
-      curY += 17;
+      curY += 20;   // 14 px de texte + 6 d'air — l'ancien 17 collait les puces
     }
-    curY += 6;
+    curY += 8;
+
+    // ── Passif — ENTRE les stats et la description, en bleu clair gras :
+    // c'est l'info décisive d'un équipement (Hidden en particulier), elle doit
+    // ressortir au lieu de se fondre dans l'italique muted du lore. Même
+    // convention que le popup de confirmation (showActionConfirmPopup).
+    const detailPassive = ('passiveEffect' in item && item.passiveEffect)
+      ? getPassiveEffectLabel(item.passiveEffect)
+      : undefined;
+    if (detailPassive) {
+      const passiveTxt = this.add.text(PX + 14, curY,
+        `${t('arsenal.passive_label')} ${detailPassive}`,
+        uiStyle(TYPE.SMALL, UI.TXT_BLUE, { bold: true, wordWrapWidth: PW - 28, lineSpacing: 4 }));
+      this.dynamicObjs.push(passiveTxt);
+      curY += passiveTxt.height + 8;
+    }
 
     // ── Description ───────────────────────────────────────────────────────
-    const descTxt = this.add.text(PX + 12, curY, locItem.description, uiStyle(10, UI.TXT_MUTED, {
-      italic: true, wordWrapWidth: PW - 24, lineSpacing: 3,
+    const descTxt = this.add.text(PX + 14, curY, locItem.description, uiStyle(TYPE.SMALL, UI.TXT_MUTED, {
+      italic: true, wordWrapWidth: PW - 28, lineSpacing: 4,
     }));
     this.dynamicObjs.push(descTxt);
 
@@ -570,11 +755,11 @@ export class InventoryScene extends Phaser.Scene {
     const isUse    = item.type === ItemType.CONSUMABLE;
     const isSell   = item.type !== ItemType.KEY_ITEM;
     const btnCount = (isEquip || isUse ? 1 : 0) + (isSell ? 1 : 0) + 1; // +1 for close
-    const BTN_H    = 32;   // visuel 32 px, hit zone 44 px (norme tactile)
-    const BTN_GAP  = 8;
-    const BTN_W    = PW - 20;
-    const BTN_X    = PX + 10;
-    let   btnY     = PY + PH - btnCount * (BTN_H + BTN_GAP) - 4;
+    const BTN_H    = 36;   // visuel 36 px (label 14 px), hit zone ≥ 44 px (norme tactile)
+    const BTN_GAP  = 10;
+    const BTN_W    = PW - 24;
+    const BTN_X    = PX + 12;
+    let   btnY     = PY + PH - btnCount * (BTN_H + BTN_GAP) - 6;
 
     const addBtn = (label: string, color: string, onClick: () => void) => {
       const y       = btnY;
@@ -583,7 +768,7 @@ export class InventoryScene extends Phaser.Scene {
       bgGfx.fillRoundedRect(BTN_X, y, BTN_W, BTN_H, 4);
       bgGfx.lineStyle(1, UI.BTN_BORDER, 1);
       bgGfx.strokeRoundedRect(BTN_X, y, BTN_W, BTN_H, 4);
-      const txt = this.add.text(BTN_X + BTN_W / 2, y + BTN_H / 2, label, uiStyle(11, color, { bold: true })).setOrigin(0.5);
+      const txt = this.add.text(BTN_X + BTN_W / 2, y + BTN_H / 2, label, uiStyle(TYPE.BODY, color, { bold: true })).setOrigin(0.5);
       const hit = this.add.rectangle(BTN_X + BTN_W / 2, y + BTN_H / 2, BTN_W + 6, Math.max(44, BTN_H + BTN_GAP), 0x000000, 0)
         .setInteractive({ useHandCursor: true })
         .on('pointerover', () => {
@@ -641,17 +826,32 @@ export class InventoryScene extends Phaser.Scene {
     this.input.off('pointermove');
 
     const { x: PX, y: PY, w: PW, h: PH } = this.bagBounds;
-    const TITLE_H   = 22;
+    const TITLE_H   = BAG_TITLE_H;
     const GRID_PAD  = 8;
     const GRID_X    = PX + GRID_PAD;
-    const GRID_Y    = PY + TITLE_H;
-    const VISIBLE_H = PH - TITLE_H;
+
+    // ── Onglets de filtrage (D13) — rangée fixe entre le titre SAC et la grille
+    this.renderBagTabs(GRID_X, PY + TITLE_H, INV_COLS * INV_SLOT);
+
+    // Le champ de recherche (créé dans create(), pas ici) occupe la bande entre
+    // les onglets et la grille : la grille démarre sous lui.
+    const SEARCH_BAND = BAG_SEARCH_H + BAG_SEARCH_GAP;
+    const GRID_Y    = PY + TITLE_H + BAG_TABS_H + 4 + SEARCH_BAND;
+    const VISIBLE_H = PH - TITLE_H - BAG_TABS_H - 4 - SEARCH_BAND;
 
     // Grouped by category (weapons / armor / accessories / ...), rarity-sorted within
     // each group — see InventorySystem.groupForDisplay. A layout pass computes every
     // group's header/item pixel offsets up front so contentH (and thus the scroll
     // mask + max scroll) is known before anything is drawn.
-    const groups = InventorySystem.groupForDisplay(this.player.inventory);
+    // Les DEUX filtres (onglet de catégorie + recherche textuelle) s'appliquent
+    // AVANT la passe de layout — c'est la condition pour que `contentH`, le masque
+    // de scroll et la virtualisation se recalculent sur le contenu RÉELLEMENT
+    // affiché. Ils se COMBINENT : la recherche cherche dans l'onglet actif.
+    const activeTab = BAG_TABS.find(tb => tb.id === this.bagFilter) ?? BAG_TABS[0]!;
+    const groups = InventorySystem.groupForDisplay(this.player.inventory)
+      .filter(g => activeTab.cats === null || activeTab.cats.includes(g.category))
+      .map(g => ({ ...g, slots: g.slots.filter(s => this.matchesQuery(s.item)) }))
+      .filter(g => g.slots.length > 0);
     interface GroupLayout { category: InventoryCategory; slots: InventorySlot[]; headerY: number; itemsY: number }
     let cursorY = 0;
     const layouts: GroupLayout[] = groups.map((g) => {
@@ -671,41 +871,160 @@ export class InventoryScene extends Phaser.Scene {
     const geomMask = maskGfx.createGeometryMask();
     this.scrollMaskGfx = maskGfx;
 
-    const scrollables: { obj: ScrollableGO; baseY: number }[] = [];
+    // ══════════════════════════════════════════════════════════════════
+    // VIRTUALISATION DE LA GRILLE
+    //
+    // Avant : chaque slot du sac était instancié, quel qu'en soit le nombre.
+    // Un slot coûte ~5 GameObjects (fond Graphics + cadre NineSlice + anneau de
+    // survol + icône + zone cliquable) — avec un sac de 400 items, ça faisait
+    // ~2 000 objets créés à CHAQUE refresh (ouverture, clic d'onglet, équipement,
+    // vente), et le scroll repositionnait les 2 000 à chaque cran de molette.
+    // D'où le freeze : le jeu devenait injouable dès que le sac se remplissait.
+    //
+    // Maintenant : on ne rend que la fenêtre visible + une marge de RENDER_BUFFER
+    // px au-dessus et en dessous. Le scroll se contente de déplacer ce petit lot ;
+    // on ne reconstruit la fenêtre que lorsqu'on sort de la marge. Le coût devient
+    // fonction de la HAUTEUR DU PANNEAU, plus de la taille du sac : un sac de 40
+    // items et un sac de 1 000 rendent exactement le même nombre d'objets.
+    // ══════════════════════════════════════════════════════════════════
+    const RENDER_BUFFER = INV_SLOT * 2; // 2 rangées de marge de part et d'autre
+
+    let scrollables: { obj: ScrollableGO; baseY: number }[] = [];
+    /** Objets de la fenêtre courante — détruits/reconstruits à chaque re-fenêtrage,
+     *  séparés de dynamicObjs (qui, lui, ne bouge pas tant qu'on ne refresh() pas). */
+    let windowObjs: Phaser.GameObjects.GameObject[] = [];
+    /**
+     * Zones cliquables des slots, suivies à part.
+     *
+     * Un masque géométrique découpe le RENDU, jamais l'INPUT : un slot scrollé
+     * au-dessus de la grille reste invisible mais toujours cliquable, à cheval
+     * sur la rangée d'onglets. D'où le bug reporté — « après avoir scrollé, si je
+     * clique sur une catégorie ça clique sur l'item en dessous » : les deux zones
+     * se déclenchaient. On coupe donc l'input des slots sortis du viewport, à
+     * chaque déplacement (cf. syncHitZones).
+     */
+    let hitZones: { obj: Phaser.GameObjects.GameObject; baseY: number }[] = [];
+
     const reg: RegisterFn = (go, baseY) => {
       go.setMask(geomMask);
       scrollables.push({ obj: go, baseY });
-      this.dynamicObjs.push(go);
+      windowObjs.push(go);
+      if (go.input) hitZones.push({ obj: go, baseY });
     };
 
-    // Empty state
-    if (this.player.inventory.length === 0) {
-      this.dynamicObjs.push(
-        this.add.text(
-          PX + PW / 2, GRID_Y + VISIBLE_H / 2,
-          t('inventory.empty'), uiStyle(11, UI.TXT_HINT),
-        ).setOrigin(0.5),
-      );
-    }
+    /** N'accepte le clic que si le slot est ENTIÈREMENT dans la bande visible —
+     *  un slot à moitié coupé par le bord ne doit pas être actionnable non plus.
+     *  `baseY` d'une zone cliquable est son CENTRE (cf. renderInventorySlot). */
+    const syncHitZones = (sy: number) => {
+      const half = INV_SLOT / 2;
+      for (const { obj, baseY } of hitZones) {
+        const cy = baseY - sy;
+        if (obj.input) obj.input.enabled = (cy - half >= GRID_Y) && (cy + half <= GRID_Y + VISIBLE_H);
+      }
+    };
 
     const gridW = INV_COLS * INV_SLOT;
-    for (const layout of layouts) {
-      this.renderInventoryGroupHeader(layout.category, layout.slots.length, GRID_X, GRID_Y + layout.headerY, gridW, reg);
-      layout.slots.forEach((slot, idx) => {
-        const col  = idx % INV_COLS;
-        const row  = Math.floor(idx / INV_COLS);
-        const sx   = GRID_X + col * INV_SLOT;
-        const topY = GRID_Y + layout.itemsY + row * INV_SLOT;
-        this.renderInventorySlot(slot, sx, topY, reg);
-      });
+
+    /** (Re)construit les seuls objets qui tombent dans la fenêtre visible. */
+    const renderWindow = (sy: number) => {
+      for (const go of windowObjs) { if (go.active) go.destroy(); }
+      windowObjs = [];
+      scrollables = [];
+      hitZones = [];
+
+      const top    = sy - RENDER_BUFFER;
+      const bottom = sy + VISIBLE_H + RENDER_BUFFER;
+
+      for (const layout of layouts) {
+        // En-tête de groupe
+        if (layout.headerY + GROUP_HEADER_H >= top && layout.headerY <= bottom) {
+          this.renderInventoryGroupHeader(
+            layout.category, layout.slots.length,
+            GRID_X, GRID_Y + layout.headerY, gridW, reg,
+          );
+        }
+        // Slots : on saute directement aux rangées concernées, sans balayer le reste
+        const rows      = Math.ceil(layout.slots.length / INV_COLS);
+        const firstRow  = Math.max(0, Math.floor((top - layout.itemsY) / INV_SLOT));
+        const lastRow   = Math.min(rows - 1, Math.floor((bottom - layout.itemsY) / INV_SLOT));
+        for (let row = firstRow; row <= lastRow; row++) {
+          for (let col = 0; col < INV_COLS; col++) {
+            const idx = row * INV_COLS + col;
+            const slot = layout.slots[idx];
+            if (!slot) break;
+            this.renderInventorySlot(
+              slot,
+              GRID_X + col * INV_SLOT,
+              GRID_Y + layout.itemsY + row * INV_SLOT,
+              reg,
+            );
+          }
+        }
+      }
+      // Repositionner le lot fraîchement créé selon le scroll courant
+      for (const { obj, baseY } of scrollables) obj.setY(baseY - sy);
+      syncHitZones(sy);
+    };
+
+    // État vide — sac vide, onglet sans item, OU recherche sans résultat : on
+    // distingue les cas, sinon « Inventaire vide » sur une recherche infructueuse
+    // ferait croire à un sac réellement vidé.
+    if (groups.length === 0) {
+      const hasQuery = this.searchQuery.length > 0;
+      this.dynamicObjs.push(
+        this.add.text(
+          PX + PW / 2, GRID_Y + VISIBLE_H / 2 - (hasQuery ? 10 : 0),
+          hasQuery ? t('search.no_results') : t('inventory.empty'),
+          uiStyle(TYPE.BODY, UI.TXT_MUTED, { bold: hasQuery }),
+        ).setOrigin(0.5),
+      );
+      if (hasQuery) {
+        this.dynamicObjs.push(
+          this.add.text(
+            PX + PW / 2, GRID_Y + VISIBLE_H / 2 + 14,
+            // Texte TEL QUE TAPÉ (« Épée »), pas la forme normalisée (« epee »).
+            t('search.no_results_hint').replace('{q}', this.search?.text ?? this.searchQuery),
+            uiStyle(TYPE.SMALL, UI.TXT_HINT, { align: 'center', wordWrapWidth: PW - 20 }),
+          ).setOrigin(0.5),
+        );
+      }
     }
+
+    renderWindow(0);
+    /** Scroll auquel la fenêtre courante a été construite. */
+    let windowScrollY = 0;
+    // Les objets de fenêtre doivent mourir avec le reste au prochain refresh() :
+    // on branche un porteur dans dynamicObjs qui les détruit en cascade.
+    this.gridWindowDispose = () => {
+      for (const go of windowObjs) { if (go.active) go.destroy(); }
+      windowObjs = [];
+      scrollables = [];
+      // `hitZones` référence les MÊMES objets : le vider aussi, sinon syncHitZones
+      // pourrait un jour être appelé sur des GameObjects détruits. Inoffensif
+      // aujourd'hui (clearDynamic retire les handlers de scroll avant d'appeler
+      // ceci), mais l'asymétrie piégerait le prochain appelant.
+      hitZones = [];
+    };
 
     // Scroll : molette (desktop) + drag vertical (tactile — dette D2 résorbée)
     if (contentH > VISIBLE_H) {
       const maxScroll = contentH - VISIBLE_H;
+
+      const applyScroll = (next: number) => {
+        scrollY = Phaser.Math.Clamp(next, 0, maxScroll);
+        // Tant qu'on reste dans la marge, il suffit de déplacer le petit lot déjà
+        // rendu. On ne reconstruit la fenêtre que lorsqu'on en sort.
+        if (Math.abs(scrollY - windowScrollY) >= RENDER_BUFFER) {
+          renderWindow(scrollY);
+          windowScrollY = scrollY;
+        } else {
+          for (const { obj, baseY } of scrollables) obj.setY(baseY - scrollY);
+          syncHitZones(scrollY);
+        }
+      };
+
       this.input.on('wheel', (_p: unknown, _g: unknown, _dx: number, dy: number) => {
-        scrollY = Phaser.Math.Clamp(scrollY + dy * 0.8, 0, maxScroll);
-        for (const { obj, baseY } of scrollables) obj.setY(baseY - scrollY);
+        applyScroll(scrollY + dy * 0.8);
       });
 
       const gridRight = GRID_X + INV_COLS * INV_SLOT + 4;
@@ -716,8 +1035,7 @@ export class InventoryScene extends Phaser.Scene {
         if (p.downY < GRID_Y || p.downY > GRID_Y + VISIBLE_H) return;
         const dy = p.y - p.prevPosition.y;
         if (dy === 0) return;
-        scrollY = Phaser.Math.Clamp(scrollY - dy, 0, maxScroll);
-        for (const { obj, baseY } of scrollables) obj.setY(baseY - scrollY);
+        applyScroll(scrollY - dy);
         // Un drag en cours annule le long-press (le doigt scrolle, il ne maintient pas)
         if (p.getDistance() > 10 && this.longPressTimer !== null) {
           clearTimeout(this.longPressTimer);
@@ -725,6 +1043,120 @@ export class InventoryScene extends Phaser.Scene {
         }
       });
     }
+  }
+
+  /**
+   * Rangée d'onglets de filtrage du sac (D13) : Tous | Équipement |
+   * Consommables | Matériaux | Quête & divers — en ICÔNES (glyphes `bagtab_*`
+   * bakés au boot, tooltip texte au survol pour l'accessibilité), fallback
+   * label texte si la sheet d'icônes n'est pas chargée.
+   *
+   * Fond : pilule Graphics sobre (vocabulaire des tabs de PauseScene). L'asset
+   * `ui_tab_frame` a été retiré ici : étiré en NineSlice sur ~64×26, son motif
+   * produisait le fond « sale » reporté par l'utilisateur.
+   *
+   * Onglet actif : fond BG_MID + liseré et bande basse arcane + glyphe alpha
+   * plein ; hit zone 44 px de haut (norme tactile). Le changement d'onglet
+   * re-rend tout (refresh) — l'état actif EST le feedback.
+   */
+  private renderBagTabs(x: number, y: number, w: number): void {
+    const GAP = 4;
+    const tw  = Math.floor((w - GAP * (BAG_TABS.length - 1)) / BAG_TABS.length);
+
+    BAG_TABS.forEach((tab, i) => {
+      const tx     = x + i * (tw + GAP);
+      const active = tab.id === this.bagFilter;
+      const cx     = tx + tw / 2;
+      const cy     = y + BAG_TABS_H / 2;
+
+      const g = this.add.graphics();
+      g.fillStyle(active ? UI.BG_MID : UI.BG_DEEP, 1);
+      g.fillRoundedRect(tx, y, tw, BAG_TABS_H, 4);
+      g.lineStyle(1, active ? UI.ACCENT_ARCANE : UI.SEPARATOR, active ? 0.9 : 1);
+      g.strokeRoundedRect(tx, y, tw, BAG_TABS_H, 4);
+      if (active) {
+        // Bande d'accent basse — même vocabulaire que les tabs de SkillScene/Pause
+        g.fillStyle(UI.ACCENT_ARCANE, 0.9);
+        g.fillRect(tx + 4, y + BAG_TABS_H - 3, tw - 8, 2);
+      }
+      this.dynamicObjs.push(g);
+
+      // Glyphe 32×32 à sa taille NATIVE (bake ×2 de la grille 16 px — tout
+      // redimensionnement non entier réintroduirait du flou NEAREST).
+      const inactiveAlpha = 0.45;
+      let icon: Phaser.GameObjects.Image | null = null;
+      if (this.textures.exists(tab.icon)) {
+        icon = this.add.image(cx, cy, tab.icon).setAlpha(active ? 1 : inactiveAlpha);
+        this.dynamicObjs.push(icon);
+      } else {
+        // Fallback texte (sheet ui_icons_16 absente) — comportement historique,
+        // clampé en pixels (les labels complets servent d'abord au tooltip).
+        const tabStyle = uiStyle(TYPE.SMALL, active ? UI.TXT_CYAN : UI.TXT_MUTED, { bold: active });
+        this.dynamicObjs.push(
+          this.add.text(cx, cy, fitText(this, t(tab.labelKey), tabStyle, tw - 8), tabStyle).setOrigin(0.5),
+        );
+      }
+
+      const hit = this.add.rectangle(cx, cy, tw + GAP, 44, 0x000000, 0)
+        .setInteractive({ useHandCursor: true });
+      hit.on('pointerover', () => {
+        if (icon && !active) icon.setAlpha(0.8);
+        this.showTabTooltip(cx, y, t(tab.labelKey));
+      });
+      hit.on('pointerout', () => {
+        if (icon && tab.id !== this.bagFilter) icon.setAlpha(inactiveAlpha);
+        this.hideTabTooltip();
+      });
+      hit.on('pointerdown', () => {
+        this.hideTabTooltip();
+        if (this.bagFilter === tab.id) return;
+        this.bagFilter = tab.id;
+        this.refresh(); // re-rend immédiatement — l'état actif EST le feedback
+      });
+      this.dynamicObjs.push(hit);
+    });
+  }
+
+  /**
+   * Tooltip du survol d'un onglet à icône — nom complet du filtre, au-dessus de
+   * la rangée (depth 30, convention tooltips §2.5). Un seul à la fois.
+   *
+   * Panneau OPAQUE, pas un simple `add.text` : la rangée d'onglets a le champ de
+   * recherche juste au-dessus, et un texte nu s'y superposait lettre sur lettre
+   * (défaut reporté : « les hover se chevauchent avec le reste »). Un fond qui
+   * masque ce qu'il recouvre est la seule façon de rendre un tooltip lisible
+   * quand il déborde forcément sur un voisin.
+   */
+  private showTabTooltip(cx: number, tabTopY: number, label: string): void {
+    this.hideTabTooltip();
+
+    const PAD_X = 8;
+    const PAD_Y = 4;
+    const txt = this.add.text(0, 0, label,
+      uiStyle(TYPE.SMALL, UI.TXT_PARCHMENT, { bold: true })).setOrigin(0.5);
+    const w = txt.width  + PAD_X * 2;
+    const h = txt.height + PAD_Y * 2;
+
+    const bg = this.add.graphics();
+    bg.fillStyle(UI.BG_DEEP, 1);
+    bg.fillRoundedRect(-w / 2, -h / 2, w, h, 3);
+    bg.lineStyle(1, UI.ACCENT_ARCANE, 0.7);
+    bg.strokeRoundedRect(-w / 2, -h / 2, w, h, 3);
+
+    // Origine du conteneur = centre du panneau : on le pose à h/2 au-dessus du
+    // bord haut des onglets pour que son BAS affleure la rangée.
+    this.tabTooltip = this.add.container(cx, tabTopY - 4 - h / 2, [bg, txt]).setDepth(30);
+
+    // Clamp horizontal : le tooltip du premier/dernier onglet ne doit pas sortir
+    // du cadre — on borne le CENTRE du panneau, pas celui du texte.
+    const W = this.cameras.main.width;
+    const min = MARGIN + 4 + w / 2;
+    const max = W - MARGIN - 4 - w / 2;
+    this.tabTooltip.setX(Phaser.Math.Clamp(cx, Math.min(min, max), max));
+  }
+
+  private hideTabTooltip(): void {
+    if (this.tabTooltip) { this.tabTooltip.destroy(); this.tabTooltip = null; }
   }
 
   /**
@@ -769,6 +1201,32 @@ export class InventoryScene extends Phaser.Scene {
     drawSlot(bg, sx, 0, INV_SLOT - 2, rarHex, { occupied: true, radius: 4 });
     bg.setY(topY);
     reg(bg, topY);
+
+    // Cadre pixel art réel (Retro Inventory) par-dessus le fond, sous l'icône —
+    // absent (script de copie pas lancé) : le rendu drawSlot reste tel quel.
+    //
+    // Variante `_empty` (intérieur aplati au gris de fond) et NON l'asset brut :
+    // `ui_slot_frame` porte une épée gravée au centre, qui transparaissait sous
+    // les icônes d'items à fond ajouré — d'où « certaines armes ont une glyphe et
+    // d'autres non » (les icônes opaques la masquaient, les autres pas). Une case
+    // de sac PLEINE n'a rien à annoncer : son contenu est déjà dessiné dessus.
+    const frame = addUiFrame(
+      this, sx + (INV_SLOT - 2) / 2, midY, INV_SLOT - 2, INV_SLOT - 2, 'ui_slot_frame_empty',
+    );
+    if (frame) reg(frame, midY);
+
+    // Anneau de rareté/survol AU-DESSUS du cadre (la bordure de drawSlot passe
+    // sous le cadre asset) — les handlers hover redessinent cet anneau, plus
+    // jamais le bg complet (même géométrie/épaisseur que la bordure drawSlot).
+    const ring = this.add.graphics();
+    const drawRing = (color: number) => {
+      ring.clear();
+      ring.lineStyle(2, color, 1);
+      ring.strokeRoundedRect(sx, 0, INV_SLOT - 2, INV_SLOT - 2, 4);
+    };
+    drawRing(rarHex);
+    ring.setY(topY);
+    reg(ring, topY);
 
     // Icon (try texture, fallback to colored square)
     const iconKey = this.resolveIcon(slot.item);
@@ -820,16 +1278,28 @@ export class InventoryScene extends Phaser.Scene {
         this.doMainAction(slot.item, screenX, screenY);
       }
     });
-    // clear() + redraw complet — cf. note équivalente sur le paperdoll plus haut.
-    hit.on('pointerover', () => { bg.clear(); drawSlot(bg, sx, 0, INV_SLOT - 2, 0xffffff, { occupied: true, radius: 4 }); });
+    // Survol : seul l'anneau est redessiné (clear + stroke) — le fond et le
+    // cadre asset restent intacts, aucune commande de tracé ne s'empile.
+    hit.on('pointerover', () => drawRing(0xffffff));
     hit.on('pointerout',  () => {
       // Cancel long-press if the pointer leaves before 500 ms
       if (this.longPressTimer !== null) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
-      bg.clear(); drawSlot(bg, sx, 0, INV_SLOT - 2, rarHex, { occupied: true, radius: 4 });
+      drawRing(rarHex);
     });
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+
+  /**
+   * Prédicat de recherche d'un objet du sac — sur le nom LOCALISÉ (`localizeItem`),
+   * la rareté et la catégorie affichée : le joueur cherche ce qu'il LIT à l'écran,
+   * pas l'id de data. Insensible à la casse ET aux accents (« epee » → « Épée »),
+   * cf. normalizeSearch/matchesSearch.
+   */
+  private matchesQuery(item: Item): boolean {
+    if (this.searchQuery.length === 0) return true;
+    return matchesSearch(this.searchQuery, localizeItem(item).name, t(`rarity.${item.rarity}`));
+  }
 
   /** Returns a valid texture key for the item icon, or null (caller draws a colored square). */
   private resolveIcon(item: Item): string | null {
@@ -995,15 +1465,41 @@ export class InventoryScene extends Phaser.Scene {
     // Only one popup at a time — dismiss any existing one first
     this.closeConsumePopup();
 
+    // Le popup est ancré sur le slot touché : il peut remonter jusque sur la bande
+    // du champ de recherche. Or la surface de capture du champ est un élément DOM,
+    // qui flotte AU-DESSUS du canvas quelle que soit la profondeur Phaser du popup
+    // — elle avalerait les taps sur les boutons du popup. On la neutralise tant que
+    // le popup est ouvert (la requête, elle, est conservée).
+    this.search?.setEnabled(false);
+
     const isConsumable = item.type === ItemType.CONSUMABLE;
     const isEquip       = EQUIP_TYPES.includes(item.type);
 
     const W       = this.cameras.main.width;
     const H       = this.cameras.main.height;
-    const PW      = isEquip ? 240 : 210;
-    const MARGIN  = 6;
-    const ICON_SIZE = 32; // seule source de vérité — réutilisé pour la mesure ET le rendu
-    const BTN_H     = 44; // idem — ≥44px touch target (Apple HIG)
+    // Aération : le popup était compact au point d'être illisible une fois la police
+    // passée en 14 px. On donne de la largeur (le canvas fait maintenant 960), de la
+    // marge intérieure, et surtout de l'INTERLIGNE — c'est lui qui manquait le plus :
+    // sept substats collées les unes aux autres se lisent comme un bloc, pas comme
+    // une liste.
+    const PW        = isEquip ? 340 : 260;
+    const MARGIN    = 12;   // 6 → 12 : padding intérieur réel
+    // 18 → 14 : les substats sont passées de BODY (Standard 14) à SMALL (Minimal
+    // 10) — elles pesaient autant que le nom de l'item et écrasaient la bulle.
+    // 10 px est le PLANCHER : Neatpixels Minimal a une grille de 10, descendre
+    // en dessous rasteriserait les glyphes hors grille et les rendrait flous
+    // (c'est la raison du flou qu'on a éliminé, on ne le réintroduit pas ici).
+    // Le passif est déjà à ce plancher.
+    const LINE_H    = 14;
+    const BLOCK_GAP = 12;   // respiration entre blocs (stats | lore | passif)
+    // La case de la popup a EXACTEMENT le gabarit d'une case du sac (INV_SLOT - 2),
+    // et l'art dedans la même taille (32) : c'est ce qui la rend indiscernable
+    // d'une case de la grille — le but même de la correction. Deux constantes et
+    // non une : le cadre pixel occupe la couronne entre les deux, il lui faut
+    // cette marge pour exister (un art à 46 dans une case de 46 le recouvrirait).
+    const ICON_SIZE = INV_SLOT - 2;  // case
+    const ICON_ART  = 32;            // icône
+    const BTN_H     = 44;   // ≥44px touch target (Apple HIG)
 
     // Hauteur du panneau calculée depuis le contenu réel (plus de troncature à 90
     // caractères ni de taille fixe trop courte pour un lore long) : on mesure le
@@ -1011,31 +1507,67 @@ export class InventoryScene extends Phaser.Scene {
     // décider PH, puis on le détruit — le vrai texte est recréé plus bas une fois
     // la position finale connue.
     const locItem    = localizeItem(item);
-    const substatCount = isEquip ? this.getSubstatLineViews(item).slice(0, 3).length : 0;
+    // Plus de plafond à 3 lignes. Le nombre de substats EST le signal de rareté
+    // (1 en COMMON → 7 en HIDDEN, cf. SUBSTAT_COUNT_BY_RARITY) : en tronquer
+    // l'affichage rendait un Hidden à 7 lignes strictement identique à un RARE à 3,
+    // et effaçait la hiérarchie que toute la table de raretés sert à établir.
+    // La hauteur du panneau est déjà dérivée de substatCount, il s'adapte donc seul.
+    const substatCount = isEquip ? this.getSubstatLineViews(item).length : 0;
     const passiveLabel = ('passiveEffect' in item && item.passiveEffect)
       ? getPassiveEffectLabel(item.passiveEffect)
       : undefined;
     const baseDesc0  = isEquip ? (locItem.lore ?? locItem.description) : '';
-    const descRaw0   = passiveLabel ? `${baseDesc0}\n\n${t('arsenal.passive_label')} ${passiveLabel}` : baseDesc0;
-    let   descHeight = 0;
-    if (isEquip && descRaw0) {
-      const probe = this.add.text(0, 0, descRaw0, uiStyle(9, UI.TXT_MUTED, {
-        italic: true, wordWrapWidth: PW - MARGIN * 2, lineSpacing: 2,
+    // Passif SÉPARÉ du lore (il était concaténé en fin de description) : rendu
+    // ENTRE les stats et le lore, en BLEU CLAIR gras — c'est l'info décisive
+    // d'un équipement, elle ne doit plus se fondre dans l'italique du lore.
+    const passiveText  = (isEquip && passiveLabel) ? `${t('arsenal.passive_label')} ${passiveLabel}` : undefined;
+    const passiveStyle = uiStyle(TYPE.SMALL, UI.TXT_BLUE, { bold: true, wordWrapWidth: PW - MARGIN * 2, lineSpacing: 4 });
+    let passiveHeight = 0;
+    if (passiveText) {
+      const probe = this.add.text(0, 0, passiveText, passiveStyle);
+      passiveHeight = probe.height;
+      probe.destroy();
+    }
+    let descHeight = 0;
+    if (isEquip && baseDesc0) {
+      const probe = this.add.text(0, 0, baseDesc0, uiStyle(TYPE.SMALL, UI.TXT_MUTED, {
+        italic: true, wordWrapWidth: PW - MARGIN * 2, lineSpacing: 4,
       }));
       descHeight = probe.height;
       probe.destroy();
     }
     // Résonance (instance réellement possédée) : une ligne compacte sous le nom,
-    // seulement pour les équipements et si calculable — décale le header de 14px.
+    // seulement pour les équipements et si calculable.
     const resonance = isEquip ? this.getResonance(item) : null;
     const hasResonanceLine = resonance !== null;
-    const headerH = MARGIN + ICON_SIZE + MARGIN + (hasResonanceLine ? 14 : 0); // icône + marges (+ Résonance)
+
+    // ── Hauteur du bandeau d'en-tête — MESURÉE, plus supposée ──
+    // L'ancien calcul postulait que le nom tenait sur UNE ligne à côté de l'icône
+    // (`headerH = MARGIN + ICON_SIZE + MARGIN`). Depuis que la police est calée sur
+    // la grille de 7 px, le nom est rendu en 14 px : un nom long passe sur deux
+    // lignes, écrase la ligne de Résonance, et décale tout le corps vers le bas —
+    // au point de faire sortir le passif du panneau. On mesure donc le nom pour de
+    // vrai, exactement comme on mesure déjà la description.
+    // Nom en TYPE.BODY (14) gras — plus HEADING (21) : dans une bulle compacte,
+    // le HEADING écrasait tout (retour utilisateur « titre beaucoup trop gros ») ;
+    // la hiérarchie est déjà portée par la couleur de rareté et le gras.
+    const nameWrapW = PW - (MARGIN * 2 + ICON_SIZE + 2) - MARGIN - (item.element ? 17 : 0);
+    const nameProbe = this.add.text(0, 0, locItem.name,
+      uiStyle(TYPE.BODY, '#ffffff', { bold: true, wordWrapWidth: Math.max(40, nameWrapW) }));
+    const nameH = nameProbe.height;
+    nameProbe.destroy();
+
+    // Colonne de droite : nom (1-2 lignes) + Résonance + ligne de stat principale.
+    const rightColH = nameH + (hasResonanceLine ? 14 : 0) + (isEquip || isConsumable ? 16 : 0);
+    const headerH = MARGIN + Math.max(ICON_SIZE, rightColH) + MARGIN;
+
     const contentH = isEquip
-      ? headerH + substatCount * 14 + 4 + descHeight + 10 + BTN_H + MARGIN * 2
-      : 116;
+      ? headerH + substatCount * LINE_H + (passiveText ? passiveHeight + 6 : 0)
+        + BLOCK_GAP + descHeight + BLOCK_GAP + BTN_H + MARGIN * 2
+      : 130;
     // Bornes : jamais plus petit que l'ancien minimum (évite une régression visuelle
     // sur les items courts), jamais plus grand que l'écran moins une marge de sécurité.
-    const PH = Math.min(Math.max(contentH, isEquip ? 130 : 116), H - MARGIN * 4);
+    const PH = Math.min(Math.max(contentH, isEquip ? 150 : 130), H - MARGIN * 4);
 
     // Anchor near the slot, clamp so the popup stays fully on screen
     let px = nearX - PW / 2;
@@ -1060,29 +1592,53 @@ export class InventoryScene extends Phaser.Scene {
     drawGlowPanel(panelGfx, px, py, PW, PH, 0x44cc66 /* green accent */, UI.PANEL_BG, 4, 0.97);
     this.consumePopupObjects.push(panelGfx);
 
-    // ── Item icon (left side), always framed in its rarity color ──────────
+    // ── Icône de l'item : une VRAIE case, identique à celles du sac ────────
+    //
+    // Elle n'avait qu'un trait rectangulaire à la couleur de rareté — pas le
+    // cadre pixel `ui_slot_frame` (le « liseré doré » du pack Retro Inventory),
+    // que seuls le paperdoll, la grille du sac et la barre de sorts posaient.
+    // Ouverte contre une rangée du sac, la popup exhibait donc une case nue au
+    // milieu de cases cernées d'or : le défaut lisait comme « cette arme-là n'a
+    // pas de liseré », alors que la différence était par ÉCRAN, jamais par item.
+    //
+    // Même vocabulaire et même ordre d'empilement que renderInventorySlot :
+    // fond arrondi → cadre pixel → anneau de rareté → icône par-dessus.
     const rarHexStr = RARITY_COLORS[item.rarity] ?? '#ffffff';
     const rarHex    = parseInt(rarHexStr.replace('#', ''), 16);
     const iconKey   = this.resolveIcon(item);
-    const iconX     = px + MARGIN + ICON_SIZE / 2;
-    const iconY     = py + MARGIN + ICON_SIZE / 2;
+    const slotX     = px + MARGIN;
+    const slotY     = py + MARGIN;
+    const iconX     = slotX + ICON_SIZE / 2;
+    const iconY     = slotY + ICON_SIZE / 2;
 
-    const frameGfx = this.add.graphics().setDepth(depth + 1);
-    frameGfx.lineStyle(2, rarHex, 1);
-    frameGfx.strokeRoundedRect(px + MARGIN - 2, py + MARGIN - 2, ICON_SIZE + 4, ICON_SIZE + 4, 4);
-    this.consumePopupObjects.push(frameGfx);
+    const slotGfx = this.add.graphics().setDepth(depth + 1);
+    drawSlot(slotGfx, slotX, slotY, ICON_SIZE, rarHex, { occupied: true, radius: 4 });
+    this.consumePopupObjects.push(slotGfx);
+
+    const slotFrame = addUiFrame(this, iconX, iconY, ICON_SIZE, ICON_SIZE, 'ui_slot_frame_empty');
+    if (slotFrame) {
+      slotFrame.setDepth(depth + 1);
+      this.consumePopupObjects.push(slotFrame);
+    }
+
+    // Anneau de rareté AU-DESSUS du cadre (sinon le cadre asset le recouvre) —
+    // même géométrie que la bordure de drawSlot.
+    const ringGfx = this.add.graphics().setDepth(depth + 1);
+    ringGfx.lineStyle(2, rarHex, 1);
+    ringGfx.strokeRoundedRect(slotX, slotY, ICON_SIZE, ICON_SIZE, 4);
+    this.consumePopupObjects.push(ringGfx);
 
     if (iconKey) {
       try {
         const img = this.add.image(iconX, iconY, iconKey)
-          .setDisplaySize(ICON_SIZE, ICON_SIZE)
-          .setDepth(depth + 1);
+          .setDisplaySize(ICON_ART, ICON_ART)
+          .setDepth(depth + 2);
         this.consumePopupObjects.push(img);
       } catch {
-        this.addColorSquareAbove(px + MARGIN, py + MARGIN, ICON_SIZE, 0x44cc66, depth + 1);
+        this.addColorSquareAbove(slotX, slotY, ICON_SIZE, 0x44cc66, depth + 2);
       }
     } else {
-      this.addColorSquareAbove(px + MARGIN, py + MARGIN, ICON_SIZE, 0x44cc66, depth + 1);
+      this.addColorSquareAbove(slotX, slotY, ICON_SIZE, 0x44cc66, depth + 2);
     }
 
     // ── Item name + element glyph (marks THIS instance's rolled element —
@@ -1096,25 +1652,32 @@ export class InventoryScene extends Phaser.Scene {
       );
       nameX += 17;
     }
-    const rawName = locItem.name;
-    const name    = rawName.length > 22 ? `${rawName.slice(0, 20)}..` : rawName;
+    // Plus de troncature à 22 caractères : elle datait d'une police plus étroite et
+    // amputait les noms (« Faucheur du Néa.. »). Le nom wrappe sur deux lignes si
+    // besoin — la hauteur du panneau en tient compte (cf. nameProbe plus haut).
+    // TYPE.BODY gras (même style que la sonde nameProbe — les deux doivent
+    // rester synchronisés) : cf. commentaire de la sonde.
     this.consumePopupObjects.push(
-      this.add.text(nameX, py + MARGIN + 2, name,
-        uiStyle(11, rarHexStr, {
+      this.add.text(nameX, py + MARGIN, locItem.name,
+        uiStyle(TYPE.BODY, rarHexStr, {
           bold: true, wordWrapWidth: px + PW - MARGIN - nameX,
         }),
       ).setDepth(depth + 1),
     );
 
+    // Les lignes suivantes se posent SOUS le nom réellement mesuré, plus à un offset
+    // fixe : c'est ce qui les faisait se chevaucher dès que le nom passait sur 2 lignes.
+    let headerCursorY = py + MARGIN + nameH;
     if (hasResonanceLine && resonance !== null) {
       this.consumePopupObjects.push(
-        this.add.text(textX, py + MARGIN + 16, `Résonance ${resonance}% — ${StatRollSystem.getResonanceLabel(resonance)}`,
+        this.add.text(textX, headerCursorY, formatResonanceLine(resonance),
           uiStyle(TYPE.SMALL, resonanceColor(resonance), { bold: true })).setDepth(depth + 1),
       );
+      headerCursorY += 14;
     }
 
     // ── Body: effect line (consumable) or stats + description (equip) ─────
-    const bodyLineY = py + MARGIN + 18 + (hasResonanceLine ? 14 : 0);
+    const bodyLineY = headerCursorY;
     if (isConsumable) {
       const effectLine = this.getConsumableEffectLine(item as Consumable);
       this.consumePopupObjects.push(
@@ -1141,23 +1704,35 @@ export class InventoryScene extends Phaser.Scene {
     // ── Equip-only: substats + description (the "lore etc." the popup lacked) ──
     if (isEquip) {
       let bodyY = py + headerH + 6;
-      for (const view of this.getSubstatLineViews(item).slice(0, 3)) {
-        const lineTxt = this.add.text(px + MARGIN, bodyY, `• ${view.text}`, uiStyle(9, view.color)).setDepth(depth + 1);
+      for (const view of this.getSubstatLineViews(item)) {
+        const lineTxt = this.add.text(px + MARGIN, bodyY, `• ${view.text}`, uiStyle(TYPE.SMALL, view.color)).setDepth(depth + 1);
         this.consumePopupObjects.push(lineTxt);
         if (view.rangeText) {
+          // Même corps que la ligne : la fourchette n'a plus à être RÉDUITE pour
+          // se distinguer, la couleur grise suffit — et sur la même ligne de base
+          // (plus d'offset +3, qui compensait deux tailles différentes).
           this.consumePopupObjects.push(
-            this.add.text(px + MARGIN + lineTxt.width + 4, bodyY, view.rangeText, uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setDepth(depth + 1),
+            this.add.text(px + MARGIN + lineTxt.width + 6, bodyY, view.rangeText, uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setDepth(depth + 1),
           );
         }
-        bodyY += 14;
+        bodyY += LINE_H;
       }
-      bodyY += 4;
-      // Texte complet (plus de troncature à 90 caractères), lore/description +
-      // passif éventuel sur la même chaîne (cf. descRaw0/descHeight mesurés plus
-      // haut, avant que PH ne soit fixé — doit rester identique à ce texte-ci).
+      // Passif ENTRE les stats et le lore, en bleu clair gras (même style que
+      // la sonde passiveStyle — hauteur déjà comptée dans contentH plus haut).
+      if (passiveText) {
+        bodyY += 6;
+        const passiveTxt = this.add.text(px + MARGIN, bodyY, passiveText, passiveStyle)
+          .setDepth(depth + 1);
+        this.consumePopupObjects.push(passiveTxt);
+        bodyY += passiveTxt.height;
+      }
+      bodyY += BLOCK_GAP;
+      // Texte complet (plus de troncature à 90 caractères) — lore/description
+      // seul (cf. baseDesc0/descHeight mesurés plus haut, avant que PH ne soit
+      // fixé — doit rester identique à ce texte-ci).
       this.consumePopupObjects.push(
-        this.add.text(px + MARGIN, bodyY, descRaw0, uiStyle(9, UI.TXT_MUTED, {
-          italic: true, wordWrapWidth: PW - MARGIN * 2, lineSpacing: 2,
+        this.add.text(px + MARGIN, bodyY, baseDesc0, uiStyle(TYPE.SMALL, UI.TXT_MUTED, {
+          italic: true, wordWrapWidth: PW - MARGIN * 2, lineSpacing: 4,
         })).setDepth(depth + 1),
       );
     }
@@ -1307,6 +1882,9 @@ export class InventoryScene extends Phaser.Scene {
     }
     this.consumePopupObjects = [];
     this.consumePopupDismissHit = null;
+    // Le champ redevient saisissable (cf. showActionConfirmPopup). Appelé aussi
+    // depuis shutdown() via clearDynamic() : `search` y est déjà null → no-op.
+    this.search?.setEnabled(true);
   }
 
   // ── State transitions ──────────────────────────────────────────────────────
@@ -1334,6 +1912,13 @@ export class InventoryScene extends Phaser.Scene {
     this.input.off('pointermove');
     // Close any open consume popup before rebuilding the scene
     this.closeConsumePopup();
+    // Tooltip d'onglet hors dynamicObjs (transient) — détruit explicitement
+    this.hideTabTooltip();
+    // Fenêtre virtualisée de la grille : ses objets ne sont PAS dans dynamicObjs
+    // (ils vont et viennent au fil du scroll) — les détruire explicitement, sinon
+    // chaque refresh en laisserait un lot orphelin derrière lui.
+    this.gridWindowDispose?.();
+    this.gridWindowDispose = null;
     for (const go of this.dynamicObjs) {
       if (go.active) go.destroy();
     }
@@ -1346,8 +1931,7 @@ export class InventoryScene extends Phaser.Scene {
 
   shutdown() {
     const KB = this.input.keyboard;
-    if (KB && this.keyEsc) KB.removeKey(this.keyEsc);
-    if (KB && this.keyZ)   KB.removeKey(this.keyZ);
+    if (KB && this.keyZ) { this.keyZ.removeAllListeners(); KB.removeKey(this.keyZ); this.keyZ = undefined; }
     // Cancel any in-flight long-press timer to prevent stale callbacks
     if (this.longPressTimer !== null) {
       clearTimeout(this.longPressTimer);
@@ -1355,6 +1939,11 @@ export class InventoryScene extends Phaser.Scene {
     }
     this.input.off('wheel');
     this.input.off('pointermove');
+    // Le champ de recherche possède un <input> DOM dans <body> et un listener de
+    // resize sur le Scale Manager — Phaser n'en sait rien : sans ce destroy(),
+    // l'input survivrait à la fermeture de l'inventaire (invisible mais
+    // focalisable, il avalerait les frappes du jeu).
+    if (this.search) { this.search.destroy(); this.search = null; }
     // clearDynamic() calls closeConsumePopup() internally
     this.clearDynamic();
   }

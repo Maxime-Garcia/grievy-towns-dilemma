@@ -102,19 +102,38 @@ export class InventorySystem {
     const removed = LootSystem.removeFromInventory(player, item.id, 1, item);
     if (!removed) return false;
 
+    // BUG (perte d'item) : le retour d'unequip était ignoré. Quand le sac est plein,
+    // addToInventory refuse, unequip échoue… mais le slot était quand même écrasé —
+    // l'ancien équipement disparaissait purement et simplement. C'est ce que déclenche
+    // la touche debug G, qui remplit le sac au-delà du cap de 60.
+    // Un swap est NEUTRE en taille de sac (le nouvel item vient d'en être retiré
+    // ci-dessus), donc le retour de l'ancien est autorisé même au-delà du cap.
     const current = (player.equipment as any)[slot];
-    if (current) this.unequip(player, slot);
+    if (current) {
+      const swappedOut = this.unequip(player, slot, true);
+      if (!swappedOut) {
+        // Impossible de rendre l'ancien équipement : on annule tout plutôt que de
+        // le détruire — le nouvel item retourne dans le sac, l'équipement est inchangé.
+        LootSystem.addToInventory(player, item, 1, undefined, true);
+        return false;
+      }
+    }
 
     (player.equipment as any)[slot] = item;
     this.recalcStats(player);
     return true;
   }
 
-  static unequip(player: PlayerState, slot: keyof Equipment): boolean {
+  /**
+   * @param ignoreCap true uniquement depuis equip() (swap net-neutre, cf. ci-dessus).
+   *   Un déséquipement « sec » reste soumis au cap : refuser est correct là, puisqu'il
+   *   fait bel et bien grossir le sac d'un item.
+   */
+  static unequip(player: PlayerState, slot: keyof Equipment, ignoreCap = false): boolean {
     const item = player.equipment[slot];
     if (!item) return false;
 
-    const added = LootSystem.addToInventory(player, item as Item, 1);
+    const added = LootSystem.addToInventory(player, item as Item, 1, undefined, ignoreCap);
     if (!added) return false;
 
     (player.equipment as any)[slot] = undefined;

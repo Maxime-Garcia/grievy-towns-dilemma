@@ -17,11 +17,12 @@
 
 import { WorldState, ElementType, ItemRarity, RARITY_COLORS, SpawnRegion } from '../types';
 import {
-  UI, TYPE, drawGlowPanel, drawCard, drawSlot, drawBadge, uiStyle,
-  addCloseButton, drawScrollbar, renderScrollableText, formatDropRate,
+  UI, TYPE, LAYOUT, drawGlowPanel, drawCard, drawSlot, drawBadge, addUiFrame, uiStyle, titleStyle, fitText,
+  drawDivider, addCloseButton, drawScrollbar, renderScrollableText, formatDropRate,
   drawConfirmCancelButtons,
   openScreenTransition, closeScreenTransition, portalRedirectTransition,
 } from '../utils/UITheme';
+import { SearchField, matchesSearch } from '../utils/SearchField';
 import { ENEMY_MAP } from '../data/enemies';
 import { BESTIARY_IDS, BESTIARY_RECORD, BestiaryDropData } from '../data/bestiary';
 import { BestiarySystem } from '../systems/BestiarySystem';
@@ -71,14 +72,15 @@ type RowDef =
   | { kind: 'enemy'; id: string };
 
 const ENEMY_ROW_H  = 50;
-const HEADER_ROW_H = 22;
+const HEADER_ROW_H = 24;
 const ROW_GAP      = 2;
 
-/** Pixels par cran de molette dans le viewport Histoire/lore. */
-const LORE_SCROLL_STEP = 28;
-/** Taille de la mini-carte de localisation approximative (chantier heatmap). */
-const LOCATION_MAP_W = 140;
-const LOCATION_MAP_H = 90;
+/** Pixels par cran de molette dans le viewport Histoire/lore (≈ 2 lignes BODY). */
+const LORE_SCROLL_STEP = 36;
+/** Taille de la mini-carte de localisation approximative (chantier heatmap) —
+ *  agrandie avec le canvas 960×720 (140×90 était calée sur 800×600). */
+const LOCATION_MAP_W = 180;
+const LOCATION_MAP_H = 112;
 
 export class BestiaryScene extends Phaser.Scene {
   private gameScene!: GameScene;
@@ -93,6 +95,11 @@ export class BestiaryScene extends Phaser.Scene {
   private maxScrollOffset = 0;
   private lastVisibleIndex = 0;
   private selectedId: string | null = null;
+
+  /** Champ de recherche (saisie DOM + rendu Phaser — cf. utils/SearchField.ts).
+   *  `searchQuery` est la requête NORMALISÉE : c'est elle que buildRows() lit. */
+  private search: SearchField | null = null;
+  private searchQuery = '';
 
   private listObjs:   Phaser.GameObjects.GameObject[] = [];
   private detailObjs: Phaser.GameObjects.GameObject[] = [];
@@ -127,7 +134,9 @@ export class BestiaryScene extends Phaser.Scene {
   // Layout (calculé dans create() depuis la caméra)
   private LIST_X = 0; private LIST_Y = 0; private LIST_W = 0; private LIST_H = 0;
   private DET_X = 0;  private DET_Y = 0;  private DET_W = 0;  private DET_H = 0;
-  private LORE_X = 0; private LORE_Y = 0; private LORE_W = 0; private readonly LORE_H = 100;
+  // 100 → 140 : le canvas 720px de haut offre un vrai bloc de lecture
+  // (≈ 7 lignes de BODY 14 visibles au lieu de ~5 lignes de micro-texte).
+  private LORE_X = 0; private LORE_Y = 0; private LORE_W = 0; private readonly LORE_H = 140;
   private rowsTop = 0; private rowsBottom = 0;
 
   constructor() { super({ key: 'BestiaryScene' }); }
@@ -140,6 +149,8 @@ export class BestiaryScene extends Phaser.Scene {
     this.enemyRowIndices = [];
     this.scrollOffset = 0;
     this.selectedId = null;
+    this.search = null;
+    this.searchQuery = '';
     this.listObjs = [];
     this.detailObjs = [];
     this.tooltip = null;
@@ -163,27 +174,30 @@ export class BestiaryScene extends Phaser.Scene {
     drawGlowPanel(frame, 6, 6, W - 12, H - 12, UI.ACCENT_ARCANE, UI.BG_DEEP, 10, 0.92);
 
     // ── Header ───────────────────────────────────────────────
-    this.add.text(W / 2, 24, t('bestiary.title'), uiStyle(13, UI.TXT_GOLD, { bold: true, stroke: true })).setOrigin(0.5);
+    // Titre d'écran en police Boss (titleStyle) — même convention que
+    // InventoryScene/ArsenalScene : la hiérarchie repose sur la police de titre,
+    // pas sur un simple gras (l'ancien uiStyle(13) tombait à la taille du corps).
+    this.add.text(W / 2, 26, t('bestiary.title'), titleStyle(UI.TXT_GOLD, { stroke: true })).setOrigin(0.5);
 
     const counts = BestiarySystem.counts(this.world);
     const progressLabel = t('bestiary.progress')
       .replace('{seen}',  String(counts.seen))
       .replace('{slain}', String(counts.slain))
       .replace('{total}', String(counts.total));
-    this.add.text(20, 24, progressLabel, uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setOrigin(0, 0.5);
+    this.add.text(20, 20, progressLabel, uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setOrigin(0, 0.5);
 
     // [DEBUG] Tout débloquer — outil de review de contenu (lore/drops), pas une
     // mécanique de jeu : couleur d'alerte distincte pour ne jamais le confondre
     // avec un bouton normal. Ne persiste rien de spécifique — passe juste par
     // BestiarySystem.discoverAll() comme n'importe quelle découverte normale.
-    const debugTxt = this.add.text(20, 36, t('bestiary.debug_unlock_all'), uiStyle(TYPE.SMALL, UI.TXT_RED, { bold: true }))
+    const debugTxt = this.add.text(20, 38, t('bestiary.debug_unlock_all'), uiStyle(TYPE.SMALL, UI.TXT_RED, { bold: true }))
       .setOrigin(0, 0.5);
-    const debugHit = this.add.rectangle(20 + debugTxt.width / 2, 36, debugTxt.width + 12, 20, 0, 0)
+    const debugHit = this.add.rectangle(20 + debugTxt.width / 2, 38, debugTxt.width + 12, 20, 0, 0)
       .setInteractive({ useHandCursor: true });
     debugHit.on('pointerover', () => debugTxt.setAlpha(0.75));
     debugHit.on('pointerout',  () => debugTxt.setAlpha(1));
     debugHit.on('pointerdown', () => {
-      this.flashAt(20 + debugTxt.width / 2, 36, debugTxt.width + 12, 20);
+      this.flashAt(20 + debugTxt.width / 2, 38, debugTxt.width + 12, 20);
       BestiarySystem.discoverAll(this.world);
       this.rows = [];
       this.enemyRowIndices = [];
@@ -194,31 +208,49 @@ export class BestiaryScene extends Phaser.Scene {
     });
 
     // Bouton × (règle inter-écrans §7.1 : rouge, haut-droite, hit ≥ 44 px)
-    addCloseButton(this, W - 28, 24, () => this.close());
+    addCloseButton(this, W - 28, 26, () => this.close());
 
     const sep = this.add.graphics();
-    sep.lineStyle(1, UI.ACCENT_ARCANE, 0.35);
-    sep.beginPath(); sep.moveTo(16, 42); sep.lineTo(W - 16, 42); sep.strokePath();
+    drawDivider(sep, 16, 48, W - 32, UI.ACCENT_ARCANE, 0.35);
 
     // ── Layout des panneaux ──────────────────────────────────
-    this.LIST_X = 16;  this.LIST_Y = 50;
-    this.LIST_W = 212; this.LIST_H = H - 50 - 26;
+    this.LIST_X = 16;
+    // Largeur de liste RELATIVE au canvas (l'ancien 212 en dur avait été calé
+    // sur 800px de large) — même ratio que l'Arsenal (~27%).
+    this.LIST_W = Math.round(W * 0.27);
+    // Champ de recherche AU-DESSUS de la liste (196 créatures) — miroir exact de
+    // l'Arsenal. Seule la LISTE recule : le panneau détail garde sa géométrie
+    // (DET_Y/DET_H inchangés — la section Butin se cale sur DET_Y + DET_H).
+    const SEARCH_Y = 56;
+    const SEARCH_H = LAYOUT.TOUCH_MIN;
+    this.LIST_Y = SEARCH_Y + SEARCH_H + 6;
+    this.LIST_H = H - this.LIST_Y - 28;
     this.DET_X  = this.LIST_X + this.LIST_W + 8;
-    this.DET_Y  = 50;
+    this.DET_Y  = SEARCH_Y;
     this.DET_W  = W - this.DET_X - 16;
-    this.DET_H  = H - 50 - 26;
+    this.DET_H  = H - this.DET_Y - 28;
     this.rowsTop    = this.LIST_Y + 24;
     this.rowsBottom = this.LIST_Y + this.LIST_H - 24;
 
     // Viewport fixe du bloc Histoire/lore — même géométrie pour tous les monstres
     // (panneau uniforme), le texte défile DEDANS au lieu de faire varier la taille
     // du panneau ou de déborder sur la section Butin (cf. renderScrollableText).
+    // +30 (au lieu de +18) : le bloc identité a grandi (nom en HEADING 21,
+    // habitat/faiblesse en BODY 14) — doit rester le miroir du `loreY` de
+    // renderDetail().
     this.LORE_X = this.DET_X + this.PAD;
-    this.LORE_Y = this.DET_Y + this.PAD + 96 + 18 + 14;
+    this.LORE_Y = this.DET_Y + this.PAD + 96 + 30 + 14;
     this.LORE_W = this.DET_W - this.PAD * 2;
 
     const listBg = this.add.graphics();
     drawGlowPanel(listBg, this.LIST_X, this.LIST_Y, this.LIST_W, this.LIST_H, UI.ACCENT_ARCANE, UI.BG_MID, 8, 0.55);
+
+    this.search = new SearchField(this, {
+      x: this.LIST_X, y: SEARCH_Y, w: this.LIST_W, h: SEARCH_H,
+      placeholder: t('search.placeholder_enemy'),
+      onChange: (q) => this.applySearch(q),
+      onEscape: () => this.close(),
+    });
 
     // Depth explicite : sans ça, les lignes recréées à chaque renderList() finissent
     // plus tard dans la display list et passent PAR-DESSUS la scrollbar (bug reporté).
@@ -253,12 +285,35 @@ export class BestiaryScene extends Phaser.Scene {
   // DONNÉES DE LISTE
   // ════════════════════════════════════════════════════════════
 
+  /**
+   * Prédicat de recherche d'un monstre — sur le nom LOCALISÉ (`localizeEnemy`),
+   * plus la zone et l'élément : « ignis » liste toute la zone, « feu » tous les
+   * monstres de feu. Une créature NON DÉCOUVERTE ne matche jamais (son nom est
+   * masqué en « ??? » : la faire remonter par son vrai nom la divulguerait).
+   */
+  private matchesQuery(id: string, discovered: boolean): boolean {
+    if (this.searchQuery.length === 0) return true;
+    if (!discovered) return false;
+    const def = ENEMY_MAP[id];
+    if (!def) return false;
+    const zoneKey = ZONE_HABITAT_KEYS[def.element];
+    return matchesSearch(
+      this.searchQuery,
+      localizeEnemy(def).name,
+      zoneKey ? t(zoneKey) : undefined,
+      t(`element.${def.element}`),
+    );
+  }
+
   private buildRows() {
     let lastZoneKey = '';
     for (const id of BESTIARY_IDS) {
       const data = BESTIARY_RECORD[id];
       const def  = ENEMY_MAP[id];
       if (!data || !def) continue;
+      // Filtre AVANT le groupement : une zone entièrement filtrée ne pousse pas
+      // son en-tête (le header n'est émis que juste avant une ligne retenue).
+      if (!this.matchesQuery(id, BestiarySystem.peekEntry(this.world, id).discovered)) continue;
       const zoneKey = ZONE_HABITAT_KEYS[def.element] ?? 'zone.grievy_town';
       if (zoneKey !== lastZoneKey) {
         lastZoneKey = zoneKey;
@@ -275,6 +330,43 @@ export class BestiaryScene extends Phaser.Scene {
 
   private rowIndexOf(enemyId: string): number {
     return this.rows.findIndex(r => r.kind === 'enemy' && r.id === enemyId);
+  }
+
+  /**
+   * Recherche appliquée à la frappe : rangées reconstruites (les en-têtes de zone
+   * vidés disparaissent d'eux-mêmes, cf. buildRows), scroll remis à zéro, et
+   * sélection recalée sur le premier résultat si la créature affichée à droite
+   * n'est plus dans la liste filtrée.
+   */
+  private applySearch(query: string) {
+    this.searchQuery = query;
+    this.rows = [];
+    this.enemyRowIndices = [];
+    this.buildRows();
+    this.maxScrollOffset = this.computeMaxOffset();
+    this.scrollOffset = 0;
+    this.destroyTooltip();
+
+    if (this.enemyRowIndices.length > 0 && (this.selectedId === null || this.rowIndexOf(this.selectedId) === -1)) {
+      const firstRow = this.rows[this.enemyRowIndices[0]];
+      if (firstRow && firstRow.kind === 'enemy') {
+        this.selectedId = firstRow.id;
+        this.loreScrollPx = 0;
+      }
+    }
+    if (this.selectedId) this.ensureVisible(this.rowIndexOf(this.selectedId));
+
+    this.renderList();
+    this.renderDetail();
+  }
+
+  /**
+   * Échap : vide d'abord la recherche, ferme seulement si elle est déjà vide.
+   * Appelé par GameScene.escKey (propriétaire de l'ESC) ET par le champ lui-même
+   * quand il a le focus clavier. True = appui CONSOMMÉ (ne pas fermer l'écran).
+   */
+  handleEscape(): boolean {
+    return this.search?.clear() ?? false;
   }
 
   /** Dernier index de ligne entièrement visible depuis un offset donné. */
@@ -353,6 +445,9 @@ export class BestiaryScene extends Phaser.Scene {
     }
     this.lastVisibleIndex = i - 1;
 
+    // État vide — jamais un panneau blanc : on nomme la requête qui n'a rien donné.
+    if (this.rows.length === 0) this.renderEmptyState(x, w);
+
     if (this.scrollOffset > 0) {
       this.renderScrollArrow(this.LIST_Y + 11, '▲', () => this.scroll(-1));
     }
@@ -366,6 +461,21 @@ export class BestiaryScene extends Phaser.Scene {
       this.scrollbarGfx,
       this.LIST_X + this.LIST_W - 10, this.rowsTop, 4, this.rowsBottom - this.rowsTop,
       this.scrollOffset, this.maxScrollOffset, visibleCount / Math.max(1, this.rows.length),
+    );
+  }
+
+  /** « Aucun résultat » + rappel de la requête, centré dans le panneau de liste. */
+  private renderEmptyState(x: number, w: number) {
+    const cx = x + w / 2;
+    const cy = this.LIST_Y + this.LIST_H / 2;
+    const hintStyle = uiStyle(TYPE.SMALL, UI.TXT_HINT, { align: 'center', wordWrapWidth: w - 8 });
+    this.listObjs.push(
+      this.add.text(cx, cy - 12, t('search.no_results'),
+        uiStyle(TYPE.BODY, UI.TXT_MUTED, { bold: true })).setOrigin(0.5),
+      this.add.text(cx, cy + 12,
+        // Texte TEL QUE TAPÉ (« Épée »), pas la forme normalisée (« epee »).
+        t('search.no_results_hint').replace('{q}', this.search?.text ?? this.searchQuery),
+        hintStyle).setOrigin(0.5),
     );
   }
 
@@ -437,28 +547,30 @@ export class BestiaryScene extends Phaser.Scene {
     }
 
     const rawName = entry.discovered ? localizeEnemy(def).name : t('bestiary.unknown');
-    const name = rawName.length > 16 ? rawName.slice(0, 15) + '..' : rawName;
     const nameColor = !entry.discovered ? UI.TXT_MUTED
       : def.isBoss  ? UI.TXT_GOLD
       : def.isElite ? UI.TXT_ORANGE
       : UI.TXT_PARCHMENT;
+    // Nom en TYPE.BODY (14) + troncature en PIXELS (fitText) — l'ancien
+    // slice(0, 15) tronquait au caractère, sans rien savoir de la police.
+    const nameStyle = uiStyle(TYPE.BODY, nameColor, { bold: entry.discovered });
     this.listObjs.push(
-      this.add.text(x + 36, y + 10, name, uiStyle(9, nameColor, { bold: entry.discovered })),
+      this.add.text(x + 36, y + 8, fitText(this, rawName, nameStyle, w - 36 - 8), nameStyle),
     );
 
     const lvlLabel = entry.discovered
       ? t('bestiary.level').replace('{lvl}', String(def.baseLevel))
       : t('bestiary.level_unknown');
     this.listObjs.push(
-      this.add.text(x + 36, y + 28, lvlLabel, uiStyle(TYPE.SMALL, UI.TXT_MUTED)),
+      this.add.text(x + 36, y + 27, lvlLabel, uiStyle(TYPE.SMALL, UI.TXT_MUTED)),
     );
     if (entry.killed) {
       this.listObjs.push(
-        this.add.text(x + w - 8, y + 28, t('bestiary.slain'), uiStyle(TYPE.SMALL, UI.TXT_RED, { bold: true })).setOrigin(1, 0),
+        this.add.text(x + w - 8, y + 27, t('bestiary.slain'), uiStyle(TYPE.SMALL, UI.TXT_RED, { bold: true })).setOrigin(1, 0),
       );
     } else if (entry.discovered) {
       this.listObjs.push(
-        this.add.text(x + w - 8, y + 28, t('bestiary.seen'), uiStyle(TYPE.SMALL, UI.TXT_GREEN)).setOrigin(1, 0),
+        this.add.text(x + w - 8, y + 27, t('bestiary.seen'), uiStyle(TYPE.SMALL, UI.TXT_GREEN)).setOrigin(1, 0),
       );
     }
 
@@ -536,52 +648,64 @@ export class BestiaryScene extends Phaser.Scene {
 
     const displayName = entry.discovered ? localizeEnemy(def).name : t('bestiary.unknown');
     const nameHex = entry.discovered ? '#' + elemColor.toString(16).padStart(6, '0') : UI.TXT_MUTED;
+    // Le nom est le héros du panneau : TYPE.HEADING (21) — même convention que
+    // l'Arsenal et le panneau détail de l'inventaire.
     const nameTxt = this.add.text(ix, iy, displayName,
-      uiStyle(13, nameHex, { bold: true, stroke: true, wordWrapWidth: iw }));
+      uiStyle(TYPE.HEADING, nameHex, { bold: true, stroke: true, wordWrapWidth: iw }));
     this.detailObjs.push(nameTxt);
     iy += nameTxt.height + 8;
 
-    // Habitat — toujours visible : guide le joueur vers la créature manquante
+    // Habitat — toujours visible : guide le joueur vers la créature manquante.
+    // Hauteur MESURÉE (plus de +20 forfaitaire) : le badge d'élément dessiné en
+    // dessous mordait le bas de « Habitat : … » (chevauchement reporté).
     const zoneKey = ZONE_HABITAT_KEYS[def.element];
     const habitatStr = zoneKey ? t(zoneKey) : data.habitat;
-    this.detailObjs.push(
-      this.add.text(ix, iy, `${t('bestiary.habitat')} ${habitatStr}`, uiStyle(9, UI.TXT_MUTED)),
-    );
-    iy += 17;
+    const habitatTxt = this.add.text(ix, iy, `${t('bestiary.habitat')} ${habitatStr}`,
+      uiStyle(TYPE.BODY, UI.TXT_MUTED, { wordWrapWidth: iw }));
+    this.detailObjs.push(habitatTxt);
+    iy += habitatTxt.height + 6;
 
-    // Badges : niveau, élément, boss/élite
-    let bx = ix;
-    bx += this.addInfoBadge(bx, iy + 7,
-      entry.discovered ? t('bestiary.level').replace('{lvl}', String(def.baseLevel)) : t('bestiary.level_unknown'),
-      0x1a2030, UI.TXT_GOLD);
+    // Badges : élément + boss/élite. Le badge de NIVEAU a été retiré (retour
+    // utilisateur) : l'info « Nv. X » vit déjà dans la liste de gauche, et ce
+    // badge encombrait l'en-tête au point de chevaucher l'habitat.
     if (entry.discovered) {
+      let bx = ix;
       const elemTxtColor = BRIGHT_ELEMENTS.includes(def.element) ? '#101018' : '#f5edd0';
-      bx += this.addInfoBadge(bx, iy + 7, t(`element.${def.element}`), elemColor, elemTxtColor);
-      if (def.isBoss)       bx += this.addInfoBadge(bx, iy + 7, t('bestiary.boss'),  0x551111, '#ffdddd');
-      else if (def.isElite) bx += this.addInfoBadge(bx, iy + 7, t('bestiary.elite'), 0x553311, '#ffe6cc');
+      bx += this.addInfoBadge(bx, iy + 11, t(`element.${def.element}`), elemColor, elemTxtColor);
+      if (def.isBoss)       bx += this.addInfoBadge(bx, iy + 11, t('bestiary.boss'),  0x551111, '#ffdddd');
+      else if (def.isElite) bx += this.addInfoBadge(bx, iy + 11, t('bestiary.elite'), 0x553311, '#ffe6cc');
+      iy += 30;
     }
-    iy += 26;
 
-    // Faiblesse + compteur de victoires
-    if (entry.discovered && def.weakness) {
-      const wkColor = ELEMENT_COLORS[def.weakness] ?? ELEMENT_COLORS[ElementType.NEUTRAL];
-      const wkLabel = this.add.text(ix, iy, t('bestiary.weakness'), uiStyle(9, UI.TXT_MUTED));
-      const wkValue = this.add.text(ix + wkLabel.width + 6, iy, t(`element.${def.weakness}`),
-        uiStyle(9, '#' + wkColor.toString(16).padStart(6, '0'), { bold: true }));
-      this.detailObjs.push(wkLabel, wkValue);
-      iy += 15;
-    }
-    if (entry.kills > 0) {
-      this.detailObjs.push(
-        this.add.text(ix, iy, t('bestiary.kills').replace('{n}', String(entry.kills)), uiStyle(9, UI.TXT_MUTED)),
-      );
+    // Faiblesse (gauche) + compteur de victoires (droite) — sur la MÊME ligne :
+    // le bloc identité est en FLUX au-dessus d'un titre « Histoire » à position
+    // FIXE (loreY) ; empiler une ligne de plus finissait sous le filet du titre.
+    // Garde : si un nom sur 2 lignes a déjà consommé le budget, on saute la
+    // ligne plutôt que de mordre le titre.
+    const identityLimit = this.DET_Y + pad + 96 + 30 - 12;
+    if (entry.discovered && iy + 16 <= identityLimit) {
+      if (def.weakness) {
+        const wkColor = ELEMENT_COLORS[def.weakness] ?? ELEMENT_COLORS[ElementType.NEUTRAL];
+        const wkLabel = this.add.text(ix, iy, t('bestiary.weakness'), uiStyle(TYPE.LABEL, UI.TXT_MUTED));
+        const wkValue = this.add.text(ix + wkLabel.width + 6, iy, t(`element.${def.weakness}`),
+          uiStyle(TYPE.BODY, '#' + wkColor.toString(16).padStart(6, '0'), { bold: true }));
+        this.detailObjs.push(wkLabel, wkValue);
+      }
+      if (entry.kills > 0) {
+        this.detailObjs.push(
+          this.add.text(this.DET_X + this.DET_W - pad, iy,
+            t('bestiary.kills').replace('{n}', String(entry.kills)),
+            uiStyle(TYPE.BODY, UI.TXT_MUTED)).setOrigin(1, 0),
+        );
+      }
     }
 
     // ── Section Histoire ─────────────────────────────────────
     // Viewport fixe (this.LORE_X/Y/W/H, calculé une fois dans create()) : le texte
     // défile DEDANS (molette + scrollbar) au lieu de faire varier la taille du
     // panneau ou de déborder sur la section Butin ci-dessous (cf. renderScrollableText).
-    const loreY = this.DET_Y + pad + 96 + 18;
+    // +30 : miroir du calcul de LORE_Y dans create() (bloc identité en BODY/HEADING).
+    const loreY = this.DET_Y + pad + 96 + 30;
     this.addSectionTitle(t('bestiary.lore_title'), loreY);
 
     let loreText: string;
@@ -595,7 +719,7 @@ export class BestiaryScene extends Phaser.Scene {
 
     const loreResult = renderScrollableText(
       this, this.LORE_X, this.LORE_Y, this.LORE_W, this.LORE_H,
-      loreText, uiStyle(9, loreColor, { lineSpacing: 5 }), this.loreScrollPx,
+      loreText, uiStyle(TYPE.BODY, loreColor, { lineSpacing: 5 }), this.loreScrollPx,
     );
     this.detailObjs.push(loreResult.text, loreResult.mask);
     this.loreMaxScrollPx = loreResult.maxScrollPx;
@@ -617,41 +741,112 @@ export class BestiaryScene extends Phaser.Scene {
     this.renderLocationMap(def.id, this.LORE_Y + this.LORE_H + 10);
 
     // ── Section Butin (zone basse = zone de pouce) ───────────
-    const dropsY = this.DET_Y + this.DET_H - 130;
+    // Grille ADAPTATIVE (les tables de loot vont de 1 à ~17 drops) :
+    //  - cas nominal (tient sur une rangée) : vignettes 48 px, layout historique ;
+    //  - sinon : vignettes 40 px sur 2 rangées (capacité 22 à 800 px de large),
+    //    hit zone size+6 = 46 px ≥ LAYOUT.TOUCH_MIN. La section grandit vers le
+    //    HAUT (dropsY recule) — jamais de débordement sous le panneau.
+    //  - filet de sécurité : au-delà de 2 rangées, la dernière case devient un
+    //    slot « +N » (tap = tooltip listant le reste) — aucune vignette coupée,
+    //    quel que soit le futur volume de loot.
+    // Tri (sortDrops) : drops révélés d'abord (rareté desc, puis taux desc),
+    // drops cachés non révélés (???) groupés en fin — on scanne du plus précieux
+    // au plus commun, les mystères ferment la marche.
+    const drops = entry.discovered ? this.sortDrops(data.drops, entry.revealedDrops) : [];
+    const availW = this.DET_W - pad * 2;
+    let slot = 48;
+    let gap  = 10;
+    let perRow = Math.floor((availW + gap) / (slot + gap));
+    if (drops.length > perRow) {
+      slot = 40; gap = 8;
+      perRow = Math.floor((availW + gap) / (slot + gap));
+    }
+    // 18 → 8 : le pas de rangée réservait la place du taux de drop écrit sous
+    // chaque vignette. Ce texte a disparu (cf. renderDropSlot) — la grille se
+    // resserre d'autant, et la section respire au lieu de s'étirer pour rien.
+    const rowPitch = slot + 8;
+    const rowCount = drops.length > perRow ? 2 : 1;
+    const dropsY = this.DET_Y + this.DET_H - (rowCount === 2 ? 22 + rowPitch * 2 + 6 : 130);
     this.addSectionTitle(t('bestiary.loot_title'), dropsY);
 
     if (!entry.discovered) {
       this.detailObjs.push(
-        this.add.text(this.DET_X + pad, dropsY + 22, t('bestiary.loot_unknown'), uiStyle(9, UI.TXT_MUTED)),
+        this.add.text(this.DET_X + pad, dropsY + 22, t('bestiary.loot_unknown'), uiStyle(TYPE.BODY, UI.TXT_MUTED)),
       );
       return;
     }
 
-    const SLOT = 48;
-    const GAP  = 10;
-    data.drops.forEach((drop, idx) => {
-      const sx = this.DET_X + pad + idx * (SLOT + GAP);
-      const sy = dropsY + 22;
-      this.renderDropSlot(drop, entry.revealedDrops, sx, sy, SLOT);
+    const capacity = perRow * 2;
+    const hasOverflow = drops.length > capacity;
+    const visible = hasOverflow ? drops.slice(0, capacity - 1) : drops;
+    visible.forEach((drop, idx) => {
+      const sx = this.DET_X + pad + (idx % perRow) * (slot + gap);
+      const sy = dropsY + 22 + Math.floor(idx / perRow) * rowPitch;
+      this.renderDropSlot(drop, entry.revealedDrops, sx, sy, slot);
+    });
+    if (hasOverflow) {
+      const idx = capacity - 1;
+      this.renderOverflowSlot(
+        drops.slice(capacity - 1), entry.revealedDrops,
+        this.DET_X + pad + (idx % perRow) * (slot + gap),
+        dropsY + 22 + Math.floor(idx / perRow) * rowPitch,
+        slot,
+      );
+    }
+  }
+
+  /** Rang numérique des raretés pour le tri du butin (HIDDEN = plus précieux). */
+  private static readonly RARITY_RANK: Record<ItemRarity, number> = {
+    [ItemRarity.HIDDEN]:    6,
+    [ItemRarity.MYTHIC]:    5,
+    [ItemRarity.LEGENDARY]: 4,
+    [ItemRarity.EPIC]:      3,
+    [ItemRarity.RARE]:      2,
+    [ItemRarity.UNCOMMON]:  1,
+    [ItemRarity.COMMON]:    0,
+  };
+
+  /**
+   * Tri du butin : révélés d'abord (rareté décroissante, puis taux décroissant,
+   * pour scanner du plus précieux au plus commun) ; drops cachés non révélés
+   * (vignettes « ??? ») groupés à la fin — les trier par rareté au milieu des
+   * autres divulguerait leur valeur par leur position.
+   */
+  private sortDrops(drops: BestiaryDropData[], revealedDrops: string[]): BestiaryDropData[] {
+    const isRevealed = (d: BestiaryDropData) => !d.isHidden || revealedDrops.includes(d.itemId);
+    const rank = (d: BestiaryDropData): number => {
+      const item = ALL_ITEMS[d.itemId];
+      return item ? BestiaryScene.RARITY_RANK[item.rarity] ?? 0 : 0;
+    };
+    return [...drops].sort((a, b) => {
+      const ga = isRevealed(a) ? 0 : 1;
+      const gb = isRevealed(b) ? 0 : 1;
+      if (ga !== gb) return ga - gb;            // mystères en fin de grille
+      const qa = rank(a), qb = rank(b);
+      if (qa !== qb) return qb - qa;            // rareté décroissante
+      return b.dropRatePct - a.dropRatePct;     // à rareté égale : taux décroissant
     });
   }
 
-  /** Badge d'info compact — retourne la largeur occupée (badge + marge). */
+  /** Badge d'info compact — retourne la largeur occupée (badge + marge).
+   *  Largeur MESURÉE en pixels (probe Text, même style que drawBadge) : l'ancienne
+   *  estimation `length * 6` ne savait rien de la police réelle. */
   private addInfoBadge(x: number, cy: number, label: string, bgColor: number, textColor: string): number {
-    const w = label.length * 6 + 12;
+    const probe = this.make.text({ text: label, style: uiStyle(9, textColor, { bold: true }) }, false);
+    const w = Math.ceil(probe.width) + 12;
+    probe.destroy();
     const badge = drawBadge(this, x + w / 2, cy, label, bgColor, textColor);
     this.detailObjs.push(badge);
     return w + 8;
   }
 
   private addSectionTitle(label: string, y: number) {
-    const txt = this.add.text(this.DET_X + 14, y, label, uiStyle(9, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0.5);
+    // Titre de section en TYPE.BODY cyan gras + drawDivider — même convention
+    // que l'Arsenal et les titres de panneaux de l'inventaire.
+    const txt = this.add.text(this.DET_X + 14, y, label, uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0.5);
     const g = this.add.graphics();
-    g.lineStyle(1, UI.ACCENT_ARCANE, 0.25);
-    g.beginPath();
-    g.moveTo(this.DET_X + 14 + txt.width + 8, y);
-    g.lineTo(this.DET_X + this.DET_W - 14, y);
-    g.strokePath();
+    drawDivider(g, this.DET_X + 14 + txt.width + 8, y,
+      this.DET_X + this.DET_W - 14 - (this.DET_X + 14 + txt.width + 8), UI.ACCENT_ARCANE, 0.25);
     this.detailObjs.push(txt, g);
   }
 
@@ -692,9 +887,15 @@ export class BestiaryScene extends Phaser.Scene {
     }
     this.detailObjs.push(g);
 
+    // Légende ALIGNÉE À GAUCHE sur la carte (plus centrée sur ses 180 px) :
+    // centrée, une légende plus large que la carte débordait à GAUCHE du
+    // panneau détail, jusque sur la liste (chevauchement reporté). Ancrée à
+    // mapX et clampée en pixels (fitText), elle reste contenue quoi qu'il arrive.
+    const legendStyle = uiStyle(TYPE.SMALL, UI.TXT_HINT);
     this.detailObjs.push(
-      this.add.text(mapX + LOCATION_MAP_W / 2, mapY + LOCATION_MAP_H + 8, t('bestiary.location_approx'),
-        uiStyle(TYPE.SMALL, UI.TXT_HINT)).setOrigin(0.5, 0),
+      this.add.text(mapX, mapY + LOCATION_MAP_H + 8,
+        fitText(this, t('bestiary.location_approx'), legendStyle, this.DET_W - this.PAD * 2),
+        legendStyle).setOrigin(0, 0),
     );
   }
 
@@ -713,10 +914,26 @@ export class BestiaryScene extends Phaser.Scene {
     }
     this.detailObjs.push(g);
 
+    // Cadre pixel `ui_slot_frame` — le « liseré doré » du pack Retro Inventory.
+    // La grille de butin ne le posait pas : ses cases étaient nues à côté de
+    // celles du sac, qui l'ont. Une case d'item doit se ressembler partout, quel
+    // que soit l'écran (c'est précisément l'incohérence reportée sur la popup).
+    const dropFrame = addUiFrame(this, sx + size / 2, sy + size / 2, size, size, 'ui_slot_frame_empty');
+    if (dropFrame) this.detailObjs.push(dropFrame);
+
+    // Anneau de rareté PAR-DESSUS le cadre : le cadre asset recouvre la bordure
+    // tracée par drawSlot, et c'est elle qui porte l'information de rareté.
+    const ring = this.add.graphics();
+    ring.lineStyle(2, revealed ? rarityHex : UI.SLOT_BORDER, revealed ? 1 : 0.45);
+    ring.strokeRoundedRect(sx, sy, size, size, 5);
+    this.detailObjs.push(ring);
+
     if (revealed && item) {
       if (this.textures.exists(item.icon)) {
+        // Icône proportionnée au slot (32 dans 48, 28 dans 40 — mode compact)
+        const iconSz = size >= 48 ? 32 : 28;
         this.detailObjs.push(
-          this.add.image(sx + size / 2, sy + size / 2, item.icon).setDisplaySize(32, 32),
+          this.add.image(sx + size / 2, sy + size / 2, item.icon).setDisplaySize(iconSz, iconSz),
         );
       } else {
         const sq = this.add.graphics();
@@ -730,12 +947,12 @@ export class BestiaryScene extends Phaser.Scene {
       );
     }
 
-    // Taux de drop sous le slot — info immédiate sans tap (dropRatePct / 100 → ratio 0-1)
-    const rate = drop.dropRatePct / 100;
-    this.detailObjs.push(
-      this.add.text(sx + size / 2, sy + size + 10, formatDropRate(rate),
-        uiStyle(TYPE.SMALL, revealed ? UI.TXT_MUTED : UI.TXT_HINT)).setOrigin(0.5),
-    );
+    // Le taux de drop N'EST PLUS écrit sous chaque vignette : sur une table de
+    // 17 butins, ça faisait 17 pourcentages en petit gris sous une grille déjà
+    // dense — un mur de chiffres qui noyait ce qu'on vient lire (QUOI tombe),
+    // pour une info qu'on ne consulte que ponctuellement (À QUELLE FRÉQUENCE).
+    // Le taux vit désormais UNIQUEMENT dans le tooltip au clic (showDropTooltip)
+    // et dans la liste du slot « +N » (renderOverflowSlot).
 
     // Hit zone élargie : tap = tooltip détaillé
     const hit = this.add.rectangle(sx + size / 2, sy + size / 2, size + 6, size + 6, 0, 0)
@@ -747,6 +964,57 @@ export class BestiaryScene extends Phaser.Scene {
     this.detailObjs.push(hit);
   }
 
+  /**
+   * Slot de repli « +N » — filet de sécurité si un monstre dépasse la capacité
+   * de la grille (2 rangées pleines). Tap = tooltip listant les drops restants
+   * (nom + taux), rien n'est jamais inaccessible. Hit zone size+6 ≥ 44 px.
+   */
+  private renderOverflowSlot(rest: BestiaryDropData[], revealedDrops: string[], sx: number, sy: number, size: number) {
+    const g = this.add.graphics();
+    drawSlot(g, sx, sy, size, UI.ACCENT_ARCANE, { occupied: false, borderAlpha: 0.7 });
+    this.detailObjs.push(g);
+    this.detailObjs.push(
+      this.add.text(sx + size / 2, sy + size / 2, `+${rest.length}`,
+        uiStyle(11, UI.TXT_CYAN, { bold: true })).setOrigin(0.5),
+    );
+    const hit = this.add.rectangle(sx + size / 2, sy + size / 2, size + 6, size + 6, 0, 0)
+      .setInteractive({ useHandCursor: true });
+    hit.on('pointerdown', () => {
+      this.flashAt(sx + size / 2, sy + size / 2, size, size);
+      this.showOverflowTooltip(rest, revealedDrops, sx, sy);
+    });
+    this.detailObjs.push(hit);
+  }
+
+  /** Tooltip du slot « +N » : liste compacte des drops restants (nom + taux). */
+  private showOverflowTooltip(rest: BestiaryDropData[], revealedDrops: string[], slotX: number, slotY: number) {
+    this.destroyTooltip();
+    this.tooltipJustOpened = true;
+
+    const TW = 240;
+    const padT = 10;
+    const MAX_LINES = 9;
+    const lines = rest.slice(0, MAX_LINES).map(d => {
+      const revealed = !d.isHidden || revealedDrops.includes(d.itemId);
+      const item = revealed ? ALL_ITEMS[d.itemId] : undefined;
+      const name = item ? localizeItem(item).name : t('bestiary.hidden_drop_name');
+      return `• ${name} — ${formatDropRate(d.dropRatePct / 100)}`;
+    });
+    if (rest.length > MAX_LINES) lines.push('…');
+
+    const txt = this.add.text(padT, padT, lines.join('\n'),
+      uiStyle(TYPE.SMALL, UI.TXT_PARCHMENT, { wordWrapWidth: TW - padT * 2, lineSpacing: 4 }));
+    const th = txt.height + padT * 2;
+
+    const g = this.add.graphics();
+    drawGlowPanel(g, 0, 0, TW, th, UI.ACCENT_ARCANE, UI.PANEL_BG, 4, 0.97);
+
+    const tx = Phaser.Math.Clamp(slotX + 24 - TW / 2, this.DET_X + 6, this.DET_X + this.DET_W - TW - 6);
+    const tyPos = Math.max(this.DET_Y + 6, slotY - th - 8);
+    this.tooltip = this.add.container(tx, tyPos, [g, txt]).setDepth(30);
+    this.tooltipTimer = this.time.delayedCall(4000, () => this.destroyTooltip());
+  }
+
   // ════════════════════════════════════════════════════════════
   // TOOLTIP DE DROP
   // ════════════════════════════════════════════════════════════
@@ -756,7 +1024,9 @@ export class BestiaryScene extends Phaser.Scene {
     this.tooltipJustOpened = true;
 
     const item = revealed ? ALL_ITEMS[drop.itemId] : undefined;
-    const TW = 208;
+    // 208 → 240 : contient une paire de boutons Aller/Annuler de 44px — la
+    // largeur suit le canvas 960 pour ne plus les étriquer.
+    const TW = 240;
     const padT = 10;
 
     const parts: Phaser.GameObjects.GameObject[] = [];
@@ -765,7 +1035,7 @@ export class BestiaryScene extends Phaser.Scene {
     const nameLabel = item ? localizeItem(item).name : t('bestiary.hidden_drop_name');
     const nameColor = item ? RARITY_COLORS[item.rarity] : UI.TXT_WHITE;
     const nameTxt = this.add.text(padT, ty, nameLabel,
-      uiStyle(10, nameColor, { bold: true, wordWrapWidth: TW - padT * 2 }));
+      uiStyle(TYPE.BODY, nameColor, { bold: true, wordWrapWidth: TW - padT * 2 }));
     parts.push(nameTxt);
     ty += nameTxt.height + 6;
 
@@ -937,6 +1207,9 @@ export class BestiaryScene extends Phaser.Scene {
     // `?.` : au moment où Phaser émet SHUTDOWN, son propre CameraManager.shutdown()
     // a déjà pu remettre `main` à undefined (crash reporté sans ce garde).
     this.cameras.main?.off(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE);
+    // Le champ de recherche possède un <input> DOM dans <body> et un listener de
+    // resize sur le Scale Manager : sans ce destroy(), l'input SURVIT à la scène.
+    if (this.search) { this.search.destroy(); this.search = null; }
     this.destroyTooltip();
     // Détruit explicitement (pas juste vidage de tableau) : le masque de scroll du
     // bloc lore (renderScrollableText) n'est jamais ajouté à la display list —

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { BootScene }      from './scenes/BootScene';
 import { PreloaderScene } from './scenes/PreloaderScene';
+import { AssetStreamScene } from './scenes/AssetStreamScene';
 import { MainMenuScene }  from './scenes/MainMenuScene';
 import { NameInputScene } from './scenes/NameInputScene';
 import { IntroScene }     from './scenes/IntroScene';
@@ -16,45 +17,31 @@ import { BestiaryScene }  from './scenes/BestiaryScene';
 import { ArsenalScene }   from './scenes/ArsenalScene';
 import { setTextResolution } from './utils/UITheme';
 
-// ── Texte net sous pixelArt:true — LE fix (pas un pansement de résolution) ──
-// Le jeu tourne en pixelArt:true + image-rendering:pixelated (index.html) :
-// indispensable pour que les sprites restent nets en gros pixels. Mais tout
-// Phaser.GameObjects.Text est un Canvas 2D "normal" (police lisse, anti-
-// aliasée) transformé en texture — sous filtrage NEAREST global, cette
-// texture lisse est échantillonnée comme un sprite pixel-art, ce qui la fait
-// ressortir grignotée/floue (essayé et insuffisant : sur-échantillonner la
-// résolution du texte pour "survivre" au NEAREST, cf. anciens commentaires
-// dans UITheme.ts — un texte lisse n'est simplement pas fait pour ce
-// filtrage, peu importe sa densité source).
-// Le vrai fix : chaque Texture Phaser peut avoir SON PROPRE filtre, indépendant
-// du réglage global pixelArt. On intercepte donc la factory `add.text()` une
-// seule fois ici (avant toute scène) pour forcer LINEAR (bilinéaire, lisse)
-// sur la texture de CHAQUE Text créé dans le jeu — les sprites, eux, gardent
-// NEAREST (chunky, voulu) puisqu'on ne touche à rien d'autre que Text.
-// Aucune scène n'a besoin d'être modifiée : this.add.text() reste l'API
-// normale partout, ce correctif est invisible pour le reste du code.
-const originalTextFactory = Phaser.GameObjects.GameObjectFactory.prototype.text;
-Phaser.GameObjects.GameObjectFactory.prototype.text = function (
-  this: Phaser.GameObjects.GameObjectFactory,
-  ...args: Parameters<typeof originalTextFactory>
-) {
-  const textObj = originalTextFactory.apply(this, args);
-  // `texture` n'est pas exposé dans les types publics de Phaser.GameObjects.Text
-  // (champ interne, cf. Text.js) — garde runtime pour ne pas planter tout le
-  // rendu texte si une future version de Phaser renomme/retire ce champ.
-  const tex = (textObj as unknown as { texture?: Phaser.Textures.Texture }).texture;
-  if (tex) {
-    tex.setFilter(Phaser.Textures.FilterMode.LINEAR);
-  } else {
-    console.warn('[main.ts] Text.texture introuvable — filtre LINEAR non appliqué (Phaser a changé ?)');
-  }
-  return textObj;
-};
+// Le monkeypatch qui forçait LINEAR sur la texture de chaque `add.text()` a été
+// RETIRÉ. Il n'existait que pour sauver du filtrage NEAREST des polices LISSES
+// (Press Start 2P, Verdana) qui n'y survivaient pas. Le jeu est passé à Neatpixels,
+// une police PIXEL : elle veut NEAREST et y est nette. Forcer LINEAR dessus la
+// rendrait floue — exactement le défaut qu'on cherchait à supprimer.
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   parent: 'game-container',
   backgroundColor: '#000000',
+  // ── Filtre pixel art : REMIS, mais le problème d'origine est réglé autrement ──
+  //
+  // Testé sans (antialias) : tout devient flou, forcément — un sprite 32×32 agrandi
+  // par interpolation bilinéaire N'EST que du flou. Ce n'était pas le bon levier.
+  //
+  // Ce qui rendait « moche » avant, ce n'était pas NEAREST : c'étaient les POLICES.
+  // Press Start 2P et Verdana sont des polices LISSES (anti-aliasées) ; rasterisées
+  // en canvas puis échantillonnées en NEAREST, leurs glyphes ressortaient grignotés.
+  // D'où toute la machinerie de supersampling (TEXT_RESOLUTION ×4 à ×10) et le
+  // monkeypatch LINEAR sur add.text() — des pansements sur une incompatibilité de
+  // fond entre une police lisse et un rendu pixel.
+  //
+  // Neatpixels, elle, est une VRAIE police pixel : elle veut NEAREST, et elle est
+  // nette à l'échelle 1:1. Le dilemme a disparu avec le changement de police —
+  // sprites nets ET texte net, sans pansement (cf. TEXT_RESOLUTION = 1 dans UITheme).
   pixelArt: true,
   render: {
     antialias: false,
@@ -65,9 +52,29 @@ const config: Phaser.Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: 800,
-    height: 600,
+    // ── 960×720 : exactement 1,2 × l'ancien 800×600, même ratio 4:3 ──
+    // Motif : depuis le passage à une police pixel, le corps de texte est à 14 px
+    // (contre 11-12 avant). Dans un canvas de 800×600 aux panneaux calés en dur,
+    // il n'avait plus aucun exutoire — d'où l'UI illisible et « pas assez aérée ».
+    //
+    // Le zoom de la caméra du monde reste à 1 (WORLD_CAMERA_ZOOM dans GameScene) :
+    // un zoom fractionnaire ré-échantillonnerait tout le monde en NEAREST et
+    // réintroduirait exactement le flou que la passe typographique a éliminé. Le monde
+    // montre donc simplement 20 % de champ en plus — la physique, elle, est en unités
+    // monde et ne bouge pas.
+    width: 960,
+    height: 720,
     zoom: Phaser.Scale.MAX_ZOOM,
+    // Second facteur du flou : Scale.FIT étire le canvas 800×600 pour remplir la
+    // fenêtre, d'un facteur qui n'a aucune raison d'être ENTIER (ex. ×2,37). Même
+    // sous `image-rendering: pixelated`, un pixel source ne tombe alors pas sur un
+    // nombre entier de pixels écran : certains sont doublés, d'autres non, et les
+    // glyphes ressortent baveux et d'épaisseur irrégulière.
+    // `autoRound` force les dimensions du canvas à des entiers, ce qui supprime le
+    // placement sub-pixel. Ça ne rend pas le RATIO entier (impossible sans bandes
+    // noires), mais ça élimine la moitié du problème — l'autre moitié, c'était la
+    // rastérisation hors grille de la police, traitée dans UITheme.snapFontSize().
+    autoRound: true,
   },
   physics: {
     default: 'arcade',
@@ -79,6 +86,9 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [
     BootScene,
     PreloaderScene,
+    // Scène de service sans rendu (`active: false`) : PreloaderScene la `launch()` en
+    // parallèle du menu pour streamer les portraits d'ennemis hors du chemin de boot.
+    AssetStreamScene,
     MainMenuScene,
     NameInputScene,
     IntroScene,
@@ -95,17 +105,39 @@ const config: Phaser.Types.Core.GameConfig = {
   ],
 };
 
+/**
+ * Attendre les polices AVANT de démarrer Phaser.
+ *
+ * Un `Phaser.GameObjects.Text` est rasterisé dans un canvas 2D puis baké en
+ * texture UNE SEULE FOIS, à sa création. Si la TTF Neatpixels n'est pas encore
+ * chargée à ce moment-là, le glyphe est baké en `monospace` — et il ne sera
+ * JAMAIS re-rendu (sauf appel explicite à setText()). Les écrans les plus
+ * exposés sont justement les premiers : Boot, menu principal, HUD initial.
+ * `font-display: block` ne protège que le DOM, pas le canvas : c'est à nous
+ * d'attendre.
+ *
+ * En cas d'échec (police absente, navigateur exotique) on démarre quand même —
+ * un jeu en police de repli reste jouable, un jeu qui ne démarre pas, non.
+ */
+const FONTS = ["'Neatpixels'", "'Neatpixels Boss'", "'Neatpixels Minimal'", "'Neatpixels Blocks'"];
+async function bootFonts(): Promise<void> {
+  if (!document.fonts?.load) return;
+  try {
+    await Promise.all(FONTS.map(f => document.fonts.load(`16px ${f}`)));
+    await document.fonts.ready;
+  } catch {
+    /* police indisponible — on démarre en repli plutôt que de bloquer le boot */
+  }
+}
+
+await bootFonts();
+
 const game = new Phaser.Game(config);
 
-// Calibre la résolution de rendu du texte (uiStyle/pxStyle, cf. UITheme.ts)
-// sur le zoom RÉEL choisi par le Scale Manager pour cet écran — un `3` fixe
-// ne suffit pas sur un grand moniteur où Scale.MAX_ZOOM choisit un zoom élevé
-// (le canvas 800×600 est alors très agrandi par le navigateur en NEAREST,
-// ce qui blockifie le texte si sa résolution interne ne suit pas). `READY`
-// fire une fois le Scale Manager initialisé, avant la première scène.
-// Complémentaire au fix LINEAR ci-dessus (celui-ci gère le filtrage, celui-là
-// la densité de la source avant filtrage — les deux ensemble donnent le
-// meilleur résultat, LINEAR seul suffirait déjà à éliminer le bruit NEAREST).
+// La résolution de rendu du texte est désormais fixée à 1 quel que soit le zoom :
+// Neatpixels est une police pixel, nette à l'échelle 1:1, et la sur-échantillonner
+// avant un filtrage NEAREST la dégrade au lieu de l'améliorer (cf. UITheme.ts).
+// L'appel est conservé pour garder le point d'ancrage si la DA changeait à nouveau.
 game.events.once(Phaser.Core.Events.READY, () => {
   setTextResolution(game.scale.zoom);
 });

@@ -1,6 +1,6 @@
 import { GameState, EndingChoice } from '../types';
 import { SaveSystem } from '../systems/SaveSystem';
-import { UI, uiStyle } from '../utils/UITheme';
+import { UI, TYPE, uiStyle, titleStyle } from '../utils/UITheme';
 import { t } from '../i18n';
 
 const RESTORE_TEXT = [
@@ -99,10 +99,12 @@ export class EndingScene extends Phaser.Scene {
     if (this.lineIndex >= this.lines.length) return;
     const W = this.cameras.main.width;
 
+    // Pas de 22px pour ~28 lignes max : 60 + 27×22 = 654 < 720 — jamais de
+    // débordement, et le corps est en TYPE.BODY (14) net sur la grille.
     const isEmpty = this.lines[this.lineIndex] === '';
     const txt = this.add.text(W / 2, 60 + this.lineIndex * 22,
       this.lines[this.lineIndex],
-      uiStyle(isEmpty ? 5 : 12, UI.TXT_PARCHMENT, { align: 'center' }),
+      uiStyle(isEmpty ? 5 : TYPE.BODY, UI.TXT_PARCHMENT, { align: 'center' }),
     ).setOrigin(0.5, 0).setAlpha(0);
 
     this.tweens.add({ targets: txt, alpha: 1, duration: 600 });
@@ -121,12 +123,12 @@ export class EndingScene extends Phaser.Scene {
       ? t('ending.thanks')
       : t('ending.ng_plus_unlocked');
 
-    this.add.text(W / 2, H - 92, subtext, uiStyle(11, UI.TXT_MUTED)).setOrigin(0.5);
+    this.add.text(W / 2, H - 96, subtext, uiStyle(TYPE.BODY, UI.TXT_MUTED)).setOrigin(0.5);
 
-    // ── New Game+ button (arrondi, hit zone 44 px) ─
+    // ── New Game+ button (arrondi, visuel = hit zone 44 px) ─
     if (this.choice === EndingChoice.ERASE) {
-      const BW = 220;
-      const BH = 36;
+      const BW = 240;
+      const BH = 44;
       const BY = H - 60;
       const nbg = this.add.graphics();
       const ndraw = (hover: boolean) => {
@@ -177,9 +179,10 @@ export class EndingScene extends Phaser.Scene {
       this.time.delayedCall(700, () => this.scene.start('MainMenuScene'));
     });
 
-    // ── Credits ───────────────────────────────────
-    this.add.text(W / 2, H / 2 + 60, "Grievy Town's Dilemma", uiStyle(15, UI.TXT_MUTED, { bold: true })).setOrigin(0.5);
-    this.add.text(W / 2, H / 2 + 82, 'Original story, design & code', uiStyle(9, UI.TXT_HINT)).setOrigin(0.5);
-    this.add.text(W / 2, H / 2 + 102, 'Music by [your friend]', uiStyle(9, UI.TXT_HINT)).setOrigin(0.5);
+    // ── Credits — titre du jeu en police Boss (titleStyle), teinte muted :
+    // identitaire mais recueilli, pas un titre d'écran actif ─────
+    this.add.text(W / 2, H / 2 + 60, "Grievy Town's Dilemma", titleStyle(UI.TXT_MUTED)).setOrigin(0.5);
+    this.add.text(W / 2, H / 2 + 86, 'Original story, design & code', uiStyle(9, UI.TXT_HINT)).setOrigin(0.5);
+    this.add.text(W / 2, H / 2 + 106, 'Music by [your friend]', uiStyle(9, UI.TXT_HINT)).setOrigin(0.5);
   }
 }

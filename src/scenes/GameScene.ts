@@ -25,15 +25,22 @@ import { getZoneLayout, ZoneLayout, LootableObject, WaterArea } from '../data/zo
 import { ALL_ITEMS } from '../data/items';
 import { loadBindings, KeyBindings } from '../data/keybindings';
 import { keyIconFrame, keyCodeLabel } from '../utils/KeyIcons';
-import { uiStyle } from '../utils/UITheme';
+import { uiStyle, FONT } from '../utils/UITheme';
 import { t, localizeItem } from '../i18n';
 import { BestiarySystem } from '../systems/BestiarySystem';
 import { ArsenalSystem, ARSENAL_ITEM_TYPES } from '../systems/ArsenalSystem';
 import { getBestiaryEntry } from '../data/bestiary';
 import type { BestiaryScene } from './BestiaryScene';
 import type { ArsenalScene } from './ArsenalScene';
+import type { InventoryScene } from './InventoryScene';
 import { ENEMY_SPRITE_BBOX, NPC_SPRITE_BBOX, PLAYER_SPRITE_BBOX } from '../data/spriteGeometry';
 import { fitSpriteToContent } from '../utils/SpriteFit';
+import {
+  enemyIdsForZone,
+  queueEnemySprites,
+  registerEnemyAnimations,
+  ensureEnemyAssets,
+} from '../utils/EnemyAssets';
 
 const ELEMENT_PROJECTILE_COLORS: Partial<Record<ElementType, number>> = {
   [ElementType.FIRE]:      0xff4400,
@@ -66,6 +73,28 @@ const ZONE_ENEMY_COLORS: Record<string, number> = {
   glaciem:        0xaaddee,
   malachars_spire:0x6622aa,
 };
+
+/**
+ * Zoom de la caméra du MONDE. **Doit rester ENTIER.**
+ *
+ * Il a valu 1,2 un temps, pour compenser l'agrandissement du canvas (800×600 → 960×720)
+ * et garder un cadrage identique. C'était une erreur, et elle est instructive : le jeu
+ * tourne en `pixelArt: true`, donc en filtrage NEAREST. Un zoom de 1,2 ré-échantillonne
+ * TOUT le monde d'un facteur non entier À L'INTÉRIEUR du canvas — un sprite de 32 px
+ * est dessiné sur 38,4 px, donc une colonne de pixels sur cinq est doublée et les
+ * autres non. C'est exactement le défaut d'épaisseur irrégulière que toute la passe
+ * typographique venait d'éliminer : on rajoutait une étape de rééchantillonnage pour
+ * sauver un cadrage.
+ *
+ * À 1, le monde est dessiné 1:1 dans le canvas — net. Le canvas plus grand montre
+ * simplement 20 % de monde en plus. La PHYSIQUE est en unités monde (inertie, dash,
+ * portées d'armes, aggro) : elle est rigoureusement inchangée. Seul le champ de vision
+ * s'élargit.
+ *
+ * Si le cadrage devait absolument être restauré un jour, la seule voie propre est un
+ * zoom ENTIER (×2) avec un canvas doublé — pas un facteur fractionnaire.
+ */
+const WORLD_CAMERA_ZOOM = 1;
 
 // ── ATTACK PATTERNS ──────────────────────────────────────────────────────────
 // Pure data — each weapon has a sequence of hits (timing, range, arc, dmg mult)
@@ -142,6 +171,18 @@ const ATTACK_PATTERNS: Partial<Record<WeaponType, AttackPattern>> = {
     windupMs: 200,
     isProjectile: true,
   },
+  [WeaponType.SPEAR]: {
+    // ESTOC — l'identité de la lance est l'ALLONGE, pas la zone : la portée la plus
+    // longue de toute la mêlée (175, devant le greatsword à 155), mais le cône le plus
+    // étroit du jeu (20°, contre 60° pour l'épée). On perce une cible alignée, on ne
+    // fauche pas une foule. Double coup (piqué-retrait) pour le rythme de l'estoc.
+    hits: [
+      { delay: 0,   range: 175, halfArc: Math.PI / 9, damageMultiplier: 0.85 },
+      { delay: 130, range: 175, halfArc: Math.PI / 9, damageMultiplier: 0.65 },
+    ],
+    cooldown: 750,
+    windupMs: 100,
+  },
 };
 
 const FISTS_PATTERN: AttackPattern = {
@@ -170,6 +211,7 @@ const ALT_ATTACK_CONFIGS: Partial<Record<WeaponType, AltAttackConfig>> = {
   [WeaponType.HAMMER]:      { cooldownMs: 1400, windupMs: 400 },
   [WeaponType.STAFF]:       { cooldownMs: 1200, windupMs: 300 },
   [WeaponType.BOW]:         { cooldownMs: 700 },
+  [WeaponType.SPEAR]:       { cooldownMs: 850,  windupMs: 180 },
 };
 
 const FISTS_ALT_CONFIG: AltAttackConfig = { cooldownMs: 500 };
@@ -392,9 +434,36 @@ export class GameScene extends Phaser.Scene {
     this.projectileCollider = null;
   }
 
+  /**
+   * Sprites d'ennemis de la zone où l'on entre — voir src/utils/EnemyAssets.ts.
+   *
+   * Ils ne sont plus chargés au boot (965 fichiers pour 193 créatures, dont ~90 %
+   * ne servent jamais dans une session). Les mettre en file ICI plutôt que dans
+   * create() n'est pas un détail : Phaser ne lance create() qu'une fois le loader
+   * de preload() vidé. La garantie « la texture existe au moment du spawn » —
+   * dont dépendent les gardes `textures.exists('enemy_X_idle')` de
+   * createEnemiesForZone() — est donc tenue par le moteur, sans aucun await.
+   *
+   * Idempotent : au retour dans une zone déjà visitée, tout est en cache et le
+   * loader n'a rien à faire.
+   */
+  preload() {
+    queueEnemySprites(this, enemyIdsForZone(this.gameState.player.currentZone));
+  }
+
   create() {
+    // Phaser n'appelle PAS scene.shutdown() de lui-même : Systems.shutdown() se
+    // contente d'ÉMETTRE l'événement SHUTDOWN. Sans cette ligne, la méthode
+    // shutdown() ci-dessous est du CODE MORT — les listeners qu'elle est censée
+    // retirer survivent à la scène, et chaque create() en empile une couche de plus.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
+
     const zoneId = this.gameState.player.currentZone;
     this.layout = getZoneLayout(zoneId);
+
+    // Les animations ne peuvent être déclarées qu'une fois les textures présentes —
+    // c'est-à-dire maintenant, preload() étant terminé.
+    registerEnemyAnimations(this, enemyIdsForZone(zoneId));
 
     this.generatePixelTexture();
     this.drawZoneMap();
@@ -606,11 +675,16 @@ export class GameScene extends Phaser.Scene {
    * createEnemiesForZone() ne relit layout.fixedEnemies qu'à l'entrée en zone, donc
    * il faut changer de zone (ou recharger) après bascule pour voir les mannequins. */
   private debugToggleTrainingDummies(): void {
+    if (this.isTraveling) return;
     const flags = this.gameState.player.flags;
     const next = !flags['dev_training_dummies'];
     flags['dev_training_dummies'] = next;
     this.events.emit('show_notification',
-      `[DEBUG] Mannequins de Kelvar ${next ? 'activés' : 'désactivés'} — changez de zone pour voir l'effet`);
+      `[DEBUG] Mannequins de Kelvar ${next ? 'activés' : 'désactivés'}`);
+    // createEnemiesForZone() ne relit layout.fixedEnemies qu'à l'entrée en zone :
+    // on rejoue la transition sur place (même zone, position courante) pour que la
+    // bascule soit visible immédiatement, sans avoir à sortir puis revenir.
+    this.performZoneTransition(this.gameState.player.currentZone, this.player.x, this.player.y);
   }
 
   // ── MOVEMENT ─────────────────────────────────────────────────
@@ -1969,7 +2043,7 @@ export class GameScene extends Phaser.Scene {
         // Announcement
         const { width: W, height: H } = this.cameras.main;
         const lbl = this.add.text(W / 2, H / 2 - 40, '— Reinforcements —', {
-          fontSize: '14px', color: '#ffd700', fontFamily: 'monospace',
+          fontSize: '14px', color: '#ffd700', fontFamily: FONT,
           stroke: '#000000', strokeThickness: 3,
         }).setScrollFactor(0).setOrigin(0.5).setDepth(200).setAlpha(0);
         this.tweens.add({
@@ -2141,6 +2215,14 @@ export class GameScene extends Phaser.Scene {
     };
     const enemyColor = ZONE_ENEMY_COLORS_LOCAL[zoneId] ?? 0xaa4444;
     const texKey = `enemy_${minionDef.id}`;
+    // enemyIdsForZone() inclut déjà les `summonMinionId` de la zone, donc les textures
+    // ET les animations du sbire sont normalement là. Filet de sécurité : le def du
+    // sbire arrive ici par paramètre (donc potentiellement hors liste de zone si la
+    // data bouge), et depuis qu'AssetStreamScene précharge les strips `idle` de TOUT
+    // le catalogue, `textures.exists(..._idle)` peut être vrai SANS que l'animation
+    // correspondante existe — `play()` logerait alors une animation manquante.
+    // registerEnemyAnimations est idempotent et ne coûte rien si tout est déjà déclaré.
+    registerEnemyAnimations(this, [minionDef.id]);
     const hasRealSprite = this.textures.exists(`enemy_${minionDef.id}_idle`);
     if (!hasRealSprite) this.ensureTexture(texKey, enemyColor);
 
@@ -2754,14 +2836,43 @@ export class GameScene extends Phaser.Scene {
     const loot = LootSystem.rollLoot(
       enemyDef.loot, enemyDef.baseGold, enemyDef.baseXp,
       activeEnemy.level, this.gameState.player, lootQFloor,
+      // Élites et boss ont une chance nettement accrue de world drop (catalogue
+      // générique) — c'est ce qui rend leur mise à mort intéressante au-delà de
+      // leur table fixe.
+      { isElite: !!activeEnemy.isElite, isBoss: !!isBoss },
     );
 
     this.gameState.player.gold += loot.gold;
     for (const { item, quantity } of loot.items) {
-      LootSystem.addToInventory(this.gameState.player, item, quantity, this.gameState.world);
+      // Le retour d'addToInventory était ignoré : sac plein → l'item était jeté,
+      // MAIS la notification de loot s'affichait quand même. Le joueur voyait un
+      // drop qu'il ne recevait jamais. On ne notifie que ce qui est réellement pris.
+      const added = LootSystem.addToInventory(this.gameState.player, item, quantity, this.gameState.world);
+      if (!added) {
+        this.events.emit('show_notification', `Sac plein — ${item.name} laissé au sol !`);
+        continue;
+      }
       this.events.emit('item_looted', { item, quantity });
       // Bestiaire — révéler les drops hidden au premier loot
       BestiarySystem.revealDrop(this.gameState.world, activeEnemy.enemyId, item.id);
+    }
+
+    // ⚠ DEV TOOL — Mannequin d'Essai (training_dummy_arsenal) : au lieu d'une table
+    // de loot figée, il redonne un TIRAGE NEUF de l'arme actuellement équipée. C'est
+    // ce qui permet de tester les fourchettes de n'importe quel item : équiper la
+    // pièce à observer, taper le mannequin en boucle, comparer les rolls obtenus au
+    // range du catalogue. Gaté par le flag dev comme le spawn du mannequin lui-même.
+    if (activeEnemy.enemyId === 'training_dummy_arsenal') {
+      const equipped = this.gameState.player.equipment.weapon;
+      const template = equipped ? ALL_ITEMS[equipped.id] : undefined;
+      if (!template) {
+        this.events.emit('show_notification', '[DEBUG] Équipez une arme : le Mannequin d\'Essai en rejoue le tirage.');
+      } else {
+        const rolled = StatRollSystem.rollItem(template, 0);
+        const added = LootSystem.addToInventory(this.gameState.player, rolled, 1, this.gameState.world);
+        if (added) this.events.emit('item_looted', { item: rolled, quantity: 1 });
+        else this.events.emit('show_notification', '[DEBUG] Sac plein — tirage perdu.');
+      }
     }
 
     this.spawnXpOrbs(deathX, deathY, Math.floor(loot.xp * xpMult));
@@ -2848,7 +2959,7 @@ export class GameScene extends Phaser.Scene {
     const nameLabel = this.add.text(W / 2, H / 2 - 30, bossName, {
       fontSize: '20px',
       color: '#ffff00',
-      fontFamily: 'monospace',
+      fontFamily: FONT,
       stroke: '#000000',
       strokeThickness: 4,
     }).setScrollFactor(0).setOrigin(0.5).setDepth(200).setAlpha(0);
@@ -3068,6 +3179,16 @@ export class GameScene extends Phaser.Scene {
         break;
       }
 
+      case WeaponType.SPEAR:
+        // Estoc : pas d'arc — un trait qui JAILLIT vers l'avant puis se rétracte.
+        // Le 2e coup (retrait) est plus court et plus pâle : on lit le piqué-retrait.
+        this.spawnSpearThrustVfx(
+          fromX, fromY, angle,
+          hitIndex === 0 ? 175 : 140,
+          hitIndex === 0 ? 0xdff2ff : 0x8fb8cc,
+        );
+        break;
+
       case WeaponType.AXE:
         this.spawnAxeVfx(fromX, fromY, toX, toY, angle, 0xff6600);
         break;
@@ -3119,6 +3240,49 @@ export class GameScene extends Phaser.Scene {
       duration,
       ease: 'Cubic.easeOut',
       onComplete: () => g.destroy(),
+    });
+  }
+
+  /**
+   * LANCE — estoc : un trait fin qui jaillit du joueur jusqu'à `range` puis se
+   * rétracte, avec un éclat à la pointe. Volontairement à contre-courant des autres
+   * armes : pas d'arc de cercle (spawnSlashArcVfx), parce que l'identité lisible de
+   * la lance est la LIGNE, pas la zone (cf. gamefeel : chaque arme doit se sentir
+   * différente au premier coup d'œil).
+   */
+  private spawnSpearThrustVfx(fromX: number, fromY: number, angle: number, range: number, color: number) {
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+
+    // Hampe : rectangle fin, ancré au joueur, dont on étire la longueur (scaleX).
+    const shaft = this.add.rectangle(fromX, fromY, range, 4, color, 0.9)
+      .setOrigin(0, 0.5).setRotation(angle).setDepth(32).setScale(0.15, 1);
+    // Pointe : petit éclat qui file jusqu'au bout de l'allonge.
+    const tip = this.add.circle(fromX, fromY, 6, 0xffffff, 0.95).setDepth(33);
+
+    this.tweens.add({
+      targets: shaft,
+      scaleX: 1,
+      duration: 90,
+      ease: 'Expo.easeOut',
+      // Rétraction : la hampe revient au joueur, on lit le retrait de l'arme.
+      yoyo: true,
+      hold: 40,
+      onComplete: () => shaft.destroy(),
+    });
+    this.tweens.add({
+      targets: tip,
+      x: fromX + cos * range,
+      y: fromY + sin * range,
+      duration: 90,
+      ease: 'Expo.easeOut',
+      onComplete: () => {
+        this.tweens.add({
+          targets: tip,
+          scale: 0, alpha: 0,
+          duration: 110,
+          onComplete: () => tip.destroy(),
+        });
+      },
     });
   }
 
@@ -3318,8 +3482,15 @@ export class GameScene extends Phaser.Scene {
   /** Position écran du joueur (pour le HUD combo de UIScene — caméra parallèle). */
   getPlayerScreenPosition(): { x: number; y: number } | null {
     if (!this.player || !this.player.active) return null;
-    const wv = this.cameras.main.worldView;
-    return { x: this.player.x - wv.x, y: this.player.y - wv.y };
+    // Conversion monde → ÉCRAN : le facteur de zoom est indispensable. `worldView` est
+    // en unités de monde ; l'appelant (UIScene, caméra à zoom 1) travaille en pixels
+    // écran. Sans le `* zoom`, les pips de combo se décalaient de tout le facteur de
+    // zoom dès qu'il n'était plus 1 — jusqu'à 160 px en bord d'écran.
+    const cam = this.cameras.main;
+    return {
+      x: (this.player.x - cam.worldView.x) * cam.zoom,
+      y: (this.player.y - cam.worldView.y) * cam.zoom,
+    };
   }
 
   private spawnFinisherVfx(weaponType: WeaponType | undefined, angle: number) {
@@ -3336,6 +3507,10 @@ export class GameScene extends Phaser.Scene {
       case WeaponType.HAMMER:      this.spawnHammerFinisherVfx(px, py);           break;
       case WeaponType.STAFF:       this.spawnStaffFinisherVfx(px, py, angle);     break;
       case WeaponType.BOW:         this.spawnBowFinisherVfx(px, py, angle);       break;
+      // SPEAR — « Broche » : même trait que l'estoc, mais à l'allonge du finisher
+      // (280, cf. COMBO_CONFIGS) et en blanc glacé. Sans ce case, le finisher
+      // infligeait ses dégâts, sa percée et son knockback SANS AUCUN VFX.
+      case WeaponType.SPEAR:       this.spawnSpearThrustVfx(px, py, angle, 280, 0xeaffff); break;
       default: break; // FISTS : pas de combo, pas de finisher
     }
   }
@@ -3641,7 +3816,7 @@ export class GameScene extends Phaser.Scene {
     const label = this.add.text(W / 2, H / 2, bossName, {
       fontSize: '22px',
       color: '#ffffff',
-      fontFamily: 'monospace',
+      fontFamily: FONT,
       stroke: '#000000',
       strokeThickness: 5,
     }).setScrollFactor(0).setOrigin(0.5).setDepth(200).setAlpha(0);
@@ -3678,7 +3853,7 @@ export class GameScene extends Phaser.Scene {
     const label = isCrit ? `${amount}!` : `${amount}`;
 
     const txt = this.add.text(x + Phaser.Math.Between(-6, 6), y, label, {
-      fontSize: size, color, fontFamily: 'monospace',
+      fontSize: size, color, fontFamily: FONT,
       stroke: isCrit ? '#ffffff' : '#000000', strokeThickness: isCrit ? 3 : 2,
     }).setDepth(100).setOrigin(0.5, 1);
 
@@ -3707,7 +3882,7 @@ export class GameScene extends Phaser.Scene {
   /** Feedback flottant DODGE_PCT (loot stat rolls) — même style que showDamageNumber. */
   private showDodgeText(x: number, y: number) {
     const txt = this.add.text(x + Phaser.Math.Between(-6, 6), y, 'Esquive !', {
-      fontSize: '13px', color: '#88ddff', fontFamily: 'monospace',
+      fontSize: '13px', color: '#88ddff', fontFamily: FONT,
       stroke: '#000000', strokeThickness: 2,
     }).setDepth(100).setOrigin(0.5, 1);
 
@@ -3723,7 +3898,7 @@ export class GameScene extends Phaser.Scene {
 
   private showHealNumber(x: number, y: number, amount: number) {
     const txt = this.add.text(x, y, `+${amount}`, {
-      fontSize: '14px', color: '#44ff88', fontFamily: 'monospace',
+      fontSize: '14px', color: '#44ff88', fontFamily: FONT,
       stroke: '#000000', strokeThickness: 2,
     }).setDepth(100);
     this.tweens.add({ targets: txt, y: y - 40, alpha: 0, duration: 900, onComplete: () => txt.destroy() });
@@ -3812,7 +3987,7 @@ export class GameScene extends Phaser.Scene {
       gfx.lineStyle(1, 0x44ff88, 0.6);
       gfx.strokeRect(tp.x, tp.y, tp.w, tp.h);
       const label = this.add.text(tp.x + tp.w / 2, tp.y + tp.h / 2, tp.label, {
-        fontSize: '9px', color: '#88ffaa', fontFamily: 'monospace',
+        fontSize: '9px', color: '#88ffaa', fontFamily: FONT,
         stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5).setDepth(1);
       this.zoneLabels.push(label);
@@ -3999,7 +4174,13 @@ export class GameScene extends Phaser.Scene {
       const aspectRatio = Math.max(mapWidth, mapHeight) / Math.min(mapWidth, mapHeight);
       const regionsUsable = aspectRatio <= 1.5;
       for (let i = 0; i < count; i++) {
-        const isElite = Math.random() < 0.20;
+        // Une créature peut être élite de DEUX façons : parce que sa data le dit
+        // (def.isElite — les 44 créatures montées en élites, dont les stats sont déjà
+        // ×2.4 dans la data), ou par promotion aléatoire d'un mob banal. Avant, seul
+        // le tirage comptait : une élite de data n'avait que 20% de chances d'être
+        // traitée comme telle (couronne, XP ×2.5, bonus de world drop…).
+        const rolledElite = Math.random() < 0.20;
+        const isElite = def.isElite || rolledElite;
         // Provisoire/approximatif : biaise le spawn vers un quadrant plausible de la zone
         // (ENEMY_SPAWN_REGIONS, cf. heatmap Bestiaire) au lieu d'un tirage uniforme sur
         // toute la map — à remplacer une fois les maps de zone finalisées.
@@ -4051,7 +4232,10 @@ export class GameScene extends Phaser.Scene {
         active.x       = ex;
         active.y       = ey;
         active.isElite = isElite;
-        if (isElite) {
+        // Le boost ne s'applique QU'À la promotion aléatoire : les élites de data
+        // portent déjà leurs stats renforcées (×2.4 dans genEnemies.mjs). Les
+        // re-multiplier ici en ferait des murs de 3.6×.
+        if (rolledElite && !def.isElite) {
           active.currentHp = Math.floor(active.currentHp * 1.5);
           active.maxHp     = Math.floor(active.maxHp     * 1.5);
           active.stats     = { ...active.stats, baseAtk: Math.floor(active.stats.baseAtk * 1.4) };
@@ -4257,7 +4441,7 @@ export class GameScene extends Phaser.Scene {
 
       // Name label above NPC
       const nameLabel = this.add.text(pos.x, pos.y - 22, npc.name, {
-        fontSize: '9px', color: '#ffee88', fontFamily: 'monospace',
+        fontSize: '9px', color: '#ffee88', fontFamily: FONT,
         stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5, 1).setDepth(5);
       this.zoneLabels.push(nameLabel);
@@ -4283,13 +4467,29 @@ export class GameScene extends Phaser.Scene {
     this.escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     this.escKey.on('down', () => {
       if (this.isInDialogue) return;
-      if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); return; }
+      // handleEscape() : l'écran a une chance de CONSOMMER l'appui avant qu'on ne
+      // le ferme (popup ouvert, champ de recherche non vide → Échap vide d'abord).
+      // GameScene est le propriétaire UNIQUE de l'ESC des overlays : un second
+      // handler ESC dans la scène overlay la refermerait dans la foulée.
+      if (this.scene.isActive('InventoryScene')) {
+        const inv = this.scene.get('InventoryScene') as InventoryScene;
+        if (inv.handleEscape()) return;
+        this.setPaused(false); this.scene.stop('InventoryScene'); return;
+      }
       if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene');     return; }
       // Bestiaire/Arsenal sont toujours ouverts depuis PauseScene (mise en pause
       // dessous) — leur propre close() sait la reprendre correctement, contrairement
       // à un setPaused(false) qui la laisserait bloquée en pause indéfiniment.
-      if (this.scene.isActive('BestiaryScene')) { (this.scene.get('BestiaryScene') as BestiaryScene).close(); return; }
-      if (this.scene.isActive('ArsenalScene'))  { (this.scene.get('ArsenalScene')  as ArsenalScene).close(); return; }
+      if (this.scene.isActive('BestiaryScene')) {
+        const bes = this.scene.get('BestiaryScene') as BestiaryScene;
+        if (bes.handleEscape()) return;
+        bes.close(); return;
+      }
+      if (this.scene.isActive('ArsenalScene')) {
+        const ars = this.scene.get('ArsenalScene') as ArsenalScene;
+        if (ars.handleEscape()) return;
+        ars.close(); return;
+      }
       if (!this.scene.isActive('PauseScene')) {
         this.setPaused(true);
         this.scene.launch('PauseScene', { gameScene: this });
@@ -4312,6 +4512,16 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setupCamera() {
+    // Le canvas est passé de 800×600 à 960×720 pour donner de l'air à l'UI (le texte
+    // pixel est en 14 px et n'avait plus d'exutoire — cf. main.ts). Sans compensation,
+    // la caméra montrerait 20 % de monde en plus et les sprites paraîtraient plus
+    // petits : le gamefeel (inertie, dash, portée des armes, lisibilité des ennemis)
+    // aurait changé alors qu'il est validé.
+    //
+    // 960/800 = 1,2 exactement. À ce zoom, la caméra recadre sur 800×600 unités de
+    // monde : zone visible et taille apparente des sprites RIGOUREUSEMENT identiques
+    // à avant. Seules les scènes d'UI (caméra à zoom 1) profitent des pixels gagnés.
+    this.cameras.main.setZoom(WORLD_CAMERA_ZOOM);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
     // Bounds already set in drawZoneMap
   }
@@ -4407,7 +4617,7 @@ export class GameScene extends Phaser.Scene {
         ? localizeItem(firstItem).name
         : t(`notif.loot_${lo.type}` as const);
       const lootLabel = this.add.text(lo.x, lo.y - 16, labelText, {
-        fontSize: '8px', color: '#ffeeaa', fontFamily: 'monospace',
+        fontSize: '8px', color: '#ffeeaa', fontFamily: FONT,
         stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5, 1).setDepth(4);
       this.zoneLabels.push(lootLabel);
@@ -4599,7 +4809,46 @@ export class GameScene extends Phaser.Scene {
     this.bossDeathObjects = [];
   }
 
+  /**
+   * Entrée en zone. Les sprites de la zone cible sont garantis présents AVANT de
+   * reconstruire quoi que ce soit (cf. EnemyAssets.ensureEnemyAssets) : sans ce
+   * verrou, createEnemiesForZone() ne trouverait pas `enemy_X_idle` et retomberait
+   * sur les carrés procéduraux.
+   *
+   * L'attente est gratuite en termes de gamefeel : on est déjà sous le fondu au
+   * noir de travelToZone(), la physique est en pause et update() sort immédiatement
+   * tant que `isTraveling` est vrai — rien ne tourne pendant le chargement. Et sur
+   * une zone déjà visitée, le rappel est SYNCHRONE (tout est en cache).
+   */
   private performZoneTransition(zoneId: string, targetX: number, targetY: number) {
+    const loadingLabel = this.showZoneLoadingLabel();
+    ensureEnemyAssets(this, enemyIdsForZone(zoneId), () => {
+      loadingLabel.destroy();
+      // La scène a pu être arrêtée pendant le chargement (retour au menu principal) :
+      // reconstruire une zone sur une scène morte planterait sur des refs détruites.
+      if (!this.scene.isActive()) return;
+      this.buildZone(zoneId, targetX, targetY);
+    });
+  }
+
+  /**
+   * Indicateur discret pendant le chargement d'une zone jamais visitée.
+   *
+   * Créé AVANT ensureEnemyAssets et détruit dans son rappel : sur une zone déjà en
+   * cache le rappel est synchrone, le label naît et meurt dans la même frame et
+   * n'est donc jamais rendu. Il n'apparaît que quand il y a réellement à attendre.
+   * Pas de i18n ici : aucune clé `common.loading` n'existe et `t()` renverrait la
+   * clé brute à l'écran.
+   */
+  private showZoneLoadingLabel(): Phaser.GameObjects.Text {
+    const { width: W, height: H } = this.cameras.main;
+    return this.add.text(W / 2, H - 40, 'Chargement de la zone...', uiStyle(12, '#cccccc', { stroke: true }))
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(1000);
+  }
+
+  private buildZone(zoneId: string, targetX: number, targetY: number) {
     try {
     this.gameState.player.currentZone = zoneId;
     this.gameState.player.position    = { x: targetX, y: targetY };
@@ -4831,8 +5080,38 @@ export class GameScene extends Phaser.Scene {
       case WeaponType.HAMMER:      this.performAltHammer(config);     break;
       case WeaponType.STAFF:       this.performAltStaff(config);      break;
       case WeaponType.BOW:         this.performAltBow(config);        break;
+      case WeaponType.SPEAR:       this.performAltSpear(config);      break;
       default:                      this.performAltFists(config);      break;
     }
+  }
+
+  // SPEAR — Percée : charge en avant, embroche TOUT ce qui est aligné (cône très
+  // étroit mais très long) et repousse. C'est le pendant offensif de l'allonge :
+  // la lance ne contrôle pas une zone, elle contrôle une LIGNE.
+  private performAltSpear(config: AltAttackConfig) {
+    const windupMs = config.windupMs ?? 0;
+    this.inWindup = true;
+    this.player.setTint(0x99ddff); // liseré glacé — telegraph distinct du windup lourd
+    this.time.delayedCall(windupMs, () => {
+      this.inWindup = false;
+      if (this.player.active) this.player.clearTint();
+      if (this.isTraveling) return;
+
+      const angle = this.facingAngle;
+      const range = 240; // allonge encore accrue sur la percée
+      this.spawnSpearThrustVfx(this.player.x, this.player.y, angle, range, 0xaaddff);
+      this.executeHitInCone(range, Math.PI / 10, 1.6);
+      for (const sprite of this.findEnemiesInCone(range, Math.PI / 10)) {
+        this.applyKnockback(sprite, 220);
+      }
+
+      // Petit bond en avant : la charge se SENT (cf. gamefeel — le dash a de la personnalité).
+      const body = this.player.body as Phaser.Physics.Arcade.Body;
+      body.setVelocity(Math.cos(angle) * 320, Math.sin(angle) * 320);
+      this.time.delayedCall(120, () => {
+        if (this.player.active && !this.isDashing) body.setVelocity(0, 0);
+      });
+    });
   }
 
   // SWORD — Estoc : narrow cone (PI/12), range x1.8, dmgMult=0.85, rapid, 350ms cd.

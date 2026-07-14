@@ -11,17 +11,21 @@
 
 import { WorldState, ElementType, ItemType, ItemRarity, RARITY_COLORS, Item, Weapon, Armor } from '../types';
 import {
-  UI, TYPE, drawGlowPanel, drawCard, drawBadge, uiStyle, addCloseButton, drawScrollbar,
-  renderScrollableText, formatDropRate, drawConfirmCancelButtons, ARCANE_CONFIRM_ACCENT,
+  UI, TYPE, LAYOUT, drawGlowPanel, drawCard, drawBadge, uiStyle, titleStyle, fitText, drawDivider,
+  addCloseButton, drawScrollbar,
+  formatDropRate, drawConfirmCancelButtons, ARCANE_CONFIRM_ACCENT,
   openScreenTransition, closeScreenTransition, portalRedirectTransition,
   formatRangedStatLine,
 } from '../utils/UITheme';
+import { SearchField, matchesSearch } from '../utils/SearchField';
 import { ALL_ITEMS } from '../data/items';
 import { getPassiveEffectLabel } from '../data/passiveEffects';
 import { ArsenalSystem } from '../systems/ArsenalSystem';
 import { StatsSystem } from '../systems/StatsSystem';
 import { isEquipableItem } from '../systems/StatRollSystem';
-import { BESTIARY_DATA, BESTIARY_RECORD, BestiaryDropData } from '../data/bestiary';
+import { SHOP_INVENTORY } from '../data/shops';
+import { NPC_MAP } from '../data/npcs';
+import { ALL_BESTIARY, BESTIARY_RECORD, BestiaryDropData } from '../data/bestiary';
 import { BestiarySystem } from '../systems/BestiarySystem';
 import { ENEMY_MAP } from '../data/enemies';
 import { itemTextureKey } from '../utils/ItemAssets';
@@ -51,6 +55,17 @@ const SECTION_ORDER: ItemType[] = [
   ItemType.BOOTS, ItemType.GLOVES, ItemType.CAPE, ItemType.RING, ItemType.AMULET,
 ];
 
+/** Rang de rareté pour le tri (le plus haut = le plus prestigieux). */
+const RARITY_RANK: Record<ItemRarity, number> = {
+  [ItemRarity.COMMON]: 0,
+  [ItemRarity.UNCOMMON]: 1,
+  [ItemRarity.RARE]: 2,
+  [ItemRarity.EPIC]: 3,
+  [ItemRarity.LEGENDARY]: 4,
+  [ItemRarity.MYTHIC]: 5,
+  [ItemRarity.HIDDEN]: 6,
+};
+
 const SECTION_LABEL_KEYS: Partial<Record<ItemType, string>> = {
   [ItemType.WEAPON]: 'arsenal.section_weapon',
   [ItemType.HELM]:   'arsenal.section_helm',
@@ -71,34 +86,38 @@ type RowDef =
   | { kind: 'header'; label: string }
   | { kind: 'item'; id: string };
 
-const ITEM_ROW_H   = 46;
-const HEADER_ROW_H = 22;
+// Rangée d'item : nom en TYPE.BODY (14) + rareté en TYPE.SMALL (10) + respiration.
+// L'ancienne valeur (46) était calée sur l'ancienne échelle typo (9/10px).
+const ITEM_ROW_H   = 50;
+const HEADER_ROW_H = 24;
 const ROW_GAP      = 2;
 
-/** Pixels par cran de molette dans le viewport lore/description. */
-const LORE_SCROLL_STEP = 28;
-/** Hauteur d'une rangée "monstre" dans la section Obtenu auprès de. */
-const DROP_SOURCE_ROW_H = 34;
+/** Pixels par cran de molette dans le viewport lore/description (≈ 2 lignes BODY). */
+const LORE_SCROLL_STEP = 36;
+/** Hauteur d'une rangée "monstre" dans la section Obtenu auprès de — rangée
+ *  INTERACTIVE (ouvre la mini-card) : alignée sur LAYOUT.TOUCH_MIN (44). */
+const DROP_SOURCE_ROW_H = 44;
 /** Nombre max de monstres affichés avant de replier en "+N autres". */
 const DROP_SOURCE_MAX_ROWS = 6;
 
 /**
- * Réserve verticale (px) sous les stats, avant le titre "Description", pour le
- * libellé du passif (affiché en gras dans le bloc identité — cf. renderDetail).
- * Calibrée pour le passif le plus long connu (~100 caractères, ex.
- * COMBAT_START_ZERO_CD / FIRST_STRIKE_500_PCT dans passiveEffects.ts) sur 2
- * lignes wrappées à la largeur de la colonne identité. Fixe et indépendante de
- * l'item sélectionné : LORE_Y doit rester la même géométrie pour tous les items
- * (panneau uniforme, cf. create()) — un item sans passif laisse juste un blanc.
+ * Réserve verticale (px) sous les stats, avant le titre "Description" — marge
+ * de sécurité du bloc identité (un nom en HEADING 21 peut wrapper sur 2 lignes,
+ * suivi de jusqu'à 3 lignes de stats en BODY 14 au pas de 18). Fixe et
+ * indépendante de l'item sélectionné : LORE_Y doit rester la même géométrie
+ * pour tous les items (panneau uniforme, cf. create()).
+ * NB : cette constante s'appelait PASSIVE_RESERVE_PX quand le passif était
+ * rendu dans le bloc identité, clampé en hauteur — ce clamp TRONQUAIT les
+ * passifs longs des items Hidden (bug reporté : « Vous soigne de 25% de tous
+ * les dégâts in… »). Le passif vit désormais EN TÊTE du viewport scrollable
+ * (cf. renderDetail) : visible sans scroll, et lisible EN ENTIER en scrollant.
  */
-const PASSIVE_RESERVE_PX = 36;
+const IDENTITY_RESERVE_PX = 44;
 
-/**
- * Sous-titre du bloc fourchettes (§7.1) — hardcodé FR (pas de clé i18n) : la
- * catégorie de contenu equipStats/equipRanges n'est pas encore localisée
- * ailleurs dans ce fichier (cf. StatsSystem.STAT_LABELS, même convention).
- */
-const RANGES_SUBTITLE = 'Fourchettes à l\'obtention';
+// Sous-titre du bloc fourchettes (§7.1) : cf. clé `arsenal.ranges_subtitle`.
+// « Fourchettes à l'obtention » sonnait comme une note de spécification. Ce bloc
+// annonce ce que l'objet PEUT rouler quand il tombe — c'est une promesse de butin,
+// pas une plage de tolérance industrielle.
 
 export class ArsenalScene extends Phaser.Scene {
   private gameScene!: GameScene;
@@ -114,12 +133,17 @@ export class ArsenalScene extends Phaser.Scene {
   private lastVisibleIndex = 0;
   private selectedId: string | null = null;
 
+  /** Champ de recherche (saisie DOM + rendu Phaser — cf. utils/SearchField.ts).
+   *  `searchQuery` est la requête NORMALISÉE : c'est elle que buildRows() lit. */
+  private search: SearchField | null = null;
+  private searchQuery = '';
+
   private listObjs:   Phaser.GameObjects.GameObject[] = [];
   private detailObjs: Phaser.GameObjects.GameObject[] = [];
   private scrollbarGfx!: Phaser.GameObjects.Graphics;
 
-  // Scroll interne du bloc description/lore (viewport masqué à taille fixe — voir
-  // renderScrollableText) : offset en pixels, indépendant du scroll de la liste.
+  // Scroll interne du bloc passif/fourchettes/lore (viewport masqué à taille
+  // fixe — cf. renderDetail) : offset en pixels, indépendant du scroll de la liste.
   private loreScrollPx = 0;
   private loreMaxScrollPx = 0;
 
@@ -147,7 +171,9 @@ export class ArsenalScene extends Phaser.Scene {
 
   private LIST_X = 0; private LIST_Y = 0; private LIST_W = 0; private LIST_H = 0;
   private DET_X = 0;  private DET_Y = 0;  private DET_W = 0;  private DET_H = 0;
-  private LORE_X = 0; private LORE_Y = 0; private LORE_W = 0; private readonly LORE_H = 100;
+  // 100 → 140 : le canvas 720px de haut offre la place d'un vrai bloc de lecture
+  // (≈ 7 lignes de BODY 14 visibles au lieu de ~5 lignes de micro-texte).
+  private LORE_X = 0; private LORE_Y = 0; private LORE_W = 0; private readonly LORE_H = 140;
   private rowsTop = 0; private rowsBottom = 0;
 
   constructor() { super({ key: 'ArsenalScene' }); }
@@ -160,6 +186,8 @@ export class ArsenalScene extends Phaser.Scene {
     this.itemRowIndices = [];
     this.scrollOffset = 0;
     this.selectedId = null;
+    this.search = null;
+    this.searchQuery = '';
     this.listObjs = [];
     this.detailObjs = [];
     this.loreScrollPx = 0;
@@ -181,41 +209,59 @@ export class ArsenalScene extends Phaser.Scene {
     const frame = this.add.graphics();
     drawGlowPanel(frame, 6, 6, W - 12, H - 12, UI.ACCENT_ARCANE, UI.BG_DEEP, 10, 0.92);
 
-    this.add.text(W / 2, 24, t('arsenal.title'), uiStyle(13, UI.TXT_GOLD, { bold: true, stroke: true })).setOrigin(0.5);
+    // Titre d'écran en police Boss (titleStyle) — même convention que
+    // InventoryScene : c'est ce qui redonne la hiérarchie (l'ancien uiStyle(13)
+    // tombait à la même taille que le corps de texte).
+    this.add.text(W / 2, 26, t('arsenal.title'), titleStyle(UI.TXT_GOLD, { stroke: true })).setOrigin(0.5);
 
     const counts = ArsenalSystem.counts(this.world);
     const progressLabel = t('arsenal.progress')
       .replace('{seen}',  String(counts.seen))
       .replace('{total}', String(counts.total));
-    this.add.text(20, 24, progressLabel, uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setOrigin(0, 0.5);
+    this.add.text(20, 26, progressLabel, uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setOrigin(0, 0.5);
 
-    addCloseButton(this, W - 28, 24, () => this.close());
+    addCloseButton(this, W - 28, 26, () => this.close());
 
     const sep = this.add.graphics();
-    sep.lineStyle(1, UI.ACCENT_ARCANE, 0.35);
-    sep.beginPath(); sep.moveTo(16, 42); sep.lineTo(W - 16, 42); sep.strokePath();
+    drawDivider(sep, 16, 48, W - 32, UI.ACCENT_ARCANE, 0.35);
 
-    this.LIST_X = 16;  this.LIST_Y = 50;
-    this.LIST_W = 212; this.LIST_H = H - 50 - 26;
+    this.LIST_X = 16;
+    // Largeur de liste RELATIVE au canvas (l'ancien 212 en dur avait été calé
+    // sur 800px de large) — ~27% laisse un panneau détail confortable à droite.
+    this.LIST_W = Math.round(W * 0.27);
+    // Le champ de recherche s'insère AU-DESSUS de la liste (542 entrées : la
+    // recherche est le premier geste, pas une option). Seule la LISTE recule —
+    // le panneau détail garde exactement sa géométrie (DET_Y/DET_H inchangés :
+    // tout son layout interne, viewport de lore et section sources, en dépend).
+    const SEARCH_Y = 56;
+    const SEARCH_H = LAYOUT.TOUCH_MIN;
+    this.LIST_Y = SEARCH_Y + SEARCH_H + 6;
+    this.LIST_H = H - this.LIST_Y - 28;
     this.DET_X  = this.LIST_X + this.LIST_W + 8;
-    this.DET_Y  = 50;
+    this.DET_Y  = SEARCH_Y;
     this.DET_W  = W - this.DET_X - 16;
-    this.DET_H  = H - 50 - 26;
+    this.DET_H  = H - this.DET_Y - 28;
     this.rowsTop    = this.LIST_Y + 24;
     this.rowsBottom = this.LIST_Y + this.LIST_H - 24;
 
     // Viewport fixe du bloc description/lore — même géométrie pour tous les items
     // (panneau uniforme), le texte défile DEDANS au lieu de faire varier la taille
-    // du panneau ou de déborder hors-cadre (cf. renderScrollableText).
-    // +PASSIVE_RESERVE_PX : place réservée au libellé du passif (gras, dans le
-    // bloc identité) entre la fin des stats et le titre "Description" — voir
-    // la constante pour le détail du calibrage.
+    // du panneau ou de déborder hors-cadre (cf. renderDetail, blocs masqués).
+    // +IDENTITY_RESERVE_PX : marge de sécurité sous le bloc identité (nom +
+    // badges + stats) avant le titre "Description" — voir la constante.
     this.LORE_X = this.DET_X + this.PAD;
-    this.LORE_Y = this.DET_Y + this.PAD + 96 + 18 + PASSIVE_RESERVE_PX + 14;
+    this.LORE_Y = this.DET_Y + this.PAD + 96 + 18 + IDENTITY_RESERVE_PX + 14;
     this.LORE_W = this.DET_W - this.PAD * 2;
 
     const listBg = this.add.graphics();
     drawGlowPanel(listBg, this.LIST_X, this.LIST_Y, this.LIST_W, this.LIST_H, UI.ACCENT_ARCANE, UI.BG_MID, 8, 0.55);
+
+    this.search = new SearchField(this, {
+      x: this.LIST_X, y: SEARCH_Y, w: this.LIST_W, h: SEARCH_H,
+      placeholder: t('search.placeholder_item'),
+      onChange: (q) => this.applySearch(q),
+      onEscape: () => this.close(),
+    });
 
     // Depth explicite : sans ça, les lignes recréées à chaque renderList() finissent
     // plus tard dans la display list et passent PAR-DESSUS la scrollbar (bug reporté).
@@ -250,9 +296,37 @@ export class ArsenalScene extends Phaser.Scene {
   // DONNÉES DE LISTE
   // ════════════════════════════════════════════════════════════
 
+  /**
+   * Prédicat de recherche d'un item — sur le nom LOCALISÉ (`localizeItem`), pas
+   * sur le nom brut de la data : le joueur cherche ce qu'il LIT à l'écran.
+   * La rareté est aussi indexée (« legendaire » liste les légendaires).
+   *
+   * Un item NON DÉCOUVERT ne matche jamais une requête : son nom est masqué
+   * (« ??? ») dans cette UI, le faire remonter par son vrai nom le divulguerait.
+   */
+  private matchesQuery(item: Item, discovered: boolean): boolean {
+    if (this.searchQuery.length === 0) return true;
+    if (!discovered) return false;
+    return matchesSearch(this.searchQuery, localizeItem(item).name, t(`rarity.${item.rarity}`));
+  }
+
   private buildRows() {
     for (const sectionType of SECTION_ORDER) {
-      const items = Object.values(ALL_ITEMS).filter(i => i.type === sectionType);
+      // Tri à DEUX niveaux : la section donne la catégorie (armes, casques…), et à
+      // l'intérieur on classe par RARETÉ CROISSANTE — Commun en tête, Hidden en fin
+      // de section. La liste se lit donc comme une progression : on descend vers les
+      // pièces d'exception, et le bas de chaque section est la récompense du scroll.
+      // À rareté égale, ordre alphabétique pour que la liste soit stable et qu'un
+      // item se retrouve à l'œil.
+      const items = Object.values(ALL_ITEMS)
+        .filter(i => i.type === sectionType)
+        // La recherche filtre AVANT le groupement : une section vidée par le
+        // filtre ne pousse pas d'en-tête (`items.length === 0` ci-dessous).
+        .filter(i => this.matchesQuery(i, ArsenalSystem.peekEntry(this.world, i.id).discovered))
+        .sort((a, b) => {
+          const dr = RARITY_RANK[a.rarity] - RARITY_RANK[b.rarity];
+          return dr !== 0 ? dr : a.name.localeCompare(b.name, 'fr');
+        });
       if (items.length === 0) continue;
       this.rows.push({ kind: 'header', label: t(SECTION_LABEL_KEYS[sectionType] ?? '').toUpperCase() });
       for (const item of items) {
@@ -264,6 +338,46 @@ export class ArsenalScene extends Phaser.Scene {
 
   private rowIndexOf(itemId: string): number {
     return this.rows.findIndex(r => r.kind === 'item' && r.id === itemId);
+  }
+
+  /**
+   * Recherche appliquée à la frappe : on reconstruit les rangées (le filtre vit
+   * dans buildRows, donc les en-têtes de section vidés disparaissent d'eux-mêmes),
+   * on remet le scroll à zéro et on garde une sélection COHÉRENTE — si l'item
+   * affiché à droite n'est plus dans les résultats, on bascule sur le premier
+   * résultat. Le panneau détail n'est jamais vidé tant qu'un item reste
+   * sélectionnable : une recherche infructueuse ne doit pas effacer le contexte.
+   */
+  private applySearch(query: string) {
+    this.searchQuery = query;
+    this.rows = [];
+    this.itemRowIndices = [];
+    this.buildRows();
+    this.maxScrollOffset = this.computeMaxOffset();
+    this.scrollOffset = 0;
+    this.destroyMonsterCard();
+
+    if (this.itemRowIndices.length > 0 && (this.selectedId === null || this.rowIndexOf(this.selectedId) === -1)) {
+      const firstRow = this.rows[this.itemRowIndices[0]];
+      if (firstRow && firstRow.kind === 'item') {
+        this.selectedId = firstRow.id;
+        this.loreScrollPx = 0;
+      }
+    }
+    if (this.selectedId) this.ensureVisible(this.rowIndexOf(this.selectedId));
+
+    this.renderList();
+    this.renderDetail();
+  }
+
+  /**
+   * Échap : vide d'abord la recherche, ferme seulement si elle est déjà vide.
+   * Appelé par GameScene.escKey (l'ESC du jeu est central — cf. son commentaire)
+   * ET par le champ lui-même quand il a le focus clavier.
+   * Retourne true si l'appui a été CONSOMMÉ (ne pas fermer l'écran).
+   */
+  handleEscape(): boolean {
+    return this.search?.clear() ?? false;
   }
 
   private lastVisibleFrom(offset: number): number {
@@ -341,6 +455,9 @@ export class ArsenalScene extends Phaser.Scene {
     }
     this.lastVisibleIndex = i - 1;
 
+    // État vide — jamais un panneau blanc : on nomme la requête qui n'a rien donné.
+    if (this.rows.length === 0) this.renderEmptyState(x, w);
+
     if (this.scrollOffset > 0) {
       this.renderScrollArrow(this.LIST_Y + 11, '▲', () => this.scroll(-1));
     }
@@ -354,6 +471,22 @@ export class ArsenalScene extends Phaser.Scene {
       this.scrollbarGfx,
       this.LIST_X + this.LIST_W - 10, this.rowsTop, 4, this.rowsBottom - this.rowsTop,
       this.scrollOffset, this.maxScrollOffset, visibleCount / Math.max(1, this.rows.length),
+    );
+  }
+
+  /** « Aucun résultat » + rappel de la requête, centré dans le panneau de liste. */
+  private renderEmptyState(x: number, w: number) {
+    const cx = x + w / 2;
+    const cy = this.LIST_Y + this.LIST_H / 2;
+    const hintStyle = uiStyle(TYPE.SMALL, UI.TXT_HINT, { align: 'center', wordWrapWidth: w - 8 });
+    this.listObjs.push(
+      this.add.text(cx, cy - 12, t('search.no_results'),
+        uiStyle(TYPE.BODY, UI.TXT_MUTED, { bold: true })).setOrigin(0.5),
+      this.add.text(cx, cy + 12,
+        // Texte TEL QUE TAPÉ (« Épée »), pas la forme normalisée (« epee ») :
+        // c'est ce que le joueur reconnaît.
+        t('search.no_results_hint').replace('{q}', this.search?.text ?? this.searchQuery),
+        hintStyle).setOrigin(0.5),
     );
   }
 
@@ -404,28 +537,30 @@ export class ArsenalScene extends Phaser.Scene {
 
     // Icône 32×32 (ou silhouette "?" si non découvert)
     const iconKey = this.resolveIcon(item);
-    const icx = x + 24;
+    const icx = x + 25;
     if (entry.discovered) {
       this.listObjs.push(
-        this.add.image(icx, cy, iconKey).setDisplaySize(28, 28),
+        this.add.image(icx, cy, iconKey).setDisplaySize(32, 32),
       );
     } else {
       const ph = this.add.graphics();
       ph.fillStyle(0x232336, 1);
-      ph.fillCircle(icx, cy, 14);
+      ph.fillCircle(icx, cy, 15);
       this.listObjs.push(ph,
         this.add.text(icx, cy, '?', uiStyle(9, UI.TXT_WHITE, { bold: true })).setOrigin(0.5),
       );
     }
 
     const rawName = entry.discovered ? localizeItem(item).name : t('arsenal.unknown');
-    const name = rawName.length > 16 ? rawName.slice(0, 15) + '..' : rawName;
     const nameColor = entry.discovered ? (RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT) : UI.TXT_MUTED;
+    // Nom en TYPE.BODY (14) + troncature en PIXELS (fitText) — l'ancien
+    // slice(0, 15) tronquait au caractère, sans rien savoir de la police.
+    const nameStyle = uiStyle(TYPE.BODY, nameColor, { bold: entry.discovered });
     this.listObjs.push(
-      this.add.text(x + 44, y + 9, name, uiStyle(9, nameColor, { bold: entry.discovered })),
+      this.add.text(x + 46, y + 8, fitText(this, rawName, nameStyle, w - 46 - 6), nameStyle),
     );
     this.listObjs.push(
-      this.add.text(x + 44, y + 26, entry.discovered ? t(`rarity.${item.rarity}`) : t('arsenal.locked'),
+      this.add.text(x + 46, y + 27, entry.discovered ? t(`rarity.${item.rarity}`) : t('arsenal.locked'),
         uiStyle(TYPE.SMALL, UI.TXT_MUTED)),
     );
 
@@ -492,7 +627,9 @@ export class ArsenalScene extends Phaser.Scene {
     const loc = localizeItem(item);
     const displayName = entry.discovered ? loc.name : t('arsenal.unknown');
     const nameColor = entry.discovered ? (RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT) : UI.TXT_MUTED;
-    const nameTxt = this.add.text(ix, iy, displayName, uiStyle(13, nameColor, { bold: true, wordWrapWidth: iw }));
+    // Le nom est le héros du panneau : TYPE.HEADING (21), couleur de rareté —
+    // même convention que le panneau détail de l'inventaire.
+    const nameTxt = this.add.text(ix, iy, displayName, uiStyle(TYPE.HEADING, nameColor, { bold: true, wordWrapWidth: iw }));
     this.detailObjs.push(nameTxt);
     iy += nameTxt.height + 10;
 
@@ -509,78 +646,87 @@ export class ArsenalScene extends Phaser.Scene {
 
     // ── Stats principales (selon le type d'item) ───────────────
     if (entry.discovered) {
+      // Valeurs en TYPE.BODY (14) : « les valeurs importantes en grand » — le
+      // micro-texte reste réservé aux fourchettes/badges (TYPE.SMALL).
+      // PARCHEMIN partout (retour utilisateur : le TXT_MUTED rendait ATK/M.ATK/
+      // Vit. d'attaque « ternes » face au blanc de la section sources). La
+      // fourchette catalogue (muted) se distingue désormais par l'ITALIQUE,
+      // les valeurs figées par le GRAS — plus jamais par une couleur éteinte.
       for (const line of this.statLines(item)) {
-        this.detailObjs.push(this.add.text(ix, iy, line.text, uiStyle(9, line.muted ? UI.TXT_MUTED : UI.TXT_PARCHMENT)));
-        iy += 15;
+        this.detailObjs.push(this.add.text(ix, iy, line.text,
+          uiStyle(TYPE.BODY, UI.TXT_PARCHMENT, line.muted ? { italic: true } : { bold: true })));
+        iy += 18;
       }
-
-      // Passif : en gras, couleur distincte (or) — sorti du bloc lore pour rester
-      // visible sans avoir à scroller. Budget vertical réservé par
-      // PASSIVE_RESERVE_PX (voir sa doc) entre ici et le titre "Description".
-      const passiveLabel = ('passiveEffect' in item && item.passiveEffect)
-        ? getPassiveEffectLabel(item.passiveEffect)
-        : undefined;
-      if (passiveLabel) {
-        iy += 4;
-        this.detailObjs.push(this.add.text(ix, iy, `${t('arsenal.passive_label')} ${passiveLabel}`,
-          uiStyle(9, UI.TXT_GOLD, { bold: true, wordWrapWidth: iw, lineSpacing: 4 })));
-      }
+      // Le passif n'est plus rendu ici : il vit en tête du viewport scrollable
+      // ci-dessous — jamais tronqué (cf. doc de IDENTITY_RESERVE_PX).
     }
 
     // ── Description / lore ──────────────────────────────────────
     // Viewport fixe (this.LORE_X/Y/W/H, calculé une fois dans create()) : le texte
     // défile DEDANS (molette + scrollbar) au lieu de faire varier la taille du
     // panneau ou de déborder hors-cadre — garantit un panneau UNIFORME pour tous
-    // les items tout en gardant tout le lore accessible (cf. renderScrollableText).
-    const descY = this.DET_Y + pad + 96 + 18 + PASSIVE_RESERVE_PX;
+    // les items tout en gardant tout le contenu accessible (blocs masqués ci-dessous).
+    const descY = this.DET_Y + pad + 96 + 18 + IDENTITY_RESERVE_PX;
     this.addSectionTitle(t('arsenal.description_title'), descY);
 
     const baseDesc = loc.lore ?? loc.description;
     const descText = entry.discovered ? baseDesc : t('arsenal.not_discovered');
     const descColor = entry.discovered ? UI.TXT_PARCHMENT : UI.TXT_MUTED;
 
-    // Fourchettes de roll (§7.1) : contenu de longueur VARIABLE (2 lignes en
-    // COMMON, jusqu'à 8 en HIDDEN) — ne peut pas tenir dans la zone identité
-    // fixe au-dessus (déjà pleine à 3 lignes avec ATK/MATK/ASPD). Rendu DANS
-    // le même viewport scrollable que le lore, en tête, avec sa propre teinte
-    // grise — deux Text partageant un seul mask/scroll, plutôt qu'un second
-    // viewport indépendant (garde LORE_Y/dropTitleY strictement inchangés).
-    const rangeLines = entry.discovered ? this.equipRangeLines(item) : [];
-    let maxScrollPx: number;
-
-    if (rangeLines.length > 0) {
-      const rangesTxt = this.add.text(
-        this.LORE_X, this.LORE_Y - this.loreScrollPx,
-        `${RANGES_SUBTITLE}\n${rangeLines.join('\n')}`,
-        uiStyle(TYPE.SMALL, UI.TXT_MUTED, { italic: true, lineSpacing: 4, wordWrapWidth: this.LORE_W }),
-      );
-      const gapY = 8;
-      const loreTxt = this.add.text(
-        this.LORE_X, rangesTxt.y + rangesTxt.height + gapY,
-        descText, uiStyle(9, descColor, { lineSpacing: 5, wordWrapWidth: this.LORE_W }),
-      );
-
-      maxScrollPx = Math.max(0, Math.ceil(rangesTxt.height + gapY + loreTxt.height) - this.LORE_H);
-      if (this.loreScrollPx > maxScrollPx) {
-        rangesTxt.y = this.LORE_Y - maxScrollPx;
-        loreTxt.y = rangesTxt.y + rangesTxt.height + gapY;
-      }
-
-      const maskGfx = this.make.graphics(undefined, false);
-      maskGfx.fillStyle(0xffffff, 1);
-      maskGfx.fillRect(this.LORE_X, this.LORE_Y, this.LORE_W, this.LORE_H);
-      const geomMask = maskGfx.createGeometryMask();
-      rangesTxt.setMask(geomMask);
-      loreTxt.setMask(geomMask);
-      this.detailObjs.push(rangesTxt, loreTxt, maskGfx);
-    } else {
-      const loreResult = renderScrollableText(
-        this, this.LORE_X, this.LORE_Y, this.LORE_W, this.LORE_H,
-        descText, uiStyle(9, descColor, { lineSpacing: 5 }), this.loreScrollPx,
-      );
-      this.detailObjs.push(loreResult.text, loreResult.mask);
-      maxScrollPx = loreResult.maxScrollPx;
+    // Contenu du viewport scrollable — blocs empilés partageant UN masque et
+    // UN scroll (garde LORE_Y/dropTitleY strictement inchangés) :
+    //  1. PASSIF (or gras, TYPE.BODY) : info capitale d'un item Hidden. En TÊTE
+    //     du viewport, donc visible sans scroller dans tous les cas courants —
+    //     et le scroll garantit sa lecture EN ENTIER quelle que soit sa longueur
+    //     (l'ancien clamp du bloc identité le tronquait, bug reporté).
+    //  2. Fourchettes de roll (§7.1) : longueur VARIABLE (2 lignes en COMMON,
+    //     jusqu'à 8 en HIDDEN) — seul le viewport scrollable peut l'absorber.
+    //  3. Lore/description : corps de lecture en TYPE.BODY.
+    const blocks: { text: string; style: Phaser.Types.GameObjects.Text.TextStyle }[] = [];
+    const passiveLabel = entry.discovered && 'passiveEffect' in item && item.passiveEffect
+      ? getPassiveEffectLabel(item.passiveEffect)
+      : undefined;
+    if (passiveLabel) {
+      blocks.push({
+        text: `${t('arsenal.passive_label')} ${passiveLabel}`,
+        style: uiStyle(TYPE.BODY, UI.TXT_GOLD, { bold: true, lineSpacing: 4, wordWrapWidth: this.LORE_W }),
+      });
     }
+    const rangeLines = entry.discovered ? this.equipRangeLines(item) : [];
+    if (rangeLines.length > 0) {
+      blocks.push({
+        text: `${t('arsenal.ranges_subtitle')}\n${rangeLines.join('\n')}`,
+        style: uiStyle(TYPE.SMALL, UI.TXT_MUTED, { italic: true, lineSpacing: 4, wordWrapWidth: this.LORE_W }),
+      });
+    }
+    blocks.push({
+      text: descText,
+      style: uiStyle(TYPE.BODY, descColor, { lineSpacing: 5, wordWrapWidth: this.LORE_W }),
+    });
+
+    const GAP_Y = 10;
+    const blockTexts: Phaser.GameObjects.Text[] = [];
+    let blockY = this.LORE_Y - this.loreScrollPx;
+    for (const block of blocks) {
+      const txt = this.add.text(this.LORE_X, blockY, block.text, block.style);
+      blockTexts.push(txt);
+      blockY += txt.height + GAP_Y;
+    }
+    const contentPx = blockY + this.loreScrollPx - this.LORE_Y - GAP_Y;
+    const maxScrollPx = Math.max(0, Math.ceil(contentPx) - this.LORE_H);
+    if (this.loreScrollPx > maxScrollPx) {
+      // Offset devenu trop grand pour ce contenu (changement d'item) : on
+      // remonte tous les blocs d'un même delta avant le clamp ci-dessous.
+      const dy = this.loreScrollPx - maxScrollPx;
+      for (const txt of blockTexts) txt.setY(txt.y + dy);
+    }
+
+    const maskGfx = this.make.graphics(undefined, false);
+    maskGfx.fillStyle(0xffffff, 1);
+    maskGfx.fillRect(this.LORE_X, this.LORE_Y, this.LORE_W, this.LORE_H);
+    const geomMask = maskGfx.createGeometryMask();
+    for (const txt of blockTexts) txt.setMask(geomMask);
+    this.detailObjs.push(...blockTexts, maskGfx);
 
     this.loreMaxScrollPx = maxScrollPx;
     if (this.loreScrollPx > this.loreMaxScrollPx) this.loreScrollPx = this.loreMaxScrollPx;
@@ -606,16 +752,46 @@ export class ArsenalScene extends Phaser.Scene {
   // OBTENU AUPRÈS DE (cross-link Bestiaire)
   // ════════════════════════════════════════════════════════════
 
-  /** Scanne BESTIARY_DATA pour lister les monstres qui peuvent dropper `itemId` —
-   *  respecte isHidden/isDropRevealed (jamais de spoil d'un drop caché non révélé). */
+  /**
+   * Marchands qui VENDENT cet objet, avec leur ville et le prix affiché.
+   * Beaucoup d'objets (consommables, matériaux, équipement de base) ne tombent
+   * d'aucun monstre : sans ça l'Arsenal affichait « Source inconnue » pour un objet
+   * en vente à deux pas, ce qui est une impasse pour le joueur.
+   */
+  private findVendors(itemId: string): { name: string; location: string; price: number }[] {
+    const out: { name: string; location: string; price: number }[] = [];
+    for (const [npcId, entries] of Object.entries(SHOP_INVENTORY)) {
+      const entry = entries.find(e => e.itemId === itemId);
+      if (!entry) continue;
+      const npc = NPC_MAP[npcId];
+      // `t()` renvoie la clé elle-même si elle est absente — on retombe donc sur le
+      // nom brut de la zone plutôt que d'afficher « zone.grievy_town » au joueur.
+      const locKey = npc?.location ? `zone.${npc.location}` : '';
+      const locLabel = locKey ? t(locKey) : '';
+      out.push({
+        name: npc?.name ?? npcId,
+        location: locLabel === locKey ? (npc?.location ?? '') : locLabel,
+        price: entry.price,
+      });
+    }
+    return out;
+  }
+
+  /** Scanne ALL_BESTIARY (les 196 monstres, generes compris — BESTIARY_DATA seul
+   *  ne couvrait que les 57 ecrits a la main, d'ou les "Source inconnue" sur tout
+   *  item ne tombant que des monstres generes) pour lister ses sources —
+   *  respecte isHidden/isDropRevealed (jamais de spoil d'un drop caché non révélé).
+   *
+   *  Le TITRE de la section suit le contenu réel (retour utilisateur : « Obtenu
+   *  auprès de » suivi d'un monstre sonnait comme un achat chez un PNJ) :
+   *  monstres → « Lâché par », marchands → « En vente chez », rien → « Provenance ». */
   private renderDroppedBySection(itemId: string, titleY: number) {
-    this.addSectionTitle(t('arsenal.dropped_by_title'), titleY);
     const contentX = this.DET_X + this.PAD;
     const contentY = titleY + 18;
     const contentW = this.DET_W - this.PAD * 2;
 
     const sources: { enemyId: string; drop: BestiaryDropData }[] = [];
-    for (const data of BESTIARY_DATA) {
+    for (const data of ALL_BESTIARY) {
       const drop = data.drops.find(d => d.itemId === itemId);
       if (!drop) continue;
       if (drop.isHidden && !BestiarySystem.isDropRevealed(this.world, data.enemyId, itemId)) continue;
@@ -623,15 +799,34 @@ export class ArsenalScene extends Phaser.Scene {
     }
 
     if (sources.length === 0) {
-      this.detailObjs.push(
-        this.add.text(contentX, contentY, t('arsenal.loot_unknown'), uiStyle(9, UI.TXT_MUTED)),
-      );
+      // Aucun monstre ne le lâche : c'est probablement un article de boutique
+      // (consommables, matériaux, équipement de base). Dire « Source inconnue » là où
+      // l'objet est en vente à deux pas était une impasse pour le joueur — on nomme
+      // le marchand et sa ville.
+      const vendors = this.findVendors(itemId);
+      if (vendors.length === 0) {
+        this.addSectionTitle(t('arsenal.source_title'), titleY);
+        this.detailObjs.push(
+          this.add.text(contentX, contentY, t('arsenal.loot_unknown'), uiStyle(9, UI.TXT_MUTED)),
+        );
+        return;
+      }
+      this.addSectionTitle(t('arsenal.sold_by_title'), titleY);
+      const vendorStyle = uiStyle(TYPE.BODY, UI.TXT_GOLD);
+      vendors.slice(0, 4).forEach((v, i) => {
+        const line = `${v.name}${v.location ? ` — ${v.location}` : ''}   ${v.price} or`;
+        this.detailObjs.push(
+          this.add.text(contentX, contentY + i * 20,
+            fitText(this, line, vendorStyle, contentW), vendorStyle),
+        );
+      });
       return;
     }
+    this.addSectionTitle(t('arsenal.dropped_by_title'), titleY);
 
     // Nombre de lignes réellement calculé depuis l'espace restant sous contentY
     // (pas un DROP_SOURCE_MAX_ROWS fixe) : le budget vertical au-dessus de ce
-    // point varie désormais avec PASSIVE_RESERVE_PX (cf. sa doc) — un plafond
+    // point varie désormais avec IDENTITY_RESERVE_PX (cf. sa doc) — un plafond
     // fixe déborderait hors du panneau pour un item à 7+ sources de drop non
     // cachées (ex: ember_core, minor_mana_potion). -18 = marge de sécurité avant
     // le bord du panneau, -14 = place réservée pour la ligne "+N autres".
@@ -664,14 +859,14 @@ export class ArsenalScene extends Phaser.Scene {
     const hit = this.add.rectangle(x + w / 2, cy, w, h, 0, 0).setInteractive({ useHandCursor: true });
     this.detailObjs.push(hit);
 
-    const pcx = x + 16;
+    const pcx = x + 18;
     const portraitKey = `enemy_${enemyId}_idle`;
     if (discovered && this.textures.exists(portraitKey)) {
-      this.detailObjs.push(this.add.image(pcx, cy, portraitKey, 0).setDisplaySize(28, 28));
+      this.detailObjs.push(this.add.image(pcx, cy, portraitKey, 0).setDisplaySize(32, 32));
     } else {
       const ph = this.add.graphics();
       ph.fillStyle(discovered ? 0x2a2a3a : 0x3a3a44, 0.9);
-      ph.fillCircle(pcx, cy, 14);
+      ph.fillCircle(pcx, cy, 16);
       const glyph = discovered ? data.name.split(' ').map(wd => wd[0] ?? '').join('').slice(0, 2).toUpperCase() : '?';
       this.detailObjs.push(ph,
         this.add.text(pcx, cy, glyph, uiStyle(discovered ? TYPE.SMALL : 10, UI.TXT_WHITE, { bold: true })).setOrigin(0.5),
@@ -679,10 +874,11 @@ export class ArsenalScene extends Phaser.Scene {
     }
 
     const name = discovered ? localizeBestiaryEntry(data).name : t('bestiary.unknown');
-    this.detailObjs.push(this.add.text(x + 34, y + 2, name, uiStyle(9, discovered ? UI.TXT_PARCHMENT : UI.TXT_MUTED, { bold: discovered })));
+    const nameStyle = uiStyle(TYPE.BODY, discovered ? UI.TXT_PARCHMENT : UI.TXT_MUTED, { bold: discovered });
+    this.detailObjs.push(this.add.text(x + 40, y + 5, fitText(this, name, nameStyle, w - 46), nameStyle));
     const rate = drop.dropRatePct / 100;
     this.detailObjs.push(
-      this.add.text(x + 34, y + 17, t('bestiary.drop_rate').replace('{rate}', formatDropRate(rate)),
+      this.add.text(x + 40, y + 24, t('bestiary.drop_rate').replace('{rate}', formatDropRate(rate)),
         uiStyle(TYPE.SMALL, UI.TXT_MUTED)),
     );
 
@@ -703,13 +899,15 @@ export class ArsenalScene extends Phaser.Scene {
     // visible — c'est un indice délibéré, cf. commentaire de BestiaryScene).
     const discovered = BestiarySystem.peekEntry(this.world, enemyId).discovered;
     const loc = localizeBestiaryEntry(data);
-    const CW = 260;
-    const padC = 12;
+    // 260 → 300 : la card contient deux boutons côte à côte de 44px de haut —
+    // l'ancienne largeur les rendait étriqués, et le canvas a la place.
+    const CW = 300;
+    const padC = 14;
     const parts: Phaser.GameObjects.GameObject[] = [];
     let cy = padC;
 
     const nameTxt = this.add.text(padC, cy, discovered ? loc.name : t('bestiary.unknown'),
-      uiStyle(11, discovered ? UI.TXT_GOLD : UI.TXT_MUTED, { bold: true, wordWrapWidth: CW - padC * 2 }));
+      uiStyle(TYPE.BODY, discovered ? UI.TXT_GOLD : UI.TXT_MUTED, { bold: true, wordWrapWidth: CW - padC * 2 }));
     parts.push(nameTxt);
     cy += nameTxt.height + 6;
 
@@ -724,9 +922,9 @@ export class ArsenalScene extends Phaser.Scene {
     cy += habitatTxt.height + 6;
 
     const descTxt = this.add.text(padC, cy, discovered ? loc.shortDesc : t('bestiary.not_discovered'),
-      uiStyle(9, discovered ? UI.TXT_PARCHMENT : UI.TXT_MUTED, { wordWrapWidth: CW - padC * 2, lineSpacing: 3 }));
+      uiStyle(TYPE.BODY, discovered ? UI.TXT_PARCHMENT : UI.TXT_MUTED, { wordWrapWidth: CW - padC * 2, lineSpacing: 4 }));
     parts.push(descTxt);
-    cy += descTxt.height + 10;
+    cy += descTxt.height + 12;
 
     const subtitleTxt = this.add.text(CW / 2, cy, t('arsenal.view_in_bestiary'),
       uiStyle(TYPE.SMALL, UI.TXT_CYAN)).setOrigin(0.5, 0);
@@ -780,10 +978,11 @@ export class ArsenalScene extends Phaser.Scene {
   /**
    * Lignes de stats affichées dans le panneau détail, selon le type d'objet.
    * Le mainStat (miroir ATK/MATK pour une arme, ligne d'identité pour une
-   * armure/accessoire) est affiché en fourchette grise (`muted: true`) au lieu
-   * de sa valeur figée — §7.1 : « au lieu des valeurs figées actuelles pour le
-   * mainStat ». Le dégât secondaire (non mainStat) et l'ASPD ne roll jamais
-   * (§1.3) et restent figés, couleur normale. Les SUBSTATS (nombre variable,
+   * armure/accessoire) est affiché en fourchette (`muted: true` → rendu en
+   * italique parchemin) au lieu de sa valeur figée — §7.1 : « au lieu des
+   * valeurs figées actuelles pour le mainStat ». Le dégât secondaire (non
+   * mainStat) et l'ASPD ne roll jamais (§1.3) et restent figés, en gras
+   * parchemin. Les SUBSTATS (nombre variable,
    * 1 à 7 lignes) ne sont PAS ici : cette zone a un budget vertical fixe (déjà
    * ~pleine avec 3 lignes) — elles vivent dans le bloc lore scrollable
    * (cf. equipRangeLines + renderDetail).
@@ -815,9 +1014,9 @@ export class ArsenalScene extends Phaser.Scene {
       // Accessoires (ring/amulet) : ni arme ni armure — seule la ligne d'identité existe ici.
       lines.push({ text: formatRangedStatLine(ranges.mainStat), muted: true });
     }
-    // Le passif n'est PAS inclus ici : il est rendu séparément juste après ces
-    // lignes dans renderDetail() (gras + couleur or, distinct du parchemin des
-    // stats), dans l'espace réservé par PASSIVE_RESERVE_PX — cf. sa doc.
+    // Le passif n'est PAS inclus ici : il est rendu en tête du viewport
+    // scrollable de renderDetail() (gras + couleur or, jamais tronqué) —
+    // cf. doc de IDENTITY_RESERVE_PX.
     return lines;
   }
 
@@ -843,22 +1042,26 @@ export class ArsenalScene extends Phaser.Scene {
     return [];
   }
 
-  /** Badge d'info compact — retourne la largeur occupée (badge + marge). */
+  /** Badge d'info compact — retourne la largeur occupée (badge + marge).
+   *  La largeur est MESURÉE en pixels (probe Text, même style que drawBadge) :
+   *  l'ancienne estimation `length * 6` était une troncature au caractère
+   *  déguisée — fausse dès que la police ou la casse changeait. */
   private addInfoBadge(x: number, cy: number, label: string, bgColor: number, textColor: string): number {
-    const w = label.length * 6 + 12;
+    const probe = this.make.text({ text: label, style: uiStyle(9, textColor, { bold: true }) }, false);
+    const w = Math.ceil(probe.width) + 12;
+    probe.destroy();
     const badge = drawBadge(this, x + w / 2, cy, label, bgColor, textColor);
     this.detailObjs.push(badge);
     return w + 8;
   }
 
   private addSectionTitle(label: string, y: number) {
-    const txt = this.add.text(this.DET_X + 14, y, label, uiStyle(9, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0.5);
+    // Titre de section en TYPE.BODY cyan gras + drawDivider — même convention
+    // que les titres de panneaux de l'inventaire (un cran net sous HEADING).
+    const txt = this.add.text(this.DET_X + 14, y, label, uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true })).setOrigin(0, 0.5);
     const g = this.add.graphics();
-    g.lineStyle(1, UI.ACCENT_ARCANE, 0.25);
-    g.beginPath();
-    g.moveTo(this.DET_X + 14 + txt.width + 8, y);
-    g.lineTo(this.DET_X + this.DET_W - 14, y);
-    g.strokePath();
+    drawDivider(g, this.DET_X + 14 + txt.width + 8, y,
+      this.DET_X + this.DET_W - 14 - (this.DET_X + 14 + txt.width + 8), UI.ACCENT_ARCANE, 0.25);
     this.detailObjs.push(txt, g);
   }
 
@@ -957,6 +1160,10 @@ export class ArsenalScene extends Phaser.Scene {
     // `?.` : au moment où Phaser émet SHUTDOWN, son propre CameraManager.shutdown()
     // a déjà pu remettre `main` à undefined (crash reporté sans ce garde).
     this.cameras.main?.off(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE);
+    // Le champ de recherche possède un <input> DOM dans <body> et un listener de
+    // resize sur le Scale Manager : sans ce destroy(), l'input SURVIT à la scène
+    // (il resterait focalisable, invisible, par-dessus le jeu).
+    if (this.search) { this.search.destroy(); this.search = null; }
     this.destroyMonsterCard();
     // Détruit explicitement (pas juste vidage de tableau) : le masque de scroll du
     // bloc lore (renderScrollableText) n'est jamais ajouté à la display list —

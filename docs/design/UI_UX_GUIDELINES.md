@@ -6,7 +6,18 @@
 > Les tokens de ce document sont extraits du code réel (`src/utils/UITheme.ts`, `src/types/index.ts`,
 > `src/main.ts`) — si le code et ce doc divergent, corriger l'un ou l'autre, jamais ignorer.
 
-**Dernière synchro avec le code :** passe « lisibilité micro-textes » (2026-07-12) —
+**Dernière synchro avec le code :** refonte « hiérarchie, aération, débordements »
+(2026-07-13) — canvas **960×720** (zoom caméra monde à **1** : un zoom fractionnaire
+réintroduisait le flou, cf. §0bis), polices **Neatpixels** avec **une grille par variante**
+(Standard 7 / Minimal 10 / Boss 18) et échelle refondue (§2.2), nouveaux helpers
+`titleStyle()` et **`fitText()`** (troncature mesurée en PIXELS — les `slice(n)` sur
+des caractères sont bannis, ils étaient la cause structurelle des débordements).
+Tous les écrans repassés. ⚠️ Les tailles en px citées dans les §6.x ci-dessous
+peuvent encore dater de l'ancienne échelle — **le code fait foi**.
+Précédente : passe « assets UI pixel art » (2026-07-13) —
+icônes de skills/talents bakées depuis la sheet `ui_icons_16`, cadres de slots en
+vrai asset (`addUiFrame`, §3.14), onglets de filtrage du sac (dette D13 résorbée).
+Précédente : passe « lisibilité micro-textes » (2026-07-12) —
 plus aucun `uiStyle` < 9 px dans les scènes (les tailles plancher référencent `TYPE.SMALL`),
 `TXT_MUTED`/`TXT_HINT` remontés, résolution de rendu du texte plafonnée à 10 (`setTextResolution`).
 Précédente : refonte « UI moderne lisible » (2026-07-06) — double système typographique,
@@ -42,27 +53,49 @@ Concrètement :
 
 | Paramètre | Valeur | Source |
 |-----------|--------|--------|
-| Résolution logique | **800×600 px**, fixe | `src/main.ts` (`scale.width/height`) |
-| Scale mode | `Phaser.Scale.FIT` + `CENTER_BOTH` | `src/main.ts` |
+| Résolution logique | **960×720 px**, fixe | `src/main.ts` (`scale.width/height`) |
+| Zoom caméra du MONDE | **1** — doit rester ENTIER (voir ci-dessous) | `GameScene.WORLD_CAMERA_ZOOM` |
+| Scale mode | `Phaser.Scale.FIT` + `CENTER_BOTH` + `autoRound` | `src/main.ts` |
 | Rendu | `pixelArt: true` (nearest-neighbor, zéro anti-aliasing) | `src/main.ts` |
-| Police identité | `'Press Start 2P', monospace` → `FONT` | `UITheme.ts` |
-| Police UI | `Verdana, 'Segoe UI', Tahoma, Geneva, sans-serif` → `FONT_UI` | `UITheme.ts` |
+| Polices | **Neatpixels** (Standard / Minimal / Boss / Blocks) | `UITheme.ts`, `public/assets/fonts/` |
 
-**Conséquence critique :** toutes les coordonnées UI sont en **unités logiques** (800×600).
-Sur un téléphone de 375 CSS px de large, `Scale.FIT` réduit tout d'un facteur **≈ 0.47**.
-Un élément de 44 px logiques ne fait donc que ~21 px physiques à l'écran. C'est pourquoi :
+### Pourquoi 960×720 et pas 800×600
 
-- Le **minimum absolu** de zone tactile est 44×44 px logiques — mais c'est un plancher, pas une cible.
+Le canvas était à 800×600. Le passage à une police **pixel** a porté le corps de texte à 14 px
+(contre 11-12 avant), dans des panneaux aux largeurs **codées en dur** : le texte n'avait plus
+aucun exutoire, et l'UI est devenue illisible et sans air.
+
+960×720 donne à l'UI 20 % de pixels en plus. Le monde, lui, montre simplement 20 % de champ en plus.
+
+> ### ⚠️ Le zoom de la caméra du monde DOIT rester ENTIER
+>
+> Une tentative a consisté à mettre `setZoom(1.2)` pour compenser la montée de résolution et garder
+> un cadrage strictement identique. **C'était une erreur, et elle est instructive.**
+>
+> Le jeu tourne en `pixelArt: true`, donc en filtrage NEAREST. Un zoom de 1,2 ré-échantillonne
+> **tout le monde d'un facteur non entier À L'INTÉRIEUR du canvas** : un sprite de 32 px est dessiné
+> sur 38,4 px, donc une colonne de pixels sur cinq est doublée et les autres non. C'est exactement
+> le défaut d'épaisseur irrégulière que toute la passe typographique venait d'éliminer — on
+> rajoutait une étape de rééchantillonnage pour sauver un cadrage.
+>
+> À zoom 1, le monde est dessiné 1:1 : net. Et la **physique est en unités monde** (inertie, dash,
+> portées d'armes, aggro) : elle est rigoureusement inchangée. Seul le champ de vision s'élargit.
+>
+> Si le cadrage devait être restauré, la seule voie propre est un zoom **entier** (×2) avec un
+> canvas doublé — jamais un facteur fractionnaire.
+
+**Corollaire :** ne jamais coder 960/720 en dur non plus. Tout dérive de `cameras.main.width/height`.
+
+### Zones tactiles
+
+Sur un téléphone de 375 CSS px de large, `Scale.FIT` réduit tout d'un facteur ≈ 0.39.
+Un élément de 44 px logiques ne fait donc que ~17 px physiques. C'est pourquoi :
+
+- Le **minimum absolu** de zone tactile est 44×44 px logiques — un plancher, pas une cible.
 - Les actions **fréquentes en combat** (skills) visent **52 px et plus**, avec hit zone élargie.
 - Toujours ajouter une **hit zone invisible** (`add.rectangle(..., 0, 0)`) de **+4 à +6 px** au-delà du visuel.
-- Ne jamais coller un élément interactif à un bord absolu de l'écran (le pouce rate les bords ; les
-  gestes système iOS/Android mangent les 20 derniers px du bas).
-- C'est aussi pourquoi la police UI moderne est indispensable : Verdana 10 px logiques reste
-  lisible à ×0.47 ; Press Start 2P 5–7 px ne l'était pas.
-- **Résolution de rendu du texte** : `setTextResolution(zoom)` (UITheme.ts, appelée au boot dans
-  `main.ts`) calibre la densité interne des canvas de texte sur le zoom réel — **plafonnée à 10** :
-  au-delà, la minification NEAREST (pixelArt) décime les pixels rendus et transforme les
-  micro-textes (9 px) en bruit. Ne jamais retirer ni déplafonner sans re-tester sur grand écran.
+- Ne jamais coller un élément interactif à un bord absolu (le pouce rate les bords ; les gestes
+  système iOS/Android mangent les 20 derniers px du bas).
 
 Toujours calculer les positions à partir de la caméra, jamais en dur :
 
@@ -163,37 +196,66 @@ Feu `0xff4400` · Eau `0x2266ff` · Foudre `0xffee00` · Glace `0x88ddff` · Ven
 Validé `0xf0e8d8` · Restant `0x444444` · Finisher prêt `0xffb347` (ambre) · Combo cassé `0x777777`
 **Interdits pour les pips :** azur `0x66ddff` et doré `0xffe066` (réservés à d'autres systèmes).
 
-### 2.2 Typographie — LE cœur de la refonte
+### 2.2 Typographie — LA règle non négociable : rester sur la grille
 
-**Deux familles, deux fonctions :**
+Le jeu utilise **Neatpixels** (ElvGames), une police **pixel**. Ça impose une contrainte que
+l'ancienne UI (Verdana, une police lisse) n'avait pas, et qui explique la moitié des bugs de cette
+section :
 
-| Constante | Famille | Rôle |
-|-----------|---------|------|
-| `FONT` | `'Press Start 2P', monospace` | **Identité uniquement** : titre du jeu (MainMenu 24 px). Ne plus l'utiliser pour du texte fonctionnel. |
-| `FONT_UI` | `Verdana, 'Segoe UI', Tahoma, Geneva, sans-serif` | **Tout le reste.** Créée via `uiStyle()`. |
+> **Une police pixel n'est nette QU'À un multiple entier de sa grille de dessin.**
+> Hors grille, le rastériseur du navigateur anti-aliase le glyphe — et ce flou est **cuit dans le
+> canvas 2D du Text avant même que Phaser ne le voie**. Aucun réglage de filtrage (`pixelArt`,
+> NEAREST, résolution de texte) ne le rattrape après coup. C'est ce qui a fait tourner en rond
+> toutes les tentatives de « corriger le flou » : on réglait le filtrage d'une image déjà floue.
 
-**Échelle typographique officielle** (constante `TYPE` de UITheme.ts, px logiques) :
+**Et chaque variante a SA grille** (mesurée dans les TTF) :
 
-| Rôle | Taille | Style | Exemples dans le code |
-|------|--------|-------|----------------------|
-| Titre d'écran | **15** | bold + stroke, doré | `INVENTAIRE` |
-| Titre de section / nom (heading) | **13** | bold, souvent stroke | Nom d'item détail, speaker dialogue, nom de talent, boutons MainMenu |
-| Corps / valeur (body) | **12** | normal ou bold | Corps de dialogue (13), main stat, notifications, nom de zone |
-| Label / secondaire | **10–11** | normal | Labels de stats, substats, descriptions, tabs (11), boutons d'action (11) |
-| Badge / hint / micro | **9** | — | **MINIMUM ABSOLU.** Abréviations de slots, hints, lore, footer |
+| Famille | Constante | Grille | Tailles nettes | Rôle |
+|---|---|---|---|---|
+| Neatpixels Boss | `FONT_TITLE` | **18 px** | 18, 36 | **Titres d'écran** (via `titleStyle()`) |
+| Neatpixels Standard | `FONT` / `FONT_UI` | **7 px** | 7, 14, 21, 28 | Corps, titres de section, valeurs |
+| Neatpixels Minimal | `FONT_HUD` | **10 px** | 10, 20, 30 | Micro-texte, HUD dense, badges |
+| Neatpixels Blocks | `FONT_DISPLAY` | 7 px | 7, 14, 21 | Accents typographiques massifs |
+
+**Échelle officielle** (constante `TYPE` de UITheme.ts) :
+
+| Rôle | Constante | Taille | Police | Exemples |
+|------|-----------|--------|--------|----------|
+| Titre d'écran | `TYPE.TITLE` | **18** | **Boss** (`titleStyle()`) | `INVENTAIRE`, `ARSENAL`, `PAUSE` |
+| Titre de section / nom d'item | `TYPE.HEADING` | **21** | Standard | Nom d'item (détail), nom de talent |
+| Corps / valeur | `TYPE.BODY` | **14** | Standard | Dialogues, stats, boutons |
+| Libellé secondaire | `TYPE.LABEL` | **14** | Standard | **Même taille que BODY** — se distingue par la COULEUR (`UI.TXT_MUTED`) et la graisse, jamais par la taille |
+| Micro-texte / badge | `TYPE.SMALL` | **10** | **Minimal** | Hints, taux de drop, fourchettes |
+
+**Pourquoi les titres sont en police Boss et non « en plus gros » :** avec une grille de 7, il n'y a
+rien entre 14 et 21. Un titre à 21 ne domine pas assez un corps à 14, et 28 est écrasant. Une police
+*différente*, plus lourde, rétablit la hiérarchie sans se battre pour un palier de taille.
+
+**Pourquoi `SMALL` est en Minimal :** Standard n'offre rien entre 7 (illisible) et 14 (trop gros pour
+un badge). Minimal est dessinée sur une grille de 10 — précisément ce registre. C'est l'intention du
+pack : **trois polices, trois grilles, donc plus de paliers nets qu'avec une seule.**
 
 Règles :
-- **Toujours passer par `uiStyle(size, color, opts)`** — jamais de style inline.
-- **Jamais de taille < 9 px** : tout texte au plancher référence **`TYPE.SMALL`** (pas un `9` en
-  dur) — purge complète des 7–8 px effectuée le 2026-07-12 (Arsenal, Bestiaire, Inventaire, Dialogue).
-- Texte superposé à une barre, un sprite ou une icône → `{ stroke: true }` (contour noir épaisseur 3).
-- Texte long → `{ wordWrapWidth: ... }`, jamais de débordement.
+- **Toujours passer par `uiStyle()` / `titleStyle()`** — jamais de style inline. `uiStyle` **route
+  automatiquement** vers la bonne police : toute taille ≤ 11 part en Minimal 10, au-dessus en
+  Standard 14/21/28. Un littéral tombera donc toujours sur une grille.
+- **Ne JAMAIS écrire une taille de police en dur dans un style inline.** C'est le seul moyen de sortir
+  de la grille — et donc de réintroduire le flou.
+- **Troncature : `fitText(scene, text, style, maxWidth)`, JAMAIS `slice(n)`.** Une troncature au
+  nombre de caractères ne veut rien dire (`MMMM` et `iiii` n'ont pas la même largeur) et ignore la
+  police. C'était la cause **structurelle** des débordements : chaque changement de typo les faisait
+  tous réapparaître.
+- Texte long → `{ wordWrapWidth: ... }`. **Zéro débordement**, sans exception.
+- Texte superposé à une barre, un sprite ou une icône → `{ stroke: true }`.
 - Chiffres/valeurs à droite : `.setOrigin(1, 0)` ; titres centrés : `.setOrigin(0.5, 0)`.
-- Chiffres de quantité sur les slots : 10 px bold + stroke.
-- `pxStyle()` reste défini dans UITheme.ts mais n'est plus référencé que par le **titre du jeu
-  de MainMenuScene** (seul usage identitaire autorisé). Toutes les autres scènes sont migrées
-  vers `uiStyle` (passe « arcane fresh » 07/2026) — **ne jamais l'utiliser dans du nouveau code
-  fonctionnel** (dette D11 résorbée).
+- `TEXT_RESOLUTION = 1` : **ne pas y toucher.** Sur-échantillonner une police pixel puis
+  ré-échantillonner en NEAREST la **dégrade** (les traits d'un pixel de large disparaissent par
+  endroits) au lieu de l'améliorer. L'ancienne machinerie (×4 à ×10) n'existait que pour sauver des
+  polices *lisses* du filtrage NEAREST — elle n'a plus d'objet.
+
+**Corollaire de dimensionnement :** une ligne de texte de 14 px a besoin d'au moins **18 px**
+d'interligne et **26 px** de rangée. Les valeurs héritées de l'ancienne échelle (`ROW_H = 22`,
+interligne 14) donnaient zéro respiration — c'est ce qui rendait l'UI « pas aérée ».
 
 ### 2.3 Espacements et dimensions standard
 
@@ -318,6 +380,61 @@ survol = bordure blanche. Slot vide du paperdoll : abréviation fantôme 9 px bo
 File FIFO, une seule visible à la fois, au-dessus des skill slots, centrée. 12 px bold + stroke,
 couleur sémantique (doré = level-up, orange = quête, bleu = skill, vert = zone, couleur de rareté =
 loot). 2.5 s + fade 400 ms. Les items Common ne notifient pas (anti-spam).
+
+### 3.13bis `addUiFrame(scene, cx, cy, w, h, texKey?, slice?)` — cadre en vrai asset
+Pose un cadre pixel art réel (packs GUI Kit / Retro Inventory — `ui_slot_frame`,
+voir ASSET_SOURCES.md §ui/) PAR-DESSUS un fond dessiné
+(drawSlot/drawCard). NineSlice en WebGL (coins nets non étirés), Image étirée en
+Canvas, **null si la texture manque** (script `scripts/copy-ui-assets.mjs` non
+lancé) — l'appelant garde alors son rendu Graphics : ne jamais supposer le
+retour non-null. Utilisé par les slots de l'inventaire (grille + paperdoll).
+Slot d'équipement **VIDE** → variante `ui_slot_frame_empty` (bakée au boot,
+`PreloaderScene.generateEmptySlotFrame`) : même cadre/gris, mais l'emblème
+d'épée gravé au centre de l'asset est aplati (il se lisait comme une arme
+équipée). Quand un cadre asset est posé, la bordure de rareté/hover
+vit dans un Graphics « ring » séparé AU-DESSUS du cadre (le hover redessine le
+ring, jamais le fond complet). L'asset `ui_tab_frame` n'est plus utilisé par
+les onglets du sac (fond jugé illisible une fois étiré — cf. §6.2).
+
+### 3.13ter Icônes de skills/talents — glyphes bakés
+Les textures `skill_*` et `talent_*` sont bakées au boot
+(`PreloaderScene.generateSkillAndTalentIcons()`) depuis la sheet
+`ui_icons_16` (336 glyphes blancs 16×16) : glyphe = **effet** (projectile,
+bouclier, soin, chevrons…), teinte = **élément** (skills) ou **couleur de
+branche** (talents). Upscale ×2 entier (32×32), teinte à plat `source-in`.
+Un vrai PNG dédié dans `assets/sprites/skills/` reste prioritaire sur le bake.
+Ne plus créer d'icône de skill en Graphics procédural.
+
+### 3.14bis `SearchField` (`src/utils/SearchField.ts`) — champ de recherche des grandes listes
+Composant partagé **Arsenal (542 équipements) · Bestiaire (196 monstres) · Sac (jusqu'à 400 objets)**.
+Il possède la **saisie**, l'**état** et le **rendu** du champ ; il ne sait rien des listes —
+chaque scène lui passe un `onChange(query)` et applique **son propre prédicat** sur sa propre
+structure (rangées groupées, ou grille virtualisée + onglets).
+
+- **Saisie = `<input>` DOM invisible** (`opacity: 0`) superposé au cadre, **rendu = Phaser**.
+  Le DOM est requis pour le **clavier système mobile**, les **accents/IME** et le collage
+  (précédent : `NameInputScene`) ; le rendu reste Phaser pour rester sur la grille typographique
+  et sous les profondeurs (un input DOM *visible* passerait au-dessus des popups).
+- **Isolation clavier** : tant que l'input a le focus, `keydown`/`keyup` sont `stopPropagation()`-és
+  avant Phaser (sinon taper « **z**weihander » déclencherait le raccourci Z de l'inventaire).
+  Seules ↑/↓ passent (navigation de liste) ; **Échap vide la recherche avant de fermer l'écran**.
+- **Recherche insensible casse + accents** (`normalizeSearch` : NFD + `\p{M}`) sur le nom
+  **LOCALISÉ** (`localizeItem`/`localizeEnemy`), jamais sur la data brute.
+- Croix d'effacement (hit 44), état vide « Aucun résultat » + rappel de la requête.
+- `setEnabled(false)` quand un modal s'ouvre **par-dessus** le champ (le DOM flotte au-dessus du
+  canvas quelle que soit la profondeur Phaser du modal — cf. popup d'équipement de l'inventaire).
+- **`destroy()` obligatoire dans `shutdown()`** : il retire l'`<input>` du `<body>` ET le listener
+  de resize du Scale Manager. Phaser n'en sait rien.
+
+> ⚠ **`Phaser n'appelle PAS `scene.shutdown()` automatiquement`** (il se contente d'émettre
+> l'événement) : toute scène qui possède un `<input>` DOM **doit** faire
+> `this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this)` dans `create()`.
+> C'est ce qui manquait à `InventoryScene` (son `shutdown()` n'était jamais appelé — corrigé).
+
+**ESC des overlays : GameScene.escKey est propriétaire UNIQUE.** Il appelle `handleEscape()` sur
+l'écran (Inventaire/Arsenal/Bestiaire), qui retourne `true` s'il a **consommé** l'appui (popup
+fermé, recherche vidée). Deux handlers ESC concurrents (scène + GameScene) rendaient tout
+comportement « vider avant de fermer » impossible.
 
 ### 3.13 Tooltip
 Panneau depth 30, nom doré 13 px bold + description muted 10 px wrapped. Position clampée dans
@@ -452,10 +569,22 @@ Layout 3 panneaux fixes : **paperdoll 180 px | stats/détail 220 px | grille** (
   description 10 px muted italique → **boutons d'action empilés en bas** (zone de pouce) : visuel
   32 px arrondi, hit ≥ 44 px, label 11 px bold — Équiper/Utiliser (vert), Vendre (orange), Fermer (muted).
 - Équiper flashe le slot paperdoll cible en blanc 400 ms (`lastFlashSlotKey`).
-- **Grille** : bordure de cellule = rareté, badge quantité 10 px bold + stroke, scroll **wheel + drag
+- **Onglets de filtrage du sac** (D13 résorbée) : rangée de 5 onglets (34 px visuel, hit 44) entre le
+  titre SAC et la grille — **icônes** (glyphes `bagtab_*` bakés depuis `ui_icons_16` : grille=Tous,
+  épée=Équipement, fiole=Consommables, gemme=Matériaux, clé=Quête & divers) sur pilule Graphics sobre
+  (l'asset `ui_tab_frame` étiré rendait un fond sale — retiré). Actif = glyphe alpha plein + fond
+  `BG_MID` + liseré et bande basse arcane ; inactif = alpha 0.45. **Tooltip texte au survol**
+  (accessibilité) + fallback label texte si la sheet d'icônes manque.
+  Changer d'onglet reset le scroll et re-rend la grille filtrée.
+- **Grille** : bordure de cellule = rareté (Graphics « ring » au-dessus du cadre asset `ui_slot_frame`
+  quand il est chargé), badge quantité 10 px bold + stroke, scroll **wheel + drag
   vertical** (§5.4), tap avec `getDistance() > 10` ignoré (anti-scroll-tap).
-- Popup consommable : `drawGlowPanel` accent vert, nom 11 px bold rareté, effet 10 px vert,
-  boutons 44 px, pop-in 90 ms, auto-dismiss 4 s, tap extérieur ferme.
+- Popup consommable/équipement : `drawGlowPanel` accent vert, nom en **BODY 14 bold** couleur rareté
+  (le HEADING 21 écrasait la bulle), effet 10 px vert, boutons 44 px, pop-in 90 ms, auto-dismiss 4 s,
+  tap extérieur ferme.
+- **Passif d'équipement** : toujours rendu **ENTRE les stats et le lore**, en `TXT_BLUE` gras
+  (popup ET panneau détail) — jamais fondu dans l'italique muted de la description, jamais tronqué.
+  Dans l'Arsenal il vit en tête du viewport scrollable (or gras), lisible en entier par scroll.
 - Raccourcis ESC (fermer) et Z (action principale). Refresh par destruction/recréation des
   `dynamicObjs` — toujours pousser chaque objet dynamique dans le tableau.
 
@@ -551,7 +680,7 @@ Identiques sur **tous** les écrans, actuels et futurs :
 | D10 | `RARITY_COLORS` (code) diverge du tableau INSPIRATIONS.md §4 (Hidden, Mythic) | `src/types/index.ts` | ouverte |
 | ~~D11~~ | ~~Scènes non migrées vers `uiStyle`/`FONT_UI` (encore en `pxStyle` pixel)~~ | Pause, Shop, Bestiary, NameInput, Intro, Ending, UIScene, SkillScene | **Résorbée** — passe « arcane fresh » généralisée (07/2026) ; seul le titre du jeu (MainMenu, NameInput) reste en police pixel (identité) |
 | D12 | Pas de drag-and-drop grille → paperdoll (le tap-equip couvre le besoin, D&D = confort desktop) | InventoryScene | ouverte, basse priorité |
-| D13 | Pas d'onglets de filtrage du sac (Tous / Équipement / Conso / Ressources / Quête) | InventoryScene | ouverte |
+| ~~D13~~ | ~~Pas d'onglets de filtrage du sac~~ | InventoryScene | **Résorbée** — 5 onglets (Tous / Équip. / Conso. / Matér. / Autres) au-dessus de la grille, visuel asset `ui_tab_frame` + fallback Graphics (passe assets 2026-07-13) |
 | D14 | Pas de comparaison item survolé vs équipé (flèches vertes/rouges — INSPIRATIONS.md §4) | InventoryScene détail | ouverte |
 
 ---

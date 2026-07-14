@@ -3,9 +3,10 @@
 // Source frames have significant transparent padding around the character —
 // GameScene uses this to size display/hitbox off the VISIBLE creature instead
 // of the full padded frame. Regenerate if any enemy/npc/player sprite changes.
+import { GENERATED_ENEMY_BBOX } from './spriteGeometryGenerated';
 export interface SpriteBBox { frameSize: number; x: number; y: number; w: number; h: number; }
 
-export const ENEMY_SPRITE_BBOX: Record<string, SpriteBBox> = {
+const AUTHORED_ENEMY_BBOX: Record<string, SpriteBBox> = {
   ember_wyrm: { frameSize: 48, x: 15, y: 25, w: 18, h: 23 },
   lava_golem: { frameSize: 48, x: 16, y: 29, w: 21, h: 19 },
   cinder_sprite: { frameSize: 32, x: 10, y: 1, w: 12, h: 25 },
@@ -60,6 +61,17 @@ export const ENEMY_SPRITE_BBOX: Record<string, SpriteBBox> = {
   void_stalker: { frameSize: 32, x: 9, y: 19, w: 15, h: 13 },
   void_sentinel: { frameSize: 48, x: 18, y: 20, w: 10, h: 28 },
   malachar_boss: { frameSize: 48, x: 11, y: 6, w: 27, h: 34 },
+};
+
+/**
+ * Boîtes des sprites d'ennemis. Les 139 créatures Fantasy Dreamland tirent les leurs
+ * d'une mesure automatique (scripts/sliceEnemySheets.mjs) : sans boîte, GameScene
+ * dimensionne l'affichage ET la hitbox sur le cadre 48x48 (très aéré) au lieu de la
+ * créature, et le monstre devient quasi intouchable.
+ */
+export const ENEMY_SPRITE_BBOX: Record<string, SpriteBBox> = {
+  ...AUTHORED_ENEMY_BBOX,
+  ...GENERATED_ENEMY_BBOX,
 };
 
 export const NPC_SPRITE_BBOX: Record<string, SpriteBBox> = {

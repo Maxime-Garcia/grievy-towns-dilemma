@@ -30,6 +30,14 @@ function rollRandomElement(): ElementType {
 }
 
 function applyRandomElement(item: Item): Item {
+  // Un élément AUTHORÉ est intouchable. Le nom et le lore en dépendent : un
+  // « Braquemart de Foudre » dont le lore parle de la foudre de Volterra ne doit pas
+  // sortir en glace. Ça annulait aussi l'accord élément↔zone du générateur d'ennemis
+  // (une lame de givre n'est attachée qu'aux monstres de Glaciem — pour rien, si le
+  // drop la relookait au hasard) et faisait mentir ses substats ELEM_BONUS_PCT.
+  // Le tirage ne concerne donc QUE les pièces sans élément propre.
+  if (item.element && item.element !== ElementType.NEUTRAL) return item;
+
   if (item.type !== ItemType.WEAPON && item.type !== ItemType.HELM &&
       item.type !== ItemType.CHEST && item.type !== ItemType.LEGS &&
       item.type !== ItemType.BOOTS && item.type !== ItemType.GLOVES &&
@@ -44,6 +52,70 @@ function applyRandomElement(item: Item): Item {
 const PITY_EPIC      = 250;
 const PITY_LEGENDARY = 500;
 
+// ════════════════════════════════════════════════════════════════════
+// WORLD DROP — le catalogue générique (`gen_*`, ~390 armes/armures issues des
+// packs d'icônes) n'appartient à AUCUNE table de loot d'ennemi : l'y inscrire à
+// la main aurait voulu dire 390 lignes réparties sur 60 ennemis, impossibles à
+// maintenir. À la place, un pool global à l'ARPG : chaque kill a une chance de
+// lâcher, EN PLUS de sa table fixe, un item tiré du catalogue générique.
+//
+// Les tables fixes gardent donc tout leur rôle (l'ennemi qui lâche SON arme
+// signature, le drop garanti de boss) ; le world drop fournit le bruit de fond
+// qui fait vivre la chasse au butin et rend l'Arsenal réellement complétable.
+// ════════════════════════════════════════════════════════════════════
+
+/** Probabilité qu'un kill produise un world drop, avant modulation élite/boss. */
+const WORLD_DROP_CHANCE = 0.18;
+const WORLD_DROP_ELITE_MULT = 2.5;
+const WORLD_DROP_BOSS_MULT  = 4.0;
+
+/**
+ * Niveau d'ennemi minimum pour qu'une rareté puisse tomber en world drop.
+ * Sans ce garde-fou, un rat de niveau 1 pourrait lâcher un MYTHIC : la
+ * progression du butin n'aurait plus aucun sens et le early game serait résolu
+ * au premier coup de chance.
+ */
+const WORLD_DROP_MIN_LEVEL: Record<ItemRarity, number> = {
+  [ItemRarity.COMMON]: 1,
+  [ItemRarity.UNCOMMON]: 3,
+  [ItemRarity.RARE]: 6,
+  [ItemRarity.EPIC]: 11,
+  [ItemRarity.LEGENDARY]: 17,
+  [ItemRarity.MYTHIC]: 24,
+  // HIDDEN manquait : les deux filtres rejettent `min === undefined`, donc un item
+  // HIDDEN ne pouvait JAMAIS tomber en world drop et son entrée dans le plancher de
+  // rareté était du code mort. Sans effet aujourd'hui (le générateur n'en produit
+  // plus aucun), mais un Hidden versé au pool plus tard serait resté inatteignable.
+  [ItemRarity.HIDDEN]: 30,
+};
+
+/**
+ * Plancher de rareté du world drop. Un boss qui lâche une épée COMMON est un
+ * anticlimax : sa mort doit valoir quelque chose. On ne touche PAS aux
+ * probabilités relatives des raretés supérieures — on retire simplement le bas
+ * de la table pour les cibles d'élite, et la renormalisation fait le reste.
+ */
+const WORLD_DROP_RARITY_FLOOR: ItemRarity[] = [
+  ItemRarity.COMMON, ItemRarity.UNCOMMON, ItemRarity.RARE, ItemRarity.EPIC,
+  ItemRarity.LEGENDARY, ItemRarity.MYTHIC, ItemRarity.HIDDEN,
+];
+const ELITE_FLOOR_IDX = WORLD_DROP_RARITY_FLOOR.indexOf(ItemRarity.UNCOMMON);
+const BOSS_FLOOR_IDX  = WORLD_DROP_RARITY_FLOOR.indexOf(ItemRarity.RARE);
+
+/** Pool générique indexé par rareté — construit une seule fois, à la demande. */
+let WORLD_POOL: Partial<Record<ItemRarity, Item[]>> | null = null;
+
+function getWorldPool(): Partial<Record<ItemRarity, Item[]>> {
+  if (WORLD_POOL) return WORLD_POOL;
+  const pool: Partial<Record<ItemRarity, Item[]>> = {};
+  for (const item of Object.values(ALL_ITEMS)) {
+    if (!item.id.startsWith('gen_')) continue;
+    (pool[item.rarity] ??= []).push(item);
+  }
+  WORLD_POOL = pool;
+  return pool;
+}
+
 export interface LootResult {
   items: { item: Item; quantity: number }[];
   gold: number;
@@ -57,6 +129,91 @@ export class LootSystem {
    * garanti de boss (première mort, cf. GameScene.onEnemyKilled), 0 sinon
    * (docs/design/LOOT_STAT_ROLLS.md §5).
    */
+  /**
+   * Tire un item du catalogue générique, ou `null`. La rareté est tirée selon les
+   * taux du jeu (RARITY_DROP_RATES), puis filtrée par le niveau de l'ennemi
+   * (WORLD_DROP_MIN_LEVEL) : on renormalise sur les seules raretés autorisées,
+   * plutôt que de retirer à vide — sinon un ennemi de bas niveau perdrait le plus
+   * clair de ses world drops au lieu de lâcher du COMMON.
+   */
+  static rollWorldDrop(
+    enemyLevel: number, isElite: boolean, isBoss: boolean,
+    /**
+     * Rareté DUE au titre de la pitié (cf. rollLoot). Quand elle est fournie, le
+     * world drop est garanti et forcé sur cette rareté : c'est la pitié qui paie.
+     *
+     * Elle ne payait pas. La pitié ne savait forcer un drop que si la table de
+     * butin FIXE de l'ennemi contenait justement un item de la rareté due — or
+     * 136 ennemis sur 196 n'ont aucun EPIC dans leur table, et 155 sur 196 aucun
+     * LEGENDARY. Sur ces ennemis-là, le compteur atteignait 250 kills, ne trouvait
+     * rien à forcer… et se faisait remettre à zéro quand même. La pitié ne pouvait
+     * mathématiquement jamais payer, et détruisait 250 kills de progression à
+     * chaque fois. Le pool générique, lui, contient bien 51 EPIC et 31 LEGENDARY :
+     * c'est par là qu'elle doit passer.
+     */
+    owedRarity?: ItemRarity,
+  ): Item | null {
+    const pool = getWorldPool();
+
+    // Dette de pitié : drop garanti, rareté imposée. On court-circuite le tirage
+    // de chance ET le tirage de rareté — mais pas le verrou de niveau, qui reste
+    // la garantie qu'un rat de niveau 1 ne lâche pas une arme de fin de jeu.
+    //
+    // Ennemi trop bas pour la rareté due : on ne paie pas, la dette reste due
+    // (le compteur n'est pas remis à zéro, cf. rollLoot) — mais on RETOMBE sur le
+    // tirage normal, sinon le joueur perdrait aussi son world drop ordinaire, et
+    // se trouverait puni d'avoir une dette en cours.
+    if (owedRarity) {
+      const owedPool = pool[owedRarity];
+      const minLevel = WORLD_DROP_MIN_LEVEL[owedRarity];
+      if (owedPool?.length && minLevel !== undefined && enemyLevel >= minLevel) {
+        return owedPool[Math.floor(Math.random() * owedPool.length)]!;
+      }
+    }
+
+    let chance = WORLD_DROP_CHANCE;
+    if (isBoss) chance *= WORLD_DROP_BOSS_MULT;
+    else if (isElite) chance *= WORLD_DROP_ELITE_MULT;
+    // Clamp : sans lui, monter WORLD_DROP_CHANCE au-dessus de 0.25 rendrait le world
+    // drop de boss silencieusement GARANTI (0.25 × 4 = 1.0), sans que rien ne le dise.
+    chance = Math.min(1, chance);
+    if (Math.random() > chance) return null;
+
+    // Plancher de rareté : un boss ne lâche jamais de COMMON/UNCOMMON, une élite
+    // jamais de COMMON. Le plancher cède devant le verrou de niveau (un boss de
+    // niveau 2 n'ouvrira pas du RARE avant le niveau 6) : c'est le niveau qui
+    // gouverne la progression, le plancher ne fait qu'écrémer le bas de table.
+    const floorIdx = isBoss ? BOSS_FLOOR_IDX : isElite ? ELITE_FLOOR_IDX : 0;
+
+    const eligible = (Object.keys(RARITY_DROP_RATES) as ItemRarity[]).filter(r => {
+      const min = WORLD_DROP_MIN_LEVEL[r];
+      if (min === undefined || enemyLevel < min) return false;
+      if ((pool[r]?.length ?? 0) === 0) return false;
+      return WORLD_DROP_RARITY_FLOOR.indexOf(r) >= floorIdx;
+    });
+    // Si le plancher ne laisse rien (cible d'élite de très bas niveau), on rouvre
+    // le bas de table plutôt que d'annuler le drop — mieux vaut un COMMON que rien.
+    if (eligible.length === 0) {
+      const fallback = (Object.keys(RARITY_DROP_RATES) as ItemRarity[]).filter(r => {
+        const min = WORLD_DROP_MIN_LEVEL[r];
+        return min !== undefined && enemyLevel >= min && (pool[r]?.length ?? 0) > 0;
+      });
+      if (fallback.length === 0) return null;
+      eligible.push(...fallback);
+    }
+
+    const total = eligible.reduce((s, r) => s + RARITY_DROP_RATES[r], 0);
+    let r = Math.random() * total;
+    let chosen = eligible[0];
+    for (const rarity of eligible) {
+      r -= RARITY_DROP_RATES[rarity];
+      if (r <= 0) { chosen = rarity; break; }
+    }
+
+    const candidates = pool[chosen]!;
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
   static rollLoot(
     entries: LootEntry[],
     goldRange: { min: number; max: number },
@@ -64,6 +221,7 @@ export class LootSystem {
     enemyLevel: number,
     player: PlayerState,
     qFloor = 0,
+    opts: { isElite?: boolean; isBoss?: boolean } = {},
   ): LootResult {
     const items: { item: Item; quantity: number }[] = [];
     const scaledXp = Math.floor(baseXp * (1 + (enemyLevel - player.level) * 0.05));
@@ -111,20 +269,75 @@ export class LootSystem {
       }
     }
 
-    // Reset pity if no eligible item existed in this enemy's loot table
-    if (pityEpicForced)   player.killsWithoutEpic      = 0;
-    if (pityLegendForced) player.killsWithoutLegendary = 0;
+    // ── World drop (catalogue générique) ──
+    // Tiré APRÈS la table fixe, et compté dans la pity comme n'importe quel drop :
+    // un LEGENDARY obtenu en world drop doit bien remettre le compteur à zéro,
+    // sinon la pity finirait par en garantir un second juste derrière.
+    //
+    // Si la table FIXE n'a pas pu honorer une dette de pitié (le cas courant : 136
+    // ennemis sur 196 n'ont aucun EPIC dans leur table), on la présente ICI. Le
+    // LEGENDARY prime sur l'EPIC : c'est la dette la plus ancienne et la plus chère.
+    const owed = pityLegendForced ? ItemRarity.LEGENDARY
+               : pityEpicForced   ? ItemRarity.EPIC
+               : undefined;
+    const worldItem = LootSystem.rollWorldDrop(enemyLevel, !!opts.isElite, !!opts.isBoss, owed);
+    if (worldItem) {
+      items.push({ item: StatRollSystem.rollItem(applyRandomElement(worldItem), qFloor), quantity: 1 });
+      if ([ItemRarity.EPIC, ItemRarity.LEGENDARY, ItemRarity.MYTHIC, ItemRarity.HIDDEN].includes(worldItem.rarity)) {
+        player.killsWithoutEpic = 0;
+        pityEpicForced = false;
+      }
+      if ([ItemRarity.LEGENDARY, ItemRarity.MYTHIC, ItemRarity.HIDDEN].includes(worldItem.rarity)) {
+        player.killsWithoutLegendary = 0;
+        pityLegendForced = false;
+      }
+    }
+
+    // Une dette encore due ici n'est PAS effacée : le compteur reste à son niveau
+    // et la pitié retentera au kill suivant. Le code remettait au contraire les
+    // compteurs à zéro « si aucun item éligible n'existait dans la table » — il
+    // détruisait donc 250 kills de progression sans rien donner en échange, à
+    // chaque fois, sur la majorité des ennemis du jeu. Le seul cas où une dette
+    // reste due après un world drop forcé est le verrou de niveau (un ennemi trop
+    // bas pour la rareté due) : là aussi, la dette doit survivre au kill.
 
     return { items, gold, xp: Math.max(1, scaledXp) };
   }
 
+  /**
+   * Taille du sac.
+   *
+   * Historique : 60, alors que l'inventaire de départ contient déjà ~59 armes
+   * (ProgressionSystem.createNewPlayer) — il ne restait littéralement QU'UN slot
+   * libre pour tout le loot de la partie.
+   *
+   * Puis 150 : encore insuffisant. Le jeu lâche désormais ~0,78 item/kill (table
+   * fixe ~0,60 + world drop ~0,18), soit un sac plein en ~117 kills — avant même
+   * d'avoir nettoyé la première zone. « Tout est lootable » se serait auto-saboté :
+   * le joueur aurait passé la partie à voir ses drops refusés.
+   *
+   * 400 laisse de quoi jouer plusieurs zones avant d'avoir à faire le tri. La
+   * grille d'inventaire est virtualisée (cf. InventoryScene.renderGrid), donc un
+   * gros sac ne coûte plus rien à l'affichage — c'est ce qui rend ce cap tenable.
+   */
+  static readonly MAX_SLOTS = 400;
+
+  /**
+   * @param ignoreCap Contourne le cap de slots. Réservé aux transferts NEUTRES en
+   *   taille de sac — typiquement le retour en sac d'un équipement lors d'un swap
+   *   (InventorySystem.equip retire d'abord le nouvel item du sac, donc rendre
+   *   l'ancien ne fait pas grossir l'inventaire). Sans cette échappatoire, un sac
+   *   plein faisait échouer le retour et l'ancien équipement était DÉTRUIT.
+   */
   static addToInventory(
     player: PlayerState,
     item: Item,
     quantity: number,
-    world?: WorldState
+    world?: WorldState,
+    ignoreCap = false
   ): boolean {
-    if (player.inventory.length >= 60 && !('stackable' in item && (item as any).stackable)) {
+    const atCap = !ignoreCap && player.inventory.length >= LootSystem.MAX_SLOTS;
+    if (atCap && !('stackable' in item && (item as any).stackable)) {
       return false;
     }
 
@@ -135,7 +348,8 @@ export class LootSystem {
       return true;
     }
 
-    if (player.inventory.length >= 60) return false;
+    if (atCap) return false;
+    if (!ignoreCap && player.inventory.length >= LootSystem.MAX_SLOTS) return false;
     player.inventory.push({ item, quantity });
     if (world) ArsenalSystem.discover(world, item.id);
     return true;

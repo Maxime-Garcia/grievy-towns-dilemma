@@ -1,5 +1,5 @@
 import { SaveSystem } from '../systems/SaveSystem';
-import { UI, FONT, FONT_UI, drawGlowPanel, drawCard, drawDivider, uiStyle } from '../utils/UITheme';
+import { UI, TYPE, FONT_UI, drawGlowPanel, drawDivider, uiStyle, titleStyle } from '../utils/UITheme';
 import { t } from '../i18n';
 
 export class NameInputScene extends Phaser.Scene {
@@ -26,31 +26,35 @@ export class NameInputScene extends Phaser.Scene {
 
     // Decorative separator lines (structure = cyan arcane)
     const deco = this.add.graphics();
-    drawDivider(deco, 18, 70,     W - 36, UI.ACCENT_ARCANE, 0.25);
+    drawDivider(deco, 18, 78,     W - 36, UI.ACCENT_ARCANE, 0.25);
     drawDivider(deco, 18, H - 70, W - 36, UI.ACCENT_ARCANE, 0.25);
 
-    // ── Title — SEUL usage de la police pixel : identité du jeu
-    //    (guidelines §2.2 — mirror du titre de MainMenuScene) ────
-    this.add.text(W / 2, 26, "GRIEVY TOWN'S DILEMMA", {
-      fontFamily: FONT,
-      fontSize:   '16px',
-      color:      UI.TXT_GOLD,
-      stroke:     '#000000',
-      strokeThickness: 4,
-    }).setOrigin(0.5);
+    // ── HIÉRARCHIE SIMPLIFIÉE (même effort que MainMenuScene) ─────────────
+    // L'écran empilait 8 niveaux de lecture (titre + sous-titre + pilule Slot
+    // + 3 lignes narratives + input + bouton + hint). Il n'en reste que 4 dans
+    // le flux : titre (identité) → accroche narrative → consigne → action
+    // (input + bouton). Le sous-titre du jeu disparaît (il appartient au
+    // MainMenu), la pilule « Slot N » devient une métadonnée discrète en coin,
+    // et « Tu ne te souviens plus de ton nom. » / « Choisis-en un. » fusionnent
+    // en UNE consigne.
 
-    this.add.text(W / 2, 52, t('menu.subtitle'), uiStyle(10, UI.TXT_MUTED)).setOrigin(0.5);
+    // Titre — mirror du titre de MainMenuScene : police Boss via titleStyle
+    this.add.text(W / 2, 44, "GRIEVY TOWN'S DILEMMA",
+      titleStyle(UI.TXT_GOLD, { stroke: true })).setOrigin(0.5);
 
-    // ── Slot indicator (pilule arrondie — or = valeur) ─────────
-    const slotGfx = this.add.graphics();
-    drawCard(slotGfx, W / 2 - 80, 82, 160, 24, { bg: UI.BG_MID, radius: 12, shadow: false });
-    this.add.text(W / 2, 94, `${t('menu.slot')} ${this.slot + 1}`, uiStyle(10, UI.TXT_GOLD, { bold: true })).setOrigin(0.5);
+    // Slot ciblé — métadonnée hors du flux de lecture (coin haut-droit, hint) :
+    // l'info reste disponible sans concurrencer la narration.
+    this.add.text(W - 24, 44, `${t('menu.slot')} ${this.slot + 1}`,
+      uiStyle(TYPE.SMALL, UI.TXT_HINT)).setOrigin(1, 0.5);
 
     // ── Narrative ─────────────────────────────────
-    const MID = H / 2 - 30;
-    this.add.text(W / 2, MID - 80, t('name_input.wake'),    uiStyle(14, UI.TXT_PARCHMENT, { bold: true, stroke: true })).setOrigin(0.5);
-    this.add.text(W / 2, MID - 52, t('name_input.no_name'), uiStyle(11, UI.TXT_MUTED)).setOrigin(0.5);
-    this.add.text(W / 2, MID - 28, t('name_input.choose'),  uiStyle(9,  UI.TXT_HINT)).setOrigin(0.5);
+    // L'accroche passe en HEADING (21) : cœur émotionnel de l'écran — la
+    // consigne redescend en BODY muted, sur une seule ligne.
+    const MID = H / 2 - 20;
+    this.add.text(W / 2, MID - 96, t('name_input.wake'),
+      uiStyle(TYPE.HEADING, UI.TXT_PARCHMENT, { bold: true, stroke: true })).setOrigin(0.5);
+    this.add.text(W / 2, MID - 60, `${t('name_input.no_name')} ${t('name_input.choose')}`,
+      uiStyle(TYPE.BODY, UI.TXT_MUTED)).setOrigin(0.5);
 
     // ── HTML input (style moderne, coins arrondis, focus arcane) ──
     const canvas = this.game.canvas;
@@ -58,8 +62,10 @@ export class NameInputScene extends Phaser.Scene {
     const scaleX = rect.width  / W;
     const scaleY = rect.height / H;
 
-    const INP_W = 280;
-    const INP_H = 36;
+    // 280×36 → 320×44 : le champ atteint la hauteur tactile minimale et
+    // respire pour du texte à 14px (grille de la police).
+    const INP_W = 320;
+    const INP_H = 44;
     const INP_X = W / 2 - INP_W / 2;
     const INP_Y = MID - INP_H / 2;
 
@@ -76,7 +82,8 @@ export class NameInputScene extends Phaser.Scene {
       top:           `${rect.top  + INP_Y * scaleY}px`,
       width:         `${INP_W * scaleX}px`,
       height:        `${INP_H * scaleY}px`,
-      fontSize:      `${13 * scaleX}px`,
+      // 14 = grille de Neatpixels (13 tombait entre les pixels → glyphes flous)
+      fontSize:      `${14 * scaleX}px`,
       textAlign:     'center',
       background:    '#0e1520',            // UI.BG_MID
       color:         UI.TXT_PARCHMENT,

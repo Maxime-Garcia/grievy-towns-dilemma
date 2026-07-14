@@ -259,6 +259,27 @@ touche réellement liée (rebindable via le menu pause), jamais un `[F]` figé.
 grimoire, recadrés depuis `Item Icons [Rogue Adventure]/RA_Item_Icons_New.png`
 (même pack que les icônes d'objets déjà utilisées).
 
+### Assets UI pixel art (GUI Kit + Retro Inventory) — copiés par `scripts/copy-ui-assets.mjs`
+
+| Fichier destination | Pack source | Fichier source | Usage |
+|---|---|---|---|
+| `ui_icons_16.png` | Pixelart Graphical User Interface (GUI Kit) | `Icons Sprite Sheets/Icons 16x16 Transparent.png` | 336 glyphes blancs 16×16 (grille 16 col × 21 lignes) — bakés en icônes de skills (`skill_*`, teinte = élément) et de talents (`talent_*`, teinte = branche) dans `PreloaderScene.generateSkillAndTalentIcons()` |
+| `ui_slot_frame.png` | Retro Inventory | `Retro Inventory/Original/Inventory_Slot_2.png` | Cadre de slot sombre à coins dorés — posé en NineSlice sur les slots de la grille d'inventaire et du paperdoll (`addUiFrame`, UITheme) |
+| `ui_tab_frame.png` | Pixelart Graphical User Interface (GUI Kit) | `User Interface 03/Inventory_Slot_01.png` | Fond bleu nuit des onglets de filtrage du sac (InventoryScene) |
+
+Si ces fichiers manquent (script non lancé), PreloaderScene les charge en
+loaderror silencieux et l'UI retombe sur les placeholders / rendu Graphics.
+
+Évalués mais NON retenus (audit 2026-07-13) : `Retro Inventory/Health_0X*.png`
+et `GUI Kit UI 0X/Health_Bar_0X.png` (cadres de barres HP — teinte orange en
+conflit avec la DA sombre+or, et barres SAO actuelles validées) ;
+`Inventory_9Slices.png` (cadre de panneau — le langage « arcane fresh »
+drawGlowPanel validé en 07/2026 est conservé pour les frames d'écrans) ;
+packs `Free Inventory` et `User Interface/Free SciFi Inventory` (doublons du
+GUI Kit ou style sci-fi hors DA).
+
 ## `skills/`, `vfx/`, `props/`, `skins/`
 
-*(rien intégré pour l'instant)*
+*(`skills/` : rien sur disque — les icônes `skill_*` sont bakées au boot depuis
+`ui/ui_icons_16.png`, voir ci-dessus ; un vrai PNG posé dans `skills/` reste
+prioritaire sur le bake. `vfx/`, `props/`, `skins/` : rien intégré.)*
