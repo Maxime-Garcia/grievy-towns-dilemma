@@ -459,6 +459,23 @@ export interface Enemy {
   attackRange: number;
   moveSpeed: number;
   lore?: string;
+  /**
+   * Canal de dégâts des attaques À DISTANCE / spéciales de cet ennemi.
+   *
+   * - `PHYSICAL` (défaut) : projectiles physiques → `baseAtk`, réduits par la DEF.
+   * - `MAGIC`             : projectiles magiques  → `baseMagicAtk`, réduits par la MDEF.
+   *
+   * Les attaques de MÊLÉE (charge, dash_melee, melee_basic, contact) restent
+   * TOUJOURS physiques, quel que soit ce champ. Un boss lanceur est donc
+   * naturellement hybride : sa `circular_burst` tape la MDEF, sa `charge` tape la
+   * DEF — il faut les DEUX défenses pour le tenir.
+   *
+   * Pourquoi ce champ existe : `baseMagicAtk` est autoré sur les 196 ennemis (et
+   * il est plus élevé que `baseAtk` sur les 26 lanceurs — la donnée dit déjà
+   * « ceci est un mage »), mais AUCUNE formule ne le lisait. `MDEF_FLAT` valait
+   * donc rigoureusement zéro. C'était un trou de COMBAT, pas de budget.
+   */
+  damageType?: 'PHYSICAL' | 'MAGIC';
   // ── Behavior system ────────────────────────────────────────────
   /** AI pattern for this enemy. Defaults to 'chaser' when absent. */
   behavior?: 'chaser' | 'patrol' | 'ranged' | 'charger' | 'summoner';
@@ -711,6 +728,11 @@ export interface ActiveEnemy {
    *  que CombatSystem puisse le lire directement (ex: FIRST_STRIKE_500_PCT réservé
    *  aux boss) sans réimporter ENEMY_MAP juste pour ce champ. */
   isBoss?: boolean;
+  /** Spread depuis Enemy.damageType (même raison que isBoss ci-dessus) —
+   *  CombatSystem.enemyRangedDamage le lit pour choisir le canal : `baseAtk` vs DEF,
+   *  ou `baseMagicAtk` vs MDEF. Sans cette déclaration, le champ existerait à
+   *  l'exécution (grâce au spread) mais serait invisible au typage. */
+  damageType?: 'PHYSICAL' | 'MAGIC';
   sprite?: Phaser.GameObjects.Sprite;
 }
 

@@ -81,6 +81,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 8,
     stats: { baseHp: 55, baseMana: 40, baseAtk: 12, baseDef: 4, baseSpd: 14, baseMagicAtk: 18, baseMagicDef: 8 },
     element: ElementType.FIRE,
+    damageType: 'MAGIC',
     weakness: ElementType.WATER,
     skills: ['fireball'],
     loot: [
@@ -113,6 +114,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 10,
     stats: { baseHp: 95, baseMana: 60, baseAtk: 14, baseDef: 6, baseSpd: 10, baseMagicAtk: 30, baseMagicDef: 14 },
     element: ElementType.FIRE,
+    damageType: 'MAGIC',
     weakness: ElementType.WATER,
     skills: ['inferno_burst'],
     loot: [
@@ -178,6 +180,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 10,
     stats: { baseHp: 160, baseMana: 70, baseAtk: 15, baseDef: 10, baseSpd: 5, baseMagicAtk: 20, baseMagicDef: 12 },
     element: ElementType.FIRE,
+    damageType: 'MAGIC',
     weakness: ElementType.WATER,
     skills: ['fireball'],
     loot: [
@@ -236,6 +239,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 14,
     stats: { baseHp: 1800, baseMana: 200, baseAtk: 80, baseDef: 40, baseSpd: 10, baseMagicAtk: 95, baseMagicDef: 45 },
     element: ElementType.FIRE,
+    damageType: 'MAGIC',
     weakness: ElementType.WATER,
     skills: ['fireball', 'inferno_burst', 'flame_dash'],
     loot: [
@@ -390,6 +394,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 11,
     stats: { baseHp: 85, baseMana: 65, baseAtk: 10, baseDef: 5, baseSpd: 9, baseMagicAtk: 32, baseMagicDef: 18 },
     element: ElementType.EARTH,
+    damageType: 'MAGIC',
     weakness: ElementType.WIND,
     skills: ['terra_surge'],
     loot: [
@@ -479,6 +484,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 16,
     stats: { baseHp: 2200, baseMana: 150, baseAtk: 90, baseDef: 60, baseSpd: 5, baseMagicAtk: 70, baseMagicDef: 50 },
     element: ElementType.EARTH,
+    damageType: 'MAGIC',
     weakness: ElementType.WIND,
     skills: ['terra_surge', 'seismic_slam', 'stone_shield'],
     loot: [
@@ -513,6 +519,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 12,
     stats: { baseHp: 100, baseMana: 35, baseAtk: 25, baseDef: 7, baseSpd: 16, baseMagicAtk: 28, baseMagicDef: 12 },
     element: ElementType.WIND,
+    damageType: 'MAGIC',
     weakness: ElementType.ICE,
     skills: ['gale_step'],
     loot: [
@@ -574,6 +581,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 13,
     stats: { baseHp: 75, baseMana: 70, baseAtk: 15, baseDef: 2, baseSpd: 18, baseMagicAtk: 42, baseMagicDef: 25 },
     element: ElementType.WIND,
+    damageType: 'MAGIC',
     weakness: ElementType.ICE,
     skills: ['tornado_spin'],
     loot: [
@@ -672,6 +680,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 13,
     stats: { baseHp: 130, baseMana: 100, baseAtk: 12, baseDef: 8, baseSpd: 6, baseMagicAtk: 38, baseMagicDef: 22 },
     element: ElementType.WIND,
+    damageType: 'MAGIC',
     weakness: ElementType.ICE,
     skills: ['tornado_spin'],
     loot: [
@@ -701,6 +710,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 14,
     stats: { baseHp: 70, baseMana: 80, baseAtk: 10, baseDef: 4, baseSpd: 15, baseMagicAtk: 45, baseMagicDef: 20 },
     element: ElementType.WIND,
+    damageType: 'MAGIC',
     weakness: ElementType.ICE,
     skills: ['gale_step'],
     loot: [
@@ -730,6 +740,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 18,
     stats: { baseHp: 2000, baseMana: 300, baseAtk: 75, baseDef: 30, baseSpd: 20, baseMagicAtk: 110, baseMagicDef: 55 },
     element: ElementType.WIND,
+    damageType: 'MAGIC',
     weakness: ElementType.ICE,
     skills: ['gale_step', 'tornado_spin', 'skyward_strike'],
     loot: [
@@ -796,6 +807,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 15,
     stats: { baseHp: 90, baseMana: 80, baseAtk: 16, baseDef: 5, baseSpd: 11, baseMagicAtk: 48, baseMagicDef: 28 },
     element: ElementType.WATER,
+    damageType: 'MAGIC',
     weakness: ElementType.LIGHTNING,
     skills: ['tidal_wave'],
     loot: [
@@ -886,6 +898,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 15,
     stats: { baseHp: 145, baseMana: 90, baseAtk: 14, baseDef: 8, baseSpd: 5, baseMagicAtk: 35, baseMagicDef: 20 },
     element: ElementType.WATER,
+    damageType: 'MAGIC',
     weakness: ElementType.LIGHTNING,
     skills: ['tidal_wave'],
     loot: [
@@ -973,6 +986,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 20,
     stats: { baseHp: 2400, baseMana: 250, baseAtk: 85, baseDef: 50, baseSpd: 8, baseMagicAtk: 100, baseMagicDef: 60 },
     element: ElementType.WATER,
+    damageType: 'MAGIC',
     weakness: ElementType.LIGHTNING,
     skills: ['tidal_wave', 'healing_current', 'frost_lance'],
     loot: [
@@ -1008,6 +1022,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 16,
     stats: { baseHp: 75, baseMana: 50, baseAtk: 20, baseDef: 5, baseSpd: 15, baseMagicAtk: 35, baseMagicDef: 12 },
     element: ElementType.LIGHTNING,
+    damageType: 'MAGIC',
     weakness: ElementType.EARTH,
     skills: ['thunder_bolt'],
     loot: [
@@ -1070,6 +1085,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 17,
     stats: { baseHp: 110, baseMana: 90, baseAtk: 18, baseDef: 6, baseSpd: 9, baseMagicAtk: 52, baseMagicDef: 25 },
     element: ElementType.LIGHTNING,
+    damageType: 'MAGIC',
     weakness: ElementType.EARTH,
     skills: ['chain_lightning', 'thunder_bolt'],
     loot: [
@@ -1161,6 +1177,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 18,
     stats: { baseHp: 200, baseMana: 110, baseAtk: 22, baseDef: 18, baseSpd: 4, baseMagicAtk: 45, baseMagicDef: 28 },
     element: ElementType.LIGHTNING,
+    damageType: 'MAGIC',
     weakness: ElementType.EARTH,
     skills: ['chain_lightning'],
     loot: [
@@ -1189,6 +1206,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 20,
     stats: { baseHp: 700, baseMana: 120, baseAtk: 70, baseDef: 30, baseSpd: 12, baseMagicAtk: 85, baseMagicDef: 45 },
     element: ElementType.LIGHTNING,
+    damageType: 'MAGIC',
     weakness: ElementType.EARTH,
     skills: ['chain_lightning', 'volt_dash', 'thunder_bolt'],
     loot: [
@@ -1219,6 +1237,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 22,
     stats: { baseHp: 2600, baseMana: 350, baseAtk: 95, baseDef: 45, baseSpd: 15, baseMagicAtk: 120, baseMagicDef: 65 },
     element: ElementType.LIGHTNING,
+    damageType: 'MAGIC',
     weakness: ElementType.EARTH,
     skills: ['chain_lightning', 'volt_dash', 'thunder_bolt'],
     loot: [
@@ -1315,6 +1334,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 19,
     stats: { baseHp: 90, baseMana: 100, baseAtk: 12, baseDef: 3, baseSpd: 13, baseMagicAtk: 58, baseMagicDef: 30 },
     element: ElementType.ICE,
+    damageType: 'MAGIC',
     weakness: ElementType.FIRE,
     skills: ['blizzard_skill', 'frost_nova'],
     loot: [
@@ -1377,6 +1397,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 23,
     stats: { baseHp: 750, baseMana: 100, baseAtk: 75, baseDef: 40, baseSpd: 9, baseMagicAtk: 80, baseMagicDef: 55 },
     element: ElementType.ICE,
+    damageType: 'MAGIC',
     weakness: ElementType.FIRE,
     skills: ['blizzard_skill', 'ice_barrier', 'frost_lance'],
     loot: [
@@ -1409,6 +1430,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 20,
     stats: { baseHp: 155, baseMana: 110, baseAtk: 16, baseDef: 12, baseSpd: 6, baseMagicAtk: 52, baseMagicDef: 30 },
     element: ElementType.ICE,
+    damageType: 'MAGIC',
     weakness: ElementType.FIRE,
     skills: ['frost_nova'],
     loot: [
@@ -1468,6 +1490,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 25,
     stats: { baseHp: 2800, baseMana: 400, baseAtk: 80, baseDef: 55, baseSpd: 12, baseMagicAtk: 115, baseMagicDef: 75 },
     element: ElementType.ICE,
+    damageType: 'MAGIC',
     weakness: ElementType.FIRE,
     skills: ['frost_nova', 'blizzard_skill', 'ice_barrier', 'frost_lance'],
     loot: [
@@ -1503,6 +1526,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 25,
     stats: { baseHp: 140, baseMana: 100, baseAtk: 25, baseDef: 10, baseSpd: 12, baseMagicAtk: 65, baseMagicDef: 35 },
     element: ElementType.DARK,
+    damageType: 'MAGIC',
     weakness: ElementType.DIVINE,
     skills: ['echo_strike'],
     loot: [
@@ -1566,6 +1590,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 26,
     stats: { baseHp: 220, baseMana: 130, baseAtk: 20, baseDef: 18, baseSpd: 7, baseMagicAtk: 60, baseMagicDef: 45 },
     element: ElementType.DARK,
+    damageType: 'MAGIC',
     weakness: ElementType.DIVINE,
     skills: ['echo_strike'],
     loot: [
@@ -1653,6 +1678,7 @@ export const ENEMIES: Enemy[] = [
     baseLevel: 30,
     stats: { baseHp: 4000, baseMana: 600, baseAtk: 100, baseDef: 60, baseSpd: 14, baseMagicAtk: 150, baseMagicDef: 90 },
     element: ElementType.DARK,
+    damageType: 'MAGIC',
     weakness: ElementType.DIVINE,
     skills: ['fireball', 'chain_lightning', 'frost_nova', 'terra_surge', 'tidal_wave', 'tornado_spin', 'echo_strike'],
     loot: [
