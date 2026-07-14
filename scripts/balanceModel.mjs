@@ -73,26 +73,32 @@ export const DPS_COMMON = 130;
 export const EHP_COMMON = 580;
 
 /** Cibles de sortie, par palier. C'est le CONTRAT : DPS et EHP croissent tous
- *  deux exactement en T(r) — donc au MÊME rythme. Mesuré après application :
- *  DPS ×7,73 et EHP ×7,73 de Common à Mythic, écart 0,00. */
+ *  deux en T(r) — donc au MÊME rythme, pour que le joueur reste MORTEL.
+ *  Mesuré sur le catalogue final : DPS ×7,58 et EHP ×8,26 de Common à Mythic.
+ *  (Avant correction : DPS ×8,7 mais EHP ×19 — le joueur devenait invulnérable
+ *  deux fois plus vite qu'il ne devenait dangereux.) */
 export const dpsTarget = (r) => DPS_COMMON * TIER[r];
 export const ehpTarget = (r) => EHP_COMMON * TIER[r];
 
 /**
  * POOLS À L'ÉQUIPEMENT COMPLET (10 slots, roll médian Q = 0.5).
  *
- * POOL_DEF est une DÉCISION : la mitigation 100/(100+DEF) passe de 25% (Common)
- * à 55% (Mythic). Avant correction elle atteignait 81% à Legendary — le joueur
- * était littéralement immortel face au trash, et la seule difficulté restante
- * était la durée. On ne peut pas calibrer un ennemi contre un joueur invincible.
+ * POOL_ATK, POOL_HP et POOL_DEF sont des SORTIES du solveur, pas des choix : le
+ * point fixe cherche ce qu'il FAUT pour que DPS et EHP atteignent leurs cibles,
+ * une fois payé le multiplicatif qu'apportent les substats en POURCENTAGE — dont
+ * le nombre est multiplié par 6 entre Common (10 lignes) et Mythic (60 lignes).
+ * C'est pourquoi les pools croissent moins vite que T : le reste de la marche est
+ * déjà payé par les %.
  *
- * POOL_ATK et POOL_HP sont RÉSOLUS (point fixe sur les vrais modules, puis
- * ajustement d'une loi de puissance pour lisser le bruit d'échantillonnage) :
- * ils sont ce qu'il FAUT pour que DPS et EHP atteignent leurs cibles, une fois
- * payé le multiplicatif qu'apportent les substats en POURCENTAGE — dont le
- * nombre est multiplié par 6 entre Common (10 lignes) et Mythic (60 lignes).
- * C'est pourquoi les pools croissent en T^0.77 et T^0.69, et non en T : le reste
- * de la marche est déjà payé par les %.
+ * ⚠ LA MITIGATION MONTE À 69% EN FULL MYTHIC (DEF 223 → 100/(100+223)).
+ * C'est plus haut que les 55% que je visais, et c'est un effet des substats DEF
+ * (DEF_FLAT + DEF_PCT + MDEF_FLAT, toutes réintégrées) : la DEF déborde sa cible,
+ * et c'est HP_MAIN qui absorbe l'écart pour que l'EHP, lui, reste sur sa cible.
+ * L'EHP est l'invariant, pas la DEF — mais la conséquence est réelle : à 69% de
+ * mitigation, un ennemi à faible ATK verra tous ses coups s'écraser sur le
+ * plancher de Math.max(1, …) de CombatSystem. C'est le premier chiffre à
+ * surveiller quand on calibrera les ennemis (étape 2) : la DEF du joueur, pas
+ * ses PV, décide si le trash existe encore.
  *
  * ⚠ CES TABLES DÉPENDENT DES POOLS DE SUBSTATS. Retirer une clé d'un pool change
  * la fréquence de toutes les autres, donc les totaux, donc ces tables. Je m'y
@@ -113,8 +119,9 @@ export const POOL_DEF = { COMMON: 37, UNCOMMON: 51, RARE: 70, EPIC: 96, LEGENDAR
  * le précédent, sur AUCUN champ, y compris les champs affichés en UI.
  *
  * HIDDEN porte une main stat pénalisée de ×0,864 (il paie sa 7e substat), mais
- * sur un budget de palier 1,30× supérieur : le net est donc positif sur CHAQUE
- * canal — ATK, PV, DEF. Un Caché ne peut jamais être un downgrade.
+ * sur un budget de palier 1,45× supérieur : le net est donc positif sur CHAQUE
+ * canal — ATK 201,9 > 179,2 · PV 639,1 > 620,2 · DEF 39,0 > 34,9.
+ * Un Caché ne peut JAMAIS être un downgrade. C'est vérifié, pas espéré.
  */
 export const ATK_MAIN_TOTAL = { COMMON: 41.9, UNCOMMON: 56.0, RARE: 74.9, EPIC: 100.2, LEGENDARY: 134.0, MYTHIC: 179.2, HIDDEN: 201.9 };
 export const HP_MAIN_TOTAL  = { COMMON: 235.8, UNCOMMON: 286.1, RARE: 347.2, EPIC: 421.2, LEGENDARY: 511.1, MYTHIC: 620.2, HIDDEN: 639.1 };
