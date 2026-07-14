@@ -28,8 +28,13 @@ import { t } from '../i18n';
  * - `aspd` est un multiplicateur GLOBAL (1.1 = +10%) à appliquer PAR-DESSUS
  *   le `attackSpeed` propre à l'arme équipée.
  * - `elemBonus` / `lifesteal` sont des pourcentages totaux.
- * - `cdr` / `dodge` / `bossDmg` sont des pourcentages totaux, CAPPÉS
- *   (docs/design/LOOT_STAT_ROLLS.md §3) : cdr ≤ 30, dodge ≤ 20, bossDmg ≤ 40.
+ * - `cdr` / `dodge` / `bossDmg` : pourcentages totaux à RENDEMENTS DÉCROISSANTS
+ *   (`softcap`, cf. StatRollSystem) — plus de plafonds durs. Un mur rendait la
+ *   ligne suivante rigoureusement NULLE : arrivé au cap, un roll d'esquive de
+ *   plus valait 0,00, et une ligne de loot qui ne sert à rien est une déception
+ *   à chaque drop. La courbe `S·x/(x+S)` tend vers l'asymptote sans jamais
+ *   l'atteindre : la 10ᵉ ligne vaut moins que la 1ʳᵉ, jamais zéro.
+ *   Asymptotes : cdr 70 (plafond effectif ~45%), dodge 75 (~55%), bossDmg 150 (~+90%).
  * - `hpOnKill` / `manaOnKill` sont des valeurs PLATES (non cappées — pas de
  *   cap spécifié par le design), additives avec KILL_HEAL_15_PCT / MANA_ON_KILL_PCT.
  */
@@ -46,9 +51,9 @@ export interface ComputedStats {
   spd: number;
   elemBonus: number; // % bonus élémentaire global
   lifesteal: number; // % lifesteal
-  cdr: number;       // % réduction de cooldown de compétences (cap 30)
-  dodge: number;     // % chance d'esquiver totalement une attaque ennemie (cap 20)
-  bossDmg: number;   // % dégâts bonus contre boss/élites (cap 40)
+  cdr: number;       // % réduction de recharge — rendements décroissants (asymptote 70)
+  dodge: number;     // % d'esquive totale — rendements décroissants (asymptote 75)
+  bossDmg: number;   // % dégâts vs boss/élites — rendements décroissants (asymptote 150)
   hpOnKill: number;  // PV rendus par kill (plat)
   manaOnKill: number; // Mana rendu par kill (plat)
 }
