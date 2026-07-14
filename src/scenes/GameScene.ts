@@ -2295,7 +2295,7 @@ export class GameScene extends Phaser.Scene {
       sprite.play(`enemy_${minionDef.id}_idle`);
     }
 
-    const active = CombatSystem.spawnEnemy(minionDef, this.gameState.player.currentZone);
+    const active = CombatSystem.spawnEnemy(minionDef, zoneId);
     active.x = x;
     active.y = y;
     sprite.name = active.instanceId;
@@ -4275,7 +4275,7 @@ export class GameScene extends Phaser.Scene {
           sprite.play(`enemy_${enemyId}_idle`);
         }
 
-        const active = CombatSystem.spawnEnemy(def, this.gameState.player.currentZone);
+        const active = CombatSystem.spawnEnemy(def, zoneId);
         active.x       = ex;
         active.y       = ey;
         active.isElite = isElite;
@@ -4286,7 +4286,7 @@ export class GameScene extends Phaser.Scene {
         // data. Avant (×1.5 PV / ×1.4 ATK) il en valait moins du tiers, pour la même
         // couronne, la même XP ×2,5 et le même butin.
         if (rolledElite && !def.isElite) {
-          const promo = elitePromotionAt(depthOfZone(this.gameState.player.currentZone));
+          const promo = elitePromotionAt(depthOfZone(zoneId));
           const hp = Math.max(1, Math.floor(active.maxHp * promo.hp));
           active.currentHp = hp;
           active.maxHp     = hp;
@@ -4364,7 +4364,7 @@ export class GameScene extends Phaser.Scene {
         sprite.play(`enemy_${placement.id}_idle`);
       }
 
-      const active = CombatSystem.spawnEnemy(def, this.gameState.player.currentZone);
+      const active = CombatSystem.spawnEnemy(def, zoneId);
       active.x = ex;
       active.y = ey;
       sprite.name = active.instanceId;
@@ -4413,7 +4413,7 @@ export class GameScene extends Phaser.Scene {
           bossSprite.play(`${bossTexKey}_idle`);
         }
 
-        const activeBoss = CombatSystem.spawnEnemy(bossDef, this.gameState.player.currentZone);
+        const activeBoss = CombatSystem.spawnEnemy(bossDef, zoneId);
         activeBoss.x = bx;
         activeBoss.y = by;
         bossSprite.name = activeBoss.instanceId;
