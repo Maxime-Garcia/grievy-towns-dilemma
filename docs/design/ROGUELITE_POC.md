@@ -98,25 +98,47 @@ Règles posées par le créateur :
 - Il doit y avoir **de l'aléatoire** dans ce qu'on ramène : partir tôt doit comporter un vrai risque,
   pas juste une taxe prévisible qu'on optimise.
 
-**La mécanique est TRANCHÉE, elle ne se rediscute pas :** des **slots sûrs** (façon Moonlighter) — un
-nombre restreint d'emplacements dont le contenu remonte **quoi qu'il arrive** ; le reste du sac est
-soumis à un tirage dont la générosité **croît avec la profondeur atteinte**. Plus on est descendu, plus
-l'exfiltration est clémente. Le joueur choisit donc consciemment ce qu'il sécurise **avant** de savoir
-s'il survivra.
+### La mécanique est TRANCHÉE — elle ne se rediscute pas
 
-**Ce qui reste ouvert n'est pas le principe, c'est le RÉGLAGE.** La récupération partielle est
-nécessaire mais pas suffisante : si les slots sûrs sont trop nombreux ou le tirage trop clément, le
-joueur s'exfiltrera quand même systématiquement au premier boss, et le choix mourra *malgré* la
-mécanique. Ce sont les nombres qui la font vivre.
+C'est **celle de Moonlighter**, et son cœur est l'**arbitrage**, pas la punition.
+
+- **Pendant la run, on ramasse tout.** Le sac n'est pas limité en descente, et les objets sont
+  **jetables au sol** : on gère son sac en cours de route, on abandonne ce qu'on juge inférieur.
+- **Aller au bout de toutes les zones → on conserve TOUT.** Sans limite, sans slot, sans condition.
+  C'est la récompense de la foi, et le seul moyen de tout ramener.
+- **S'exfiltrer en route → on ne dispose que de N emplacements.** Le joueur **choisit** ce qu'il y met.
+  **Tout le reste est perdu, au sol.** Il doit donc abandonner, de sa propre main, un butin pour lequel
+  il vient de se battre.
+- **N s'améliore.** On achète des emplacements supplémentaires **chez un marchand**, avec de l'or.
+
+> **La douleur ne vient pas d'une perte subie : elle vient d'une décision.** C'est ce qui fait la force
+> de Moonlighter, et c'est ce qu'on reproduit.
+
+**Deux bénéfices dérivés, et ils ne sont pas anecdotiques** — ils comblent des trous ouverts par la
+suppression des niveaux :
+- **Une méta-progression** : le nombre de slots est ce qui grandit d'une run à l'autre. C'est la courbe
+  de puissance long terme du joueur, à la place des niveaux.
+- **Un puits à or** : l'or retrouve une raison d'exister, et une bonne — il achète de la *capacité à
+  garder*, pas de la puissance brute.
+
+### ⚠️ L'aléatoire est ABANDONNÉ
+
+Le créateur avait d'abord évoqué « un peu d'aléatoire pour qu'il y ait des inconvénients à s'exfiltrer
+tôt ». **Les slots le rendent inutile, et il serait même nuisible :** avec un tirage par-dessus, le
+joueur perdrait des objets qu'il a *délibérément choisi de sauver*. Ça se vit comme du vol, pas comme un
+pari — et ça détruit exactement l'agentivité qui fait tout le sel de la mécanique. Le risque est déjà
+là, et il est **choisi**.
+
+### Ce qui reste ouvert : le RÉGLAGE
 
 Le `balance-agent` doit établir, par simulation :
-1. le **nombre de slots sûrs** ;
-2. la **courbe de générosité** par profondeur, sur le reste du sac ;
-3. la **forme de l'aléatoire** — attention au piège : un tirage pondéré par rareté qui protégerait les
-   items rares annulerait le risque précisément là où il doit mordre ;
-4. le **point d'indifférence** — la profondeur à laquelle la valeur espérée de « pousser » rattrape
+1. **N de départ** — le nombre d'emplacements d'exfiltration au premier run. Trop peu : on ne s'exfiltre
+   jamais, autant mourir. Trop : on ne perd rien, il n'y a plus d'arbitrage.
+2. **La courbe d'upgrade chez le marchand** — coût en or de chaque emplacement supplémentaire, et
+   plafond éventuel. C'est le puits à or principal du jeu : il doit rester désirable longtemps.
+3. **Le point d'indifférence** — la profondeur à laquelle la valeur espérée de « pousser » rattrape
    celle de « s'exfiltrer maintenant ». C'est lui qui produit le serrement de ventre. Il ne doit tomber
-   ni à la zone 1 (on partirait toujours) ni à la zone 5 (on pousserait toujours).
+   ni à la zone 1 (on partirait toujours) ni à la dernière (on pousserait toujours).
 
 ---
 
