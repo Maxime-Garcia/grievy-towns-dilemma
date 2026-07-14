@@ -1,6 +1,6 @@
 import {
   PlayerState, Enemy, ActiveEnemy, DamageResult,
-  StatusEffect, ElementType, ELEMENT_WEAKNESS, DARK_MULTIPLIER, WEAKNESS_MULTIPLIER, Skill
+  StatusEffect, ElementType, ELEMENT_WEAKNESS, DARK_MULTIPLIER, WEAKNESS_MULTIPLIER, Skill, WeaponType
 } from '../types';
 import { TalentModifiers } from './TalentSystem';
 import { StatsSystem, ComputedStats } from './StatsSystem';
@@ -56,7 +56,21 @@ export class CombatSystem {
     const cs = precomputed ?? StatsSystem.computeAll(player);
     // cs.atk includes DÉJÀ la main stat de l'arme (StatsSystem.computeAll) — ne
     // jamais réadditionner weapon.damage ici, sous peine de compter l'arme deux fois.
-    const rawDamage = cs.atk;
+    //
+    // ⚠ LE BÂTON EST UNE ARME MAGIQUE — et son attaque de base l'ignorait.
+    // Sa main stat est MATK_FLAT (c'est la seule arme dans ce cas, cf.
+    // balanceModel.MAGIC_WEAPONS). Or cette ligne lisait `cs.atk` pour TOUT LE
+    // MONDE : la main stat du bâton — c'est-à-dire l'essentiel de sa puissance —
+    // ne touchait donc PAS son propre coup de base. Un bâton Mythique attaquait
+    // avec l'ATK de son ARMURE (138 mesuré, contre 232 pour une épée Mythique) :
+    // l'arme la plus chère du joueur ne contribuait quasiment rien à son attaque.
+    // C'est exactement le trou que CLAUDE.md décrit pour les armes sans equipStats,
+    // sauf qu'ici l'equipStats existe — il est simplement branché sur le mauvais canal.
+    //
+    // Le trait du bâton est un projectile MAGIQUE : il scale sur la MATK et il est
+    // mitigé par la DEF MAGIQUE de la cible (même formule que playerSkill).
+    const isMagicWeapon = weapon?.weaponType === WeaponType.STAFF;
+    const rawDamage = isMagicWeapon ? cs.matk : cs.atk;
     // FIRST_STRIKE_500_PCT (qa-agent BUG) : calculé AVANT le crit pour pouvoir
     // désactiver ce dernier sur le coup — évite le cumul ×5 × crit(×2) qui montait
     // à ×17,7 avec élément+Soul Echo. Réservé aux boss (cf. PassiveSystem).
@@ -68,11 +82,13 @@ export class CombatSystem {
     // DEF_IGNORE_100_PCT (hidden_stoneheart_maul) — traite la DEF cible comme 0,
     // prioritaire sur EXPOSE (qui ne fait de toute façon que la réduire davantage).
     const defIgnore = PassiveSystem.hasDefIgnore(player.equipment);
+    // Une arme magique se heurte à la DEF MAGIQUE, pas à la DEF physique (cf. playerSkill).
+    const targetDef = isMagicWeapon ? target.stats.baseMagicDef : target.stats.baseDef;
     const effectiveDef = defIgnore
       ? 0
       : expose
-        ? Math.max(0, target.stats.baseDef * (1 - expose.strength / 100))
-        : target.stats.baseDef;
+        ? Math.max(0, targetDef * (1 - expose.strength / 100))
+        : targetDef;
     const reduced = rawDamage * (100 / (100 + effectiveDef));
     const weaponElement = weapon?.element;
     const elemMult = CombatSystem.elementalMultiplier(weaponElement, target);

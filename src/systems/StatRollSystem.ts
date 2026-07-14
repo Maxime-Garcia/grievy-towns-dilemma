@@ -48,20 +48,46 @@ export const CDR_SOFT_PCT = 70;        // esquive de recharge : plafond effectif
 export const DODGE_SOFT_PCT = 75;      // esquive : plafond effectif ~55%
 export const BOSS_DMG_SOFT_PCT = 150;  // dégâts vs boss : plafond effectif ~+90%
 /**
- * Vitesse d'attaque : l'aspd PERMANENTE tend vers ×1,8 sans jamais l'atteindre.
+ * Vitesse d'attaque — asymptote 220.
  *
- * Pourquoi un plafond ici alors que l'ASPD_PCT était jusqu'ici linéaire : au-delà
- * de ×2, ce n'est pas la mécanique qui casse en premier, c'est la LISIBILITÉ. Le
- * telegraph de l'ennemi et le flash de coup vivent dans le même canal (setTintFill) ;
- * à cadence élevée le sprite est blanc une bonne partie du temps et l'ennemi ne
- * peut plus annoncer son coup. Sur un jeu dont la règle est « telegraph before
- * punish », c'est la faute capitale — donc le plafond est un plafond de SENSATION.
+ * ⚠ LA SPEC DISAIT 80. LA SIMULATION L'A REFUSÉ, et voici pourquoi, car le piège
+ * est subtil et un successeur le retendra sinon.
+ *
+ * L'intention derrière « 80 » était : « que l'aspd permanente tende vers ×1,8, la
+ * bande de confort étant 1,0–1,8 ». Mais UNE ASYMPTOTE N'EST PAS UNE PLAGE : c'est
+ * une limite qu'on n'approche qu'à l'infini. Mesuré sur 300 sets Mythiques réels,
+ * à S=80 l'aspd médiane atteignait ×1,15 — la fameuse bande 1,0–1,8 n'était JAMAIS
+ * peuplée. Le plafond ne bornait pas le joueur : il l'empêchait d'arriver.
+ *
+ * Pire, il rendait la substat INPAYABLE. Mesure appariée sur les vrais modules :
+ * une ligne d'ATK_PCT rapporte +6,76% de DPS. Au POINT FIXE (c'est-à-dire sur les
+ * sets que la ligne produit elle-même — car agrandir la ligne enfonce le total
+ * dans le softcap, ce qui rabote le marginal), une ligne d'ASPD à S=80 plafonne à
+ * +4,28%, quelle que soit sa magnitude. 63% d'une ligne normale. Il n'existe AUCUN
+ * CALIB qui répare ça : le mur n'est pas dans le prix, il est dans la courbe.
+ *
+ * Or les substats sont ROLLÉES, pas CHOISIES : le joueur ne peut pas éviter le
+ * piège, il reçoit juste un objet qui vaut moins et ne saura jamais pourquoi.
+ * C'est exactement l'injustice silencieuse que le pilier n°2 interdit (« toute
+ * ligne vaut le MÊME budget, quelle que soit sa clé »).
+ *
+ * À S=220 : la ligne devient payable (+6,78% au point fixe, centre 13,3%), l'aspd
+ * médiane monte à ×1,34 et une build dédiée atteint ×1,83 — la bande de confort
+ * est enfin HABITÉE. L'asymptote 2,2 n'est, elle, jamais approchée.
+ *
+ * Et la raison d'être du plafond serré a disparu : il protégeait la LISIBILITÉ
+ * (au-delà de ×2, le telegraph ennemi et le flash de coup se disputaient le canal
+ * `setTintFill`, et le joueur s'aveuglait lui-même en accélérant). Ce conflit est
+ * RÉPARÉ à la source — le telegraph est désormais inviolable (GameScene.
+ * applyHitFeedback), le shake est budgété, les chiffres agrégés, les particules
+ * dégressives. On ne paie plus en puissance un problème qu'on a réglé en code.
  *
  * Les buffs TEMPORAIRES (dash, critSurge) s'appliquent APRÈS ce softcap, pleins :
  * un burst doit se sentir plein. Le plafond borne ce qu'on PORTE, pas ce qu'on
- * DÉCLENCHE.
+ * DÉCLENCHE. Vérifié : même au pire (stack + dash + critSurge ≈ ×2,7), le plancher
+ * d'intégrité du pattern ne s'engage jamais — les patterns ne se chevauchent pas.
  */
-export const ASPD_SOFT_PCT = 80;
+export const ASPD_SOFT_PCT = 220;
 
 /**
  * Rendements décroissants. `raw` = somme brute des substats ; `soft` = asymptote.
