@@ -105,15 +105,31 @@ C'est **celle de Moonlighter**, et son cœur est l'**arbitrage**, pas la punitio
 **Il y a DEUX contraintes distinctes, et c'est ce qui fait la richesse du système. Ne pas les
 confondre — deux étages de décision, pas un.**
 
-**Étage 1 — le sac de run est LIMITÉ.** C'est l'arbitrage seconde par seconde.
-- Le sac a une **capacité**. Il se remplit.
+### Un seul sac, deux natures d'emplacements
+
+**Valeurs de départ posées par le créateur : 20 emplacements, dont 8 SÛRS.**
+Les deux nombres s'améliorent **chez un marchand**, avec de l'or.
+
+| | Départ | Rôle |
+|---|---|---|
+| **Emplacements totaux** | **20** | La capacité du sac de run. Plein → on ne ramasse plus. |
+| dont **emplacements sûrs** | **8** | Leur contenu remonte **quoi qu'il arrive** en cas d'exfiltration. |
+| emplacements ordinaires | 12 | **Perdus** si on s'exfiltre. Conservés si on va au bout. |
+
+**Étage 1 — le sac se remplit.** L'arbitrage seconde par seconde.
 - Ramasser alors qu'il est plein est **impossible** → message **« Inventaire plein »**.
 - Les objets sont **jetables au sol**, à tout moment, pour faire de la place.
-- Question posée au joueur en permanence : *ce butin vaut-il plus que celui que je porte déjà ?*
+- Question posée en permanence : *ce butin vaut-il plus que celui que je porte déjà ?*
 
-**Étage 2 — l'exfiltration.** C'est l'arbitrage global, une fois, au moment de partir.
-- **Aller au bout de toutes les zones → on conserve TOUT.** Sans limite, sans slot, sans condition.
-  C'est la récompense de la foi, et le seul moyen de tout ramener.
+**Étage 2 — quels objets vont dans les 8 sûrs ?** L'arbitrage global.
+- Le joueur **place lui-même** ses objets dans les emplacements sûrs. C'est un acte délibéré.
+- **Aller au bout de toutes les zones → on conserve les 20.** Sans condition. La distinction
+  sûr/ordinaire s'efface : c'est la récompense de la foi, et le seul moyen de tout ramener.
+- **S'exfiltrer → on ne conserve que les 8.** Les 12 autres sont perdus.
+
+> **Recommandation de mise en œuvre** (à confirmer par le `ux-agent`) : que les emplacements sûrs soient
+> une **zone visuellement distincte de la grille**, et que le joueur doive **y déposer physiquement** ses
+> objets. Une case cochée dans un menu ne pèse rien ; déplacer une épée dans le coffre-fort, si.
 - **S'exfiltrer en route → on ne dispose que de N emplacements.** Le joueur **choisit** ce qu'il y met.
   **Tout le reste est perdu, au sol.** Il doit donc abandonner, de sa propre main, un butin pour lequel
   il vient de se battre.
@@ -152,14 +168,20 @@ c'est le geste le plus répété de la run.
 
 ### Ce qui reste ouvert : le RÉGLAGE
 
-Le `balance-agent` doit établir, par simulation :
-0. **La capacité du sac de run** — c'est elle qui crée l'arbitrage seconde par seconde. Trop grande :
-   on ramasse tout sans réfléchir, l'étage 1 disparaît. Trop petite : on passe la run dans les menus.
-1. **N de départ** — le nombre d'emplacements d'exfiltration au premier run. Trop peu : on ne s'exfiltre
-   jamais, autant mourir. Trop : on ne perd rien, il n'y a plus d'arbitrage.
-2. **La courbe d'upgrade chez le marchand** — coût en or de chaque emplacement supplémentaire, et
-   plafond éventuel. C'est le puits à or principal du jeu : il doit rester désirable longtemps.
-3. **Le point d'indifférence** — la profondeur à laquelle la valeur espérée de « pousser » rattrape
+**20 et 8 sont les valeurs de départ du créateur. Le `balance-agent` les VALIDE ou les CORRIGE — il ne
+les réinvente pas.** Il doit établir, par simulation :
+
+1. **20 emplacements tiennent-ils face au débit de loot réel ?** Combien d'objets tombent par zone, et
+   donc à quelle **fréquence le joueur doit trier** ? C'est le vrai indicateur de confort : trop souvent,
+   la run se joue dans les menus, et le flow d'un roguelite n'y survit pas.
+2. **8 sûrs sur 20 : l'exfiltration fait-elle assez mal ?** Il faut un **écart** suffisant entre les deux
+   nombres, sinon partir tôt ne coûte presque rien et l'étage 2 ne mord plus.
+3. **Les deux courbes d'upgrade chez le marchand** — coût en or d'un emplacement total, coût d'un
+   emplacement sûr, et plafonds éventuels. ⚠️ **Le ratio sûrs/totaux ne doit jamais pouvoir tendre vers
+   1** : le jour où tout le sac est sûr, l'exfiltration est gratuite et la mécanique est morte. Le
+   plafond des emplacements sûrs est donc la garde-fou la plus importante de l'économie.
+   C'est aussi le **puits à or principal** du jeu — il doit rester désirable longtemps.
+4. **Le point d'indifférence** — la profondeur à laquelle la valeur espérée de « pousser » rattrape
    celle de « s'exfiltrer maintenant ». C'est lui qui produit le serrement de ventre. Il ne doit tomber
    ni à la zone 1 (on partirait toujours) ni à la dernière (on pousserait toujours).
 
