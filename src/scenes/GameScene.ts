@@ -1200,8 +1200,17 @@ export class GameScene extends Phaser.Scene {
       const sameTargetMult = PassiveSystem.getSameTargetStackMultiplier(
         this.gameState.player.equipment, this.sameTargetStackState, activeEnemy.instanceId, this.time.now,
       );
+      // Talents Partie 1 : synergie Brûlure (ATK_PER_BURNING_PCT/BURNING_PACK_DMG_PCT,
+      // globales) + bonus vs contrôle dur (STUN_DMG_PCT) + vulnérabilité SHOCK
+      // (posée sur CETTE cible) — combinés au même niveau que les autres multiplicateurs.
+      const burningSynergyMult = this.getBurningSynergyMult();
+      const stunDmgMult = this.getStunDmgMult(activeEnemy);
+      const shockVulnMult = this.getShockVulnMult(activeEnemy);
       // Combiné : multiplicateur du pattern + talents mêlée + bonus de chaîne + stack cible.
-      const finalDamage = Math.round(result.damage * damageMultiplier * appliedMeleeMult * stackBonus * sameTargetMult);
+      const finalDamage = Math.round(
+        result.damage * damageMultiplier * appliedMeleeMult * stackBonus * sameTargetMult
+          * burningSynergyMult * stunDmgMult * shockVulnMult,
+      );
       // ÉCHO — canal DIRECT #1/3 (mêlée). Plusieurs cibles dans la même salve de cône
       // sont gérées par le batching de stageEchoAnchor (clé = this.time.now).
       this.registerEchoDamage(activeEnemy.instanceId, finalDamage, true, result.isCrit);
@@ -1225,6 +1234,9 @@ export class GameScene extends Phaser.Scene {
       } else {
         this.addMagmaStackIfEquipped(activeEnemy.instanceId);
         this.checkStagger(sprite, activeEnemy, finalDamage);
+        // Talents Partie 1 : statuts sur coup + arc en chaîne (pas sur un
+        // coup qui tue — la cible n'existe plus pour porter un statut).
+        this.applyOnHitTalentEffects(activeEnemy, finalDamage, false);
       }
     }
 
@@ -1329,8 +1341,14 @@ export class GameScene extends Phaser.Scene {
         const sameTargetMult = PassiveSystem.getSameTargetStackMultiplier(
           this.gameState.player.equipment, this.sameTargetStackState, activeEnemy.instanceId, this.time.now,
         );
+        // Talents Partie 1 : mêmes synergies que executeHitInCone.
+        const burningSynergyMult = this.getBurningSynergyMult();
+        const stunDmgMult = this.getStunDmgMult(activeEnemy);
+        const shockVulnMult = this.getShockVulnMult(activeEnemy);
         // BUG4 fix: apply the dmgMult from the finisher (or 1.0 for normal shots)
-        const arrowFinalDmg = Math.round(result.damage * arrow.dmgMult * sameTargetMult);
+        const arrowFinalDmg = Math.round(
+          result.damage * arrow.dmgMult * sameTargetMult * burningSynergyMult * stunDmgMult * shockVulnMult,
+        );
         // ÉCHO — canal DIRECT #2/3 (flèches). Une flèche ne touche qu'un seul ennemi
         // (break juste après), donc aucun batching multi-cible n'est nécessaire ici.
         this.registerEchoDamage(activeEnemy.instanceId, arrowFinalDmg, true, result.isCrit);
@@ -1350,6 +1368,7 @@ export class GameScene extends Phaser.Scene {
         else {
           this.addMagmaStackIfEquipped(activeEnemy.instanceId);
           this.checkStagger(sprite, activeEnemy, arrowFinalDmg);
+          this.applyOnHitTalentEffects(activeEnemy, arrowFinalDmg, false);
         }
         break;
       }
@@ -1365,6 +1384,19 @@ export class GameScene extends Phaser.Scene {
     const nearest = this.findNearestEnemy(skill.range ?? 200);
     const activeEnemy = nearest ? this.activeEnemies.get(nearest.name) : undefined;
 
+    // Snapshot AVANT CombatSystem.playerSkill — même raison que executeHitInCone/
+    // updateArrowProjectiles : CombatSystem mute currentHp en interne avec le
+    // montant NON multiplié par les synergies talents Partie 1 (burningSynergy/
+    // stunDmg/shockVuln, calculées côté scène) — il faut recalculer depuis ce
+    // snapshot plutôt que patcher un delta sur un currentHp déjà clampé.
+    const hpBeforeHit = activeEnemy?.currentHp;
+    // Talents Partie 1 : synergies calculées AVANT l'appel, pas après — sinon un
+    // sort qui pose lui-même STUN/FREEZE/BURN sur sa cible (CombatSystem.playerSkill
+    // mute statusEffects EN INTERNE) bénéficierait de son propre statut fraîchement
+    // posé sur CE MÊME cast (auto-synergie non voulue, trouvée en review).
+    const burningSynergyMult = this.getBurningSynergyMult();
+    const stunDmgMult = activeEnemy ? this.getStunDmgMult(activeEnemy) : 1;
+    const shockVulnMult = activeEnemy ? this.getShockVulnMult(activeEnemy) : 1;
     const result = CombatSystem.playerSkill(this.gameState.player, skill, activeEnemy, this.playerModifiers);
     // CombatSystem.playerSkill mute target.currentHp EN INTERNE (systems/ reste
     // agnostique du concept de dev-tool) — le Mannequin de Fer est donc restauré
@@ -1373,32 +1405,43 @@ export class GameScene extends Phaser.Scene {
     const isSkillDummy = !!activeEnemy && this.isInvincibleDummy(activeEnemy.enemyId);
     if (isSkillDummy && activeEnemy) activeEnemy.currentHp = activeEnemy.maxHp;
     if (result) {
-      if (result.damage > 0 && nearest) {
+      if (result.damage > 0 && nearest && activeEnemy) {
+        const extraMult = burningSynergyMult * stunDmgMult * shockVulnMult;
+        const finalSkillDmg = extraMult === 1 ? result.damage : Math.max(1, Math.round(result.damage * extraMult));
+        if (extraMult !== 1 && !isSkillDummy && hpBeforeHit !== undefined) {
+          activeEnemy.currentHp = Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - finalSkillDmg));
+        }
+        // Toujours re-dérivé de currentHp (jamais result.isKill directement) —
+        // reste correct que extraMult ait bougé la cible ou non.
+        const isSkillKill = !isSkillDummy && activeEnemy.currentHp <= 0;
+
         // ÉCHO — canal DIRECT #3/3 (sorts). activateSkill ne cible jamais qu'un seul
         // ennemi (this.findNearestEnemy) : aucun batching multi-cible nécessaire.
-        this.registerEchoDamage(activeEnemy!.instanceId, result.damage, true, result.isCrit);
+        this.registerEchoDamage(activeEnemy.instanceId, finalSkillDmg, true, result.isCrit);
         if (skill.isProjectile) {
           this.spawnCosmeticProjectile(this.player.x, this.player.y, nearest.x, nearest.y, skill.element);
         }
-        this.showDamageNumber(nearest.x, nearest.y - 20, result.damage, result.isCrit, skill.element);
+        this.showDamageNumber(nearest.x, nearest.y - 20, finalSkillDmg, result.isCrit, skill.element);
         this.spawnHitParticles(nearest.x, nearest.y, skill.element);
         if (result.isCrit) this.requestShake(150, 0.009, GameScene.SHAKE_PRIO.CRIT);
-        this.applyHitFeedback(nearest, activeEnemy!, result.damage);
+        this.applyHitFeedback(nearest, activeEnemy, finalSkillDmg);
         this.tryCritCdReset(result.isCrit);
-        if (result.isKill && !isSkillDummy) {
-          this.onEnemyKilled(activeEnemy!, nearest);
+        if (isSkillKill) {
+          this.onEnemyKilled(activeEnemy, nearest);
         } else {
-          this.addMagmaStackIfEquipped(activeEnemy!.instanceId);
-          this.checkStagger(nearest, activeEnemy!, result.damage);
+          this.addMagmaStackIfEquipped(activeEnemy.instanceId);
+          this.checkStagger(nearest, activeEnemy, finalSkillDmg);
+          // FREEZE_CHANCE_PCT (abyssal_ice_veil) est réservé aux sorts — isSpell=true.
+          this.applyOnHitTalentEffects(activeEnemy, finalSkillDmg, true);
         }
 
         // SKILL_ECHO_50_PCT (hidden_stormheart_staff) — rejoue la compétence à 50%
         // des dégâts après un court délai sur la MÊME cible (si toujours en vie),
         // sans reconsommer de mana ni relancer le cooldown (coup "gratuit").
-        if (PassiveSystem.hasSkillEcho(this.gameState.player.equipment) && result.damage > 0) {
-          const echoTargetId = activeEnemy!.instanceId;
+        if (PassiveSystem.hasSkillEcho(this.gameState.player.equipment) && finalSkillDmg > 0) {
+          const echoTargetId = activeEnemy.instanceId;
           const echoElement = skill.element;
-          const echoDmg = Math.round(result.damage * PassiveSystem.SKILL_ECHO_PCT / 100);
+          const echoDmg = Math.round(finalSkillDmg * PassiveSystem.SKILL_ECHO_PCT / 100);
           this.time.delayedCall(PassiveSystem.SKILL_ECHO_DELAY_MS, () => {
             if (this.isTraveling) return;
             const echoTarget = this.activeEnemies.get(echoTargetId);
@@ -1664,6 +1707,17 @@ export class GameScene extends Phaser.Scene {
       const slowMult = slowEffect && slowEffect.duration > 0 ? Math.max(0, 1 - slowEffect.strength) : 1;
       const moveSpeed = (def.moveSpeed ?? 90) * slowMult;
 
+      // ── Shock tick (talents Partie 2 — fulguris_spark_touch/overload) ────
+      // Contrairement au SHOCK subi par le joueur (immobilise, cf. Phase 0),
+      // le SHOCK posé sur un ENNEMI est une vulnérabilité temporaire (+dégâts
+      // subis, `strength` = %), pas un CC — décompte simple, aucun effet sur
+      // le déplacement. Lu par getShockVulnMult() au calcul de dégâts.
+      const shockEffect = ae.statusEffects.find(e => e.type === 'SHOCK');
+      if (shockEffect) {
+        shockEffect.duration -= dt;
+        if (shockEffect.duration <= 0) ae.statusEffects = ae.statusEffects.filter(e => e !== shockEffect);
+      }
+
       // ── STUN / FREEZE check ─────────────────────────────────
       // FREEZE immobilise exactement comme STUN (CombatSystem.enemyAttack empêche
       // déjà l'attaque d'un ennemi gelé ; ici on stoppe aussi son déplacement — sinon
@@ -1700,6 +1754,34 @@ export class GameScene extends Phaser.Scene {
         }
         if (bleedEffect.duration <= 0) {
           ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'BLEED');
+        }
+      }
+
+      // ── Burn tick (talents Partie 2 — ignis_dragon_soul BURN_DMG_PCT) ────
+      // BUG préexistant corrigé au passage : BURN est posé sur les ennemis
+      // depuis toujours (CombatSystem.playerSkill, sorts FEU) mais n'était
+      // JAMAIS tické nulle part dans ce fichier (contrairement à SLOW/STUN/
+      // FREEZE/BLEED juste au-dessus) — la durée ne décroissait jamais, aucun
+      // dégât n'était appliqué. Même minuteur 1s que BLEED.
+      const burnEffect = ae.statusEffects.find(e => e.type === 'BURN');
+      if (burnEffect && burnEffect.duration > 0) {
+        burnEffect.duration -= dt;
+        const burnKey = `burn_${instanceId}`;
+        if (!this.cooldowns[burnKey] || this.cooldowns[burnKey] <= 0) {
+          this.cooldowns[burnKey] = 1.0;
+          const tickDmg = Math.max(1, Math.round(burnEffect.strength * (1 + this.playerModifiers.burnDmgPct / 100)));
+          if (!this.isInvincibleDummy(ae.enemyId)) {
+            ae.currentHp = Math.max(0, ae.currentHp - tickDmg);
+          }
+          this.registerEchoDamage(instanceId, tickDmg, false);
+          this.showDamageNumber(sprite.x, sprite.y - 12, tickDmg, false, ElementType.FIRE);
+          if (ae.currentHp <= 0) {
+            this.onEnemyKilled(ae, sprite);
+            return;
+          }
+        }
+        if (burnEffect.duration <= 0) {
+          ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'BURN');
         }
       }
 
@@ -2895,6 +2977,118 @@ export class GameScene extends Phaser.Scene {
     return enemyId === 'training_dummy_iron';
   }
 
+  // ── Talents Partie 1 — statut-sur-coup + synergies (Phase 1) ────────────
+
+  /** Nombre d'ennemis actuellement en feu (BURN actif) — ATK_PER_BURNING_PCT
+   *  (ignis_volcanic_rage), BURNING_PACK_DMG_PCT (ignis_eruption). */
+  private countBurningEnemies(): number {
+    let count = 0;
+    for (const ae of this.activeEnemies.values()) {
+      if (ae.statusEffects.some(e => e.type === 'BURN' && e.duration > 0)) count++;
+    }
+    return count;
+  }
+
+  /** Multiplicateur combiné ATK_PER_BURNING_PCT (continu, par ennemi en feu)
+   *  + BURNING_PACK_DMG_PCT (palier binaire, 3+ ennemis en feu simultanément). */
+  private getBurningSynergyMult(): number {
+    const burning = this.countBurningEnemies();
+    let mult = 1 + (this.playerModifiers.atkPerBurningPct * burning) / 100;
+    if (burning >= 3) mult *= 1 + this.playerModifiers.burningPackDmgPct / 100;
+    return mult;
+  }
+
+  /** STUN_DMG_PCT (terra_crushing_weight) — vrai sous STUN ou FREEZE actifs
+   *  ("contrôle dur" au sens de la description du talent — un SLOW, même
+   *  celui posé par un stagger de boss, n'est volontairement PAS visé ici). */
+  private getStunDmgMult(ae: ActiveEnemy): number {
+    const hardCC = ae.statusEffects.some(e => (e.type === 'STUN' || e.type === 'FREEZE') && e.duration > 0);
+    return hardCC ? 1 + this.playerModifiers.stunDmgPct / 100 : 1;
+  }
+
+  /** SHOCK_CHANCE_PCT (fulguris_spark_touch/overload) — vulnérabilité posée
+   *  sur un ennemi (tick de durée dans tickEnemyAI), lue ici au moment des
+   *  dégâts. */
+  private getShockVulnMult(ae: ActiveEnemy): number {
+    const shock = ae.statusEffects.find(e => e.type === 'SHOCK' && e.duration > 0);
+    return shock ? 1 + shock.strength / 100 : 1;
+  }
+
+  /**
+   * Statuts sur coup (talents Partie 1) — BURN_CHANCE_PCT, SHOCK_CHANCE_PCT,
+   * SLOW_ON_HIT, FREEZE_CHANCE_PCT (sorts uniquement, cf. abyssal_ice_veil :
+   * « +15% de chance de FREEZE sur les sorts »). Appelé une fois par coup
+   * DIRECT depuis les 3 points de contact (mêlée, flèche, sort).
+   */
+  private rollOnHitStatuses(ae: ActiveEnemy, hitDamage: number, isSpell: boolean): void {
+    const mods = this.playerModifiers;
+
+    // BURN — ignis_ember_touch/volcanic_rage. strength dérivée du coup qui l'a
+    // posé, même convention que le BURN subi par le joueur (Phase 0).
+    if (mods.burnChancePct > 0 && Math.random() < mods.burnChancePct / 100) {
+      ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'BURN');
+      ae.statusEffects.push({ type: 'BURN', duration: 3, strength: Math.max(1, Math.round(hitDamage * 0.3)) });
+    }
+
+    // SHOCK — fulguris_spark_touch/overload. Vulnérabilité +10%/3s (PAS un CC,
+    // contrairement au SHOCK subi par le joueur en Phase 0) — valeur fixe du
+    // talent, conforme à sa description ("+10% de dégâts subis pendant 3s").
+    if (mods.shockChancePct > 0 && Math.random() < mods.shockChancePct / 100) {
+      ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'SHOCK');
+      ae.statusEffects.push({ type: 'SHOCK', duration: 3, strength: 10 });
+    }
+
+    // SLOW_ON_HIT — abyssal_frostbite. Flag booléen : s'applique à CHAQUE
+    // coup, pas un jet de chance (la description n'a aucun %). Ne remplace un
+    // SLOW déjà présent QUE s'il est plus faible — sinon ce coup écraserait le
+    // SLOW de stagger d'un boss (triggerRealStagger, strength 0.6) par ce
+    // 0.20 bien plus faible, sur le coup même qui vient de déclencher le
+    // stagger (bug trouvé en review).
+    const existingSlow = ae.statusEffects.find(e => e.type === 'SLOW');
+    if (mods.slowOnHit && (!existingSlow || existingSlow.strength <= 0.20)) {
+      ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'SLOW');
+      ae.statusEffects.push({ type: 'SLOW', duration: 2, strength: 0.20 });
+    }
+
+    // FREEZE_CHANCE_PCT — abyssal_ice_veil. "Sur les sorts" uniquement.
+    if (isSpell && mods.freezeChancePct > 0 && Math.random() < mods.freezeChancePct / 100) {
+      ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'FREEZE');
+      ae.statusEffects.push({ type: 'FREEZE', duration: 2, strength: 1 });
+    }
+  }
+
+  /** ARC_CHANCE_PCT (fulguris_arc_conduit) — 10% de chance qu'un coup
+   *  propage 40% de ses dégâts à l'ennemi le plus proche de la CIBLE (hors
+   *  elle-même), en foudre. Pas un statut : dégâts directs (direct=false,
+   *  même convention que les autres procs passifs — ne compte pas comme un
+   *  coup pour l'Écho, ne déplace pas son ancre). */
+  private rollArcChain(ae: ActiveEnemy, hitDamage: number): void {
+    if (this.playerModifiers.arcChancePct <= 0) return;
+    if (Math.random() >= this.playerModifiers.arcChancePct / 100) return;
+    let nearest: ActiveEnemy | null = null;
+    let nearestDist = Infinity;
+    for (const other of this.activeEnemies.values()) {
+      if (other.instanceId === ae.instanceId) continue;
+      const d = Phaser.Math.Distance.Between(ae.x, ae.y, other.x, other.y);
+      if (d < nearestDist) { nearestDist = d; nearest = other; }
+    }
+    if (!nearest || nearestDist > 200) return; // portée d'arc raisonnable
+    const arcDmg = Math.max(1, Math.round(hitDamage * 0.4));
+    this.applyDamageToEnemy(nearest.instanceId, arcDmg, false);
+    const sprite = this.findEnemySpriteByInstanceId(nearest.instanceId);
+    if (sprite) {
+      this.showDamageNumber(sprite.x, sprite.y - 20, arcDmg, false, ElementType.LIGHTNING);
+      this.spawnHitParticles(sprite.x, sprite.y, ElementType.LIGHTNING);
+    }
+  }
+
+  /** Point d'entrée unique pour les 3 canaux directs (mêlée/flèche/sort) —
+   *  statuts sur coup + arc en chaîne. */
+  private applyOnHitTalentEffects(ae: ActiveEnemy, hitDamage: number, isSpell: boolean): void {
+    this.rollOnHitStatuses(ae, hitDamage, isSpell);
+    this.rollArcChain(ae, hitDamage);
+  }
+
   /**
    * `direct` (défaut false) : ÉCHO — true pour un coup direct (aucun appelant actuel
    * n'en a besoin, les 3 canaux directs — mêlée/flèches/sorts — mutent currentHp en
@@ -3229,6 +3423,7 @@ export class GameScene extends Phaser.Scene {
     delete this.cooldowns[`melee_${iid}`];
     delete this.cooldowns[`bleed_${iid}`];
     delete this.cooldowns[`magma_${iid}`];
+    delete this.cooldowns[`burn_${iid}`];
     this.magmaBurnStacks.delete(iid);
 
     this.activeEnemies.delete(activeEnemy.instanceId);
@@ -6126,9 +6321,10 @@ export class GameScene extends Phaser.Scene {
     this.enemies.destroy(true);
 
     // BUG 4 fix: purge orphaned enemy cooldown keys to prevent unbounded dict growth
-    // (inclut magma_${id}, ajouté avec la Marque de Magma — même garde-fou).
+    // (inclut magma_${id}/burn_${id}, ajoutés respectivement avec la Marque de
+    // Magma et le tick BURN — même garde-fou).
     for (const key of Object.keys(this.cooldowns)) {
-      if (key.startsWith('atkcd_') || key.startsWith('melee_') || key.startsWith('bleed_') || key.startsWith('magma_')) {
+      if (key.startsWith('atkcd_') || key.startsWith('melee_') || key.startsWith('bleed_') || key.startsWith('magma_') || key.startsWith('burn_')) {
         delete this.cooldowns[key];
       }
     }
