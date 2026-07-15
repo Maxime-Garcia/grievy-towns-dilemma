@@ -743,6 +743,17 @@ export interface ActiveEnemy {
    *  l'exécution (grâce au spread) mais serait invisible au typage. */
   damageType?: 'PHYSICAL' | 'MAGIC';
   sprite?: Phaser.GameObjects.Sprite;
+  /**
+   * Jauge de stagger réelle (talents Partie 2 — STAGGER_BONUS_PCT, quakeFinisher).
+   * Avant ce chantier, `GameScene.checkStagger` était un flash cosmétique sans
+   * accumulation persistante ; ces deux champs remplacent ça par une vraie jauge :
+   * `staggerMeter` cumule les dégâts encaissés (jamais sérialisé — reset à chaque
+   * combat/mort/changement de zone comme le reste de l'état runtime d'ActiveEnemy),
+   * `staggerResetAt` est le timestamp après lequel un nouveau coup repart de zéro
+   * plutôt que de s'additionner (pas de decay continu, juste une fenêtre glissante).
+   */
+  staggerMeter: number;
+  staggerResetAt: number;
 }
 
 export interface DamageResult {

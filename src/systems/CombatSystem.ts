@@ -44,6 +44,8 @@ export class CombatSystem {
       x: 0,
       y: 0,
       sprite: undefined,
+      staggerMeter: 0,
+      staggerResetAt: 0,
     };
   }
 

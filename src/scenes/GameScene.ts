@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType, ItemRarity } from '../types';
+import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType, ItemRarity, StatusEffect } from '../types';
 import { CombatSystem } from '../systems/CombatSystem';
 import { StatsSystem } from '../systems/StatsSystem';
 import { PassiveSystem, SameTargetStackState, CritCdResetState } from '../systems/PassiveSystem';
@@ -246,6 +246,19 @@ export class GameScene extends Phaser.Scene {
   private playerVy = 0;
   private dashMomentumX = 0;
   private dashMomentumY = 0;
+  // KNOCKBACK_RES_PCT/UNSHAKABLE (talents Partie 2) : overlay de vélocité additif
+  // séparé de dashMomentumX/Y — même mécanisme (décroissance linéaire indépendante
+  // du mouvement), mais un champ dédié pour ne pas mélanger la glisse post-dash
+  // du joueur avec une poussée subie d'un coup ennemi.
+  private knockbackX = 0;
+  private knockbackY = 0;
+  // Statuts subis par le joueur (talents Partie 2 — BURN_BLEED_IMMUNITY,
+  // STATUS_RES_DURATION_PCT) : aucun ennemi n'infligeait de statut au joueur
+  // avant ce chantier. Même StatusEffect[] que ActiveEnemy.statusEffects, tické
+  // dans tickPlayerStatusEffects() (cf. handleMovement pour la consommation).
+  private playerStatusEffects: StatusEffect[] = [];
+  private playerSlowMult = 1;
+  private playerImmobilized = false;
   private menuOpen = false;
   private isInDialogue = false;
   private isTraveling = false;
@@ -339,6 +352,11 @@ export class GameScene extends Phaser.Scene {
     this.playerVy            = 0;
     this.dashMomentumX       = 0;
     this.dashMomentumY       = 0;
+    this.knockbackX          = 0;
+    this.knockbackY          = 0;
+    this.playerStatusEffects = [];
+    this.playerSlowMult      = 1;
+    this.playerImmobilized   = false;
     this.playtimeAccumulator = 0;
     this.lastAutoSave        = 0;
     this.attackCooldownUntil    = 0;
@@ -520,6 +538,14 @@ export class GameScene extends Phaser.Scene {
     this.syncComboRing();
     // L'Écho suit son ancre et gère sa propre fenêtre d'expiration (2000ms fixes).
     this.updateEcho(time);
+    // Statuts subis par le joueur (talents Partie 2) — AVANT handleMovement(dt)
+    // plus bas : playerImmobilized/playerSlowMult doivent être à jour pour la
+    // même frame.
+    this.tickPlayerStatusEffects(dt);
+    // Un tick BURN peut déclencher onPlayerDeath() ci-dessus (pose isTraveling) —
+    // couper la frame ici, comme le garde déjà fait en haut d'update() pour tout
+    // le reste (inputs, IA ennemie ne doivent pas tourner sur un joueur mort).
+    if (this.isTraveling) return;
 
     // NPC proximity via distance (le collider empêche le vrai overlap physique)
     this.nearbyNPC = null;
@@ -699,6 +725,16 @@ export class GameScene extends Phaser.Scene {
 
   private handleMovement(dt: number) {
     if (this.isDashing) return;
+    // Statuts subis (talents Partie 2) — STUN/FREEZE/SHOCK immobilisent le joueur
+    // exactement comme un ennemi (cf. tickPlayerStatusEffects) : aucun déplacement,
+    // le knockback/dash-momentum continue de s'appliquer (subi, pas choisi).
+    if (this.playerImmobilized) {
+      const body = this.player.body as Phaser.Physics.Arcade.Body;
+      this.playerVx = 0;
+      this.playerVy = 0;
+      body.setVelocity(this.dashMomentumX + this.knockbackX, this.dashMomentumY + this.knockbackY);
+      return;
+    }
 
     this.debugSpeedMult = this.speedBoostKey?.isDown ? 5 : 1;
 
@@ -708,7 +744,8 @@ export class GameScene extends Phaser.Scene {
     const passiveSpeedMult = 1
       + PassiveSystem.getMoveSpeedBonusPct(player.equipment) / 100
       + PassiveSystem.getSkywardMoveSpeedPct(player.equipment) / 100;
-    const speed  = (90 + player.stats.spd * 4) * this.playerModifiers.moveSpeedMult * passiveSpeedMult * this.debugSpeedMult;
+    // SLOW subi (talents Partie 2) : playerSlowMult ∈ [0,1], 1 = pas ralenti.
+    const speed  = (90 + player.stats.spd * 4) * this.playerModifiers.moveSpeedMult * passiveSpeedMult * this.debugSpeedMult * this.playerSlowMult;
     const body   = this.player.body as Phaser.Physics.Arcade.Body;
 
     let targetVx = 0, targetVy = 0;
@@ -745,8 +782,18 @@ export class GameScene extends Phaser.Scene {
       this.dashMomentumX = Math.abs(this.dashMomentumX) <= dm ? 0 : this.dashMomentumX - Math.sign(this.dashMomentumX) * dm;
       this.dashMomentumY = Math.abs(this.dashMomentumY) <= dm ? 0 : this.dashMomentumY - Math.sign(this.dashMomentumY) * dm;
     }
+    // Knockback subi (talents Partie 2) — même mécanisme que dashMomentum ci-dessus,
+    // overlay séparé pour ne pas se mélanger à la glisse post-dash.
+    if (this.knockbackX !== 0 || this.knockbackY !== 0) {
+      const kb = 560 * dt;
+      this.knockbackX = Math.abs(this.knockbackX) <= kb ? 0 : this.knockbackX - Math.sign(this.knockbackX) * kb;
+      this.knockbackY = Math.abs(this.knockbackY) <= kb ? 0 : this.knockbackY - Math.sign(this.knockbackY) * kb;
+    }
 
-    body.setVelocity(this.playerVx + this.dashMomentumX, this.playerVy + this.dashMomentumY);
+    body.setVelocity(
+      this.playerVx + this.dashMomentumX + this.knockbackX,
+      this.playerVy + this.dashMomentumY + this.knockbackY,
+    );
 
     const isMoving = targetVx !== 0 || targetVy !== 0;
 
@@ -786,6 +833,7 @@ export class GameScene extends Phaser.Scene {
 
   private handleDash() {
     if (this.dashCooldown > 0) return;
+    if (this.playerImmobilized) return; // STUN/FREEZE/SHOCK subi (talents Partie 2)
 
     const body = this.player.body as Phaser.Physics.Arcade.Body;
 
@@ -882,6 +930,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private performBasicAttack() {
+    if (this.playerImmobilized) return; // STUN/FREEZE/SHOCK subi (talents Partie 2)
     const now = this.time.now;
 
     const weapon = this.gameState.player.equipment.weapon;
@@ -1221,6 +1270,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private activateSkill(skillId: string) {
+    if (this.playerImmobilized) return; // STUN/FREEZE/SHOCK subi (talents Partie 2)
     const skill = SkillSystem.getSkill(skillId);
     if (!skill) return;
     if (!SkillSystem.canUseSkill(this.gameState.player, skillId, this.cooldowns)) return;
@@ -2042,13 +2092,13 @@ export class GameScene extends Phaser.Scene {
             const d = Phaser.Math.Distance.Between(sprite.x, sprite.y, this.player.x, this.player.y);
             if (d < 45) {
               chargeHit = true;
-              this.applyEnemyMeleeDamage(ae, cfg.damageMult ?? 1.5);
+              // Knockback renforcé (280 vs 140 standard) passé à applyEnemyMeleeDamage
+              // — un setVelocity() direct sur le joueur ici serait écrasé dès le
+              // prochain handleMovement() (cf. applyKnockbackToPlayer, l'overlay
+              // knockbackX/Y est le SEUL mécanisme qui survit à la frame suivante).
+              this.applyEnemyMeleeDamage(ae, cfg.damageMult ?? 1.5, 280);
               // Camera shake on charge hit
               this.cameras.main.shake(130, 0.008);
-              // Knockback
-              const kb = this.player.body as Phaser.Physics.Arcade.Body;
-              const kbAngle = Math.atan2(this.player.y - sprite.y, this.player.x - sprite.x);
-              kb.setVelocity(Math.cos(kbAngle) * 280, Math.sin(kbAngle) * 280);
               body.setVelocity(0, 0);
             }
           },
@@ -2240,8 +2290,11 @@ export class GameScene extends Phaser.Scene {
       const dist = Phaser.Math.Distance.Between(h.sprite.x, h.sprite.y, px, py);
       if (dist < 20) {
         h.hit = true;
+        // Position capturée AVANT destroy() — knockback (talents Partie 2) a besoin
+        // d'une source, plus fiable que de relire h.sprite.x/y après destruction.
+        const impactX = h.sprite.x, impactY = h.sprite.y;
         // Impact VFX
-        const imp = this.add.circle(h.sprite.x, h.sprite.y, 14, 0x9933cc, 0.9).setDepth(14);
+        const imp = this.add.circle(impactX, impactY, 14, 0x9933cc, 0.9).setDepth(14);
         this.tweens.add({
           targets: imp, scaleX: 3, scaleY: 3, alpha: 0, duration: 250,
           onComplete: () => imp.destroy(),
@@ -2250,7 +2303,7 @@ export class GameScene extends Phaser.Scene {
         h.halo.destroy();
         this._homingProjectiles.splice(i, 1);
         // Apply damage
-        this.applyDamageToPlayer(h.damage);
+        this.applyDamageToPlayer(h.damage, impactX, impactY);
       }
     }
   }
@@ -2475,7 +2528,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** Apply melee damage from an enemy to the player, with guard/windup checks. */
-  private applyEnemyMeleeDamage(ae: ActiveEnemy, damageMult: number) {
+  /** `knockbackForce` optionnel : certains patterns (ex. charge) veulent un
+   *  recul plus fort que le standard PLAYER_KNOCKBACK_FORCE. */
+  private applyEnemyMeleeDamage(ae: ActiveEnemy, damageMult: number, knockbackForce = GameScene.PLAYER_KNOCKBACK_FORCE) {
     if (this.inWindup && this.playerModifiers.windupArmor) return;
     if (damageMult <= 0) return; // summon pattern has damageMult 0
 
@@ -2528,6 +2583,12 @@ export class GameScene extends Phaser.Scene {
     if (finalDmg > 0) {
       this.showDamageNumber(this.player.x, this.player.y - 20, finalDmg, false, undefined, true);
       this.cameras.main.shake(100, 0.005);
+      // Knockback + statut subis (talents Partie 2) — pas sur le coup qui tue,
+      // le joueur n'a plus la main sur son mouvement pendant la séquence de mort.
+      if (!isKill) {
+        this.applyKnockbackToPlayer(ae.x, ae.y, knockbackForce);
+        this.rollPlayerStatusOnHit(ae);
+      }
     }
     this.events.emit('player_update', this.gameState.player);
     if (isKill) this.onPlayerDeath();
@@ -2551,8 +2612,108 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  /** Apply direct damage to the player (from homing projectile, AoE, etc.). */
-  private applyDamageToPlayer(damage: number) {
+  /**
+   * KNOCKBACK_RES_PCT/UNSHAKABLE (talents Partie 2 — terra_mountain_patience,
+   * terra_unshaking_foundation) — pousse le JOUEUR loin de (sourceX, sourceY)
+   * avec la force donnée (px/s), réduite/annulée par les talents de résistance.
+   * Overlay décroissant (knockbackX/Y, cf. handleMovement) — jamais un
+   * setVelocity direct comme applyKnockback() (la version ennemi) : rien
+   * d'autre ne pilote la vélocité ennemie au même tick, mais handleMovement()
+   * écraserait un setVelocity direct sur le joueur dès la frame suivante.
+   */
+  /**
+   * Statuts subis par le joueur (talents Partie 2) — même sémantique que côté
+   * ennemi (SLOW = fraction de vitesse retirée sur handleMovement, STUN/FREEZE/
+   * SHOCK = immobilise, BURN = tick 1×/s via this.cooldowns['player_burn'],
+   * même gate 1s que le motif BLEED existant côté ennemi). Appelé chaque frame
+   * depuis update().
+   */
+  private tickPlayerStatusEffects(dt: number): void {
+    const slow = this.playerStatusEffects.find(e => e.type === 'SLOW');
+    if (slow) {
+      slow.duration -= dt;
+      if (slow.duration <= 0) this.playerStatusEffects = this.playerStatusEffects.filter(e => e !== slow);
+    }
+    this.playerSlowMult = slow && slow.duration > 0 ? Math.max(0, 1 - slow.strength) : 1;
+
+    const immobilize = this.playerStatusEffects.find(e => e.type === 'STUN' || e.type === 'FREEZE' || e.type === 'SHOCK');
+    if (immobilize) {
+      immobilize.duration -= dt;
+      if (immobilize.duration <= 0) this.playerStatusEffects = this.playerStatusEffects.filter(e => e !== immobilize);
+    }
+    this.playerImmobilized = !!immobilize && immobilize.duration > 0;
+
+    const burn = this.playerStatusEffects.find(e => e.type === 'BURN');
+    if (burn && burn.duration > 0) {
+      burn.duration -= dt;
+      const burnKey = 'player_burn';
+      if ((!this.cooldowns[burnKey] || this.cooldowns[burnKey] <= 0) && this.gameState.player.stats.hp > 0) {
+        this.cooldowns[burnKey] = 1.0;
+        const dmg = Math.round(burn.strength);
+        if (dmg > 0) {
+          this.gameState.player.stats.hp = Math.max(0, this.gameState.player.stats.hp - dmg);
+          this.showDamageNumber(this.player.x, this.player.y - 20, dmg, false, ElementType.FIRE, true);
+          this.events.emit('player_update', this.gameState.player);
+          if (this.gameState.player.stats.hp <= 0) this.onPlayerDeath();
+        }
+      }
+      if (burn.duration <= 0) this.playerStatusEffects = this.playerStatusEffects.filter(e => e.type !== 'BURN');
+    }
+  }
+
+  private static readonly PLAYER_STATUS_ON_HIT_CHANCE = 0.12; // 12%, milieu de la fourchette validée 10-15%
+  // Élément de l'ennemi ATTAQUANT → statut infligé au joueur. Seuls FIRE/ICE/
+  // LIGHTNING sont mappés (validé avec le créateur) — les autres éléments
+  // n'infligent aucun statut sur un coup de mêlée basique.
+  private static readonly PLAYER_STATUS_ON_HIT_MAP: Partial<Record<ElementType, StatusEffect['type']>> = {
+    [ElementType.FIRE]: 'BURN',
+    [ElementType.ICE]: 'SLOW',
+    [ElementType.LIGHTNING]: 'SHOCK',
+  };
+
+  /** Jet de statut sur un coup de mêlée ennemi (talents Partie 2). Appelé depuis
+   *  applyEnemyMeleeDamage, jamais depuis les DOT/passifs (un statut ne doit pas
+   *  en déclencher un autre en boucle). */
+  private rollPlayerStatusOnHit(ae: ActiveEnemy): void {
+    const type = GameScene.PLAYER_STATUS_ON_HIT_MAP[ae.element];
+    if (!type) return;
+    // BURN_BLEED_IMMUNITY (abyssal_soul_of_the_deep) — filtre BURN à la source,
+    // jamais posé du tout plutôt que posé-puis-ignoré au tick.
+    if (type === 'BURN' && this.playerModifiers.burnBleedImmunity) return;
+    if (Math.random() >= GameScene.PLAYER_STATUS_ON_HIT_CHANCE) return;
+    // STATUS_RES_DURATION_PCT (glacius_unmelting_memory, plafonné à 60 dans
+    // TalentSystem) réduit la durée — jamais la chance d'être touché.
+    const baseDurationS = type === 'BURN' ? 2 : type === 'SLOW' ? 1.75 : 1.5; // SHOCK, le plus dur, le plus court
+    const durationS = baseDurationS * (1 - this.playerModifiers.statusResDurationPct / 100);
+    if (durationS <= 0) return;
+    this.playerStatusEffects = this.playerStatusEffects.filter(e => e.type !== type);
+    this.playerStatusEffects.push({
+      type,
+      duration: durationS,
+      strength: type === 'BURN' ? Math.max(1, Math.round(ae.stats.baseAtk * 0.15))
+        : type === 'SLOW' ? 0.35
+        : 1, // SHOCK : immobilise, strength non lue
+    });
+  }
+
+  /** Force par défaut (px/s) du knockback subi par le joueur sur un coup de
+   *  mêlée ennemi standard — modeste, un "recul" plutôt qu'une projection. */
+  private static readonly PLAYER_KNOCKBACK_FORCE = 140;
+
+  private applyKnockbackToPlayer(sourceX: number, sourceY: number, force: number): void {
+    if (this.playerModifiers.unshakable) return;
+    const reduced = force * (1 - this.playerModifiers.knockbackResPct / 100);
+    if (reduced <= 0) return;
+    const angle = Math.atan2(this.player.y - sourceY, this.player.x - sourceX);
+    this.knockbackX = Math.cos(angle) * reduced;
+    this.knockbackY = Math.sin(angle) * reduced;
+  }
+
+  /** Apply direct damage to the player (from homing projectile, AoE, etc.).
+   *  `sourceX/sourceY` optionnels : position d'origine du coup pour le
+   *  knockback (talents Partie 2) — absent pour les appelants qui n'ont pas
+   *  de source directionnelle claire, auquel cas aucun knockback n'est appliqué. */
+  private applyDamageToPlayer(damage: number, sourceX?: number, sourceY?: number) {
     if (damage <= 0) return;
     if (this.isDashing) return;
     if (this.time.now < this.iframeUntil) return; // iframes post-hit
@@ -2575,8 +2736,12 @@ export class GameScene extends Phaser.Scene {
     this.iframeUntil = this.time.now + 800;
     this.showDamageNumber(this.player.x, this.player.y - 20, damage, false, undefined, true);
     this.applyPlayerHitFx();
+    const isKill = this.gameState.player.stats.hp <= 0;
+    if (!isKill && sourceX !== undefined && sourceY !== undefined) {
+      this.applyKnockbackToPlayer(sourceX, sourceY, GameScene.PLAYER_KNOCKBACK_FORCE);
+    }
     this.events.emit('player_update', this.gameState.player);
-    if (this.gameState.player.stats.hp <= 0) this.onPlayerDeath();
+    if (isKill) this.onPlayerDeath();
   }
 
   /** Update HP bar and crown positions for a given enemy. */
@@ -3130,6 +3295,13 @@ export class GameScene extends Phaser.Scene {
     // le joueur — repartir « propre » évite qu'un reliquat traverse le respawn.
     this.frozenSanctuaryUntil = 0;
     this.gameState.player.passiveStacks['OVERHEAL_SHIELD_50_PCT'] = 0;
+    // Statuts/knockback subis (talents Partie 2) — même raison que ci-dessus,
+    // repartir "propre" au respawn.
+    this.playerStatusEffects = [];
+    this.playerSlowMult      = 1;
+    this.playerImmobilized   = false;
+    this.knockbackX          = 0;
+    this.knockbackY          = 0;
 
     this.physics.world.pause();
     this.cameras.main.once(
@@ -3465,7 +3637,27 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.shake(durationMs, intensity);
   }
 
+  // Jauge de stagger réelle (talents Partie 2 — STAGGER_BONUS_PCT, STUN_DMG_PCT,
+  // quakeFinisher "stagger ×2"). Seuil et fenêtre en % de maxHp / ms plutôt que
+  // des valeurs absolues — reste valide quel que soit le tankiness de l'ennemi.
+  private static readonly STAGGER_THRESHOLD_PCT = 0.60;
+  private static readonly STAGGER_RESET_WINDOW_MS = 2500;
+
   private checkStagger(sprite: Phaser.Physics.Arcade.Sprite, ae: ActiveEnemy, damage: number) {
+    // ── Jauge réelle : accumule TOUS les coups (pas seulement les gros isolés
+    // ci-dessous), avec une fenêtre glissante — pas de decay continu, un coup
+    // hors fenêtre repart juste de zéro plutôt que de s'additionner indéfiniment.
+    const now = this.time.now;
+    if (now > ae.staggerResetAt) ae.staggerMeter = 0;
+    ae.staggerResetAt = now + GameScene.STAGGER_RESET_WINDOW_MS;
+    ae.staggerMeter += damage * (1 + this.playerModifiers.staggerBonusPct / 100);
+    if (ae.staggerMeter >= ae.maxHp * GameScene.STAGGER_THRESHOLD_PCT) {
+      ae.staggerMeter = 0;
+      this.triggerRealStagger(sprite, ae);
+    }
+
+    // ── Flash/ralentissement cosmétique existant — inchangé, réservé aux gros
+    // coups isolés (≥20% maxHp EN UN SEUL coup, indépendant de la jauge ci-dessus).
     if (damage / ae.maxHp < 0.20) return;
 
     sprite.setTintFill(0xff3333);
@@ -3480,6 +3672,26 @@ export class GameScene extends Phaser.Scene {
         (sprite.body as Phaser.Physics.Arcade.Body).setMaxVelocity(origMaxVel);
       }
     });
+  }
+
+  /** Jauge de stagger pleine : vrai CC dur (STUN), pas juste cosmétique — c'est
+   *  ce qui donne un sens à STUN_DMG_PCT (terra_crushing_weight, lit déjà les
+   *  statusEffects STUN/FREEZE existants). Feedback visuel plus marqué que le
+   *  flash normal : la jauge vient de se vider d'un coup.
+   *  Boss exemptés du vrai STUN — même raison que maybeFreezeRetaliation
+   *  (pas de stun-lock : rien n'empêche de continuer à taper une cible stun,
+   *  la jauge peut se reremplir avant l'expiration du STUN précédent). SLOW à
+   *  la place, même patron que le boss-case de maybeFreezeRetaliation. */
+  private triggerRealStagger(sprite: Phaser.Physics.Arcade.Sprite, ae: ActiveEnemy): void {
+    if (ae.isBoss) {
+      ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'SLOW');
+      ae.statusEffects.push({ type: 'SLOW', duration: 1.5, strength: 0.6 });
+    } else {
+      ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'STUN');
+      ae.statusEffects.push({ type: 'STUN', duration: 1.2, strength: 1 });
+    }
+    sprite.setTintFill(0xffee44);
+    this.time.delayedCall(280, () => { if (sprite.active) this.resetEnemyTint(sprite); });
   }
 
   private spawnHitParticles(x: number, y: number, element?: ElementType, colorOverride?: number) {
@@ -5679,6 +5891,13 @@ export class GameScene extends Phaser.Scene {
     // Écho : changement de zone = reset dur SILENCIEUX, jamais l'animation de
     // libération (celle-ci n'a de sens que pour une expiration naturelle).
     this.destroyEchoImmediate();
+    // Statuts/knockback subis (talents Partie 2) — un SLOW/BURN ne doit pas
+    // traverser une transition de zone.
+    this.playerStatusEffects = [];
+    this.playerSlowMult      = 1;
+    this.playerImmobilized   = false;
+    this.knockbackX          = 0;
+    this.knockbackY          = 0;
 
     // Destroy all tracked physics colliders/overlaps individually
     for (const c of this.physicsColliders) c.destroy();
