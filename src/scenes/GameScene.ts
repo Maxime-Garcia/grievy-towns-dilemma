@@ -189,6 +189,7 @@ export class GameScene extends Phaser.Scene {
   private giveAllWeaponsKey!: Phaser.Input.Keyboard.Key;
   private toggleDummiesKey!: Phaser.Input.Keyboard.Key;
   private givePointsKey!: Phaser.Input.Keyboard.Key;
+  private spawnTestEnemiesKey!: Phaser.Input.Keyboard.Key;
 
   private xpOrbs!: Phaser.Physics.Arcade.Group;
   private readonly XP_ATTRACT_RANGE = 96;
@@ -578,6 +579,8 @@ export class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.toggleDummiesKey)) this.debugToggleTrainingDummies();
     // Debug: press P to grant 20 talent points (talent unlock test aid, étape 4 roguelite)
     if (Phaser.Input.Keyboard.JustDown(this.givePointsKey)) this.debugGiveTalentPoints();
+    // Debug: press Y to spawn one enemy per element tested by Phase 0 (talents Partie 2) + a boss
+    if (Phaser.Input.Keyboard.JustDown(this.spawnTestEnemiesKey)) this.debugSpawnTestEnemies();
 
     // ── IFRAMES : clignotement du joueur pendant l'invincibilité post-hit ──
     // Alterne alpha 0.25 / 1 toutes les 80ms ; alpha restauré à la fin de la fenêtre.
@@ -719,6 +722,75 @@ export class GameScene extends Phaser.Scene {
     this.gameState.player.talentPoints = 20;
     this.events.emit('player_update', this.gameState.player);
     this.events.emit('show_notification', `[DEBUG] Talents au plafond (20) — +${Math.max(0, gained)}`);
+  }
+
+  // Un ennemi par élément testé par la Phase 0 (talents Partie 2) + un boss
+  // pour vérifier l'exemption anti-stun-lock du stagger réel (SLOW au lieu
+  // de STUN, cf. triggerRealStagger).
+  private static readonly DEBUG_TEST_ENEMY_IDS = ['ember_wyrm', 'frost_wolf', 'spark_imp', 'pyrath_boss'];
+
+  /** Debug aid (press Y) : invoque les ennemis nécessaires pour tester le
+   *  knockback/statuts/stagger subis par le joueur (Phase 0 du chantier
+   *  talents) sans voyager entre zones — FIRE→BURN, ICE→SLOW, LIGHTNING→SHOCK,
+   *  + 1 boss. Positionnés en cercle autour du joueur. Jamais persistés,
+   *  retirés comme n'importe quel ennemi normal en changeant de zone. */
+  private debugSpawnTestEnemies(): void {
+    if (this.isTraveling) return;
+    const px = this.player.x, py = this.player.y, radius = 90;
+    GameScene.DEBUG_TEST_ENEMY_IDS.forEach((enemyId, i) => {
+      const angle = (i / GameScene.DEBUG_TEST_ENEMY_IDS.length) * Math.PI * 2;
+      this.spawnDebugEnemy(enemyId, px + Math.cos(angle) * radius, py + Math.sin(angle) * radius);
+    });
+    this.events.emit('show_notification', '[DEBUG] Ennemis de test invoqués (Feu/Glace/Foudre/Boss)');
+  }
+
+  /** Fait à la main ce que la boucle fixedEnemies/le spawn de boss font pour la
+   *  population normale d'une zone (cf. les deux blocs dans createEnemiesForZone),
+   *  généralisé pour accepter un ennemi OU un boss à une position arbitraire. */
+  private spawnDebugEnemy(enemyId: string, x: number, y: number): void {
+    const def = ENEMY_MAP[enemyId];
+    if (!def) return;
+    const zoneColor = ZONE_ENEMY_COLORS[def.zone] ?? 0xaa4444;
+    const texKey = `enemy_${enemyId}`;
+    const hasRealSprite = this.textures.exists(`${texKey}_idle`);
+    const fallbackSize = def.isBoss ? 64 : 28;
+    if (!hasRealSprite) this.ensureTexture(texKey, zoneColor, fallbackSize, fallbackSize);
+
+    const bbox = ENEMY_SPRITE_BBOX[enemyId];
+    const fit = hasRealSprite && bbox ? fitSpriteToContent(bbox, def.isBoss ? 68 : 36) : null;
+    const dispSize = fit ? fit.dispSize : fallbackSize;
+    const sprite = hasRealSprite
+      ? this.physics.add.sprite(x, y, `${texKey}_idle`)
+      : this.physics.add.sprite(x, y, texKey);
+    sprite.setDisplaySize(dispSize, dispSize);
+    const body = sprite.body as Phaser.Physics.Arcade.Body;
+    if (fit && bbox) {
+      body.setSize(bbox.w, bbox.h);
+      body.setOffset(bbox.x, bbox.y);
+    } else {
+      body.setSize(dispSize - (def.isBoss ? 4 : 8), dispSize - (def.isBoss ? 4 : 8));
+    }
+    sprite.setDepth(def.isBoss ? 5 : 4);
+    sprite.setData('baseScale', sprite.scale);
+    if (hasRealSprite) {
+      sprite.setData('hasRealSprite', true);
+      sprite.play(`${texKey}_idle`);
+    }
+
+    const active = CombatSystem.spawnEnemy(def, this.gameState.player.currentZone);
+    active.x = x;
+    active.y = y;
+    sprite.name = active.instanceId;
+    this.activeEnemies.set(active.instanceId, active);
+    this.enemies.add(sprite);
+
+    const contentTopGap = fit ? dispSize / 2 - fit.offsetY : dispSize / 2;
+    const barW = (fit ? fit.bodyW : dispSize) + 4;
+    const barY = y - contentTopGap - (def.isBoss ? 12 : 8);
+    const barBg = this.add.rectangle(x, barY, barW, def.isBoss ? 8 : 6, 0x220000).setDepth(8);
+    const barFg = this.add.rectangle(x - barW / 2, barY, barW, def.isBoss ? 6 : 4, def.isBoss ? 0xffd700 : 0xff2222)
+      .setDepth(9).setOrigin(0, 0.5);
+    this.enemyHpBars.set(active.instanceId, { bg: barBg, bar: barFg, baseW: barW });
   }
 
   // ── MOVEMENT ─────────────────────────────────────────────────
@@ -5662,6 +5734,8 @@ export class GameScene extends Phaser.Scene {
     this.toggleDummiesKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.T);
     // Debug: press P to grant 20 talent points (talent unlock test aid)
     this.givePointsKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.P);
+    // Debug: press Y to spawn FIRE/ICE/LIGHTNING enemies + a boss around the player
+    this.spawnTestEnemiesKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Y);
     // Remaining keys (attack, dash, inventory, skill menu, skill slots)
     // are all wired by applyKeyBindings() called right after setupInput().
   }
