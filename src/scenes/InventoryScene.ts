@@ -794,11 +794,27 @@ export class InventoryScene extends Phaser.Scene {
     };
 
     if (isEquip) {
-      addBtn(t('inventory.equip_hint'), UI.TXT_GREEN, () => {
-        InventorySystem.equip(this.player, item);
-        this.selectedItem = null;
-        this.refresh();
-      });
+      // Un item DÉJÀ équipé (le paperdoll ouvre la même popup) : « Déséquiper »
+      // REMPLACE « Équiper » — sinon la popup proposait d'équiper un objet qui
+      // l'était déjà, et il n'existait AUCUN moyen de retirer une pièce.
+      const equippedSlot = this.equippedSlotOf(item);
+      if (equippedSlot) {
+        addBtn(t('inventory.unequip_hint'), UI.TXT_ORANGE, () => {
+          // unequip renvoie false si le sac est plein — impossible tant que le sac
+          // fait 400 slots. À revisiter (toast « sac plein ») quand le sac de run à
+          // 20 emplacements arrivera : là, l'échec sera un cas réel à signaler.
+          if (InventorySystem.unequip(this.player, equippedSlot)) {
+            this.selectedItem = null;
+            this.refresh();
+          }
+        });
+      } else {
+        addBtn(t('inventory.equip_hint'), UI.TXT_GREEN, () => {
+          InventorySystem.equip(this.player, item);
+          this.selectedItem = null;
+          this.refresh();
+        });
+      }
     }
     if (isUse) {
       addBtn(t('inventory.use_hint'), UI.TXT_GREEN, () => {
@@ -824,6 +840,17 @@ export class InventoryScene extends Phaser.Scene {
       this.selectedItem = null;
       this.refresh();
     });
+  }
+
+  /** Slot d'équipement occupé par CETTE instance d'item, ou null si non équipée.
+   *  Comparaison par IDENTITÉ (`===`) et non par `id` : deux exemplaires rollés du
+   *  même item ont le même id mais sont des objets distincts — seule l'instance
+   *  réellement équipée doit matcher. */
+  private equippedSlotOf(item: Item): EquipSlotKey | null {
+    for (const slot of EQ_ORDER) {
+      if (this.player.equipment[slot] === item) return slot;
+    }
+    return null;
   }
 
   // ── Inventory grid (right panel) ──────────────────────────────────────────
