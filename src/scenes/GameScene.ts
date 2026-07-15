@@ -1308,6 +1308,23 @@ export class GameScene extends Phaser.Scene {
     this.scene.launch('SkillScene', { gameScene: this });
   }
 
+  /**
+   * BUG préexistant (trouvé pendant le chantier « Partie 2 des talents ») :
+   * `this.playerModifiers` n'était calculé QU'UNE FOIS, dans le bloc de reset de
+   * `init()` — aucun autre point du fichier ne le recalculait. Débloquer un talent
+   * ou faire un respec EN COURS DE RUN n'avait donc aucun effet sur les flags
+   * spéciaux (meleeDmgMult, comboStackDmg, windupArmor, heavyFinisherBonus,
+   * skillDmgMult, magicDmgMult, projectileSkillMult, lightFinisherBleed,
+   * critSurgeAspdPct, killHealPct, dashPreservesCombo, comboGraceMult,
+   * moveSpeedMult) tant que la scène n'était pas rechargée — les stats simples
+   * (ATK%/DEF%/CRIT%, via StatsSystem.computeAll → getStatContribs) restaient,
+   * elles, bien live, d'où la découverte tardive. Appelé par SkillScene juste
+   * après un unlock/respec réussi.
+   */
+  public refreshTalentModifiers() {
+    this.playerModifiers = TalentSystem.getModifiers(this.gameState.player);
+  }
+
   public goToMainMenu() {
     if (this.isTraveling) return;
     this.isTraveling = true;

@@ -877,6 +877,12 @@ export class SkillScene extends Phaser.Scene {
       // recalculer player.stats, sinon maxHp resterait gonflé après avoir
       // rendu les points (et hp serait clampé de travers au combat suivant).
       InventorySystem.recalcStats(this.player);
+      // playerModifiers (meleeDmgMult, comboStackDmg, windupArmor, etc.) n'est
+      // JAMAIS recalculé par GameScene lui-même — sans cet appel, les flags
+      // spéciaux resteraient sur leurs anciennes valeurs jusqu'au rechargement
+      // de la scène (bug trouvé pendant le chantier Partie 2, cf. GameScene.
+      // refreshTalentModifiers).
+      this.gameScene.refreshTalentModifiers();
       this.selectedNodeId = null;
       this.refreshBranchHeader();
       this.refreshTabs();      // les gates tier 3 peuvent se re-verrouiller
@@ -902,6 +908,9 @@ export class SkillScene extends Phaser.Scene {
     // débloquer +25% HP ne relèverait la barre qu'au prochain changement
     // d'équipement. (atk/crit/lifesteal, eux, sont lus live via computeAll.)
     InventorySystem.recalcStats(this.player);
+    // Même raison que dans doRespec() ci-dessus : playerModifiers ne se
+    // recalcule jamais tout seul côté GameScene.
+    this.gameScene.refreshTalentModifiers();
     this.selectedNodeId    = null;
     this.unlockFlashNodeId = nodeId;   // flash blanc sur le nœud débloqué
     this.refreshBranchHeader();
