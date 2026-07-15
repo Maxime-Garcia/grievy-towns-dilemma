@@ -134,8 +134,14 @@ export class CombatSystem {
   ): DamageResult | null {
     const zeroManaCost = PassiveSystem.hasZeroManaCost(player.equipment);
     if (!zeroManaCost) {
-      if (player.stats.mana < skill.manaCost) return null;
-      player.stats.mana -= skill.manaCost;
+      // MANA_COST_PCT (arc_deep_reservoir) — réduction du coût, plancher à 1 pour
+      // qu'un sort reste toujours castable (jamais gratuit via ce seul canal,
+      // contrairement à hasZeroManaCost qui est un passif d'objet dédié).
+      const cost = mods && mods.manaCostPct > 0
+        ? Math.max(1, Math.round(skill.manaCost * (1 - mods.manaCostPct / 100)))
+        : skill.manaCost;
+      if (player.stats.mana < cost) return null;
+      player.stats.mana -= cost;
     }
 
     if (skill.effect?.heal || skill.effect?.healPercent) {
@@ -145,8 +151,21 @@ export class CombatSystem {
         : Math.round(player.stats.maxHp * (skill.effect.healPercent ?? 0) * healSkillMult);
       // PassiveSystem.applyHeal (au lieu d'un clamp manuel) — convertit le surplus
       // au-delà de maxHp en bouclier si OVERHEAL_SHIELD_50_PCT est équipé.
-      PassiveSystem.applyHeal(player, amt);
+      PassiveSystem.applyHeal(player, amt, mods);
       return { damage: 0, isCrit: false, isKill: false };
+    }
+
+    // SHIELD_SKILL_PCT (arc_steel_ward/glacius_layered_ice) — stone_shield/
+    // ice_barrier n'avaient AUCUN consommateur pour leur effect.shield avant ce
+    // chantier (skill entièrement muette au cast, en plus d'être une cible morte
+    // pour ce talent) : return anticipé ici, comme pour heal/healPercent
+    // au-dessus, sinon `!target` plus bas ferait tomber un sort sans cible
+    // dans le calcul de dégâts (bug similaire à celui trouvé en Phase 6 sur les
+    // sorts utilitaires). mods.shieldSkillMult (base 1.0) s'applique même sans
+    // talent débloqué — c'est la VALEUR de base du sort, pas un bonus séparé.
+    if (skill.effect?.shield) {
+      const amount = Math.round(skill.effect.shield * (mods?.shieldSkillMult ?? 1));
+      return { damage: 0, isCrit: false, isKill: false, shieldAmount: amount };
     }
 
     if (!target) return null;
@@ -366,7 +385,11 @@ export class CombatSystem {
 
     // PassiveSystem.applyHeal (au lieu d'un clamp manuel) — convertit le surplus HP
     // au-delà de maxHp en bouclier si OVERHEAL_SHIELD_50_PCT est équipé (cohérent
-    // avec playerSkill et les soins de GameScene).
+    // avec playerSkill et les soins de GameScene). Pas de `mods` ici : cette
+    // fonction statique n'a accès qu'à `player` (pas de TalentModifiers dans sa
+    // signature publique) — HEALING_RECEIVED_PCT ne s'applique donc pas à la
+    // régén hors-combat d'elaras_gift, scope volontairement restreint aux soins
+    // actifs (sorts, kill-heal, omnivamp, régén permanente en combat).
     PassiveSystem.applyHeal(player, hpRegen);
     player.stats.mana = Math.min(player.stats.maxMana, player.stats.mana + manaRegen);
   }

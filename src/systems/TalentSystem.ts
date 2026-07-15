@@ -97,6 +97,10 @@ export interface TalentModifiers {
   lastBastion: boolean;         // 1x/combat sous 30% HP → bouclier 25% HP max, 5s
   guardFinisher: boolean;       // finisher : bouclier 8% HP max, 3s
   preserved: boolean;           // 1x/zone, un coup fatal laisse à 1 HP + 2s d'invulnérabilité
+
+  // ── Phase 8 (divers) ─────────────────────────────────────────────────────
+  manaCostPct: number;          // % de réduction des coûts de mana des sorts
+  postFinisherBuff: boolean;    // après un finisher : prochaine attaque <2.5s +50% dmg, chaîne démarre à 2
 }
 
 export class TalentSystem {
@@ -375,6 +379,8 @@ export class TalentSystem {
       lastBastion: false,
       guardFinisher: false,
       preserved: false,
+      manaCostPct: 0,
+      postFinisherBuff: false,
     };
 
     for (const id of player.unlockedTalents) {
@@ -410,8 +416,11 @@ export class TalentSystem {
       // restent calculés mais sont VESTIGIAUX (aucun consommateur) — exactement
       // comme attackSpeedMult coexiste avec getAspdPct (étape 3). NE PAS les
       // recâbler : le canal vivant est getStatContribs, et lui seul.
-      // TODO(combat-signature): MANA_COST_PCT → playerSkill(), POST_FINISHER_BUFF
-      // → executeFinisherAttack(), LOW_HP_ATK/DEF_PCT (conditionnels runtime).
+      if (e.MANA_COST_PCT !== undefined)          mods.manaCostPct         += e.MANA_COST_PCT;
+      if (e.POST_FINISHER_BUFF !== undefined)     mods.postFinisherBuff     = true;
+      // LOW_HP_ATK_PCT/LOW_HP_DEF_PCT restent conditionnels runtime (HP courants),
+      // volontairement absents d'ici ET de getStatContribs — lus directement dans
+      // GameScene (isLowHp()) au moment du dégât, pas agrégés en amont.
 
       // ── Génériques (branches élémentaires) ──────────────────────────────
       if (e.ATK_PCT !== undefined)                mods.atkMult             *= 1 + e.ATK_PCT / 100;

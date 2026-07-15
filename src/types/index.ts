@@ -764,6 +764,8 @@ export interface DamageResult {
   statusApplied?: StatusEffect;
   /** true si l'attaque a été totalement esquivée (DODGE_PCT) — dégâts = 0, cf. CombatSystem.enemyAttack. */
   wasDodged?: boolean;
+  /** Montant de bouclier accordé par un sort à effect.shield (stone_shield/ice_barrier), cf. CombatSystem.playerSkill. */
+  shieldAmount?: number;
 }
 
 export interface CombatLog {
