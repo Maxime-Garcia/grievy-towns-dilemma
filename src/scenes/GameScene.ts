@@ -203,6 +203,17 @@ export class GameScene extends Phaser.Scene {
     hit: boolean;
     destroyAt: number;
     dmgMult: number;
+    spawnZone?: boolean;   // STAFF_FINISHER_ZONE — pose une zone au point d'impact réel
+    zoneElement?: ElementType;
+  }> = [];
+  // STAFF_FINISHER_ZONE (arc_elemental_wake) — zones élémentaires laissées au sol.
+  private _finisherZones: Array<{
+    x: number; y: number;
+    element: ElementType;
+    radius: number;
+    expiresAt: number;
+    nextTickAt: number;
+    gfx: Phaser.GameObjects.Arc;
   }> = [];
   private lootableLooted: Set<string> = new Set();
 
@@ -325,6 +336,10 @@ export class GameScene extends Phaser.Scene {
   private comboWeaponType: WeaponType | undefined = undefined;
   private guardUntil = 0;       // timestamp fin de la garde (Sword finisher)
   private inWindup = false;     // true pendant le chargement (windup) d'une arme lourde
+  // GUARD_FINISHER (glacius_guarded_strikes) — bouclier temporisé (8% HP max, 3s, se
+  // rafraîchit) distinct de playerShieldHp (LOW_HP_SHIELD_30_PCT, pas de durée/expiry).
+  private guardFinisherShieldHp = 0;
+  private guardFinisherShieldUntil = 0;
   private playerModifiers!: TalentModifiers; // recalculé après unlock/respec/équipement
 
   // Interaction tracking
@@ -413,6 +428,10 @@ export class GameScene extends Phaser.Scene {
     this.comboWeaponType = undefined;
     this.guardUntil      = 0;
     this.inWindup        = false;
+    this.guardFinisherShieldHp    = 0;
+    this.guardFinisherShieldUntil = 0;
+    for (const z of this._finisherZones) { if (z.gfx.active) z.gfx.destroy(); }
+    this._finisherZones = [];
     this.playerModifiers = TalentSystem.getModifiers(this.gameState.player);
     // Passifs d'objet (code-reviewer BUG) : sans ce reset, recharger une partie
     // dans la même instance de Scene (menu principal → Continuer) hérite d'un
@@ -656,6 +675,7 @@ export class GameScene extends Phaser.Scene {
     this.tickAutoBolt(time);
     this.tickDeferredDamage(time);
     this.tickFrozenSanctuaryHeal(time);
+    this.tickFinisherZones(time);
 
     // Transition hors-combat → en-combat : reset des passifs "premier coup"/"cooldowns
     // à zéro au début du combat" (FIRST_STRIKE_500_PCT, COMBAT_START_ZERO_CD).
@@ -1270,7 +1290,7 @@ export class GameScene extends Phaser.Scene {
   // La détection de collision se fait manuellement dans updateArrowProjectiles()
   // — plus fiable que physics.add.overlap qui dépend d'une texture valide.
 
-  private fireArrowProjectile(dmgMult = 1.0) {
+  private fireArrowProjectile(dmgMult = 1.0, spawnZone = false, zoneElement?: ElementType) {
     const SPEED = 600;  // px/s
     const RANGE = 460;
     const angle = this.facingAngle;
@@ -1285,6 +1305,8 @@ export class GameScene extends Phaser.Scene {
       hit: false,
       destroyAt: this.time.now + travelMs,
       dmgMult,
+      spawnZone,
+      zoneElement,
     });
 
     // VFX cosmétique — voyage en parallèle, purement visuel
@@ -1302,6 +1324,7 @@ export class GameScene extends Phaser.Scene {
       const arrow = this._activeArrows[i];
 
       if (arrow.hit || this.time.now >= arrow.destroyAt) {
+        if (arrow.spawnZone) this.spawnFinisherZone(arrow.rect.x, arrow.rect.y, arrow.zoneElement ?? ElementType.NEUTRAL);
         if (arrow.rect.active) arrow.rect.destroy();
         this._activeArrows.splice(i, 1);
         continue;
@@ -1326,6 +1349,7 @@ export class GameScene extends Phaser.Scene {
         if (!Phaser.Geom.Rectangle.Overlaps(enemyRect, arrowRect)) continue;
 
         // Impact — un seul ennemi touché
+        if (arrow.spawnZone) this.spawnFinisherZone(arrow.rect.x, arrow.rect.y, arrow.zoneElement ?? ElementType.NEUTRAL);
         arrow.hit = true;
         arrow.rect.destroy();
         this._activeArrows.splice(i, 1);
@@ -2623,6 +2647,16 @@ export class GameScene extends Phaser.Scene {
     const equipment = this.gameState.player.equipment;
     let dmg = rawDamage;
 
+    // GUARD_FINISHER (glacius_guarded_strikes) — bouclier temporisé, absorbe avant
+    // TOUT le reste (y compris LOW_HP_SHIELD) : c'est le plus frais des deux, et il
+    // expire de toute façon tout seul si non consommé — autant qu'il serve en premier.
+    if (this.time.now > this.guardFinisherShieldUntil) this.guardFinisherShieldHp = 0;
+    if (this.guardFinisherShieldHp > 0) {
+      const absorbed = Math.min(this.guardFinisherShieldHp, dmg);
+      this.guardFinisherShieldHp -= absorbed;
+      dmg -= absorbed;
+    }
+
     // LOW_HP_SHIELD_30_PCT — absorbe les dégâts en premier, avant tout le reste.
     if (this.playerShieldHp > 0) {
       const absorbed = Math.min(this.playerShieldHp, dmg);
@@ -3182,6 +3216,51 @@ export class GameScene extends Phaser.Scene {
       if (Phaser.Math.Distance.Between(px, py, sprite.x, sprite.y) > PassiveSystem.BURNING_AURA_RADIUS_PX) continue;
       this.showDamageNumber(sprite.x, sprite.y - 12, perTick, false, ElementType.FIRE);
       this.applyPassiveDamageToEnemy(id, perTick);
+    }
+  }
+
+  /** STAFF_FINISHER_ZONE (arc_elemental_wake) — pose une zone élémentaire (r70, 2s,
+   *  tick 500ms, 20% ATK/tick) au point d'impact RÉEL du dernier tir du finisher STAFF
+   *  (position de la flèche au moment de l'impact/fin de portée, pas une estimation). */
+  private spawnFinisherZone(x: number, y: number, element: ElementType): void {
+    const radius = 70;
+    const color = ELEMENT_PROJECTILE_COLORS[element] ?? 0xffffff;
+    const gfx = this.add.circle(x, y, radius, color, 0.22).setDepth(2);
+    this.tweens.add({ targets: gfx, alpha: 0.08, duration: 600, yoyo: true, repeat: -1 });
+    this._finisherZones.push({
+      x, y, element, radius,
+      expiresAt: this.time.now + 2000,
+      nextTickAt: this.time.now,
+      gfx,
+    });
+  }
+
+  private tickFinisherZones(time: number): void {
+    if (this._finisherZones.length === 0) return;
+    const atk = StatsSystem.computeAll(this.gameState.player).atk;
+    for (let i = this._finisherZones.length - 1; i >= 0; i--) {
+      const zone = this._finisherZones[i];
+      if (time >= zone.expiresAt) {
+        if (zone.gfx.active) zone.gfx.destroy();
+        this._finisherZones.splice(i, 1);
+        continue;
+      }
+      if (time < zone.nextTickAt) continue;
+      zone.nextTickAt = time + 500;
+      const dmg = Math.max(1, Math.round(atk * 0.20));
+      // Snapshot des ids : applyDamageToEnemy peut tuer (mutation de la Map).
+      const ids = Array.from(this.activeEnemies.keys());
+      for (const id of ids) {
+        const ae = this.activeEnemies.get(id);
+        if (!ae || ae.currentHp <= 0) continue;
+        // Position RÉELLE du sprite, jamais ActiveEnemy.x/y (jamais resynchronisé
+        // après le spawn — cf. commentaire finisherNova/quakeFinisher).
+        const sprite = this.findEnemySpriteByInstanceId(id);
+        if (!sprite || Phaser.Math.Distance.Between(zone.x, zone.y, sprite.x, sprite.y) > zone.radius) continue;
+        this.showDamageNumber(sprite.x, sprite.y - 12, dmg, false, zone.element);
+        this.spawnHitParticles(sprite.x, sprite.y, zone.element);
+        this.applyDamageToEnemy(id, dmg, false);
+      }
     }
   }
 
@@ -6291,6 +6370,10 @@ export class GameScene extends Phaser.Scene {
       if (h.halo.active)   h.halo.destroy();
     }
     this._homingProjectiles = [];
+    // STAFF_FINISHER_ZONE — une zone laissée au sol ne doit pas traverser une
+    // transition de zone (coordonnées locales à l'ancienne zone, cercle orphelin).
+    for (const z of this._finisherZones) { if (z.gfx.active) z.gfx.destroy(); }
+    this._finisherZones = [];
     this.weaponProjectiles?.clear(true, true);
 
     // Zone graphics (map background, paths, walls, teleport highlights)
@@ -6466,6 +6549,11 @@ export class GameScene extends Phaser.Scene {
     const finisher = comboConfig.finisher;
     const delayOf  = (d: number) => effectiveHitDelayMs(d, aspd);
 
+    // Une transition de zone déjà en cours au moment du cast (mort par DOT, téléport)
+    // annulerait de toute façon tous les hits différés plus bas (chacun gardé par
+    // isTraveling) — autant ne pas prélever le coût de sacrificeFinisher pour rien.
+    if (this.isTraveling) return;
+
     // BLOCKER-E: heavyFinisherBonus multiplie le damageMultiplier pour GS/HAMMER/AXE
     const isHeavyWeapon = weaponType === WeaponType.GREATSWORD
       || weaponType === WeaponType.HAMMER
@@ -6474,19 +6562,39 @@ export class GameScene extends Phaser.Scene {
       ? (1 + this.playerModifiers.heavyFinisherBonus / 100)
       : 1.0;
 
+    // SACRIFICE_FINISHER (ten_malchar_blessing, NG+) — consume 20% HP max au CAST
+    // (pas au timing du dernier coup : le joueur paie même si la cible meurt avant),
+    // triple les dégâts de TOUS les coups du finisher. Plancher à 1 HP — un finisher
+    // ne doit jamais tuer son propre lanceur.
+    const sacrificeFinisher = this.playerModifiers.sacrificeFinisher;
+    const sacrificeFactor = sacrificeFinisher ? 3 : 1;
+    if (sacrificeFinisher) {
+      const p = this.gameState.player;
+      const cost = Math.max(1, Math.round(p.stats.maxHp * 0.20));
+      p.stats.hp = Math.max(1, p.stats.hp - cost);
+      this.showDamageNumber(this.player.x, this.player.y - 20, cost, false, undefined, true);
+    }
+
     if (pattern.isProjectile) {
-      // BOW finisher : 3 flèches en éventail via le système de projectile existant.
+      // BOW/STAFF finisher : projectiles en éventail via le système existant.
       // BUG4 fix: passe le damageMultiplier de chaque hit à fireArrowProjectile.
       if (windupMs > 0) this.spawnWindupVfx(windupMs);
-      finisher.hits.forEach(hit => {
+      const weaponElement = this.gameState.player.equipment.weapon?.element;
+      const isLastHitIdx = finisher.hits.length - 1;
+      finisher.hits.forEach((hit, hitIndex) => {
         this.time.delayedCall(windupMs + delayOf(hit.delay), () => {
-          if (!this.isTraveling) this.fireArrowProjectile(hit.damageMultiplier);
+          if (this.isTraveling) return;
+          // STAFF_FINISHER_ZONE : uniquement le dernier tir, uniquement STAFF.
+          const spawnZone = weaponType === WeaponType.STAFF
+            && this.playerModifiers.staffFinisherZone
+            && hitIndex === isLastHitIdx;
+          this.fireArrowProjectile(hit.damageMultiplier * sacrificeFactor, spawnZone, weaponElement);
         });
       });
     } else {
       if (windupMs > 0) this.spawnWindupVfx(windupMs);
       finisher.hits.forEach((hit, hitIndex) => {
-        const effectiveDmgMult = hit.damageMultiplier * heavyFinisherFactor;
+        const effectiveDmgMult = hit.damageMultiplier * heavyFinisherFactor * sacrificeFactor;
         const fireAt = windupMs + delayOf(hit.delay);
         const doHit = () => {
           if (this.isTraveling) return;
@@ -6569,6 +6677,131 @@ export class GameScene extends Phaser.Scene {
 
       if (effectAt === 0) applyEffect();
       else this.time.delayedCall(effectAt, applyEffect);
+    }
+
+    // Effets spéciaux des TALENTS (Partie 2, Phase 2) — universels : tout finisher,
+    // quelle que soit l'arme, les déclenche si le nœud est débloqué. Indépendants de
+    // comboConfig.finisher.effect (au-dessus), qui est spécifique à l'arme et peut
+    // être absent. STAFF_FINISHER_ZONE (position réelle d'impact projectile) et
+    // SACRIFICE_FINISHER (coût payé au cast) sont gérés ailleurs dans cette fonction.
+    const mods = this.playerModifiers;
+    const hasTalentFx = mods.finisherNova || mods.burnOnFinisher || mods.freezeOnFinisher
+      || mods.cycloneFinisher || mods.quakeFinisher || mods.chainFinisher || mods.guardFinisher;
+    if (hasTalentFx) {
+      const lastHit = finisher.hits[finisher.hits.length - 1];
+      const talentEffectAt = windupMs + delayOf(lastHit?.delay ?? 0);
+
+      const applyTalentEffects = () => {
+        if (this.isTraveling) return;
+        const px = this.player.x, py = this.player.y;
+
+        // BURN_ON_FINISHER / FREEZE_ON_FINISHER — mêmes cibles que effect.stunMs/
+        // knockback ci-dessus : cône du dernier coup, proxy déjà établi pour "les
+        // ennemis touchés par le finisher".
+        if (mods.burnOnFinisher || mods.freezeOnFinisher) {
+          const range   = lastHit?.range   ?? 130;
+          const halfArc = lastHit?.halfArc ?? Math.PI;
+          const atk = this.gameState.player.stats.atk;
+          for (const sprite of this.findEnemiesInCone(range, halfArc)) {
+            const ae = this.activeEnemies.get(sprite.name);
+            if (!ae || ae.currentHp <= 0) continue;
+            if (mods.burnOnFinisher) {
+              ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'BURN');
+              ae.statusEffects.push({ type: 'BURN', duration: 3, strength: Math.max(1, Math.round(atk * 0.3)) });
+            }
+            if (mods.freezeOnFinisher) {
+              ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'FREEZE');
+              ae.statusEffects.push({ type: 'FREEZE', duration: 2, strength: 1 });
+            }
+          }
+        }
+
+        // CYCLONE_FINISHER — zone de vent, repousse les ennemis proches (r150).
+        if (mods.cycloneFinisher) {
+          for (const sprite of this.enemies.getChildren()) {
+            const s = sprite as Phaser.Physics.Arcade.Sprite;
+            if (!s.active) continue;
+            if (Phaser.Math.Distance.Between(px, py, s.x, s.y) > 150) continue;
+            this.applyKnockback(s, 220);
+          }
+        }
+
+        // FINISHER_NOVA — r90 autour du joueur, 60% Magic ATK, élément de l'arme.
+        // NB : distance mesurée sur la position RÉELLE du sprite (ActiveEnemy.x/y
+        // n'est jamais resynchronisé après le spawn — bug préexistant, cf. rollArcChain/
+        // applyKnockbackToPlayer — donc jamais utilisé ici comme source de position).
+        if (mods.finisherNova) {
+          const matk = StatsSystem.computeAll(this.gameState.player).matk;
+          const dmg = Math.max(1, Math.round(matk * 0.60));
+          const novaElement = this.gameState.player.equipment.weapon?.element ?? ElementType.NEUTRAL;
+          for (const id of Array.from(this.activeEnemies.keys())) {
+            const ae = this.activeEnemies.get(id);
+            if (!ae || ae.currentHp <= 0) continue;
+            const sprite = this.findEnemySpriteByInstanceId(id);
+            if (!sprite || Phaser.Math.Distance.Between(px, py, sprite.x, sprite.y) > 90) continue;
+            this.showDamageNumber(sprite.x, sprite.y - 20, dmg, false, novaElement);
+            this.spawnHitParticles(sprite.x, sprite.y, novaElement);
+            this.applyDamageToEnemy(id, dmg, false);
+          }
+          this.requestShake(150, 0.010, GameScene.SHAKE_PRIO.FINISHER);
+        }
+
+        // QUAKE_FINISHER — onde de choc au sol (r100), 40% ATK terre, stagger ×2.
+        if (mods.quakeFinisher) {
+          const atk = StatsSystem.computeAll(this.gameState.player).atk;
+          const dmg = Math.max(1, Math.round(atk * 0.40));
+          for (const id of Array.from(this.activeEnemies.keys())) {
+            const ae = this.activeEnemies.get(id);
+            if (!ae || ae.currentHp <= 0) continue;
+            const sprite = this.findEnemySpriteByInstanceId(id);
+            if (!sprite || Phaser.Math.Distance.Between(px, py, sprite.x, sprite.y) > 100) continue;
+            this.showDamageNumber(sprite.x, sprite.y - 20, dmg, false, ElementType.EARTH);
+            this.spawnHitParticles(sprite.x, sprite.y, ElementType.EARTH);
+            this.applyDamageToEnemy(id, dmg, false);
+            if (ae.currentHp <= 0) continue; // tué par la secousse — pas de stagger sur un cadavre
+            this.checkStagger(sprite, ae, dmg * 2);
+          }
+          this.requestShake(180, 0.012, GameScene.SHAKE_PRIO.FINISHER);
+        }
+
+        // CHAIN_FINISHER — éclair en chaîne depuis le joueur, jusqu'à 3 ennemis, 60% Magic ATK.
+        if (mods.chainFinisher) {
+          const matk = StatsSystem.computeAll(this.gameState.player).matk;
+          const dmg = Math.max(1, Math.round(matk * 0.60));
+          const hitIds = new Set<string>();
+          let originX = px, originY = py;
+          for (let hop = 0; hop < 3; hop++) {
+            let nearest: ActiveEnemy | null = null;
+            let nearestSprite: Phaser.Physics.Arcade.Sprite | null = null;
+            let nearestDist = Infinity;
+            for (const other of this.activeEnemies.values()) {
+              if (hitIds.has(other.instanceId) || other.currentHp <= 0) continue;
+              const s = this.findEnemySpriteByInstanceId(other.instanceId);
+              if (!s) continue;
+              const d = Phaser.Math.Distance.Between(originX, originY, s.x, s.y);
+              if (d < nearestDist) { nearestDist = d; nearest = other; nearestSprite = s; }
+            }
+            if (!nearest || !nearestSprite || nearestDist > 250) break;
+            hitIds.add(nearest.instanceId);
+            this.showDamageNumber(nearestSprite.x, nearestSprite.y - 20, dmg, false, ElementType.LIGHTNING);
+            this.spawnHitParticles(nearestSprite.x, nearestSprite.y, ElementType.LIGHTNING);
+            this.applyDamageToEnemy(nearest.instanceId, dmg, false);
+            originX = nearestSprite.x; originY = nearestSprite.y;
+          }
+        }
+
+        // GUARD_FINISHER — bouclier temporisé 8% HP max, 3s, se rafraîchit (pas cumulatif).
+        if (mods.guardFinisher) {
+          this.guardFinisherShieldHp = Math.max(
+            this.guardFinisherShieldHp,
+            Math.round(this.gameState.player.stats.maxHp * 0.08),
+          );
+          this.guardFinisherShieldUntil = this.time.now + 3000;
+        }
+      };
+
+      if (talentEffectAt === 0) applyTalentEffects();
+      else this.time.delayedCall(talentEffectAt, applyTalentEffects);
     }
 
     this.spawnFinisherVfx(weaponType, this.facingAngle);
