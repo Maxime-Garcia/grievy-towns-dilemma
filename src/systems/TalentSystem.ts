@@ -261,10 +261,12 @@ export class TalentSystem {
   static getStatContribs(player: PlayerState): {
     atkPct: number; hpPct: number; defPct: number; critPct: number;
     elemBonusPct: number; lifestealPct: number; manaMaxPct: number; manaRegenPct: number;
+    defToAtkPct: number;
   } {
     const c = {
       atkPct: 0, hpPct: 0, defPct: 0, critPct: 0,
       elemBonusPct: 0, lifestealPct: 0, manaMaxPct: 0, manaRegenPct: 0,
+      defToAtkPct: 0,
     };
     for (const id of player.unlockedTalents) {
       const node = TALENT_MAP[id];
@@ -277,6 +279,10 @@ export class TalentSystem {
       if (e.LIFESTEAL_PCT  !== undefined) c.lifestealPct += e.LIFESTEAL_PCT;
       if (e.MANA_MAX_PCT   !== undefined) c.manaMaxPct   += e.MANA_MAX_PCT;
       if (e.MANA_REGEN_PCT !== undefined) c.manaRegenPct += e.MANA_REGEN_PCT;
+      // DEF_TO_ATK_PCT (terra_unshaking_foundation) — % de la DEF FINALE (calculée
+      // après tous les autres canaux) ajouté à l'ATK ; lu par StatsSystem.computeAll
+      // APRÈS le calcul de `def`, cf. commentaire là-bas sur l'ordre atk avant def.
+      if (e.DEF_TO_ATK_PCT !== undefined) c.defToAtkPct  += e.DEF_TO_ATK_PCT;
       // ELEM_BONUS_PCT : seulement les nœuds NON restreints à un élément.
       // Les nœuds `elementScoped` (pyroclast fire, leviathan water/ice, …) sont
       // conditionnels — hors scope tant que le combat ne teste pas l'élément.

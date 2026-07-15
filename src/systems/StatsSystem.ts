@@ -165,6 +165,13 @@ export class StatsSystem {
     atk  = Math.round((atk  + t.ATK_FLAT)  * (1 + (t.ATK_PCT  + tal.atkPct) / 100));
     matk = Math.round((matk + t.MATK_FLAT) * (1 + (t.MATK_PCT + tal.atkPct) / 100));
     def  = Math.round((def  + t.DEF_FLAT)  * (1 + (t.DEF_PCT  + tal.defPct) / 100));
+    // DEF_TO_ATK_PCT (terra_unshaking_foundation) — DOIT lire `def` APRÈS sa propre
+    // ligne ci-dessus (canal additif unique déjà établi pour ATK_PCT/DEF_PCT — la
+    // conversion se fait sur la DEF FINALE, pas la DEF de base) : atk (l.165) est
+    // calculé AVANT def (ligne précédente), donc ce bonus s'ajoute ici en aval
+    // plutôt que dans le canal % de la ligne atk, qui tournerait avant que def
+    // n'existe encore sous sa forme finale.
+    if (tal.defToAtkPct > 0) atk += Math.round(def * tal.defToAtkPct / 100);
     hp   = Math.round((hp   + t.HP_FLAT)   * (1 + (t.HP_PCT   + tal.hpPct)  / 100));
     mana = Math.round((mana + t.MANA_FLAT) * (1 + tal.manaMaxPct / 100));
     spd  = Math.round(spd  + t.SPD_FLAT);

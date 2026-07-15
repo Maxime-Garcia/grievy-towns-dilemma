@@ -2926,6 +2926,26 @@ export class GameScene extends Phaser.Scene {
       this.applyDamageToEnemy(ae.instanceId, Math.round(finalDmg * reflectPct / 100));
     }
 
+    // RETALIATION_DEF_PCT (terra_shale_skin) — tout coup de mêlée qui ATTEINT le
+    // joueur (esquive/stun déjà filtrés plus haut, return anticipés) inflige X% de
+    // la DEF finale à l'attaquant en dégâts de terre — indépendant des dégâts
+    // réellement subis (contrairement à MAGIC_REFLECT_25_PCT ci-dessus, qui reflète
+    // un % du COUP ; ceci reflète un % de la DEF, même si le coup a été réduit à 0).
+    const retaliationPct = this.playerModifiers.retaliationDefPct;
+    // Garde activeEnemies.has() : MAGIC_REFLECT_25_PCT juste au-dessus peut avoir
+    // déjà tué ae (sprite disabled mais pas encore détruit, cf. onEnemyKilled) —
+    // sans ça, un nombre de dégâts/particules fantômes apparaît sur un cadavre.
+    if (retaliationPct > 0 && this.activeEnemies.has(ae.instanceId)) {
+      const def = StatsSystem.computeAll(this.gameState.player).def;
+      const retalDmg = Math.max(1, Math.round(def * retaliationPct / 100));
+      const attackerSprite = this.findEnemySpriteByInstanceId(ae.instanceId);
+      if (attackerSprite) {
+        this.showDamageNumber(attackerSprite.x, attackerSprite.y - 20, retalDmg, false, ElementType.EARTH);
+        this.spawnHitParticles(attackerSprite.x, attackerSprite.y, ElementType.EARTH);
+      }
+      this.applyDamageToEnemy(ae.instanceId, retalDmg, false);
+    }
+
     this.gameState.player.stats.hp = Math.max(0, Math.min(
       this.gameState.player.stats.maxHp, hpBeforeHit - finalDmg,
     ));
