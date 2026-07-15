@@ -3346,9 +3346,8 @@ export class GameScene extends Phaser.Scene {
   private playBossDeathSequence(
     sprite: Phaser.Physics.Arcade.Sprite,
     _ae: ActiveEnemy,
-    enemyDef: Enemy,
+    _enemyDef: Enemy,
   ) {
-    const { width: W, height: H } = this.cameras.main;
     const baseScale = (sprite.getData('baseScale') as number | undefined) ?? sprite.scale;
 
     sprite.setTint(0xffffff);
@@ -3389,25 +3388,9 @@ export class GameScene extends Phaser.Scene {
         onComplete: () => { if (sprite.scene) sprite.destroy(); },
       });
     });
-
-    const bossName = enemyDef.name;
-    const nameLabel = this.add.text(W / 2, H / 2 - 30, bossName, {
-      fontSize: '20px',
-      color: '#ffff00',
-      fontFamily: FONT,
-      stroke: '#000000',
-      strokeThickness: 4,
-    }).setScrollFactor(0).setOrigin(0.5).setDepth(200).setAlpha(0);
-    this.bossDeathObjects.push(nameLabel);
-
-    this.tweens.add({
-      targets: nameLabel,
-      alpha: 1,
-      duration: 400,
-      hold: 1600,
-      yoyo: true,
-      onComplete: () => { if (nameLabel.active) nameLabel.destroy(); },
-    });
+    // Le nom du boss ne s'affiche QU'à son apparition (showBossAnnouncement) —
+    // le réafficher à sa mort n'a pas de sens (demande explicite du créateur,
+    // 15/07/2026) : un ancien nameLabel centré-écran vivait ici, retiré.
   }
 
   private onPlayerDeath() {
