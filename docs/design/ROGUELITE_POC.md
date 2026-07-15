@@ -158,13 +158,25 @@ là, et il est **choisi**.
 Le loot au sol devient un objet de première classe du jeu, plus un détail :
 
 1. **Une belle bulle d'item au sol** — à la **couleur de la rareté** de l'objet, avec **l'asset de
-   l'item dedans**. C'est ce que le joueur regarde en permanence : il doit pouvoir juger un butin *sans
-   le ramasser*.
+   l'item dedans**, un **VFX d'apparition** soigné. C'est ce que le joueur regarde en permanence : il
+   doit pouvoir juger un butin *sans le ramasser*.
 2. **Message « Inventaire plein »** quand on tente de ramasser alors qu'on n'a plus de place.
-3. **Une touche pour jeter**, ajoutée dans la **popup d'item**.
+3. **Une touche pour jeter**, ajoutée dans la **popup d'item**, et un **bouton pour ramasser** l'objet
+   au sol, avec **animation de récupération**.
+4. **Déséquiper quand le sac est plein → l'objet tombe au sol**, avec un message du type
+   **« Inventaire plein, objet à terre »** (décision créateur 15/07). Le déséquipement ne doit jamais
+   échouer silencieusement : soit il rentre dans le sac, soit il tombe au sol — mais le joueur récupère
+   toujours sa pièce. (Aujourd'hui `unequip()` renvoie `false` si le sac est plein et ne fait rien : ce
+   chemin doit être remplacé par un drop au sol quand le système d'objet au sol existera.)
 
-Ces trois éléments forment la boucle de l'étage 1. Si jeter est pénible, le jeu entier est pénible :
-c'est le geste le plus répété de la run.
+Ces éléments forment la boucle de l'étage 1. Si jeter est pénible, le jeu entier est pénible : c'est le
+geste le plus répété de la run.
+
+> **⚠️ Statut : à construire AVEC le `RunSystem`, pas avant.** La condition qui déclenche tout ceci — le
+> sac plein — ne peut pas se produire tant que le sac fait 400 emplacements (le sac de run à 20 slots
+> n'existe qu'avec le `RunSystem`). Bâtir le drop au sol avant rendrait son comportement principal
+> intestable. Délégation prévue : `ux-agent` (bulle, message, écran) + `gamefeel-agent` (VFX
+> d'apparition, animation de ramassage, feedback du « sac plein »).
 
 ### Ce qui reste ouvert : le RÉGLAGE
 
