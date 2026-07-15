@@ -1890,12 +1890,19 @@ export class GameScene extends Phaser.Scene {
         const burnKey = `burn_${instanceId}`;
         if (!this.cooldowns[burnKey] || this.cooldowns[burnKey] <= 0) {
           this.cooldowns[burnKey] = 1.0;
-          const tickDmg = Math.max(1, Math.round(burnEffect.strength * (1 + this.playerModifiers.burnDmgPct / 100)));
+          // DARK_BURN (ten_forbidden_flame) — la brûlure devient un dégât sombre :
+          // change l'élément affiché ET bénéficie de darkDmgMult comme toute autre
+          // source de dégâts sombres (cohérent avec le hook posé dans playerSkill).
+          const isDarkBurn = this.playerModifiers.darkBurn;
+          const darkMult = isDarkBurn ? this.playerModifiers.darkDmgMult : 1;
+          const tickDmg = Math.max(1, Math.round(
+            burnEffect.strength * (1 + this.playerModifiers.burnDmgPct / 100) * darkMult,
+          ));
           if (!this.isInvincibleDummy(ae.enemyId)) {
             ae.currentHp = Math.max(0, ae.currentHp - tickDmg);
           }
           this.registerEchoDamage(instanceId, tickDmg, false);
-          this.showDamageNumber(sprite.x, sprite.y - 12, tickDmg, false, ElementType.FIRE);
+          this.showDamageNumber(sprite.x, sprite.y - 12, tickDmg, false, isDarkBurn ? ElementType.DARK : ElementType.FIRE);
           if (ae.currentHp <= 0) {
             this.onEnemyKilled(ae, sprite);
             return;

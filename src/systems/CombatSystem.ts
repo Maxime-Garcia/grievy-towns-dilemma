@@ -194,6 +194,31 @@ export class CombatSystem {
       finalTotal = Math.round(total * mods.skillDmgMult);
       if (skill.isProjectile) finalTotal = Math.round(finalTotal * mods.projectileSkillMult);
       if (skill.element)      finalTotal = Math.round(finalTotal * mods.magicDmgMult);
+      // DARK_DMG_MULT / VOID_CHANNEL — réservés aux sorts qui déclarent RÉELLEMENT
+      // des dégâts (skill.damage/magicDamage). Sans cette garde, un sort utilitaire
+      // sans dégâts (bouclier, dash, etc.) qui a quand même une cible proche (cf.
+      // GameScene.activateSkill, qui résout une cible pour TOUT sort équipé) tombe
+      // dans `total = Math.max(1, magicDmg+physDmg)` — un plancher de 1 dégât
+      // "fantôme" calculé depuis l'ATK/MATK brut du joueur (bug préexistant, hors
+      // périmètre). VOID_CHANNEL en particulier ne doit JAMAIS prélever 15% des HP
+      // max pour ce dégât fantôme sur un sort qui n'est pas censé infliger quoi que
+      // ce soit (trouvé en review : stone_shield/ice_barrier/gale_step/void_step).
+      const dealsRealDamage = (skill.damage ?? 0) > 0 || (skill.magicDamage ?? 0) > 0;
+      if (dealsRealDamage && skill.element === ElementType.DARK) {
+        // DARK_DMG_MULT (ten_shadow_veil/abyss_pact/world_ender) — multiplicatif,
+        // s'accumule déjà en amont dans TalentSystem (mods.darkDmgMult *= 1+pct/100
+        // par nœud), donc une seule application ici suffit pour les 3 tiers.
+        finalTotal = Math.round(finalTotal * mods.darkDmgMult);
+      }
+      if (dealsRealDamage && mods.voidChannel) {
+        // Sacrifice systématique (pas de garde "1 fois par...", contrairement aux
+        // talents défensifs de ce chantier) : chaque sort à dégâts payé en HP double
+        // ses dégâts. Plancher à 1 HP — même garde-fou que sacrificeFinisher, un
+        // sort ne doit jamais tuer son propre lanceur.
+        const cost = Math.max(1, Math.round(player.stats.maxHp * 0.15));
+        player.stats.hp = Math.max(1, player.stats.hp - cost);
+        finalTotal = Math.round(finalTotal * 2);
+      }
       finalTotal = Math.max(1, finalTotal);
     }
 
