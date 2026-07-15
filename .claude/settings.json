@@ -4,11 +4,20 @@
     "defaultMode": "bypassPermissions",
     "allow": [
       "Bash(*)",
+      "Bash(node *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(npx *)",
+      "PowerShell(*)",
       "Read(*)",
       "Edit(*)",
       "Write(*)",
       "Glob(*)",
-      "Grep(*)"
+      "Grep(*)",
+      "Agent(*)",
+      "Skill(*)",
+      "WebFetch(*)",
+      "WebSearch(*)"
     ]
   }
 }
