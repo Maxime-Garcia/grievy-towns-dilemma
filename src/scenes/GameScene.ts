@@ -217,6 +217,7 @@ export class GameScene extends Phaser.Scene {
     destroyAt: number;
     damage: number;
     hit: boolean;
+    element: ElementType;
   }> = [];
 
   // Zone-scoped objects destroyed/recreated on each transition
@@ -791,6 +792,11 @@ export class GameScene extends Phaser.Scene {
     const barFg = this.add.rectangle(x - barW / 2, barY, barW, def.isBoss ? 6 : 4, def.isBoss ? 0xffd700 : 0xff2222)
       .setDepth(9).setOrigin(0, 0.5);
     this.enemyHpBars.set(active.instanceId, { bg: barBg, bar: barFg, baseW: barW });
+
+    // La population normale de zone annonce le nom du boss à l'apparition
+    // (showBossAnnouncement, cf. createEnemiesForZone) — absent ici, le nom
+    // n'apparaissait donc qu'à sa mort (playBossDeathSequence).
+    if (def.isBoss) this.showBossAnnouncement(def.name, def.element);
   }
 
   // ── MOVEMENT ─────────────────────────────────────────────────
@@ -2375,7 +2381,7 @@ export class GameScene extends Phaser.Scene {
         h.halo.destroy();
         this._homingProjectiles.splice(i, 1);
         // Apply damage
-        this.applyDamageToPlayer(h.damage, impactX, impactY);
+        this.applyDamageToPlayer(h.damage, impactX, impactY, h.element);
       }
     }
   }
@@ -2422,6 +2428,7 @@ export class GameScene extends Phaser.Scene {
       destroyAt: this.time.now + lifetime,
       damage,
       hit: false,
+      element,
     });
   }
 
@@ -2659,7 +2666,7 @@ export class GameScene extends Phaser.Scene {
       // le joueur n'a plus la main sur son mouvement pendant la séquence de mort.
       if (!isKill) {
         this.applyKnockbackToPlayer(ae.x, ae.y, knockbackForce);
-        this.rollPlayerStatusOnHit(ae);
+        this.rollPlayerStatusOnHit(ae.element, finalDmg);
       }
     }
     this.events.emit('player_update', this.gameState.player);
@@ -2745,11 +2752,17 @@ export class GameScene extends Phaser.Scene {
     [ElementType.LIGHTNING]: 'SHOCK',
   };
 
-  /** Jet de statut sur un coup de mêlée ennemi (talents Partie 2). Appelé depuis
-   *  applyEnemyMeleeDamage, jamais depuis les DOT/passifs (un statut ne doit pas
-   *  en déclencher un autre en boucle). */
-  private rollPlayerStatusOnHit(ae: ActiveEnemy): void {
-    const type = GameScene.PLAYER_STATUS_ON_HIT_MAP[ae.element];
+  /**
+   * Jet de statut sur un coup ennemi (talents Partie 2). Prend l'élément +
+   * les dégâts du coup plutôt qu'un `ActiveEnemy` directement : les 3 canaux
+   * de dégâts subis (mêlée directe, projectile droit, projectile homing)
+   * n'ont pas tous une référence `ae` vivante au moment de l'impact (un
+   * projectile qui touche APRÈS la mort de sa source, par ex.) — l'élément
+   * et les dégâts, eux, sont toujours connus. Jamais appelé depuis les
+   * DOT/passifs (un statut ne doit pas en déclencher un autre en boucle).
+   */
+  private rollPlayerStatusOnHit(element: ElementType, hitDamage: number): void {
+    const type = GameScene.PLAYER_STATUS_ON_HIT_MAP[element];
     if (!type) return;
     // BURN_BLEED_IMMUNITY (abyssal_soul_of_the_deep) — filtre BURN à la source,
     // jamais posé du tout plutôt que posé-puis-ignoré au tick.
@@ -2764,7 +2777,11 @@ export class GameScene extends Phaser.Scene {
     this.playerStatusEffects.push({
       type,
       duration: durationS,
-      strength: type === 'BURN' ? Math.max(1, Math.round(ae.stats.baseAtk * 0.15))
+      // BURN : fraction du coup qui l'a posé plutôt que de l'ATK brut de la
+      // source — évite un paramètre supplémentaire à faire voyager depuis les
+      // 3 canaux d'appel, et reste cohérent ("la brûlure est proportionnelle
+      // au coup qui l'a causée").
+      strength: type === 'BURN' ? Math.max(1, Math.round(hitDamage * 0.4))
         : type === 'SLOW' ? 0.35
         : 1, // SHOCK : immobilise, strength non lue
     });
@@ -2787,8 +2804,11 @@ export class GameScene extends Phaser.Scene {
   /** Apply direct damage to the player (from homing projectile, AoE, etc.).
    *  `sourceX/sourceY` optionnels : position d'origine du coup pour le
    *  knockback (talents Partie 2) — absent pour les appelants qui n'ont pas
-   *  de source directionnelle claire, auquel cas aucun knockback n'est appliqué. */
-  private applyDamageToPlayer(damage: number, sourceX?: number, sourceY?: number) {
+   *  de source directionnelle claire, auquel cas aucun knockback n'est appliqué.
+   *  `sourceElement` optionnel : élément de la source pour le jet de statut
+   *  subi (talents Partie 2) — absent pour les dégâts sans élément (AoE
+   *  générique, dégâts scriptés, etc.). */
+  private applyDamageToPlayer(damage: number, sourceX?: number, sourceY?: number, sourceElement?: ElementType) {
     if (damage <= 0) return;
     if (this.isDashing) return;
     if (this.time.now < this.iframeUntil) return; // iframes post-hit
@@ -2812,9 +2832,14 @@ export class GameScene extends Phaser.Scene {
     this.showDamageNumber(this.player.x, this.player.y - 20, damage, false, undefined, true);
     this.applyPlayerHitFx();
     const isKill = this.gameState.player.stats.hp <= 0;
-    if (!isKill && sourceX !== undefined && sourceY !== undefined) {
+    // damage > 0 : un coup entièrement absorbé par un bouclier (LOW_HP_SHIELD_30_PCT/
+    // OVERHEAL_SHIELD_50_PCT ramènent damage à 0 via mitigatePlayerDamage ci-dessus)
+    // ne doit ni repousser ni poser de statut — même garde que applyEnemyMeleeDamage
+    // (if (finalDmg > 0)), qui lui l'avait déjà correctement.
+    if (!isKill && damage > 0 && sourceX !== undefined && sourceY !== undefined) {
       this.applyKnockbackToPlayer(sourceX, sourceY, GameScene.PLAYER_KNOCKBACK_FORCE);
     }
+    if (!isKill && damage > 0 && sourceElement !== undefined) this.rollPlayerStatusOnHit(sourceElement, damage);
     this.events.emit('player_update', this.gameState.player);
     if (isKill) this.onPlayerDeath();
   }
@@ -3033,19 +3058,20 @@ export class GameScene extends Phaser.Scene {
       (_playerGO, projGO) => {
         const proj = projGO as Phaser.Physics.Arcade.Sprite;
         if (proj.getData('isPlayer')) return;
-        // IFRAMES : le joueur est invincible — le projectile est absorbé sans dégâts
-        if (this.time.now < this.iframeUntil) { proj.destroy(); return; }
-        const damage = (proj.getData('damage') as number) ?? 8;
+        const damage  = (proj.getData('damage') as number) ?? 8;
+        const element = proj.getData('element') as ElementType | undefined;
+        // Position capturée AVANT destroy() — même précaution que le homing
+        // projectile (l'accès post-destroy à x/y est fragile, pas garanti).
+        const impactX = proj.x, impactY = proj.y;
         proj.destroy();
-        this.gameState.player.stats.hp = Math.max(
-          0,
-          this.gameState.player.stats.hp - damage,
-        );
-        this.iframeUntil = this.time.now + 800;
-        this.showDamageNumber(this.player.x, this.player.y - 20, damage, false, undefined, true);
-        this.applyPlayerHitFx();
-        this.events.emit('player_update', this.gameState.player);
-        if (this.gameState.player.stats.hp <= 0) this.onPlayerDeath();
+        // Route désormais par applyDamageToPlayer() — auparavant ce bloc
+        // mutait stats.hp en dur, en contournant iframes correctement gérées
+        // ailleurs mais SURTOUT mitigatePlayerDamage() (boucliers,
+        // DAMAGE_REDUCTION_PCT), FROZEN_SANCTUARY, le blocage de garde, le
+        // TRUE_DODGE, ET les hooks knockback/statut subis (talents Partie 2)
+        // — un projectile "burst_fan"/"circular_burst" (frost_wolf, spark_imp)
+        // ne posait donc jamais SLOW/SHOCK, contrairement au contact mêlée.
+        this.applyDamageToPlayer(damage, impactX, impactY, element);
       },
     );
 
@@ -3080,6 +3106,10 @@ export class GameScene extends Phaser.Scene {
     proj.setDepth(15);
     proj.setData('isPlayer', isPlayer);
     proj.setData('damage', damage);
+    // Élément source — statuts subis par le joueur (talents Partie 2), lu à
+    // l'impact dans createProjectileGroup(). undefined pour un projectile
+    // joueur (isPlayer=true) : jamais lu dans ce cas.
+    proj.setData('element', element);
 
     const angle = Math.atan2(toY - fromY, toX - fromX);
     const speed = isPlayer ? 400 : 280;
@@ -3292,7 +3322,15 @@ export class GameScene extends Phaser.Scene {
       scaleY: baseScale * 0.2,
       duration: 350,
       ease: 'Power3',
-      onComplete: () => { if (sprite.active) sprite.destroy(); },
+      // sprite.active est déjà à false ici (onEnemyKilled appelle
+      // disableBody(true, false) avant playEnemyDeathSequence) — un garde
+      // `if (sprite.active)` serait toujours faux (bug d'origine). `sprite.scene`
+      // devient undefined UNIQUEMENT après un vrai destroy() (ex: transition de
+      // zone qui a détruit ce sprite entre-temps) — garde précise plutôt qu'un
+      // destroy() inconditionnel : destroy() est idempotent (no-op si déjà
+      // détruit) donc les deux sont sans risque, mais celle-ci évite en plus
+      // tout travail redondant sur un sprite déjà mort.
+      onComplete: () => { if (sprite.scene) sprite.destroy(); },
     });
   }
 
@@ -3320,17 +3358,27 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.time.delayedCall(600, () => {
-      if (sprite.active) {
-        this.tweens.add({
-          targets: sprite,
-          alpha: 0,
-          scaleX: baseScale * 0.2,
-          scaleY: baseScale * 0.2,
-          duration: 800,
-          ease: 'Power2',
-          onComplete: () => { if (sprite.active) sprite.destroy(); },
-        });
-      }
+      // BUG (préexistant, indépendant du chantier talents) : onEnemyKilled()
+      // appelle sprite.disableBody(true, false) — qui met sprite.active À FALSE
+      // — AVANT d'appeler playBossDeathSequence(). Un `if (sprite.active)` ici
+      // était donc TOUJOURS faux : le tween de fondu ne se lançait jamais, le
+      // sprite du boss restait visible à l'écran indéfiniment après sa mort.
+      // sprite.visible reste true (disableBody(hideGameObject=false)) donc rien
+      // n'empêche le tween lui-même de tourner sur un objet "inactive". Garde
+      // sur `sprite.scene` (devient undefined seulement après un VRAI destroy(),
+      // ex: destroyCurrentZoneObjects() si le joueur change de zone pendant
+      // cette fenêtre de 600ms) plutôt qu'un lancement inconditionnel — évite
+      // de programmer un tween pour rien sur un sprite déjà mort ailleurs.
+      if (!sprite.scene) return;
+      this.tweens.add({
+        targets: sprite,
+        alpha: 0,
+        scaleX: baseScale * 0.2,
+        scaleY: baseScale * 0.2,
+        duration: 800,
+        ease: 'Power2',
+        onComplete: () => { if (sprite.scene) sprite.destroy(); },
+      });
     });
 
     const bossName = enemyDef.name;
