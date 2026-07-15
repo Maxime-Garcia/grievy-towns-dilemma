@@ -215,6 +215,9 @@ export class CombatSystem {
 
     // BLOCKER-C: apply talent multipliers (skillDmgMult, projectileSkillMult, magicDmgMult)
     let finalTotal = total;
+    // Base du vol de vie — snapshot AVANT le doublement VOID_CHANNEL (voir plus
+    // bas). Par défaut égale à finalTotal (cas normal, pas de voidChannel).
+    let lifestealBase = total;
     if (mods) {
       finalTotal = Math.round(total * mods.skillDmgMult);
       if (skill.isProjectile) finalTotal = Math.round(finalTotal * mods.projectileSkillMult);
@@ -235,6 +238,13 @@ export class CombatSystem {
         // par nœud), donc une seule application ici suffit pour les 3 tiers.
         finalTotal = Math.round(finalTotal * mods.darkDmgMult);
       }
+      // Snapshot AVANT le doublement — sinon le vol de vie soigne sur les dégâts
+      // DÉJÀ doublés (trouvé au passage balance-agent final : dès ~12% de vol de
+      // vie, un sacrifice "coûte" 15% HP max mais EN REND davantage — le
+      // "sacrifice" se rembourse tout seul). Même principe que SACRIFICE_FINISHER
+      // (GameScene.executeFinisherAttack), dont le ×2 s'applique EN DEHORS de cet
+      // appel : le vol de vie n'y voit jamais que le coup non multiplié.
+      lifestealBase = finalTotal;
       if (dealsRealDamage && mods.voidChannel) {
         // Sacrifice systématique (pas de garde "1 fois par...", contrairement aux
         // talents défensifs de ce chantier) : chaque sort à dégâts payé en HP double
@@ -249,7 +259,7 @@ export class CombatSystem {
 
     target.currentHp = Math.max(0, target.currentHp - finalTotal);
     if (cs.lifesteal > 0) {
-      player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + Math.floor(finalTotal * cs.lifesteal / 100));
+      player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + Math.floor(lifestealBase * cs.lifesteal / 100));
     }
 
     let statusApplied: StatusEffect | undefined;

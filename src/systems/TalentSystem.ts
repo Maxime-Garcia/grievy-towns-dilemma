@@ -81,7 +81,7 @@ export interface TalentModifiers {
   voidChannel: boolean;         // sacrifie 15% HP au cast → sort +100%
   darkBurn: boolean;            // les BURN infligés deviennent des dégâts sombres
   phantomStrikePct: number;     // % de chance de coup fantôme sans cooldown
-  sacrificeFinisher: boolean;   // finisher : consume 20% HP max → dégâts ×3
+  sacrificeFinisher: boolean;   // finisher : consume 20% HP max → dégâts ×2
 
   // ── TERRA ──────────────────────────────────────────────────────────────────
   knockbackResPct: number;      // % de réduction du knockback subi (cap 100)

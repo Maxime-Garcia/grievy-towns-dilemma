@@ -126,12 +126,12 @@ export const TALENTS: TalentNode[] = [
   {
     id: 'ins_honed_reflexes',
     name: 'Réflexes Affûtés',
-    description: '+6% chance de critique.',
+    description: '+5% chance de critique.',
     branch: TalentBranch.INSTINCT,
     tier: 1,
     cost: 1,
     icon: 'talent_ins_honed_reflexes',
-    effects: { CRIT_PCT: 6 },
+    effects: { CRIT_PCT: 5 },
     lore: 'Ce que le corps devine avant la pensée. Sylvael comprenait : le mouvement est une forme de mémoire.',
   },
 
@@ -775,7 +775,7 @@ export const TALENTS: TalentNode[] = [
   {
     id: 'ten_malchar_blessing',
     name: 'Bénédiction de Malachar',
-    description: 'Les finishers consument 20% des HP max pour tripler leurs dégâts.',
+    description: 'Les finishers consument 20% des HP max pour doubler leurs dégâts.',
     branch: TalentBranch.TENEBRES,
     tier: 4,
     cost: 3,
@@ -983,13 +983,13 @@ export const TALENTS: TalentNode[] = [
   {
     id: 'fulguris_arc_conduit',
     name: 'Conduit d\'Arc',
-    description: '10% de chance qu\'un coup produise un arc vers l\'ennemi le plus proche (40% des dégâts, foudre).',
+    description: '8% de chance qu\'un coup produise un arc vers l\'ennemi le plus proche (40% des dégâts, foudre).',
     branch: TalentBranch.FULGURIS,
     tier: 2,
     cost: 1,
     icon: 'talent_fulguris_arc_conduit',
     requires: ['fulguris_spark_touch'],
-    effects: { ARC_CHANCE_PCT: 10 },
+    effects: { ARC_CHANCE_PCT: 8 },
     lore: 'Ce que la foudre choisit, elle l\'atteint.',
   },
 

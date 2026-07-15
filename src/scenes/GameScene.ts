@@ -3421,7 +3421,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  /** ARC_CHANCE_PCT (fulguris_arc_conduit) — 10% de chance qu'un coup
+  /** ARC_CHANCE_PCT (fulguris_arc_conduit) — 8% de chance qu'un coup
    *  propage 40% de ses dégâts à l'ennemi le plus proche de la CIBLE (hors
    *  elle-même), en foudre. Pas un statut : dégâts directs (direct=false,
    *  même convention que les autres procs passifs — ne compte pas comme un
@@ -6945,10 +6945,14 @@ export class GameScene extends Phaser.Scene {
 
     // SACRIFICE_FINISHER (ten_malchar_blessing, NG+) — consume 20% HP max au CAST
     // (pas au timing du dernier coup : le joueur paie même si la cible meurt avant),
-    // triple les dégâts de TOUS les coups du finisher. Plancher à 1 HP — un finisher
+    // DOUBLE les dégâts de TOUS les coups du finisher. Plancher à 1 HP — un finisher
     // ne doit jamais tuer son propre lanceur.
+    // Passage balance-agent (fin du chantier talents Partie 2) : ×3 mesurait +72%
+    // DPS solo pour 20% HP/finisher (BP/pt=4,00, 4× la référence "juste" du
+    // projet) et faisait tomber le boss final à 8-15s — sous le temps minimum
+    // pour qu'il délivre ne serait-ce que 2 cycles de pattern. Ramené à ×2.
     const sacrificeFinisher = this.playerModifiers.sacrificeFinisher;
-    const sacrificeFactor = sacrificeFinisher ? 3 : 1;
+    const sacrificeFactor = sacrificeFinisher ? 2 : 1;
     if (sacrificeFinisher) {
       const p = this.gameState.player;
       const cost = Math.max(1, Math.round(p.stats.maxHp * 0.20));
@@ -7117,13 +7121,19 @@ export class GameScene extends Phaser.Scene {
           }
         }
 
-        // FINISHER_NOVA — r90 autour du joueur, 60% Magic ATK, élément de l'arme.
+        // FINISHER_NOVA — r90 autour du joueur, 60% Magic ATK (STAFF) ou ATK
+        // (toute autre arme), élément de l'arme.
         // NB : distance mesurée sur la position RÉELLE du sprite (ActiveEnemy.x/y
         // n'est jamais resynchronisé après le spawn — bug préexistant, cf. rollArcChain/
         // applyKnockbackToPlayer — donc jamais utilisé ici comme source de position).
+        // Passage balance-agent (fin du chantier) : scalait sur matk pour TOUTE
+        // arme — sur les 9 armes non-STAFF, matk est une stat jamais investie
+        // (~18 vs ~254 d'atk sur un build MYTHIC) : contenu mort en pratique.
+        // Même garde que CombatSystem.playerAttack (isMagicWeapon).
         if (mods.finisherNova) {
-          const matk = StatsSystem.computeAll(this.gameState.player).matk;
-          const dmg = Math.max(1, Math.round(matk * 0.60));
+          const csFinisher = StatsSystem.computeAll(this.gameState.player);
+          const isMagicWeapon = weaponType === WeaponType.STAFF;
+          const dmg = Math.max(1, Math.round((isMagicWeapon ? csFinisher.matk : csFinisher.atk) * 0.60));
           const novaElement = this.gameState.player.equipment.weapon?.element ?? ElementType.NEUTRAL;
           for (const id of Array.from(this.activeEnemies.keys())) {
             const ae = this.activeEnemies.get(id);
@@ -7155,10 +7165,13 @@ export class GameScene extends Phaser.Scene {
           this.requestShake(180, 0.012, GameScene.SHAKE_PRIO.FINISHER);
         }
 
-        // CHAIN_FINISHER — éclair en chaîne depuis le joueur, jusqu'à 3 ennemis, 60% Magic ATK.
+        // CHAIN_FINISHER — éclair en chaîne depuis le joueur, jusqu'à 3 ennemis,
+        // 60% Magic ATK (STAFF) ou ATK (toute autre arme) — même correctif que
+        // FINISHER_NOVA ci-dessus (matk mort sur les armes non-STAFF).
         if (mods.chainFinisher) {
-          const matk = StatsSystem.computeAll(this.gameState.player).matk;
-          const dmg = Math.max(1, Math.round(matk * 0.60));
+          const csChain = StatsSystem.computeAll(this.gameState.player);
+          const isMagicWeaponChain = weaponType === WeaponType.STAFF;
+          const dmg = Math.max(1, Math.round((isMagicWeaponChain ? csChain.matk : csChain.atk) * 0.60));
           const hitIds = new Set<string>();
           let originX = px, originY = py;
           for (let hop = 0; hop < 3; hop++) {

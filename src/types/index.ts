@@ -167,7 +167,7 @@ export type TalentEffectKey =
   | 'VOID_CHANNEL'         // flag : sacrifie 15% HP au cast → sort +100%
   | 'DARK_BURN'            // flag : les BURN infligés deviennent des dégâts sombres
   | 'PHANTOM_STRIKE_PCT'   // % de chance de coup fantôme sans cooldown
-  | 'SACRIFICE_FINISHER';  // flag : finisher consume 20% HP max → dégâts ×3
+  | 'SACRIFICE_FINISHER';  // flag : finisher consume 20% HP max → dégâts ×2
 
 export interface TalentNode {
   id: string;
