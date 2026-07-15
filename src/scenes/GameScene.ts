@@ -3111,14 +3111,23 @@ export class GameScene extends Phaser.Scene {
     // joueur (isPlayer=true) : jamais lu dans ce cas.
     proj.setData('element', element);
 
+    // BUG (préexistant, confirmé via node_modules/phaser/src/physics/arcade/
+    // PhysicsGroup.js:217-229) : `this.projectiles.add(proj)` déclenche
+    // createCallbackHandler(), qui réapplique les vélocités PAR DÉFAUT du
+    // groupe (0,0, jamais configurées explicitement) sur TOUT enfant ajouté —
+    // même un enfant qui a DÉJÀ un corps physique. Poser la vélocité AVANT
+    // `add()` la faisait donc écraser à (0,0) immédiatement après : tous les
+    // projectiles ennemis en ligne droite (burst_fan/circular_burst) partaient
+    // figés sur leur point d'origine. Il faut `add()` D'ABORD, `setVelocity()`
+    // APRÈS.
+    this.projectiles.add(proj);
+
     const angle = Math.atan2(toY - fromY, toX - fromX);
     const speed = isPlayer ? 400 : 280;
     (proj.body as Phaser.Physics.Arcade.Body).setVelocity(
       Math.cos(angle) * speed,
       Math.sin(angle) * speed,
     );
-
-    this.projectiles.add(proj);
 
     // Auto-destroy après 2s
     this.time.delayedCall(2000, () => { if (proj.active) proj.destroy(); });
