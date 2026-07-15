@@ -71,7 +71,7 @@ export const TALENTS: TalentNode[] = [
   {
     id: 'vig_shattering_echo',
     name: 'Fracas',
-    description: 'Finishers GREATSWORD/HAMMER/AXE : durée de stun +0.5s, zone/portée +30%.',
+    description: 'Finishers GREATSWORD/HAMMER/AXE : +30% de dégâts.',
     branch: TalentBranch.VIGOR,
     tier: 3,
     cost: 1,

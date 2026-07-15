@@ -4,7 +4,7 @@ import { LootSystem } from '../systems/LootSystem';
 import { StatRollSystem } from '../systems/StatRollSystem';
 import { SHOP_INVENTORY, ShopEntry } from '../data/shops';
 import { RARITY_COLORS } from '../types';
-import { UI, TYPE, drawGlowPanel, drawCard, drawDivider, uiStyle, titleStyle, fitText, addCloseButton, openScreenTransition } from '../utils/UITheme';
+import { UI, TYPE, drawGlowPanel, drawCard, drawDivider, uiStyle, titleStyle, fitText, addCloseButton, openScreenTransition, closeScreenTransition } from '../utils/UITheme';
 import { t } from '../i18n';
 
 export class ShopScene extends Phaser.Scene {
@@ -17,11 +17,18 @@ export class ShopScene extends Phaser.Scene {
   private rowNames:  Phaser.GameObjects.Text[]       = [];
   private rowPrices: Phaser.GameObjects.Text[]       = [];
 
+  // True dès que l'animation de FERMETURE (closeScreenTransition, ~170ms) est en
+  // cours — ignore tout nouvel appel à closeShop() tant qu'elle tourne (évite un
+  // scene.stop() dupliqué si × est cliqué puis ESC/I pressé pendant le fondu).
+  // Même patron que BestiaryScene/ArsenalScene.
+  private closing = false;
+
   constructor() { super({ key: 'ShopScene' }); }
 
   init(data: { gameScene: GameScene; npcId: string }) {
     this.gameScene = data.gameScene;
     this.npcId     = data.npcId;
+    this.closing   = false;
   }
 
   create() {
@@ -144,6 +151,9 @@ export class ShopScene extends Phaser.Scene {
   }
 
   private buyItem(entry: ShopEntry) {
+    // Pas d'achat pendant l'animation de fermeture (~170ms) : la boutique est
+    // déjà en train de disparaître, un achat surprise y serait illisible.
+    if (this.closing) return;
     const player = this.gameScene.gameState.player;
     if (player.gold < entry.price) return;
     const template = ALL_ITEMS[entry.itemId];
@@ -179,9 +189,17 @@ export class ShopScene extends Phaser.Scene {
 
   }
 
+  // Fermeture avec l'animation symétrique de l'ouverture (closeScreenTransition)
+  // — même patron que BestiaryScene.close(). setShopOpen(false) est reporté dans
+  // onClosed : le joueur reste verrouillé (isInDialogue) tant que la boutique
+  // n'est pas dissoute, exactement comme avant mais 170ms plus tard.
   private closeShop() {
-    this.gameScene.setShopOpen(false);
-    this.scene.stop();
+    if (this.closing) return;
+    this.closing = true;
+    closeScreenTransition(this, () => {
+      this.gameScene.setShopOpen(false);
+      this.scene.stop();
+    });
   }
 
   shutdown() {

@@ -1,10 +1,13 @@
 import Phaser from 'phaser';
 import { GameScene } from './GameScene';
-import { PlayerState, TalentNode, TalentEffectKey } from '../types';
+import { PlayerState, TalentNode } from '../types';
 import { TALENT_MAP } from '../data/talents';
 import { TalentSystem } from '../systems/TalentSystem';
 import { InventorySystem } from '../systems/InventorySystem';
-import { UI, TYPE, drawGlowPanel, uiStyle, fitText, openScreenTransition } from '../utils/UITheme';
+import {
+  UI, TYPE, LAYOUT, drawGlowPanel, uiStyle, fitText,
+  drawConfirmCancelButtons, openScreenTransition, closeScreenTransition,
+} from '../utils/UITheme';
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 // TAB_H = 44 (au lieu de 36) : les hit zones étaient étirées à 44px par-dessus
@@ -12,23 +15,35 @@ import { UI, TYPE, drawGlowPanel, uiStyle, fitText, openScreenTransition } from 
 // le tap touchait la mauvaise rangée. À 44, hit = rangée, zéro chevauchement.
 const TAB_H    = 44;   // height of one tab row (px) — = LAYOUT.TOUCH_MIN
 const CLOSE_W  = 44;   // width reserved at end of row-1 for the × button
-const HDR_H    = 32;   // branch header height (name + desc inline + points)
+// 32 → 44 : le header accueille désormais le bouton Respec (hit 44px) — il
+// vivait avant en bouton FLOTTANT par-dessus l'arbre, où il chevauchait les
+// labels du dernier tier. Un contrôle global (respec, points) appartient au
+// header, pas à la zone de contenu.
+const HDR_H    = 44;   // branch header height (name + desc + respec + points)
 const BOTTOM_H = 150;  // bottom-sheet panel height
-const NODE_SZ  = 60;   // node square size (px)
-// 90 → 78 : calé pour que les branches à 5 TIERS (7 branches en ont) tiennent
-// entre le header et la bottom sheet — l'ancien 90 faisait déborder le label du
-// tier 5 sous la sheet. LABEL_ZONE réserve la place du libellé sous le dernier nœud.
-const TIER_GAP = 78;   // vertical distance between tier centres
-const LABEL_ZONE = 18; // hauteur réservée au libellé sous chaque nœud
-const NODE_HIT = 7;    // extra px on each side to enlarge touch target
+// 60 → 52 : libère l'espace vertical nécessaire pour que le LIBELLÉ d'un nœud
+// puisse s'écrire sur DEUX lignes (fin des noms tronqués « Braise au P… »).
+// La cible tactile ne rétrécit pas : NODE_HIT passe de 7 à 10 (hit 72×72).
+const NODE_SZ  = 52;   // node square size (px)
+// Entraxe horizontal des nœuds d'un même tier — définit aussi la largeur
+// de wrap des libellés (NODE_SPACING - 10).
+const NODE_SPACING = 140;
+// Calé pour que les branches à 5 TIERS (7 branches en ont) tiennent entre le
+// header et la bottom sheet, libellés 2 lignes compris. LABEL_ZONE réserve la
+// place du libellé sous le dernier nœud.
+const TIER_GAP = 84;   // vertical distance between tier centres
+const LABEL_ZONE = 30; // hauteur réservée au libellé (2 lignes) sous chaque nœud
+const NODE_HIT = 10;   // extra px on each side to enlarge touch target (hit 72)
 
+// Deux rangées au lieu de trois : rangée 1 = les 3 voies PRIMAIRES, rangée 2 =
+// les 7 voies élémentaires. L'ancienne découpe 4+3 des élémentaires était
+// arbitraire (aucune sémantique) et empilait trois barres visuellement
+// identiques — illisible, et 44px de vertical perdus. Ténèbres (NG+) ferme la
+// liste : c'est la voie la plus tardive du jeu.
 const TAB_ROW1 = ['VIGOR', 'INSTINCT', 'ARCANE'] as const;
-const TAB_ROW2 = ['IGNIS', 'ZEPHYR', 'ABYSSAL', 'TENEBRES'] as const;
-const TAB_ROW3 = ['TERRA', 'FULGURIS', 'GLACIUS'] as const;
-const BRANCH_KEYS: string[] = [...TAB_ROW1, ...TAB_ROW2, ...TAB_ROW3];
-// All tab rows, in display order — used by buildTabs/refreshTabs so the layout
-// scales automatically if more rows are added later.
-const TAB_ROWS: readonly (readonly string[])[] = [TAB_ROW1, TAB_ROW2, TAB_ROW3];
+const TAB_ROW2 = ['IGNIS', 'ZEPHYR', 'ABYSSAL', 'TERRA', 'FULGURIS', 'GLACIUS', 'TENEBRES'] as const;
+const BRANCH_KEYS: string[] = [...TAB_ROW1, ...TAB_ROW2];
+const TAB_ROWS: readonly (readonly string[])[] = [TAB_ROW1, TAB_ROW2];
 // Total vertical space occupied by the tab bar (all rows stacked).
 const TAB_TOTAL_H = TAB_H * TAB_ROWS.length;
 
@@ -94,103 +109,18 @@ function tierCenterY(tier: number, screenH: number, maxTier = 4): number {
 
 // ── Node X positions for a tier with `count` nodes ───────────────────────────
 // 110 → 140 : profite des 960px de large — les libellés sous les nœuds ont de
-// la place au lieu d'être tronqués à 12 caractères.
-function tierNodeXs(count: number, centerX: number, spacing = 140): number[] {
+// la place (wrap 2 lignes) au lieu d'être tronqués.
+function tierNodeXs(count: number, centerX: number, spacing = NODE_SPACING): number[] {
   return Array.from({ length: count }, (_, i) =>
     centerX + (i - (count - 1) / 2) * spacing,
   );
 }
 
-// ── Effect description formatter (type-safe, no any) ─────────────────────────
-function formatEffects(effects: Partial<Record<TalentEffectKey, number>>): string {
-  const l: string[] = [];
-  if (effects.MELEE_DMG_PCT          !== undefined) l.push(`+${effects.MELEE_DMG_PCT}% dégâts mêlée`);
-  if (effects.DEF_PCT                !== undefined) l.push(`+${effects.DEF_PCT}% DEF`);
-  if (effects.KILL_HEAL_PCT          !== undefined) l.push(`+${effects.KILL_HEAL_PCT}% HP par kill`);
-  if (effects.WINDUP_ARMOR           !== undefined) l.push('Armure pendant windup (GS/HAMMER/AXE)');
-  if (effects.HEAVY_FINISHER_BONUS   !== undefined) l.push(`+${effects.HEAVY_FINISHER_BONUS}% finishers lourds`);
-  if (effects.LOW_HP_ATK_PCT         !== undefined) l.push(`+${effects.LOW_HP_ATK_PCT}% ATK sous 35% HP`);
-  if (effects.HEAVY_CD_REDUCTION_PCT !== undefined) l.push(`-${effects.HEAVY_CD_REDUCTION_PCT}% CD arme lourde`);
-  if (effects.POST_FINISHER_BUFF     !== undefined) l.push('Buff post-finisher (2.5s)');
-  if (effects.CRIT_PCT               !== undefined) l.push(`+${effects.CRIT_PCT}% chance critique`);
-  if (effects.MOVE_SPEED_PCT         !== undefined) l.push(`+${effects.MOVE_SPEED_PCT}% vitesse`);
-  if (effects.COMBO_GRACE_PCT        !== undefined) l.push(`+${effects.COMBO_GRACE_PCT}% fenêtre combo`);
-  if (effects.DASH_PRESERVES_COMBO   !== undefined) l.push('Dash gèle le timer combo (0.35s)');
-  if (effects.LIGHT_FINISHER_BLEED   !== undefined) l.push('Finisher léger → saignement renforcé');
-  if (effects.BOW_RANGE_DMG_PCT      !== undefined) l.push(`+${effects.BOW_RANGE_DMG_PCT}% dégâts distance (BOW)`);
-  if (effects.MAX_HP_PCT             !== undefined) l.push(`+${effects.MAX_HP_PCT}% HP max`);
-  if (effects.COMBO_STACK_DMG        !== undefined) l.push(`+${effects.COMBO_STACK_DMG}% dégâts par coup chaîné`);
-  if (effects.MAGIC_DMG_PCT          !== undefined) l.push(`+${effects.MAGIC_DMG_PCT}% dégâts magiques`);
-  if (effects.MANA_COST_PCT          !== undefined) l.push(`-${effects.MANA_COST_PCT}% coût mana`);
-  if (effects.SKILL_DMG_PCT          !== undefined) l.push(`+${effects.SKILL_DMG_PCT}% dégâts skills`);
-  if (effects.STAFF_FINISHER_ZONE    !== undefined) l.push('Finisher Staff → zone au sol (r70, 2s)');
-  if (effects.BOW_ELEMENTAL_ARROWS   !== undefined) l.push('Flèches élémentaires si INT ≥ 10');
-  if (effects.PROJECTILE_SKILL_PCT   !== undefined) l.push(`+${effects.PROJECTILE_SKILL_PCT}% skills projectiles`);
-  if (effects.SHIELD_SKILL_PCT       !== undefined) l.push(`+${effects.SHIELD_SKILL_PCT}% boucliers magiques`);
-  if (effects.FINISHER_NOVA          !== undefined) l.push('Finisher → nova élémentaire (r90)');
-  // ── Génériques (branches élémentaires) ────────────────────────────────
-  if (effects.ATK_PCT                !== undefined) l.push(`+${effects.ATK_PCT}% ATK`);
-  if (effects.ASPD_PCT               !== undefined) l.push(`+${effects.ASPD_PCT}% vitesse d'attaque`);
-  if (effects.ELEM_BONUS_PCT         !== undefined) l.push(`+${effects.ELEM_BONUS_PCT}% dégâts élémentaires`);
-  if (effects.MANA_MAX_PCT           !== undefined) l.push(`+${effects.MANA_MAX_PCT}% mana max`);
-  if (effects.MANA_REGEN_PCT         !== undefined) l.push(`+${effects.MANA_REGEN_PCT}% mana max régénéré/s hors combat`);
-  if (effects.LIFESTEAL_PCT          !== undefined) l.push(`+${effects.LIFESTEAL_PCT}% vol de vie`);
-  // ── IGNIS ───────────────────────────────────────────────────────────────
-  if (effects.BURN_CHANCE_PCT        !== undefined) l.push(`+${effects.BURN_CHANCE_PCT}% chance de BURN`);
-  if (effects.BURN_DMG_PCT           !== undefined) l.push(`+${effects.BURN_DMG_PCT}% dégâts de BURN`);
-  if (effects.ATK_PER_BURNING_PCT    !== undefined) l.push(`+${effects.ATK_PER_BURNING_PCT}% ATK par ennemi en feu`);
-  if (effects.LOW_HP_DEF_PCT         !== undefined) l.push(`+${effects.LOW_HP_DEF_PCT}% DEF sous 50% HP`);
-  if (effects.MAGMA_GUARD            !== undefined) l.push('Absorbe entièrement 1 coup par combat');
-  if (effects.BURN_ON_FINISHER       !== undefined) l.push('Finisher → BURN garanti (3s)');
-  if (effects.BURNING_PACK_DMG_PCT   !== undefined) l.push(`+${effects.BURNING_PACK_DMG_PCT}% dégâts si 3+ ennemis brûlent`);
-  // ── ZEPHYR ──────────────────────────────────────────────────────────────
-  if (effects.DASH_CD_PCT            !== undefined) l.push(`-${effects.DASH_CD_PCT}% cooldown de dash`);
-  if (effects.RANGED_CRIT_PCT        !== undefined) l.push(`+${effects.RANGED_CRIT_PCT}% critique à distance`);
-  if (effects.DOUBLE_DASH            !== undefined) l.push('Second dash immédiat autorisé (CD 8s)');
-  if (effects.PROJECTILE_RANGE_PCT   !== undefined) l.push(`+${effects.PROJECTILE_RANGE_PCT}% portée des projectiles`);
-  if (effects.PROJECTILE_DMG_PCT     !== undefined) l.push(`+${effects.PROJECTILE_DMG_PCT}% dégâts des projectiles`);
-  if (effects.CYCLONE_FINISHER       !== undefined) l.push('Finisher → zone de vent qui repousse');
-  if (effects.DASH_DMG_PCT           !== undefined) l.push(`+${effects.DASH_DMG_PCT}% dégâts pendant un dash`);
-  if (effects.AUTO_DODGE             !== undefined) l.push('Esquive automatique 1 attaque / 5s');
-  // ── ABYSSAL ─────────────────────────────────────────────────────────────
-  if (effects.SLOW_ON_HIT            !== undefined) l.push('Attaques → SLOW 20% (2s)');
-  if (effects.FREEZE_CHANCE_PCT      !== undefined) l.push(`+${effects.FREEZE_CHANCE_PCT}% chance de FREEZE`);
-  if (effects.AQUATIC_DEF_PCT        !== undefined) l.push(`+${effects.AQUATIC_DEF_PCT}% DEF en zone aquatique`);
-  if (effects.FREEZE_ON_FINISHER     !== undefined) l.push('Finisher → FREEZE garanti (2s)');
-  if (effects.MANA_ON_KILL_PCT       !== undefined) l.push(`+${effects.MANA_ON_KILL_PCT}% mana max par kill`);
-  if (effects.BURN_BLEED_IMMUNITY    !== undefined) l.push('Immunité BURN et BLEED');
-  // ── TERRA ───────────────────────────────────────────────────────────────
-  if (effects.KNOCKBACK_RES_PCT      !== undefined) l.push(`-${effects.KNOCKBACK_RES_PCT}% knockback subi`);
-  if (effects.STAGGER_BONUS_PCT      !== undefined) l.push(`+${effects.STAGGER_BONUS_PCT}% accumulation de stagger`);
-  if (effects.STUN_DMG_PCT           !== undefined) l.push(`+${effects.STUN_DMG_PCT}% dégâts contre CC dur`);
-  if (effects.RETALIATION_DEF_PCT    !== undefined) l.push(`${effects.RETALIATION_DEF_PCT}% de la DEF renvoyé en dégâts de terre`);
-  if (effects.QUAKE_FINISHER         !== undefined) l.push('Finisher → onde de choc au sol (r100)');
-  if (effects.UNSHAKABLE             !== undefined) l.push('Immunité totale au knockback et à l\'interruption');
-  if (effects.DEF_TO_ATK_PCT         !== undefined) l.push(`+${effects.DEF_TO_ATK_PCT}% de la DEF ajouté à l'ATK`);
-  // ── FULGURIS ────────────────────────────────────────────────────────────
-  if (effects.SHOCK_CHANCE_PCT       !== undefined) l.push(`+${effects.SHOCK_CHANCE_PCT}% chance de SHOCK`);
-  if (effects.CRIT_SURGE_ASPD_PCT    !== undefined) l.push(`+${effects.CRIT_SURGE_ASPD_PCT}% vitesse d'attaque après critique`);
-  if (effects.ARC_CHANCE_PCT         !== undefined) l.push(`+${effects.ARC_CHANCE_PCT}% chance d'arc électrique`);
-  if (effects.STATIC_RETORT_PCT      !== undefined) l.push(`+${effects.STATIC_RETORT_PCT}% chance de nova en étant touché`);
-  if (effects.CHAIN_FINISHER         !== undefined) l.push('Finisher → éclair en chaîne (3 ennemis)');
-  if (effects.CRIT_ARC               !== undefined) l.push('Critique → arc électrique automatique');
-  // ── GLACIUS ─────────────────────────────────────────────────────────────
-  if (effects.DAMAGE_REDUCTION_PCT    !== undefined) l.push(`-${effects.DAMAGE_REDUCTION_PCT}% dégâts subis`);
-  if (effects.STATUS_RES_DURATION_PCT !== undefined) l.push(`-${effects.STATUS_RES_DURATION_PCT}% durée des debuffs subis`);
-  if (effects.HEALING_RECEIVED_PCT    !== undefined) l.push(`+${effects.HEALING_RECEIVED_PCT}% soins reçus`);
-  if (effects.CHILL_AURA              !== undefined) l.push('Aura : ralentit les ennemis proches (r130)');
-  if (effects.LAST_BASTION            !== undefined) l.push('1×/combat sous 30% HP → bouclier (5s)');
-  if (effects.GUARD_FINISHER          !== undefined) l.push('Finisher → bouclier (3s)');
-  if (effects.PRESERVED               !== undefined) l.push('1×/zone : coup fatal → 1 HP + invulnérabilité (2s)');
-  // ── TENEBRES (NG+) ──────────────────────────────────────────────────────
-  if (effects.DARK_DMG_MULT          !== undefined) l.push(`+${effects.DARK_DMG_MULT}% dégâts sombres`);
-  if (effects.SOUL_STACK_BONUS       !== undefined) l.push(`+${effects.SOUL_STACK_BONUS} stacks Soul Echo par zone nettoyée`);
-  if (effects.VOID_CHANNEL           !== undefined) l.push('Sacrifie 15% HP au cast → sort +100%');
-  if (effects.DARK_BURN              !== undefined) l.push('BURN infligés → dégâts sombres');
-  if (effects.PHANTOM_STRIKE_PCT     !== undefined) l.push(`+${effects.PHANTOM_STRIKE_PCT}% chance de coup fantôme`);
-  if (effects.SACRIFICE_FINISHER     !== undefined) l.push('Finisher : sacrifie 20% HP max → dégâts ×3');
-  return l.join('\n') || '—';
-}
+// NOTE : l'ancien formatEffects() (reformulation mécanique des `effects` typés)
+// a été SUPPRIMÉ de la bottom sheet — il redisait mot pour mot ce que la
+// `description` manuscrite du nœud affichait juste au-dessus (vérifié sur les
+// 87 nœuds : la description couvre 100% des effects, et porte EN PLUS le
+// contexte — armes ciblées, conditions, cumuls). Une seule formulation.
 
 // ─────────────────────────────────────────────────────────────────────────────
 export class SkillScene extends Phaser.Scene {
@@ -202,15 +132,31 @@ export class SkillScene extends Phaser.Scene {
   // Dynamic buckets — rebuilt on every branch/selection change
   private dynamicObjs: Phaser.GameObjects.GameObject[] = [];
   private sheetObjs:   Phaser.GameObjects.GameObject[] = [];
+  // Modal de confirmation du respec (action destructrice — jamais en 1 tap)
+  private modalObjs:   Phaser.GameObjects.GameObject[] = [];
+  private modalOpen  = false;
+  // True dès que l'animation de FERMETURE (closeScreenTransition, ~170ms) est en
+  // cours — ignore tout nouvel appel à close() tant qu'elle tourne (évite un
+  // scene.stop() dupliqué si × est cliqué puis ESC pressé pendant le fondu).
+  // Même patron que BestiaryScene/ArsenalScene.
+  private closing    = false;
 
   // Persistent tab objects (updated, never destroyed mid-session)
   private tabBgGraphics: Phaser.GameObjects.Graphics[] = [];
   private tabTextObjs:   Phaser.GameObjects.Text[]     = [];
+  // Géométrie des onglets, calculée une fois (rangée 2 = largeurs
+  // PROPORTIONNELLES aux labels : aucun label d'onglet ne peut être tronqué).
+  private tabRects: { key: string; x: number; y: number; w: number; h: number; row: number }[] = [];
 
   // Persistent header refs
   private branchNameTxt!: Phaser.GameObjects.Text;
   private branchDescTxt!: Phaser.GameObjects.Text;
   private pointsText!:    Phaser.GameObjects.Text;
+
+  // Micro-feedback (dette D4) : le re-render complet est conservé, mais le nœud
+  // qu'on vient de sélectionner « pop » et le nœud débloqué flashe en blanc.
+  private pulseNodeId:       string | null = null;
+  private unlockFlashNodeId: string | null = null;
 
   // Swipe state
   private swipeX       = 0;
@@ -219,18 +165,19 @@ export class SkillScene extends Phaser.Scene {
   private readonly SWIPE_MIN  = 60;
   private readonly SWIPE_YMAX = 40;
 
-  // Input cleanup ref
-  private escKey!: Phaser.Input.Keyboard.Key;
-
   constructor() { super({ key: 'SkillScene' }); }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   init(data: { gameScene: GameScene }) {
-    this.gameScene      = data.gameScene;
-    this.player         = data.gameScene.gameState.player;
-    this.activeBranch   = 'VIGOR';
-    this.selectedNodeId = null;
+    this.gameScene          = data.gameScene;
+    this.player             = data.gameScene.gameState.player;
+    this.activeBranch       = 'VIGOR';
+    this.selectedNodeId     = null;
+    this.modalOpen          = false;
+    this.pulseNodeId        = null;
+    this.unlockFlashNodeId  = null;
+    this.closing            = false;
   }
 
   create() {
@@ -256,74 +203,117 @@ export class SkillScene extends Phaser.Scene {
     this.buildBranchHeader(W);
     this.buildCloseButton(W);
     this.setupSwipe();
-    this.setupEscKey();
 
     this.renderBranch(this.activeBranch);
   }
 
   shutdown() {
-    this.input.keyboard?.removeKey(this.escKey);
     this.input.off('pointerdown', this.onPointerDown, this);
     this.input.off('pointerup',   this.onPointerUp,   this);
     this.clearDynamic();
     this.clearSheet();
+    this.clearModal();
     this.gameScene?.setPaused(false);
   }
 
   // ── Tab bar ───────────────────────────────────────────────────────────────
 
+  /**
+   * Calcule la géométrie des deux rangées d'onglets, UNE fois.
+   * Rangée 1 : 3 largeurs égales (moins le slot du ×).
+   * Rangée 2 : 7 largeurs PROPORTIONNELLES à la largeur réelle du label
+   * (mesure par Text jetable) puis mises à l'échelle pour remplir W —
+   * « Préservation » et « Roc » n'ont pas besoin de la même place, et aucun
+   * label ne peut être tronqué quelle que soit la police.
+   */
+  private computeTabLayout(W: number) {
+    this.tabRects = [];
+
+    // Row 1 — primary branches, equal widths
+    const row1W = W - CLOSE_W;
+    const tab1W = Math.floor(row1W / TAB_ROW1.length);
+    TAB_ROW1.forEach((key, i) => {
+      const x = i * tab1W;
+      const w = i === TAB_ROW1.length - 1 ? row1W - x : tab1W;
+      this.tabRects.push({ key, x, y: 0, w, h: TAB_H, row: 0 });
+    });
+
+    // Row 2 — elemental branches, label-proportional widths
+    const probeStyle = uiStyle(TYPE.BODY, UI.TXT_MUTED, { bold: true });
+    const natural = TAB_ROW2.map(key => {
+      const probe = this.make.text({ text: BRANCH_META[key]?.label ?? key, style: probeStyle }, false);
+      const w = probe.width + 22; // padding minimal de part et d'autre
+      probe.destroy();
+      return Math.max(w, LAYOUT.TOUCH_MIN);
+    });
+    const total = natural.reduce((a, b) => a + b, 0);
+    const scale = W / total;
+    let x2 = 0;
+    TAB_ROW2.forEach((key, i) => {
+      const w = i === TAB_ROW2.length - 1
+        ? W - x2                                   // le dernier absorbe l'arrondi
+        : Math.round(natural[i]! * scale);
+      this.tabRects.push({ key, x: x2, y: TAB_H, w, h: TAB_H, row: 1 });
+      x2 += w;
+    });
+  }
+
   private buildTabs(W: number) {
     this.tabBgGraphics = [];
     this.tabTextObjs   = [];
+    this.computeTabLayout(W);
 
-    const rows: readonly (readonly string[])[] = TAB_ROWS;
+    for (const rect of this.tabRects) {
+      const meta = BRANCH_META[rect.key];
 
-    rows.forEach((row, rowIdx) => {
-      const y = rowIdx * TAB_H;
-      // Row 1 leaves CLOSE_W px on the right for the × button
-      const rowW  = rowIdx === 0 ? W - CLOSE_W : W;
-      const tabW  = Math.floor(rowW / row.length);
+      const bg = this.add.graphics().setDepth(2);
+      this.tabBgGraphics.push(bg);
+      this.paintTab(bg, rect);
 
-      row.forEach((branchKey, colIdx) => {
-        const x    = colIdx * tabW;
-        const meta = BRANCH_META[branchKey];
+      // Onglets = navigation primaire : TYPE.BODY (14), pas du micro-texte.
+      const txt = this.add.text(
+        rect.x + rect.w / 2,
+        rect.y + rect.h / 2,
+        meta?.label ?? rect.key,
+        uiStyle(TYPE.BODY, this.tabLabelColor(rect.key), { bold: true }),
+      ).setOrigin(0.5).setDepth(3);
+      this.tabTextObjs.push(txt);
 
-        const bg = this.add.graphics().setDepth(2);
-        this.tabBgGraphics.push(bg);
-        this.paintTab(bg, x, y, tabW, TAB_H, branchKey);
+      // Touch target — min 44 × 44 px (TAB_H = 44, la rangée EST la hit zone)
+      const hit = this.add.rectangle(
+        rect.x + rect.w / 2, rect.y + rect.h / 2,
+        Math.max(rect.w, LAYOUT.TOUCH_MIN), Math.max(rect.h, LAYOUT.TOUCH_MIN), 0, 0,
+      ).setInteractive({ useHandCursor: true }).setDepth(4);
+      hit.on('pointerdown', () => this.switchBranch(rect.key));
+    }
+  }
 
-        const isActive = branchKey === this.activeBranch;
-        // Onglets = navigation primaire : TYPE.BODY (14), pas du micro-texte.
-        const txt = this.add.text(
-          x + tabW / 2,
-          y + TAB_H / 2,
-          meta?.label ?? branchKey,
-          uiStyle(TYPE.BODY, isActive ? UI.TXT_WHITE : UI.TXT_MUTED, { bold: true }),
-        ).setOrigin(0.5).setDepth(3);
-        this.tabTextObjs.push(txt);
-
-        // Touch target — min 44 × 44 px
-        const hitW = Math.max(tabW, 44);
-        const hitH = Math.max(TAB_H, 44);
-        const hit  = this.add.rectangle(x + tabW / 2, y + TAB_H / 2, hitW, hitH, 0, 0)
-          .setInteractive({ useHandCursor: true })
-          .setDepth(4);
-        hit.on('pointerdown', () => this.switchBranch(branchKey));
-      });
-    });
+  /**
+   * Couleur du label d'onglet : blanc si actif, fantôme (TXT_HINT) si la
+   * branche est verrouillée (gate tier 3 non rempli, ou Ténèbres hors NG+) —
+   * le joueur voit d'un coup d'œil où il PEUT investir —, muted sinon.
+   */
+  private tabLabelColor(branchKey: string): string {
+    if (branchKey === this.activeBranch) return UI.TXT_WHITE;
+    if (branchKey === 'TENEBRES' && !this.player.isNewGamePlus) return UI.TXT_HINT;
+    if (isBranchGateUnmet(this.player, branchKey)) return UI.TXT_HINT;
+    return UI.TXT_MUTED;
   }
 
   private paintTab(
     g: Phaser.GameObjects.Graphics,
-    x: number, y: number, w: number, h: number,
-    branchKey: string,
+    rect: { key: string; x: number; y: number; w: number; h: number; row: number },
   ) {
     g.clear();
-    const meta     = BRANCH_META[branchKey];
+    const { x, y, w, h } = rect;
+    const meta     = BRANCH_META[rect.key];
     const color    = meta?.color ?? 0x333333;
-    const isActive = branchKey === this.activeBranch;
+    const isActive = rect.key === this.activeBranch;
+    // Rangée 2 (élémentaire) légèrement plus sombre : hiérarchie visuelle entre
+    // la rangée primaire et la rangée secondaire, sans troisième barre.
+    const idleBg = rect.row === 0 ? 0x0e0e1c : 0x0a0a14;
 
-    g.fillStyle(isActive ? color : 0x0e0e1c, isActive ? 0.85 : 1);
+    g.fillStyle(isActive ? color : idleBg, isActive ? 0.85 : 1);
     g.fillRect(x, y, w, h);
 
     g.lineStyle(1, isActive ? color : 0x2a2a3a, 1);
@@ -336,35 +326,38 @@ export class SkillScene extends Phaser.Scene {
       g.moveTo(x + 6, y + h - 1);
       g.lineTo(x + w - 6, y + h - 1);
       g.strokePath();
+    } else {
+      // Liseré bas discret à la couleur de la branche : chaque onglet garde son
+      // identité colorée même inactif (repérage rapide, réf. onglets Genshin).
+      g.lineStyle(2, color, 0.28);
+      g.beginPath();
+      g.moveTo(x + 6, y + h - 1);
+      g.lineTo(x + w - 6, y + h - 1);
+      g.strokePath();
     }
   }
 
   private refreshTabs() {
-    const rows: readonly (readonly string[])[] = TAB_ROWS;
-    let idx = 0;
-    rows.forEach((row, rowIdx) => {
-      const W    = this.cameras.main.width;
-      const rowW = rowIdx === 0 ? W - CLOSE_W : W;
-      const tabW = Math.floor(rowW / row.length);
-
-      row.forEach((branchKey, colIdx) => {
-        const x = colIdx * tabW;
-        const y = rowIdx * TAB_H;
-
-        const bg  = this.tabBgGraphics[idx];
-        const txt = this.tabTextObjs[idx];
-        if (bg)  this.paintTab(bg, x, y, tabW, TAB_H, branchKey);
-        if (txt) txt.setColor(branchKey === this.activeBranch ? UI.TXT_WHITE : UI.TXT_MUTED);
-        idx++;
-      });
+    this.tabRects.forEach((rect, idx) => {
+      const bg  = this.tabBgGraphics[idx];
+      const txt = this.tabTextObjs[idx];
+      if (bg)  this.paintTab(bg, rect);
+      if (txt) txt.setColor(this.tabLabelColor(rect.key));
     });
   }
 
   // ── Branch header ─────────────────────────────────────────────────────────
 
+  // Largeur réservée à droite du header : bouton Respec (RESPEC_W) + compteur
+  // de points (~90px) + gouttières. La description est tronquée (fitText) pour
+  // ne JAMAIS passer dessous — c'était le chevauchement reproché à l'écran.
+  private static readonly RESPEC_W    = 150;
+  private static readonly PTS_RESERVE = 92;
+  private static readonly HDR_RIGHT_RESERVE =
+    SkillScene.RESPEC_W + SkillScene.PTS_RESERVE + 14 + 8 + 12;
+
   private buildBranchHeader(W: number) {
-    const y    = TAB_TOTAL_H;
-    const meta = BRANCH_META[this.activeBranch];
+    const y = TAB_TOTAL_H;
 
     // Separator between tabs and header
     const sep = this.add.graphics();
@@ -374,22 +367,26 @@ export class SkillScene extends Phaser.Scene {
     // Nom de branche en HEADING (21) + description en BODY muted SUR LA MÊME
     // LIGNE (au lieu d'empilées) : hiérarchie nette sans grossir le header.
     this.branchNameTxt = this.add.text(
-      14, y + 5,
-      meta?.label ?? this.activeBranch,
+      14, y + 10,
+      '',
       uiStyle(TYPE.HEADING, UI.TXT_GOLD, { bold: true, stroke: true }),
     ).setDepth(2);
 
     this.branchDescTxt = this.add.text(
-      14 + this.branchNameTxt.width + 12, y + 11,
-      meta?.desc ?? '',
+      0, y + 16,
+      '',
       uiStyle(TYPE.BODY, UI.TXT_MUTED),
     ).setDepth(2);
 
+    // Compteur de points = LA ressource de l'écran : doré quand il reste des
+    // points à dépenser, muted quand il n'y en a plus.
     this.pointsText = this.add.text(
-      W - 14, y + 9,
-      this.buildPointsLabel(),
-      uiStyle(TYPE.BODY, UI.TXT_PARCHMENT, { bold: true }),
-    ).setOrigin(1, 0).setDepth(2);
+      W - 14, y + HDR_H / 2,
+      '',
+      uiStyle(TYPE.BODY, UI.TXT_GOLD, { bold: true }),
+    ).setOrigin(1, 0.5).setDepth(2);
+
+    this.refreshBranchHeader();
   }
 
   private buildPointsLabel(): string {
@@ -398,15 +395,24 @@ export class SkillScene extends Phaser.Scene {
   }
 
   private refreshBranchHeader() {
+    const W    = this.cameras.main.width;
     const meta = BRANCH_META[this.activeBranch];
     this.branchNameTxt?.setText(meta?.label ?? this.activeBranch);
-    this.branchDescTxt?.setText(meta?.desc ?? '');
-    // La description est inline à droite du nom — recaler son X sur la
-    // nouvelle largeur du nom.
+
+    // La description est inline à droite du nom — recalée sur la largeur du
+    // nom et TRONQUÉE en pixels pour s'arrêter avant le bouton Respec.
     if (this.branchNameTxt && this.branchDescTxt) {
-      this.branchDescTxt.setX(14 + this.branchNameTxt.width + 12);
+      const descX = 14 + this.branchNameTxt.width + 12;
+      const maxW  = W - SkillScene.HDR_RIGHT_RESERVE - descX;
+      const style = uiStyle(TYPE.BODY, UI.TXT_MUTED);
+      this.branchDescTxt.setX(descX);
+      this.branchDescTxt.setText(maxW > 30 ? fitText(this, meta?.desc ?? '', style, maxW) : '');
     }
-    this.pointsText?.setText(this.buildPointsLabel());
+
+    if (this.pointsText) {
+      this.pointsText.setText(this.buildPointsLabel());
+      this.pointsText.setColor(this.player.talentPoints > 0 ? UI.TXT_GOLD : UI.TXT_MUTED);
+    }
   }
 
   // ── Close button ──────────────────────────────────────────────────────────
@@ -431,7 +437,7 @@ export class SkillScene extends Phaser.Scene {
     const hit = this.add.rectangle(bx + bw / 2, by + bh / 2, Math.max(bw, 44), Math.max(bh, 44), 0, 0)
       .setInteractive({ useHandCursor: true })
       .setDepth(4);
-    hit.on('pointerdown', () => this.gameScene.closeOverlay('SkillScene'));
+    hit.on('pointerdown', () => this.close());
     hit.on('pointerover', () => bg.setAlpha(0.7));
     hit.on('pointerout',  () => bg.setAlpha(1.0));
   }
@@ -475,7 +481,7 @@ export class SkillScene extends Phaser.Scene {
       this.renderNgpOverlay(W, H);
     }
 
-    this.renderRespecButton(W, H);
+    this.renderHeaderRespec(W);
     this.renderBottomSheet(this.selectedNodeId, branchColor, W, H);
   }
 
@@ -617,33 +623,60 @@ export class SkillScene extends Phaser.Scene {
     }
 
     // Icon
+    let iconObj: Phaser.GameObjects.Image | Phaser.GameObjects.Text | null = null;
     if (status !== 'ngplus_only') {
       const alpha = status === 'locked' ? 0.3 : 1;
-      try {
+      if (this.textures.exists(node.icon)) {
         const img = this.add.image(cx, cy, node.icon)
-          .setDisplaySize(34, 34)
+          .setDisplaySize(32, 32)
           .setAlpha(alpha)
           .setDepth(7);
         this.dynamicObjs.push(img);
-      } catch {
+        iconObj = img;
+      } else {
         const fb = this.add.text(cx, cy, `T${node.tier}`, uiStyle(12, '#ffffff', { bold: true, stroke: true }))
           .setOrigin(0.5).setAlpha(alpha).setDepth(7);
         this.dynamicObjs.push(fb);
+        iconObj = fb;
       }
     }
 
-    // Label below node — tronqué en PIXELS (fitText) sur l'entraxe des nœuds,
-    // au lieu de l'ancien slice(0, 12) aveugle à la largeur réelle des glyphes.
+    // Micro-feedback D4 : le nœud qu'on vient de sélectionner « pop » (l'icône
+    // retombe à sa taille en 130ms) — le re-render sec ne suffisait pas à
+    // localiser la sélection du regard.
+    if (iconObj && this.pulseNodeId === node.id) {
+      this.pulseNodeId = null;
+      const fs = iconObj.scale;
+      iconObj.setScale(fs * 1.35);
+      this.tweens.add({ targets: iconObj, scale: fs, duration: 130, ease: 'Back.easeOut' });
+    }
+
+    // Flash blanc de confirmation sur le nœud fraîchement débloqué (400ms,
+    // même langage que le tap-equip de l'inventaire).
+    if (status === 'unlocked' && this.unlockFlashNodeId === node.id) {
+      this.unlockFlashNodeId = null;
+      const flash = this.add.rectangle(cx, cy, NODE_SZ, NODE_SZ, 0xffffff, 0.8).setDepth(9);
+      this.dynamicObjs.push(flash);
+      this.tweens.add({
+        targets: flash, alpha: 0, duration: 400, ease: 'Quad.easeOut',
+        onComplete: () => { if (flash.active) flash.destroy(); },
+      });
+    }
+
+    // Label below node — wrap sur 2 lignes dans l'entraxe (NODE_SPACING - 10) :
+    // le nom complet est TOUJOURS visible (fin des « Braise au P… »).
+    // Locked = TXT_MUTED (lisible : savoir ce qu'on vise fait partie du jeu),
+    // TXT_HINT réservé aux nœuds NG+ volontairement mystérieux.
     const labelColor = status === 'unlocked' ? UI.TXT_GOLD
                      : status === 'available' ? UI.TXT_PARCHMENT
+                     : status === 'locked'    ? UI.TXT_MUTED
                      : UI.TXT_HINT;
-    const labelStyle = uiStyle(9, labelColor, { stroke: true });
-    const labelTxt = this.add.text(cx, cy + NODE_SZ / 2 + 4,
-      fitText(this, node.name, labelStyle, 132), labelStyle)
+    const labelTxt = this.add.text(cx, cy + NODE_SZ / 2 + 3, node.name,
+      uiStyle(TYPE.SMALL, labelColor, { stroke: true, align: 'center', wordWrapWidth: NODE_SPACING - 10 }))
       .setOrigin(0.5, 0).setDepth(7);
     this.dynamicObjs.push(labelTxt);
 
-    // Interactive touch zone (min 44 × 44 px)
+    // Interactive touch zone (NODE_SZ + 2×NODE_HIT = 72 px — cible confortable)
     if (status !== 'ngplus_only') {
       const hitSz = NODE_SZ + NODE_HIT * 2;
       const hit   = this.add.rectangle(cx, cy, hitSz, hitSz, 0, 0)
@@ -651,9 +684,35 @@ export class SkillScene extends Phaser.Scene {
         .setDepth(8);
       this.dynamicObjs.push(hit);
 
+      // Feedback immédiat au pointerdown, ACTION au pointerup + garde de
+      // distance : les nœuds vivent dans la zone de swipe — sur pointerdown,
+      // commencer un swipe sur un nœud le sélectionnait puis changeait de
+      // branche dans la foulée (double action involontaire).
       hit.on('pointerdown', () => {
-        // Toggle selection
-        this.selectedNodeId = this.selectedNodeId === node.id ? null : node.id;
+        if (this.modalOpen) return;
+        g.setAlpha(0.7);
+      });
+      hit.on('pointerup', (p: Phaser.Input.Pointer) => {
+        g.setAlpha(1);
+        if (this.modalOpen) return;
+        if (p.getDistance() > 12) return;   // c'était un swipe, pas un tap
+        if (this.selectedNodeId === node.id) {
+          // 2e tap sur le nœud déjà sélectionné :
+          // - disponible → DÉBLOQUER sur place. Le 1er tap a affiché le détail
+          //   (aucune dépense à l'aveugle), le 2e confirme sans trajet de pouce
+          //   vers le bouton du bas — affordance écrite dans la ligne de statut.
+          // - sinon      → désélectionner (toggle historique conservé).
+          if (status === 'available') {
+            this.unlockNode(node.id);
+            return;
+          }
+          this.selectedNodeId = null;
+          this.pulseNodeId    = null;
+          this.renderBranch(this.activeBranch);
+          return;
+        }
+        this.selectedNodeId = node.id;
+        this.pulseNodeId    = node.id;
         this.renderBranch(this.activeBranch);
       });
       hit.on('pointerover', () => {
@@ -680,18 +739,18 @@ export class SkillScene extends Phaser.Scene {
     this.dynamicObjs.push(msg);
   }
 
-  // ── Respec button ─────────────────────────────────────────────────────────
+  // ── Respec button (dans le header, plus jamais flottant sur l'arbre) ─────
 
-  private renderRespecButton(W: number, H: number) {
+  private renderHeaderRespec(W: number) {
     const cost      = TalentSystem.respecCost(this.player);
     const hasSpent  = this.player.unlockedTalents.length > 0;
     const canAfford = this.player.gold >= cost;
     const canRespec = hasSpent && canAfford;
 
-    const btnW = 176;
+    const btnW = SkillScene.RESPEC_W;
     const btnH = 30;
-    const btnX = W - 8 - btnW;
-    const btnY = H - BOTTOM_H - btnH - 8;
+    const btnX = W - 14 - SkillScene.PTS_RESERVE - 8 - btnW;
+    const btnY = TAB_TOTAL_H + (HDR_H - btnH) / 2;
 
     const bg = this.add.graphics().setDepth(10);
     bg.fillStyle(canRespec ? 0x1e0a2a : 0x0e0e18, 1);
@@ -701,34 +760,153 @@ export class SkillScene extends Phaser.Scene {
     this.dynamicObjs.push(bg);
 
     const labelColor = canRespec ? '#cc99ff' : UI.TXT_HINT;
-    const label      = `↺ Réspec — ${cost} or`;
+    const label      = `↺ Respec — ${cost} or`;
     const txt = this.add.text(btnX + btnW / 2, btnY + btnH / 2, label, uiStyle(10, labelColor, { bold: true }))
       .setOrigin(0.5).setDepth(11);
     this.dynamicObjs.push(txt);
 
     if (canRespec) {
-      // Touch target — min 44 px height
-      const hitH = Math.max(btnH, 44);
-      const hit  = this.add.rectangle(btnX + btnW / 2, btnY + btnH / 2, btnW, hitH, 0, 0)
-        .setInteractive({ useHandCursor: true })
-        .setDepth(12);
+      // Touch target — min 44 px height (le visuel reste 30, hit invisible 44)
+      const hit = this.add.rectangle(
+        btnX + btnW / 2, TAB_TOTAL_H + HDR_H / 2,
+        btnW, LAYOUT.TOUCH_MIN, 0, 0,
+      ).setInteractive({ useHandCursor: true }).setDepth(12);
       this.dynamicObjs.push(hit);
 
-      hit.on('pointerdown', () => {
-        const ok = TalentSystem.respec(this.player);
-        if (ok) {
-          // Le respec RETIRE tous les bonus de stats de talents : il faut
-          // recalculer player.stats, sinon maxHp resterait gonflé après avoir
-          // rendu les points (et hp serait clampé de travers au combat suivant).
-          InventorySystem.recalcStats(this.player);
-          this.selectedNodeId = null;
-          this.pointsText?.setText(this.buildPointsLabel());
-          this.renderBranch(this.activeBranch);
-        }
-      });
+      // Action DESTRUCTRICE (rend tous les talents, débite l'or) → jamais en
+      // un seul tap sur mobile : confirmation obligatoire.
+      hit.on('pointerdown', () => this.showRespecConfirm(cost));
       hit.on('pointerover', () => bg.setAlpha(0.8));
       hit.on('pointerout',  () => bg.setAlpha(1.0));
     }
+  }
+
+  // ── Respec confirmation modal ─────────────────────────────────────────────
+
+  private showRespecConfirm(cost: number) {
+    if (this.modalOpen || this.closing) return;
+    this.modalOpen = true;
+
+    const W = this.cameras.main.width;
+    const H = this.cameras.main.height;
+
+    // Voile plein écran : assombrit ET avale tous les taps (topOnly).
+    // Tap hors du panneau = annuler (convention popup du projet).
+    const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.6)
+      .setInteractive()
+      .setDepth(40);
+    dim.on('pointerdown', () => this.closeRespecConfirm());
+    this.modalObjs.push(dim);
+
+    const pw = 420;
+    const ph = 168;
+    const px = (W - pw) / 2;
+    const py = (H - ph) / 2;
+
+    const panel = this.add.graphics().setDepth(41);
+    drawGlowPanel(panel, px, py, pw, ph, 0x9933cc, UI.BG_DEEP, 8, 0.97);
+    this.modalObjs.push(panel);
+
+    // Bouclier anti-tap-through : un tap SUR le panneau ne doit pas fermer.
+    const shield = this.add.rectangle(W / 2, py + ph / 2, pw, ph, 0, 0)
+      .setInteractive()
+      .setDepth(42);
+    this.modalObjs.push(shield);
+
+    const title = this.add.text(W / 2, py + 18, 'Réinitialiser les talents ?',
+      uiStyle(TYPE.BODY, UI.TXT_PARCHMENT, { bold: true })).setOrigin(0.5, 0).setDepth(43);
+    this.modalObjs.push(title);
+
+    const n = this.player.unlockedTalents.length;
+    const body = this.add.text(
+      W / 2, py + 46,
+      `Rend les points de ${n} talent${n > 1 ? 's' : ''} débloqué${n > 1 ? 's' : ''}.\nCoût : ${cost} or.`,
+      uiStyle(TYPE.SMALL, UI.TXT_MUTED, { align: 'center', lineSpacing: 4 }),
+    ).setOrigin(0.5, 0).setDepth(43);
+    this.modalObjs.push(body);
+
+    const { objects } = drawConfirmCancelButtons(
+      this,
+      px + 20, py + ph - 56, pw - 40,
+      'Réinitialiser', 'Annuler',
+      () => this.doRespec(),
+      () => this.closeRespecConfirm(),
+      LAYOUT.TOUCH_MIN,
+    );
+    for (const o of objects) {
+      (o as Phaser.GameObjects.GameObject & { setDepth?: (d: number) => void }).setDepth?.(43);
+      this.modalObjs.push(o);
+    }
+  }
+
+  private closeRespecConfirm() {
+    this.modalOpen = false;
+    this.clearModal();
+  }
+
+  /**
+   * Échap : ferme d'abord la modale de confirmation de respec si elle est ouverte,
+   * sinon laisse l'appelant fermer l'écran. Appelé par GameScene.escKey (unique
+   * propriétaire de l'ESC — cf. InventoryScene.handleEscape pour le même patron).
+   * True = appui CONSOMMÉ, l'écran de talents doit rester ouvert.
+   */
+  handleEscape(): boolean {
+    if (this.modalOpen) { this.closeRespecConfirm(); return true; }
+    return false;
+  }
+
+  // Public : GameScene (touche K, ESC après handleEscape, action mobile) et le
+  // bouton × ci-dessus l'appellent pour fermer avec l'animation symétrique de
+  // l'ouverture (closeScreenTransition) au lieu d'un scene.stop() brut — même
+  // patron que BestiaryScene.close(). Le setPaused(false) est déjà garanti par
+  // shutdown() (rejoué au stop), il n'a donc lieu qu'une fois l'écran dissous.
+  public close(): void {
+    if (this.closing) return;
+    this.closing = true;
+    closeScreenTransition(this, () => {
+      this.scene.stop();
+    });
+  }
+
+  private doRespec() {
+    if (this.closing) return;
+    this.closeRespecConfirm();
+    const ok = TalentSystem.respec(this.player);
+    if (ok) {
+      // Le respec RETIRE tous les bonus de stats de talents : il faut
+      // recalculer player.stats, sinon maxHp resterait gonflé après avoir
+      // rendu les points (et hp serait clampé de travers au combat suivant).
+      InventorySystem.recalcStats(this.player);
+      this.selectedNodeId = null;
+      this.refreshBranchHeader();
+      this.refreshTabs();      // les gates tier 3 peuvent se re-verrouiller
+      this.renderBranch(this.activeBranch);
+    }
+  }
+
+  // ── Unlock (chemin UNIQUE : bouton Débloquer ET 2e tap sur le nœud) ──────
+
+  /**
+   * Débloque un talent et resynchronise toute l'UI. Appelé par le bouton
+   * « Débloquer » de la bottom sheet ET par le second tap sur un nœud
+   * disponible déjà sélectionné — le raccourci mobile : dépenser 3-5 points
+   * d'affilée ne demande plus l'aller-retour grille ↔ bas d'écran à chaque
+   * nœud, le pouce reste sur place (tap = lire, re-tap = confirmer).
+   */
+  private unlockNode(nodeId: string) {
+    if (this.closing) return;
+    const ok = TalentSystem.unlock(this.player, nodeId);
+    if (!ok) return;
+    // Les talents à stats (MAX_HP_PCT, DEF_PCT, MANA_MAX_PCT…) ne touchent
+    // player.stats.maxHp/def/maxMana que via recalcStats — sans cet appel,
+    // débloquer +25% HP ne relèverait la barre qu'au prochain changement
+    // d'équipement. (atk/crit/lifesteal, eux, sont lus live via computeAll.)
+    InventorySystem.recalcStats(this.player);
+    this.selectedNodeId    = null;
+    this.unlockFlashNodeId = nodeId;   // flash blanc sur le nœud débloqué
+    this.refreshBranchHeader();
+    this.refreshTabs();                // un gate tier 3 peut venir de s'ouvrir
+    this.renderBranch(this.activeBranch);
   }
 
   // ── Bottom sheet ──────────────────────────────────────────────────────────
@@ -755,13 +933,20 @@ export class SkillScene extends Phaser.Scene {
     this.sheetObjs.push(bg);
 
     if (!nodeId) {
-      // Empty state hint
+      // Empty state — dit QUOI faire ET rappelle l'affordance de swipe
+      // (invisible autrement sur mobile).
       const hint = this.add.text(
-        W / 2, sy + sh / 2 - 8,
-        'Sélectionne un talent pour voir ses détails',
-        uiStyle(TYPE.BODY, UI.TXT_HINT),
+        W / 2, sy + sh / 2 - 16,
+        'Touche un talent pour voir ses détails',
+        uiStyle(TYPE.BODY, UI.TXT_MUTED),
       ).setOrigin(0.5).setDepth(21);
       this.sheetObjs.push(hint);
+      const swipeHint = this.add.text(
+        W / 2, sy + sh / 2 + 10,
+        '← glisse sur l\'arbre pour changer de voie →',
+        uiStyle(TYPE.SMALL, UI.TXT_HINT),
+      ).setOrigin(0.5).setDepth(21);
+      this.sheetObjs.push(swipeHint);
       return;
     }
 
@@ -770,37 +955,54 @@ export class SkillScene extends Phaser.Scene {
 
     const status = getNodeStatus(this.player, nodeId);
 
-    // ── Left column (name, description, effects) ──────────────────────────
+    // ── Left column (icon + name, description = l'effet) ──────────────────
     // Layout en FLUX (chaque bloc sous le précédent) : les anciens y fixes
-    // (sy+30/sy+50) faisaient chevaucher desc et effets dès 2 lignes.
+    // (sy+30/sy+50) faisaient chevaucher les blocs dès 2 lignes.
     const lx  = sx + 12;
     const colW = Math.floor(sw * 0.52) - 10;
 
-    const nameTxt = this.add.text(lx, sy + 10, node.name,
+    // Icône du talent à gauche du nom : lie visuellement la sheet au nœud
+    // sélectionné dans l'arbre (repérage rapide, coût nul).
+    let nameX = lx;
+    if (this.textures.exists(node.icon)) {
+      const icon = this.add.image(lx + 16, sy + 24, node.icon)
+        .setDisplaySize(32, 32).setDepth(21);
+      this.sheetObjs.push(icon);
+      nameX = lx + 40;
+    }
+
+    const nameTxt = this.add.text(nameX, sy + 10, node.name,
       uiStyle(TYPE.HEADING, UI.TXT_GOLD, { bold: true, stroke: true })).setDepth(21);
     this.sheetObjs.push(nameTxt);
 
+    // La description manuscrite EST l'effet (formulation unique, cf. note en
+    // tête de fichier) → style PRIMAIRE parchemin, plus le muted de l'époque
+    // où elle doublonnait avec la liste formatEffects.
     const descTxt = this.add.text(lx, nameTxt.y + nameTxt.height + 6, node.description,
-      uiStyle(TYPE.BODY, UI.TXT_MUTED, { wordWrapWidth: colW })).setDepth(21);
+      uiStyle(TYPE.BODY, UI.TXT_PARCHMENT, { wordWrapWidth: colW, lineSpacing: 3 })).setDepth(21);
     this.sheetObjs.push(descTxt);
 
-    const effTxt = this.add.text(lx, descTxt.y + descTxt.height + 6, formatEffects(node.effects),
-      uiStyle(TYPE.BODY, UI.TXT_PARCHMENT, { wordWrapWidth: colW, lineSpacing: 3 })).setDepth(21);
-    this.sheetObjs.push(effTxt);
-
-    // ── Right column (cost, status, lore, unlock button) ─────────────────
+    // ── Right column (status, cost, lore, unlock button) ─────────────────
     const rx   = sx + Math.floor(sw * 0.54);
     let   ry   = sy + 12;
     const rColW = sw - Math.floor(sw * 0.54) - 10;
 
-    // Cost
-    const costTxt = this.add.text(
-      rx, ry,
-      `Coût : ${node.cost} point${node.cost !== 1 ? 's' : ''}`,
-      uiStyle(TYPE.BODY, UI.TXT_GOLD, { bold: true }),
-    ).setDepth(21);
-    this.sheetObjs.push(costTxt);
-    ry += costTxt.height + 6;
+    // canUnlock() vérifie déjà les points : 'available' ⟹ coût payable.
+    const willShowButton = status === 'available';
+
+    // Coût — affiché UNE seule fois, là où il sert :
+    // - débloquable   → porté par le bouton « Débloquer — N pt(s) », pas de ligne
+    // - verrouillé/NG+ → ligne dorée (info de planification de build)
+    // - déjà débloqué → nulle part (points déjà dépensés : info morte)
+    if (!willShowButton && status !== 'unlocked') {
+      const costTxt = this.add.text(
+        rx, ry,
+        `Coût : ${node.cost} point${node.cost !== 1 ? 's' : ''}`,
+        uiStyle(TYPE.BODY, UI.TXT_GOLD, { bold: true }),
+      ).setDepth(21);
+      this.sheetObjs.push(costTxt);
+      ry += costTxt.height + 6;
+    }
 
     // Status
     let statusStr: string;
@@ -811,7 +1013,9 @@ export class SkillScene extends Phaser.Scene {
         statusColor = UI.TXT_GREEN;
         break;
       case 'available':
-        statusStr   = 'Disponible';
+        // La ligne de statut porte AUSSI l'affordance du raccourci mobile
+        // (2e tap sur le nœud = débloquer) — un élément, deux infos.
+        statusStr   = 'Disponible — retouche le nœud pour débloquer';
         statusColor = UI.TXT_PARCHMENT;
         break;
       case 'locked': {
@@ -848,7 +1052,6 @@ export class SkillScene extends Phaser.Scene {
     // tronquait au caractère, aveugle au wrap réel) : on coupe jusqu'à ce que
     // le bloc tienne au-dessus du bouton Débloquer / du bas de la sheet.
     if (node.lore && ry < sy + sh - 30) {
-      const willShowButton = status === 'available' && this.player.talentPoints >= node.cost;
       const maxLoreH = (sy + sh - (willShowButton ? 56 : 10)) - ry;
       if (maxLoreH > 14) {
         const loreStyle = uiStyle(TYPE.SMALL, UI.TXT_HINT, { italic: true, wordWrapWidth: rColW, lineSpacing: 3 });
@@ -862,9 +1065,10 @@ export class SkillScene extends Phaser.Scene {
       }
     }
 
-    // Unlock button (only when available + enough points)
-    if (status === 'available' && this.player.talentPoints >= node.cost) {
-      const btnW = 150;
+    // Unlock button (canUnlock inclut déjà la vérification du coût en points)
+    if (willShowButton) {
+      // 150 → 170 : le label embarque désormais le coût (« Débloquer — 3 pts »)
+      const btnW = 170;
       const btnH = 40;
       const btnX = sx + sw - btnW - 8;
       const btnY = sy + sh - btnH - 8;
@@ -878,7 +1082,7 @@ export class SkillScene extends Phaser.Scene {
 
       const btnTxt = this.add.text(
         btnX + btnW / 2, btnY + btnH / 2,
-        'Débloquer',
+        `Débloquer — ${node.cost} pt${node.cost !== 1 ? 's' : ''}`,
         uiStyle(13, UI.TXT_WHITE, { bold: true, stroke: true }),
       ).setOrigin(0.5).setDepth(23);
       this.sheetObjs.push(btnTxt);
@@ -889,17 +1093,8 @@ export class SkillScene extends Phaser.Scene {
       this.sheetObjs.push(btnHit);
 
       btnHit.on('pointerdown', () => {
-        const ok = TalentSystem.unlock(this.player, nodeId);
-        if (ok) {
-          // Les talents à stats (MAX_HP_PCT, DEF_PCT, MANA_MAX_PCT…) ne touchent
-          // player.stats.maxHp/def/maxMana que via recalcStats — sans cet appel,
-          // débloquer +25% HP ne relèverait la barre qu'au prochain changement
-          // d'équipement. (atk/crit/lifesteal, eux, sont lus live via computeAll.)
-          InventorySystem.recalcStats(this.player);
-          this.selectedNodeId = null;
-          this.pointsText?.setText(this.buildPointsLabel());
-          this.renderBranch(this.activeBranch);
-        }
+        if (this.modalOpen) return;
+        this.unlockNode(nodeId);
       });
       btnHit.on('pointerover', () => btnBg.setAlpha(0.7));
       btnHit.on('pointerout',  () => btnBg.setAlpha(1.0));
@@ -914,8 +1109,13 @@ export class SkillScene extends Phaser.Scene {
   }
 
   private onPointerDown(p: Phaser.Input.Pointer) {
-    // Only track swipes in the tree content area (below header)
+    // Only track swipes in the TREE area : sous le header ET au-dessus de la
+    // bottom sheet. L'ancienne borne (header seul) faisait qu'un glissement
+    // partant du bouton « Débloquer » déclenchait l'unlock PUIS changeait de
+    // branche — deux actions pour un seul geste.
+    if (this.modalOpen) return;
     if (p.y < TAB_TOTAL_H + HDR_H) return;
+    if (p.y > this.cameras.main.height - BOTTOM_H - 4) return;
     this.swipeX      = p.x;
     this.swipeY      = p.y;
     this.swipeActive = true;
@@ -924,6 +1124,7 @@ export class SkillScene extends Phaser.Scene {
   private onPointerUp(p: Phaser.Input.Pointer) {
     if (!this.swipeActive) return;
     this.swipeActive = false;
+    if (this.modalOpen) return;
 
     const dx  = p.x - this.swipeX;
     const ady = Math.abs(p.y - this.swipeY);
@@ -937,13 +1138,6 @@ export class SkillScene extends Phaser.Scene {
     const nextIdx = (currentIdx + dir + BRANCH_KEYS.length) % BRANCH_KEYS.length;
     const nextKey = BRANCH_KEYS[nextIdx];
     if (nextKey !== undefined) this.switchBranch(nextKey);
-  }
-
-  // ── ESC key ───────────────────────────────────────────────────────────────
-
-  private setupEscKey() {
-    this.escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
-    this.escKey.on('down', () => this.gameScene.closeOverlay('SkillScene'));
   }
 
   // ── Cleanup helpers ───────────────────────────────────────────────────────
@@ -960,5 +1154,12 @@ export class SkillScene extends Phaser.Scene {
       if (obj.active) obj.destroy();
     }
     this.sheetObjs = [];
+  }
+
+  private clearModal() {
+    for (const obj of this.modalObjs) {
+      if (obj.active) obj.destroy();
+    }
+    this.modalObjs = [];
   }
 }

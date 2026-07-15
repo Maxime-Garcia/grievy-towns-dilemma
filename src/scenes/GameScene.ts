@@ -39,6 +39,7 @@ import { getBestiaryEntry } from '../data/bestiary';
 import type { BestiaryScene } from './BestiaryScene';
 import type { ArsenalScene } from './ArsenalScene';
 import type { InventoryScene } from './InventoryScene';
+import type { SkillScene } from './SkillScene';
 import { ENEMY_SPRITE_BBOX, NPC_SPRITE_BBOX, PLAYER_SPRITE_BBOX } from '../data/spriteGeometry';
 import { fitSpriteToContent } from '../utils/SpriteFit';
 import {
@@ -187,6 +188,7 @@ export class GameScene extends Phaser.Scene {
   private debugSpeedMult = 1;
   private giveAllWeaponsKey!: Phaser.Input.Keyboard.Key;
   private toggleDummiesKey!: Phaser.Input.Keyboard.Key;
+  private givePointsKey!: Phaser.Input.Keyboard.Key;
 
   private xpOrbs!: Phaser.Physics.Arcade.Group;
   private readonly XP_ATTRACT_RANGE = 96;
@@ -523,6 +525,8 @@ export class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.giveAllWeaponsKey)) this.debugGiveAllWeapons();
     // Debug: press T to toggle the training dummies flag (loot stat rolls test aid, cf. LOOT_STAT_ROLLS.md §10)
     if (Phaser.Input.Keyboard.JustDown(this.toggleDummiesKey)) this.debugToggleTrainingDummies();
+    // Debug: press P to grant 20 talent points (talent unlock test aid, étape 4 roguelite)
+    if (Phaser.Input.Keyboard.JustDown(this.givePointsKey)) this.debugGiveTalentPoints();
 
     // ── IFRAMES : clignotement du joueur pendant l'invincibilité post-hit ──
     // Alterne alpha 0.25 / 1 toutes les 80ms ; alpha restauré à la fin de la fenêtre.
@@ -654,6 +658,16 @@ export class GameScene extends Phaser.Scene {
     // on rejoue la transition sur place (même zone, position courante) pour que la
     // bascule soit visible immédiatement, sans avoir à sortir puis revenir.
     this.performZoneTransition(this.gameState.player.currentZone, this.player.x, this.player.y);
+  }
+
+  /** Debug aid (press P) : porte player.talentPoints au cap de 20 sans grinder l'XP
+   * (cf. ProgressionSystem.addXp — cap identique). Sert à débloquer des talents pour
+   * tester en jeu l'impact d'un unlock sur les dégâts (étape 4 roguelite, §2 handoff). */
+  private debugGiveTalentPoints(): void {
+    const gained = 20 - this.gameState.player.talentPoints;
+    this.gameState.player.talentPoints = 20;
+    this.events.emit('player_update', this.gameState.player);
+    this.events.emit('show_notification', `[DEBUG] Talents au plafond (20) — +${Math.max(0, gained)}`);
   }
 
   // ── MOVEMENT ─────────────────────────────────────────────────
@@ -1027,8 +1041,11 @@ export class GameScene extends Phaser.Scene {
       );
       // Combiné : multiplicateur du pattern + talents mêlée + bonus de chaîne + stack cible.
       const finalDamage = Math.round(result.damage * damageMultiplier * appliedMeleeMult * stackBonus * sameTargetMult);
-      activeEnemy.currentHp = Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - finalDamage));
-      const isKill = activeEnemy.currentHp <= 0;
+      const isDummy = this.isInvincibleDummy(activeEnemy.enemyId);
+      activeEnemy.currentHp = isDummy
+        ? activeEnemy.maxHp
+        : Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - finalDamage));
+      const isKill = !isDummy && activeEnemy.currentHp <= 0;
 
       this.showEnemyDamageNumber(activeEnemy.instanceId, sprite.x, sprite.y - 20, finalDamage, result.isCrit, result.element);
       this.spawnHitParticles(sprite.x, sprite.y, result.element);
@@ -1150,8 +1167,11 @@ export class GameScene extends Phaser.Scene {
         );
         // BUG4 fix: apply the dmgMult from the finisher (or 1.0 for normal shots)
         const arrowFinalDmg = Math.round(result.damage * arrow.dmgMult * sameTargetMult);
-        activeEnemy.currentHp = Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - arrowFinalDmg));
-        const arrowIsKill = activeEnemy.currentHp <= 0;
+        const isArrowDummy = this.isInvincibleDummy(activeEnemy.enemyId);
+        activeEnemy.currentHp = isArrowDummy
+          ? activeEnemy.maxHp
+          : Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - arrowFinalDmg));
+        const arrowIsKill = !isArrowDummy && activeEnemy.currentHp <= 0;
         this.showEnemyDamageNumber(activeEnemy.instanceId, sprite.x, sprite.y - 20, arrowFinalDmg, result.isCrit, result.element);
         this.spawnHitParticles(sprite.x, sprite.y, result.element);
         this.applyHitFeedback(sprite, activeEnemy, arrowFinalDmg);
@@ -1178,6 +1198,12 @@ export class GameScene extends Phaser.Scene {
     const activeEnemy = nearest ? this.activeEnemies.get(nearest.name) : undefined;
 
     const result = CombatSystem.playerSkill(this.gameState.player, skill, activeEnemy, this.playerModifiers);
+    // CombatSystem.playerSkill mute target.currentHp EN INTERNE (systems/ reste
+    // agnostique du concept de dev-tool) — le Mannequin de Fer est donc restauré
+    // ICI, côté scène, et result.isKill (calculé avant restauration) est ignoré
+    // pour lui plutôt que recâblé dans CombatSystem.
+    const isSkillDummy = !!activeEnemy && this.isInvincibleDummy(activeEnemy.enemyId);
+    if (isSkillDummy && activeEnemy) activeEnemy.currentHp = activeEnemy.maxHp;
     if (result) {
       if (result.damage > 0 && nearest) {
         if (skill.isProjectile) {
@@ -1188,7 +1214,7 @@ export class GameScene extends Phaser.Scene {
         if (result.isCrit) this.requestShake(150, 0.009, GameScene.SHAKE_PRIO.CRIT);
         this.applyHitFeedback(nearest, activeEnemy!, result.damage);
         this.tryCritCdReset(result.isCrit);
-        if (result.isKill) {
+        if (result.isKill && !isSkillDummy) {
           this.onEnemyKilled(activeEnemy!, nearest);
         } else {
           this.addMagmaStackIfEquipped(activeEnemy!.instanceId);
@@ -1234,11 +1260,6 @@ export class GameScene extends Phaser.Scene {
     this.menuOpen = paused;
     if (paused) this.physics.world.pause();
     else        this.physics.world.resume();
-  }
-
-  public closeOverlay(key: string) {
-    this.setPaused(false);
-    this.scene.stop(key);
   }
 
   public openInventory() {
@@ -1327,14 +1348,20 @@ export class GameScene extends Phaser.Scene {
     this.skillMenuKey?.removeAllListeners();
     this.inventoryKey = kb.addKey(b.inventory);
     this.skillMenuKey = kb.addKey(b.skills);
+    // Fermeture (re-toggle) : via close() — animation symétrique de l'ouverture.
+    // BASCULE d'un écran vers l'autre : stop BRUT conservé volontairement — le
+    // nouvel écran se lance dans la même frame par-dessus, et le setPaused(false)
+    // différé d'un close() animé tomberait APRÈS son setPaused(true) → jeu
+    // dé-pausé sous l'overlay. (Stopper la scène tue le tween de fermeture, donc
+    // aucun onClosed orphelin ne survit à une bascule pendant l'animation.)
     this.inventoryKey.on('down', () => {
-      if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); return; }
+      if (this.scene.isActive('InventoryScene')) { (this.scene.get('InventoryScene') as InventoryScene).close(); return; }
       if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); }
       this.setPaused(true);
       this.scene.launch('InventoryScene', { gameScene: this });
     });
     this.skillMenuKey.on('down', () => {
-      if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); return; }
+      if (this.scene.isActive('SkillScene'))     { (this.scene.get('SkillScene') as SkillScene).close(); return; }
       if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
       this.setPaused(true);
       this.scene.launch('SkillScene', { gameScene: this });
@@ -1470,7 +1497,9 @@ export class GameScene extends Phaser.Scene {
         bleedEffect.duration -= dt;
         const bleedKey = `bleed_${instanceId}`;
         if (!this.cooldowns[bleedKey] || this.cooldowns[bleedKey] <= 0) {
-          ae.currentHp = Math.max(0, ae.currentHp - bleedEffect.strength);
+          if (!this.isInvincibleDummy(ae.enemyId)) {
+            ae.currentHp = Math.max(0, ae.currentHp - bleedEffect.strength);
+          }
           this.cooldowns[bleedKey] = 1.0;
           if (ae.currentHp <= 0) {
             this.onEnemyKilled(ae, sprite);
@@ -1491,7 +1520,9 @@ export class GameScene extends Phaser.Scene {
           const magmaKey = `magma_${instanceId}`;
           if (!this.cooldowns[magmaKey] || this.cooldowns[magmaKey] <= 0) {
             const tickDmg = CombatSystem.getMagmaBurnTickDamage(this.gameState.player, magmaStacks);
-            ae.currentHp = Math.max(0, ae.currentHp - tickDmg);
+            if (!this.isInvincibleDummy(ae.enemyId)) {
+              ae.currentHp = Math.max(0, ae.currentHp - tickDmg);
+            }
             this.cooldowns[magmaKey] = 1.0;
             const omnivampPct = PassiveSystem.getOmnivampPct(this.gameState.player.equipment);
             if (omnivampPct > 0) {
@@ -2523,10 +2554,20 @@ export class GameScene extends Phaser.Scene {
     body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
   }
 
+  /** Mannequin de Fer (dev tool, LOOT_STAT_ROLLS.md §10 bis) : seul ID invincible —
+   *  les 3 autres mannequins (straw/gilded/arsenal) DOIVENT mourir pour tester le
+   *  loot-roll / le re-tirage d'arme, donc PAS de `startsWith('training_dummy')`. */
+  private isInvincibleDummy(enemyId: string): boolean {
+    return enemyId === 'training_dummy_iron';
+  }
+
   private applyDamageToEnemy(instanceId: string, damage: number) {
     const ae = this.activeEnemies.get(instanceId);
     if (!ae) return;
-    ae.currentHp -= damage;
+    // PV figés à 100% pour tester hitbox/dégâts en boucle sans le tuer — les
+    // numéros de dégâts restent affichés (calculés en amont, indépendants de currentHp).
+    const isTrainingDummy = this.isInvincibleDummy(ae.enemyId);
+    if (!isTrainingDummy) ae.currentHp -= damage;
 
     // Flash visuel
     const sprite = this.enemies.getChildren().find(
@@ -2537,7 +2578,7 @@ export class GameScene extends Phaser.Scene {
       this.time.delayedCall(80, () => { if (sprite.active) this.resetEnemyTint(sprite); });
     }
 
-    if (ae.currentHp <= 0 && sprite?.active) {
+    if (!isTrainingDummy && ae.currentHp <= 0 && sprite?.active) {
       this.onEnemyKilled(ae, sprite);
     }
   }
@@ -4840,9 +4881,13 @@ export class GameScene extends Phaser.Scene {
       if (this.scene.isActive('InventoryScene')) {
         const inv = this.scene.get('InventoryScene') as InventoryScene;
         if (inv.handleEscape()) return;
-        this.setPaused(false); this.scene.stop('InventoryScene'); return;
+        inv.close(); return;
       }
-      if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene');     return; }
+      if (this.scene.isActive('SkillScene')) {
+        const sk = this.scene.get('SkillScene') as SkillScene;
+        if (sk.handleEscape()) return;
+        sk.close(); return;
+      }
       // Bestiaire/Arsenal sont toujours ouverts depuis PauseScene (mise en pause
       // dessous) — leur propre close() sait la reprendre correctement, contrairement
       // à un setPaused(false) qui la laisserait bloquée en pause indéfiniment.
@@ -4873,6 +4918,8 @@ export class GameScene extends Phaser.Scene {
     this.giveAllWeaponsKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.G);
     // Debug: press T to toggle the training dummies flag (loot stat rolls test aid)
     this.toggleDummiesKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.T);
+    // Debug: press P to grant 20 talent points (talent unlock test aid)
+    this.givePointsKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.P);
     // Remaining keys (attack, dash, inventory, skill menu, skill slots)
     // are all wired by applyKeyBindings() called right after setupInput().
   }
@@ -5805,9 +5852,12 @@ export class GameScene extends Phaser.Scene {
       case 'skill1': this.triggerSkillBySlot(1); break;
       case 'skill2': this.triggerSkillBySlot(2); break;
       case 'skill3': this.triggerSkillBySlot(3); break;
+      // Fermeture via close() (animation symétrique) ; bascule d'un écran vers
+      // l'autre en stop BRUT — même raison que les handlers clavier I/K de
+      // applyKeyBindings() (setPaused(false) différé sous le nouvel overlay).
       case 'inventory':
         if (this.scene.isActive('InventoryScene')) {
-          this.setPaused(false); this.scene.stop('InventoryScene');
+          (this.scene.get('InventoryScene') as InventoryScene).close();
         } else {
           if (this.scene.isActive('SkillScene')) { this.setPaused(false); this.scene.stop('SkillScene'); }
           this.setPaused(true);
@@ -5816,7 +5866,7 @@ export class GameScene extends Phaser.Scene {
         break;
       case 'skills':
         if (this.scene.isActive('SkillScene')) {
-          this.setPaused(false); this.scene.stop('SkillScene');
+          (this.scene.get('SkillScene') as SkillScene).close();
         } else {
           if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
           this.setPaused(true);
