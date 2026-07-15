@@ -261,6 +261,8 @@ export class GameScene extends Phaser.Scene {
   private playerStatusEffects: StatusEffect[] = [];
   private playerSlowMult = 1;
   private playerImmobilized = false;
+  // Debug aid (touche Y) : force rollPlayerStatusOnHit à 100% au lieu de 12%.
+  private debugForceStatusProc = false;
   private menuOpen = false;
   private isInDialogue = false;
   private isTraveling = false;
@@ -359,6 +361,7 @@ export class GameScene extends Phaser.Scene {
     this.playerStatusEffects = [];
     this.playerSlowMult      = 1;
     this.playerImmobilized   = false;
+    this.debugForceStatusProc = false;
     this.playtimeAccumulator = 0;
     this.lastAutoSave        = 0;
     this.attackCooldownUntil    = 0;
@@ -742,7 +745,13 @@ export class GameScene extends Phaser.Scene {
       const angle = (i / GameScene.DEBUG_TEST_ENEMY_IDS.length) * Math.PI * 2;
       this.spawnDebugEnemy(enemyId, px + Math.cos(angle) * radius, py + Math.sin(angle) * radius);
     });
-    this.events.emit('show_notification', '[DEBUG] Ennemis de test invoqués (Feu/Glace/Foudre/Boss)');
+    // Force le jet de statut-sur-coup (rollPlayerStatusOnHit) à 100% — sans ça,
+    // vérifier BURN/SLOW/SHOCK à 12% de chance demande beaucoup trop de coups
+    // pour être un test fiable. Reste actif tant que la scène tourne (reset
+    // par init(), donc à chaque nouvelle partie/rechargement) : c'est un outil
+    // de test, pas un mode qui doit survivre discrètement à une vraie session.
+    this.debugForceStatusProc = true;
+    this.events.emit('show_notification', '[DEBUG] Ennemis de test invoqués (Feu/Glace/Foudre/Boss) — statuts à 100%');
   }
 
   /** Fait à la main ce que la boucle fixedEnemies/le spawn de boss font pour la
@@ -2767,7 +2776,9 @@ export class GameScene extends Phaser.Scene {
     // BURN_BLEED_IMMUNITY (abyssal_soul_of_the_deep) — filtre BURN à la source,
     // jamais posé du tout plutôt que posé-puis-ignoré au tick.
     if (type === 'BURN' && this.playerModifiers.burnBleedImmunity) return;
-    if (Math.random() >= GameScene.PLAYER_STATUS_ON_HIT_CHANCE) return;
+    // debugForceStatusProc (touche Y) : 100% au lieu de 12%, pour valider en
+    // quelques coups plutôt qu'en dizaines que le mécanisme se déclenche bien.
+    if (!this.debugForceStatusProc && Math.random() >= GameScene.PLAYER_STATUS_ON_HIT_CHANCE) return;
     // STATUS_RES_DURATION_PCT (glacius_unmelting_memory, plafonné à 60 dans
     // TalentSystem) réduit la durée — jamais la chance d'être touché.
     const baseDurationS = type === 'BURN' ? 2 : type === 'SLOW' ? 1.75 : 1.5; // SHOCK, le plus dur, le plus court
