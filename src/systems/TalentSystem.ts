@@ -207,6 +207,34 @@ export class TalentSystem {
    * Agrège les effets de tous les talents débloqués en un objet TalentModifiers.
    * À appeler après chaque unlock/respec/changement d'équipement — PAS à chaque frame.
    */
+  /**
+   * Vitesse d'attaque apportée par les TALENTS, en POINTS DE POURCENTAGE.
+   *
+   * `getModifiers().attackSpeedMult` existait depuis toujours et n'a JAMAIS été
+   * consommé par une seule ligne de `src/scenes/` : les 4 talents de vitesse
+   * d'attaque du jeu (r.451, r.555, r.946, r.1025, r.1051) ne faisaient
+   * strictement RIEN. Le joueur dépensait des points dans du vide.
+   *
+   * La vitesse d'attaque n'a désormais qu'UN seul point d'entrée —
+   * `StatsSystem.computeAll().aspd` — et les talents y sont additionnés AVANT le
+   * softcap, exactement comme les substats d'équipement. Deux canaux qui portent
+   * le même nom doivent se sommer dans la même monnaie, sinon l'un des deux ment.
+   *
+   * Accesseur DÉDIÉ (et non `getModifiers()`) parce que `computeAll()` est appelé
+   * une fois par cône d'attaque : on ne construit pas un objet de 60 champs pour
+   * lire un seul nombre.
+   */
+  static getAspdPct(player: PlayerState): number {
+    // Les talents se MULTIPLIENT entre eux (cf. la boucle de getModifiers) ;
+    // on reconvertit le produit en points de % pour l'additionner aux substats.
+    let mult = 1;
+    for (const id of player.unlockedTalents) {
+      const e = TALENT_MAP[id]?.effects;
+      if (e?.ASPD_PCT !== undefined) mult *= 1 + e.ASPD_PCT / 100;
+    }
+    return (mult - 1) * 100;
+  }
+
   static getModifiers(player: PlayerState): TalentModifiers {
     const mods: TalentModifiers = {
       meleeDmgMult: 1.0,

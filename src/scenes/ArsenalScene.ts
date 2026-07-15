@@ -19,6 +19,7 @@ import {
 } from '../utils/UITheme';
 import { SearchField, matchesSearch } from '../utils/SearchField';
 import { ALL_ITEMS } from '../data/items';
+import { ATTACK_PATTERNS, cadencePerSec, effectiveWindupMs } from '../data/attackPatterns';
 import { getPassiveEffectLabel } from '../data/passiveEffects';
 import { ArsenalSystem } from '../systems/ArsenalSystem';
 import { StatsSystem } from '../systems/StatsSystem';
@@ -1004,7 +1005,30 @@ export class ArsenalScene extends Phaser.Scene {
         if (w.damage)      lines.push({ text: `${t('stats.atk')}: ${w.damage}` });
         if (w.magicDamage) lines.push({ text: `${t('stats.matk')}: ${w.magicDamage}` });
       }
-      lines.push({ text: `${t('stats.aspd')}: ×${w.attackSpeed.toFixed(1)}` });
+      // CADENCE DÉRIVÉE — et c'est tout l'enjeu de cette ligne.
+      //
+      // Elle affichait `w.attackSpeed` (dague ×1,7 · marteau ×0,7). Ce champ
+      // n'était lu par AUCUNE formule de combat : ni le cooldown, ni les dégâts,
+      // rien. L'Arsenal était le SEUL endroit du jeu où il existait. Il ne
+      // décrivait donc pas l'arme — il DÉCORAIT une fiche, et il mentait : le
+      // joueur comparait deux armes sur un nombre qui ne servait à rien.
+      //
+      // Ce qui décide vraiment de la cadence, c'est `ATTACK_PATTERNS[type].cooldown`
+      // divisé par l'aspd du joueur. On affiche donc ça, calculé à la source :
+      // un affichage DÉRIVÉ ne peut plus diverger de la mécanique — il n'a pas de
+      // valeur propre à conserver.
+      const pattern = ATTACK_PATTERNS[w.weaponType];
+      if (pattern) {
+        const aspd = StatsSystem.computeAll(this.gameScene.gameState.player).aspd;
+        lines.push({ text: `${t('stats.cadence')}: ${cadencePerSec(pattern, aspd).toFixed(2)} ${t('stats.hitsPerSec')}` });
+        // L'armement (windup) est un COÛT : le temps pendant lequel on est engagé
+        // sans avoir encore frappé. Le taire, c'est cacher au joueur ce qui rend
+        // le marteau dangereux à manier.
+        const windup = effectiveWindupMs(pattern, aspd);
+        if (windup > 0) {
+          lines.push({ text: `${t('stats.windup')}: ${Math.round(windup)} ms`, muted: true });
+        }
+      }
     } else if ('defense' in item) {
       const a = item as Armor;
       lines.push({ text: `${t('stats.def')}: ${a.defense}` });

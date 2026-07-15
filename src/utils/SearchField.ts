@@ -149,8 +149,13 @@ export class SearchField {
     this.drawFrame();
 
     const cy = this.y + this.h / 2;
+    // Le placeholder INITIAL passe par fitText comme le texte tapé (cf. setValue) :
+    // sans ça, à l'ouverture, un placeholder plus long que le champ débordait sur
+    // la croix et hors du cadre (« Rechercher une créature… » tronqué à droite).
+    const phStyle = SearchField.textStyle(false);
     this.valueTxt = scene.add
-      .text(this.x + PAD_LEFT, cy, this.placeholder, SearchField.textStyle(false))
+      .text(this.x + PAD_LEFT, cy,
+        fitText(scene, this.placeholder, phStyle, this.textMaxWidth()), phStyle)
       .setOrigin(0, 0.5)
       .setDepth(this.depth + 1);
 

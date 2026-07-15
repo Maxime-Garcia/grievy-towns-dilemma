@@ -250,7 +250,11 @@ export interface Weapon extends BaseItem {
   damage: number;
   magicDamage: number;
   bonusStats: StatBonus;
-  attackSpeed: number;
+  // ⚠ `attackSpeed` A ÉTÉ SUPPRIMÉ (dague 1,7 · marteau 0,7). Il n'était lu par
+  // AUCUNE formule de combat — seulement AFFICHÉ dans l'Arsenal, où il mentait au
+  // joueur. La vitesse par TYPE d'arme est `ATTACK_PATTERNS[weaponType].cooldown`,
+  // la variation par ITEM est la substat `ASPD_PCT`. Entre les deux, ce champ
+  // n'avait aucune place : il ne décrivait rien. Ne pas le réintroduire.
   passiveEffect?: string;
   equipStats?: EquipStats;        // INSTANCE : valeurs rollées (ou centre pour le catalogue, cf. LOOT_STAT_ROLLS §1.2)
   equipRanges?: EquipStatRanges;  // CATALOGUE : fourchettes de roll

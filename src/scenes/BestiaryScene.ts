@@ -67,6 +67,15 @@ export const ZONE_HABITAT_KEYS: Partial<Record<ElementType, string>> = {
   [ElementType.DIVINE]:    'zone.grievy_town',
 };
 
+/** Ordre d'affichage des zones dans la liste. Une zone = UN en-tête, tous ses
+ *  ennemis dessous — quel que soit leur ordre dans ALL_BESTIARY (les 139 ennemis
+ *  générés sont concaténés APRÈS les 57 écrits à la main : sans un vrai
+ *  regroupement, ils refaisaient une seconde série de zones tout en bas). */
+const ZONE_ORDER: string[] = [
+  'zone.ignis_reach', 'zone.terravast', 'zone.zephyr_peaks', 'zone.abyssmar',
+  'zone.volterra', 'zone.glaciem', 'zone.malachars_spire', 'zone.grievy_town',
+];
+
 type RowDef =
   | { kind: 'header'; label: string; color: number }
   | { kind: 'enemy'; id: string };
@@ -306,25 +315,44 @@ export class BestiaryScene extends Phaser.Scene {
   }
 
   private buildRows() {
-    let lastZoneKey = '';
-    for (const id of BESTIARY_IDS) {
-      const data = BESTIARY_RECORD[id];
-      const def  = ENEMY_MAP[id];
-      if (!data || !def) continue;
-      // Filtre AVANT le groupement : une zone entièrement filtrée ne pousse pas
-      // son en-tête (le header n'est émis que juste avant une ligne retenue).
-      if (!this.matchesQuery(id, BestiarySystem.peekEntry(this.world, id).discovered)) continue;
-      const zoneKey = ZONE_HABITAT_KEYS[def.element] ?? 'zone.grievy_town';
-      if (zoneKey !== lastZoneKey) {
-        lastZoneKey = zoneKey;
-        this.rows.push({
-          kind: 'header',
-          label: t(zoneKey).toUpperCase(),
-          color: ELEMENT_COLORS[def.element] ?? ELEMENT_COLORS[ElementType.NEUTRAL],
-        });
+    // Auto-suffisant : on repart d'une liste vide quel que soit l'appelant
+    // (create, recherche…) — évite toute accumulation si un chemin oubliait le reset.
+    this.rows = [];
+    this.enemyRowIndices = [];
+    // VRAI regroupement par zone (une passe par zone, dans ZONE_ORDER), et non
+    // plus « par plages consécutives » : ALL_BESTIARY concatène 57 ennemis écrits
+    // à la main PUIS 139 générés, si bien que l'ancien code refaisait une seconde
+    // série d'en-têtes de zone tout en bas. Chaque zone n'apparaît désormais
+    // qu'UNE fois, avec tous ses ennemis — quel que soit leur rang dans la data.
+    const zoneOf = (id: string): string => {
+      const def = ENEMY_MAP[id];
+      return def ? (ZONE_HABITAT_KEYS[def.element] ?? 'zone.grievy_town') : 'zone.grievy_town';
+    };
+
+    // Une zone hors ZONE_ORDER (élément inattendu) ne doit pas disparaître :
+    // on la rattache en fin de liste plutôt que de la perdre en silence.
+    const seen = new Set(ZONE_ORDER);
+    const extraZones = [...new Set(BESTIARY_IDS.map(zoneOf))].filter(z => !seen.has(z));
+    const order = [...ZONE_ORDER, ...extraZones];
+
+    for (const zoneKey of order) {
+      const ids = BESTIARY_IDS.filter(id => {
+        if (zoneOf(id) !== zoneKey) return false;
+        if (!BESTIARY_RECORD[id] || !ENEMY_MAP[id]) return false;
+        return this.matchesQuery(id, BestiarySystem.peekEntry(this.world, id).discovered);
+      });
+      if (ids.length === 0) continue; // zone vide (ou entièrement filtrée) : pas d'en-tête
+
+      const headEl = ENEMY_MAP[ids[0]!]!.element;
+      this.rows.push({
+        kind: 'header',
+        label: t(zoneKey).toUpperCase(),
+        color: ELEMENT_COLORS[headEl] ?? ELEMENT_COLORS[ElementType.NEUTRAL],
+      });
+      for (const id of ids) {
+        this.enemyRowIndices.push(this.rows.length);
+        this.rows.push({ kind: 'enemy', id });
       }
-      this.enemyRowIndices.push(this.rows.length);
-      this.rows.push({ kind: 'enemy', id });
     }
   }
 

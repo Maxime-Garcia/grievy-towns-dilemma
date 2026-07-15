@@ -4,6 +4,10 @@ import { CombatSystem } from '../systems/CombatSystem';
 import { StatsSystem } from '../systems/StatsSystem';
 import { PassiveSystem, SameTargetStackState, CritCdResetState } from '../systems/PassiveSystem';
 import { COMBO_CONFIGS, ComboConfig } from '../data/combos';
+import {
+  ATTACK_PATTERNS, FISTS_PATTERN, AttackPattern, AttackHit,
+  effectiveWindupMs, effectiveHitDelayMs, effectiveCooldownMs,
+} from '../data/attackPatterns';
 import { TalentSystem, TalentModifiers } from '../systems/TalentSystem';
 import { LootSystem } from '../systems/LootSystem';
 import { StatRollSystem } from '../systems/StatRollSystem';
@@ -98,102 +102,8 @@ const ZONE_ENEMY_COLORS: Record<string, number> = {
  */
 const WORLD_CAMERA_ZOOM = 1;
 
-// ── ATTACK PATTERNS ──────────────────────────────────────────────────────────
-// Pure data — each weapon has a sequence of hits (timing, range, arc, dmg mult)
-// and an overall cooldown. windupMs delays all hits so heavy weapons "charge".
-
-interface AttackHit {
-  /** ms offset from (windupMs + start of attack) */
-  delay: number;
-  range: number;
-  halfArc: number;
-  /** multiplier applied on top of CombatSystem base damage — 1.0 = normal */
-  damageMultiplier: number;
-}
-
-interface AttackPattern {
-  hits: AttackHit[];
-  /** ms before the player can attack again */
-  cooldown: number;
-  /** ms before the first hit fires (windup charging feel for heavy weapons) */
-  windupMs?: number;
-  /** if true, this weapon fires a physical projectile instead of an instant cone hit */
-  isProjectile?: boolean;
-}
-
-const ATTACK_PATTERNS: Partial<Record<WeaponType, AttackPattern>> = {
-  [WeaponType.DAGGER]: {
-    hits: [{ delay: 0, range: 85, halfArc: Math.PI / 3, damageMultiplier: 1.0 }],
-    cooldown: 400,
-  },
-  [WeaponType.DUAL_DAGGER]: {
-    hits: [
-      { delay: 0,   range: 85, halfArc: Math.PI / 3, damageMultiplier: 0.7 },
-      { delay: 150, range: 85, halfArc: Math.PI / 3, damageMultiplier: 0.7 },
-    ],
-    cooldown: 500,
-  },
-  [WeaponType.SWORD]: {
-    hits: [{ delay: 0, range: 115, halfArc: Math.PI / 3, damageMultiplier: 1.0 }],
-    cooldown: 600,
-  },
-  [WeaponType.DUAL_SWORD]: {
-    hits: [
-      { delay: 0,   range: 105, halfArc: 11 * Math.PI / 18, damageMultiplier: 0.6 },
-      { delay: 180, range: 105, halfArc: 11 * Math.PI / 18, damageMultiplier: 0.6 },
-      { delay: 360, range: 105, halfArc: 11 * Math.PI / 18, damageMultiplier: 0.8 },
-    ],
-    cooldown: 800,
-  },
-  [WeaponType.GREATSWORD]: {
-    hits: [{ delay: 0, range: 155, halfArc: 5 * Math.PI / 12, damageMultiplier: 1.8 }],
-    cooldown: 1100,
-    windupMs: 300,
-  },
-  [WeaponType.AXE]: {
-    hits: [{ delay: 0, range: 125, halfArc: 11 * Math.PI / 18, damageMultiplier: 1.3 }],
-    cooldown: 700,
-    windupMs: 150,
-  },
-  [WeaponType.HAMMER]: {
-    // +30% arc (Math.PI * 0.65 ≈ 117°) + massive multiplier
-    hits: [{ delay: 0, range: 105, halfArc: Math.PI * 0.65, damageMultiplier: 2.5 }],
-    cooldown: 1300,
-    windupMs: 400,
-  },
-  [WeaponType.STAFF]: {
-    hits: [{ delay: 0, range: 260, halfArc: Math.PI / 12, damageMultiplier: 1.0 }],
-    cooldown: 700,
-  },
-  [WeaponType.BOW]: {
-    // Physical arrow projectile — damage lands on collision, not via timed cone hit.
-    // VFX (spawnArrowVfx) is purely cosmetic; the physics body drives actual hit detection.
-    hits: [],
-    cooldown: 900,
-    windupMs: 200,
-    isProjectile: true,
-  },
-  [WeaponType.SPEAR]: {
-    // ESTOC — l'identité de la lance est l'ALLONGE, pas la zone : la portée la plus
-    // longue de toute la mêlée (175, devant le greatsword à 155), mais le cône le plus
-    // étroit du jeu (20°, contre 60° pour l'épée). On perce une cible alignée, on ne
-    // fauche pas une foule. Double coup (piqué-retrait) pour le rythme de l'estoc.
-    hits: [
-      { delay: 0,   range: 175, halfArc: Math.PI / 9, damageMultiplier: 0.85 },
-      { delay: 130, range: 175, halfArc: Math.PI / 9, damageMultiplier: 0.65 },
-    ],
-    cooldown: 750,
-    windupMs: 100,
-  },
-};
-
-const FISTS_PATTERN: AttackPattern = {
-  hits: [
-    { delay: 0,   range: 65, halfArc: Math.PI / 2.4, damageMultiplier: 0.5 },
-    { delay: 200, range: 65, halfArc: Math.PI / 2.4, damageMultiplier: 0.5 },
-  ],
-  cooldown: 500,
-};
+// ATTACK_PATTERNS / FISTS_PATTERN vivent désormais dans src/data/attackPatterns.ts
+// (données pures, simulables hors Phaser — cf. l'en-tête de ce fichier).
 
 /**
  * Dégâts de CONTACT — le coup que prend le joueur simplement parce qu'il se tient
@@ -380,6 +290,17 @@ export class GameScene extends Phaser.Scene {
   // ── COMBO STATE MACHINE ──────────────────────────────────────
   private comboCount = 0;
   private lastAttackEnd = 0;    // timestamp (ms) de fin du cooldown de la dernière attaque
+  /**
+   * Instant LIMITE (ms) auquel le coup suivant doit être porté pour que la chaîne
+   * survive. Posé au moment du coup, sur les valeurs de BASE de l'arme : il ne
+   * dépend PAS de l'aspd. C'est ce qui rend l'accélération PLUS permissive au lieu
+   * de plus punitive — cf. le commentaire de performBasicAttack.
+   */
+  private comboDeadline = 0;
+  /** Fin de la fenêtre de vitesse d'attaque octroyée par un critique (talent CRIT_SURGE_ASPD_PCT). */
+  private critSurgeUntil = 0;
+  /** Horodatage des coups portés sur la dernière seconde — sert à MESURER la cadence réelle (particules). */
+  private recentHitTimes: number[] = [];
   private comboRushed = false;  // un input a été reçu en zone morte
   private bufferedAttack = false; // réservé pour implémentation future zone buffer
   private comboWeaponType: WeaponType | undefined = undefined;
@@ -428,6 +349,17 @@ export class GameScene extends Phaser.Scene {
     // Combo state machine reset
     this.comboCount      = 0;
     this.lastAttackEnd   = 0;
+    this.comboDeadline   = 0;
+    this.critSurgeUntil  = 0;
+    this.recentHitTimes  = [];
+    this.comboGraceMs    = 0;
+    // Les textes agrégés et l'anneau référencent des GameObjects de la scène
+    // PRÉCÉDENTE : les garder ferait pointer une entrée sur un objet détruit au
+    // changement de zone.
+    this.dmgAggregates.clear();
+    this.comboRing        = null;
+    this.shakeWindowUntil = 0;
+    this.shakeWindowPrio  = 0;
     this.comboRushed     = false;
     this.bufferedAttack  = false;
     this.comboWeaponType = undefined;
@@ -558,6 +490,9 @@ export class GameScene extends Phaser.Scene {
     const dt = delta / 1000;
     this.playtimeAccumulator += dt;
     this.gameState.player.playtime += dt;
+
+    // L'anneau de combo suit le joueur et clignote à l'approche de l'expiration.
+    this.syncComboRing();
 
     // NPC proximity via distance (le collider empêche le vrai overlap physique)
     this.nearbyNPC = null;
@@ -847,9 +782,11 @@ export class GameScene extends Phaser.Scene {
       this.dashAspdBuffUntil = this.time.now + PassiveSystem.DASH_ASPD_BUFF_DURATION_MS;
     }
 
-    // BUG5 fix: dashPreservesCombo gèle le timer de grace pendant 350ms
+    // dashPreservesCombo — GEL de 350 ms de la fenêtre de combo. Repose désormais
+    // sur `comboDeadline` (et non plus sur `lastAttackEnd`, dont la grâce ne dépend
+    // plus). Sémantique inchangée : le dash offre 350 ms de sursis à la chaîne.
     if (this.playerModifiers.dashPreservesCombo) {
-      this.lastAttackEnd = Math.max(this.lastAttackEnd, this.time.now + 350);
+      this.comboDeadline = Math.max(this.comboDeadline, this.time.now + 350);
     }
 
     this.spawnDashAfterimages();
@@ -923,52 +860,83 @@ export class GameScene extends Phaser.Scene {
 
     // ── CHANGEMENT D'ARME ────────────────────────────────────────
     if (weaponType !== this.comboWeaponType) {
-      if (this.comboCount > 0) this.events.emit('combo-broken');
+      if (this.comboCount > 0) { this.events.emit('combo-broken'); this.burstComboRing(); }
       this.comboCount = 0;
     }
 
-    // ── GRACE TIMER ──────────────────────────────────────────────
-    // If the player waited past the grace window, the chain resets to 1.
-    // Grace is measured from when the previous cooldown ended (lastAttackEnd).
-    if (comboConfig && this.comboCount > 0) {
-      const effectiveGrace = comboConfig.graceMs * this.playerModifiers.comboGraceMult;
-      if (now - this.lastAttackEnd > effectiveGrace) {
-        this.comboCount = 0;
-        this.events.emit('combo-broken');
-      }
+    // ── DEADLINE DE COMBO ────────────────────────────────────────
+    // La grâce était mesurée depuis la FIN du cooldown (`lastAttackEnd`), donc la
+    // fenêtre totale valait `cooldown/aspd + graceMs` : ACCÉLÉRER LA RÉTRÉCISSAIT.
+    // Le joueur rapide était donc PUNI de sa vitesse, alors que la demande est
+    // qu'elle soit PLUS PERMISSIVE. (Et faire grandir graceMs avec l'aspd ne suffit
+    // pas : à ×1,3 la fenêtre vaudrait encore 774 ms contre 840 de base.)
+    //
+    // La deadline est désormais posée AU MOMENT DU COUP, sur les valeurs de BASE,
+    // sans aucune division par l'aspd : elle ne bouge JAMAIS avec la vitesse.
+    // Accélérer ne peut donc plus rien coûter — on ne donne rien de neuf, on
+    // arrête simplement de reprendre.
+    //
+    // Fond du problème : ce qui casse un combo ici n'est pas un raté de rythme
+    // (l'input est bufferisé, cf. plus haut), c'est l'ESQUIVE — et un dash coûte un
+    // temps FIXE. Toute loi qui rétrécit la fenêtre punit le joueur rapide d'avoir
+    // eu le droit de se défendre.
+    if (comboConfig && this.comboCount > 0 && now > this.comboDeadline) {
+      this.comboCount = 0;
+      this.events.emit('combo-broken');
+      this.burstComboRing();
     }
 
     this.comboWeaponType = weaponType;
     this.comboCount++;
 
-    // ASPD_PCT (equipStats) accélère le cooldown d'attaque de base — cf. StatsSystem.
-    // MOVE_25_DASH_ASPD_50_PCT (hidden_skyward_mantle) : +50% d'ASPD pendant la
-    // fenêtre post-dash (dashAspdBuffUntil, posée dans handleDash).
+    // ── VITESSE D'ATTAQUE ────────────────────────────────────────
+    // `cs.aspd` agrège DÉJÀ les substats ASPD_PCT *et* les talents, softcap compris
+    // (asymptote 80 → l'aspd permanente tend vers ×1,8 sans l'atteindre).
+    // Les buffs TEMPORAIRES se multiplient APRÈS le softcap, PLEINS : un burst doit
+    // se sentir plein. Le plafond borne ce qu'on PORTE, pas ce qu'on DÉCLENCHE.
     let aspd = StatsSystem.computeAll(this.gameState.player).aspd;
+    // MOVE_25_DASH_ASPD_50_PCT (hidden_skyward_mantle) — fenêtre post-dash.
     if (now < this.dashAspdBuffUntil) aspd *= 1 + PassiveSystem.DASH_ASPD_BUFF_PCT / 100;
-    // NO_ATTACK_COOLDOWN (hidden_temporal_blade) : les attaques basiques n'ont
-    // plus le cooldown propre à l'arme — plancher à NO_ATTACK_COOLDOWN_FLOOR_MS
-    // (pas 0 : qa-agent BLOCKER, un cooldown nul rendait le DPS quasi-infini,
-    // borné uniquement par le débit d'input/frame-rate) — lastAttackEnd reste
-    // utile pour la grâce combo.
+    // CRIT_SURGE_ASPD_PCT (talent) — fenêtre de 2 s après un critique. Ce modificateur
+    // existait dans TalentSystem et n'était consommé NULLE PART : le talent ne faisait rien.
+    if (now < this.critSurgeUntil) aspd *= 1 + this.playerModifiers.critSurgeAspdPct / 100;
+
+    // NO_ATTACK_COOLDOWN (hidden_temporal_blade) : plus de cooldown propre à l'arme —
+    // plancher à NO_ATTACK_COOLDOWN_FLOOR_MS (pas 0 : un cooldown nul rendait le DPS
+    // quasi-infini, borné par le seul débit d'input).
     const noAttackCooldown = PassiveSystem.hasNoAttackCooldown(this.gameState.player.equipment);
-    const cooldown = noAttackCooldown ? PassiveSystem.NO_ATTACK_COOLDOWN_FLOOR_MS : pattern.cooldown / aspd;
+    const rawCooldown = noAttackCooldown ? PassiveSystem.NO_ATTACK_COOLDOWN_FLOOR_MS : pattern.cooldown / aspd;
 
     // ── FINISHER ─────────────────────────────────────────────────
     let finisherFired = false;
     if (comboConfig && this.comboCount >= comboConfig.chainLength) {
       finisherFired = true;
-      this.executeFinisherAttack(weaponType, pattern, comboConfig, now);
+      this.executeFinisherAttack(weaponType, pattern, comboConfig, now, aspd);
       this.comboCount = 0;
-      const finisherCd = noAttackCooldown ? PassiveSystem.NO_ATTACK_COOLDOWN_FLOOR_MS : cooldown * comboConfig.finisher.cooldownMult;
+      // Le PLANCHER D'INTÉGRITÉ s'applique aussi ici, et sur les coups du FINISHER
+      // (qui sont souvent plus étalés que ceux de l'attaque normale) : on ne relance
+      // jamais une attaque avant que la précédente ait fini de sortir ses coups.
+      const rawFinisherCd = noAttackCooldown
+        ? PassiveSystem.NO_ATTACK_COOLDOWN_FLOOR_MS
+        : rawCooldown * comboConfig.finisher.cooldownMult;
+      const finisherCd = effectiveCooldownMs(pattern, aspd, rawFinisherCd, comboConfig.finisher.hits);
       this.lastAttackEnd      = now + finisherCd;
       this.attackCooldownUntil = this.lastAttackEnd;
+      // Après un finisher le combo est remis à zéro : aucune deadline à poser.
+      // L'anneau se vide (sans éclat : ce n'est pas une rupture, c'est un ABOUTISSEMENT).
+      this.comboGraceMs = 0;
+      this.redrawComboRing(0, 0, weaponType);
+      this.spawnSpeedTierVfx(aspd, this.facingAngle);
     } else {
       // ── ATTAQUE NORMALE ──────────────────────────────────────
-      const windupMs = pattern.windupMs ?? 0;
+      // Les temps d'ANIMATION se compressent avec l'aspd (planchers dans
+      // attackPatterns.ts) : sans ça, à aspd 1,8, le marteau passerait 55% de son
+      // cycle en armement contre 31% aujourd'hui — il aurait l'air BLOQUÉ à charger.
+      // En compressant, le ratio reste 31% : la signature rythmique de l'arme tient.
+      const windupMs = effectiveWindupMs(pattern, aspd);
 
       if (pattern.isProjectile) {
-        // BOW fires a physics rectangle, not a cone.
+        // BOW : rectangle physique, pas un cône.
         if (windupMs > 0) this.spawnWindupVfx(windupMs);
         if (windupMs === 0) {
           this.fireArrowProjectile();
@@ -981,13 +949,13 @@ export class GameScene extends Phaser.Scene {
         if (windupMs > 0) this.spawnWindupVfx(windupMs);
         for (let i = 0; i < pattern.hits.length; i++) {
           const hit = pattern.hits[i];
-          const fireDelay = windupMs + hit.delay;
+          const fireDelay = windupMs + effectiveHitDelayMs(hit.delay, aspd);
           const hitIndex  = i;
           const doHit = () => {
             if (this.isTraveling) return;
             const tx = this.player.x + Math.cos(this.facingAngle) * hit.range * 0.7;
             const ty = this.player.y + Math.sin(this.facingAngle) * hit.range * 0.7;
-            this.spawnWeaponSwingVfx(this.player.x, this.player.y, tx, ty, weaponType, hitIndex);
+            this.spawnWeaponSwingVfx(this.player.x, this.player.y, tx, ty, weaponType, hitIndex, aspd);
             this.executeHitInCone(hit.range, hit.halfArc, hit.damageMultiplier);
           };
           if (fireDelay === 0) doHit();
@@ -995,8 +963,18 @@ export class GameScene extends Phaser.Scene {
         }
       }
 
+      const cooldown = effectiveCooldownMs(pattern, aspd, rawCooldown);
       this.lastAttackEnd      = now + cooldown;
       this.attackCooldownUntil = this.lastAttackEnd;
+
+      // Deadline posée MAINTENANT, sur les valeurs de BASE (aucune division par
+      // l'aspd) et STOCKÉE — donc robuste à un buff qui expirerait entre deux coups.
+      if (comboConfig) {
+        this.comboGraceMs  = comboConfig.graceMs * this.playerModifiers.comboGraceMult;
+        this.comboDeadline = now + pattern.cooldown + this.comboGraceMs;
+        this.redrawComboRing(this.comboCount, comboConfig.chainLength, weaponType);
+      }
+      this.spawnSpeedTierVfx(aspd, this.facingAngle);
     }
 
     // ── ÉVÉNEMENT COMBO HUD ──────────────────────────────────────
@@ -1052,11 +1030,15 @@ export class GameScene extends Phaser.Scene {
       activeEnemy.currentHp = Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - finalDamage));
       const isKill = activeEnemy.currentHp <= 0;
 
-      this.showDamageNumber(sprite.x, sprite.y - 20, finalDamage, result.isCrit, result.element);
+      this.showEnemyDamageNumber(activeEnemy.instanceId, sprite.x, sprite.y - 20, finalDamage, result.isCrit, result.element);
       this.spawnHitParticles(sprite.x, sprite.y, result.element);
       this.applyHitFeedback(sprite, activeEnemy, finalDamage);
+      // Le coup normal ne secoue plus la CAMÉRA : il pousse l'ENNEMI (5 px, 70 ms).
+      // Le feedback passe de l'écran au monde — même punch, zéro coût de lisibilité.
+      if (!isKill) this.spawnHitRecoil(sprite, this.facingAngle);
       if (result.isCrit) anyCrit = true;
       this.tryCritCdReset(result.isCrit);
+      this.tryCritSurge(result.isCrit);
       if (isKill) {
         this.onEnemyKilled(activeEnemy, sprite);
       } else {
@@ -1065,11 +1047,14 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    if (anyCrit) {
-      this.cameras.main.shake(120, 0.007);
-    } else {
-      this.cameras.main.shake(40, 0.002);
-    }
+    // Le micro-shake du coup banal (40 ms / 0.002) est SUPPRIMÉ — cf. requestShake.
+    if (anyCrit) this.requestShake(120, 0.007, GameScene.SHAKE_PRIO.CRIT);
+  }
+
+  /** CRIT_SURGE_ASPD_PCT — un critique ouvre une fenêtre de vitesse d'attaque (2 s, refresh, no-stack). */
+  private tryCritSurge(isCrit: boolean) {
+    if (!isCrit || this.playerModifiers.critSurgeAspdPct <= 0) return;
+    this.critSurgeUntil = this.time.now + 2000;
   }
 
   private findEnemiesInCone(range: number, halfArc: number): Phaser.Physics.Arcade.Sprite[] {
@@ -1167,12 +1152,13 @@ export class GameScene extends Phaser.Scene {
         const arrowFinalDmg = Math.round(result.damage * arrow.dmgMult * sameTargetMult);
         activeEnemy.currentHp = Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - arrowFinalDmg));
         const arrowIsKill = activeEnemy.currentHp <= 0;
-        this.showDamageNumber(sprite.x, sprite.y - 20, arrowFinalDmg, result.isCrit, result.element);
+        this.showEnemyDamageNumber(activeEnemy.instanceId, sprite.x, sprite.y - 20, arrowFinalDmg, result.isCrit, result.element);
         this.spawnHitParticles(sprite.x, sprite.y, result.element);
         this.applyHitFeedback(sprite, activeEnemy, arrowFinalDmg);
-        if (result.isCrit) this.cameras.main.shake(120, 0.007);
-        else               this.cameras.main.shake(40, 0.002);
+        if (!arrowIsKill) this.spawnHitRecoil(sprite, Math.atan2(arrow.vy, arrow.vx));
+        if (result.isCrit) this.requestShake(120, 0.007, GameScene.SHAKE_PRIO.CRIT);
         this.tryCritCdReset(result.isCrit);
+        this.tryCritSurge(result.isCrit);
         if (arrowIsKill) this.onEnemyKilled(activeEnemy, sprite);
         else {
           this.addMagmaStackIfEquipped(activeEnemy.instanceId);
@@ -1199,11 +1185,7 @@ export class GameScene extends Phaser.Scene {
         }
         this.showDamageNumber(nearest.x, nearest.y - 20, result.damage, result.isCrit, skill.element);
         this.spawnHitParticles(nearest.x, nearest.y, skill.element);
-        if (result.isCrit) {
-          this.cameras.main.shake(150, 0.009);
-        } else {
-          this.cameras.main.shake(50, 0.003);
-        }
+        if (result.isCrit) this.requestShake(150, 0.009, GameScene.SHAKE_PRIO.CRIT);
         this.applyHitFeedback(nearest, activeEnemy!, result.damage);
         this.tryCritCdReset(result.isCrit);
         if (result.isKill) {
@@ -3102,6 +3084,180 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // ── ANNEAU DE COMBO (AU SOL) ────────────────────────────────
+  /**
+   * Les pips de combo vivaient dans le HUD, en haut de l'écran. À 4 coups/s ils
+   * sont MORTS : l'œil du joueur ne quitte jamais le cône de danger autour de son
+   * personnage — il n'a ni le temps ni la raison de monter lire un compteur.
+   * Un signal que le joueur ne peut pas regarder n'est pas un signal.
+   *
+   * L'anneau vit donc AUX PIEDS du joueur, sous le sprite, exactement là où le
+   * regard est déjà posé. Il dit trois choses sans un mot : où en est la chaîne,
+   * que le prochain coup est le FINISHER (segments blanc-or, pulse), et qu'elle
+   * va EXPIRER (clignotement).
+   */
+  private static readonly COMBO_RING_RADIUS = 26;
+  private comboRing: Phaser.GameObjects.Container | null = null;
+  /** Grâce effective de la chaîne en cours — sert à décider si un clignotement est LISIBLE. */
+  private comboGraceMs = 0;
+
+  private static readonly WEAPON_RING_COLOR: Partial<Record<WeaponType, number>> = {
+    [WeaponType.DAGGER]: 0xcccccc,
+    [WeaponType.DUAL_DAGGER]: 0xcccccc,
+    [WeaponType.SWORD]: 0x88aaff,
+    [WeaponType.DUAL_SWORD]: 0x88aaff,
+    [WeaponType.GREATSWORD]: 0xffffff,
+    [WeaponType.AXE]: 0xff6600,
+    [WeaponType.HAMMER]: 0xffdd00,
+    [WeaponType.STAFF]: 0x9944ff,
+    [WeaponType.BOW]: 0xddcc77,
+    [WeaponType.SPEAR]: 0xdff2ff,
+  };
+
+  private ensureComboRing(): Phaser.GameObjects.Container {
+    if (!this.comboRing || !this.comboRing.active) {
+      // Depth 2 : SOUS le sprite du joueur (depth 10) — l'anneau ne doit jamais
+      // masquer le personnage ni ce qu'il y a devant lui.
+      this.comboRing = this.add.container(this.player.x, this.player.y).setDepth(2);
+    }
+    return this.comboRing;
+  }
+
+  private redrawComboRing(count: number, max: number, weaponType: WeaponType | undefined) {
+    const ring = this.ensureComboRing();
+    ring.removeAll(true);
+    ring.setAlpha(1);
+    if (count <= 0 || max <= 0) return;
+
+    const R = GameScene.COMBO_RING_RADIUS;
+    const baseColor = (weaponType !== undefined ? GameScene.WEAPON_RING_COLOR[weaponType] : undefined) ?? 0xffffff;
+    // Le coup SUIVANT est le finisher : l'anneau vire au blanc-or et pulse.
+    const preFinisher = count >= max - 1 && max > 1;
+    const color = preFinisher ? 0xffe58a : baseColor;
+
+    const step = (Math.PI * 2) / max;
+    const gap  = step * 0.16;
+
+    for (let i = 0; i < count; i++) {
+      const g = this.add.graphics();
+      g.lineStyle(3, color, 0.95);
+      g.beginPath();
+      g.arc(0, 0, R, -Math.PI / 2 + i * step + gap / 2, -Math.PI / 2 + (i + 1) * step - gap / 2);
+      g.strokePath();
+      ring.add(g);
+    }
+
+    // Pop du segment qui vient d'être gagné — la chaîne « encaisse » le coup.
+    const last = ring.list[ring.list.length - 1] as Phaser.GameObjects.Graphics | undefined;
+    if (last) {
+      last.setScale(1.4);
+      this.tweens.add({ targets: last, scale: 1, duration: 60, ease: 'Back.easeOut' });
+    }
+
+    if (preFinisher) {
+      // Pulse 2 Hz — « le prochain coup est LE coup ».
+      this.tweens.add({
+        targets: ring, alpha: 0.55,
+        duration: 250, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+      });
+    }
+  }
+
+  /** Rupture : les segments ÉCLATENT en fragments — aucun effet caméra (cf. budget de shake). */
+  private burstComboRing() {
+    const ring = this.comboRing;
+    if (!ring || !ring.active || ring.list.length === 0) return;
+    const cx = ring.x, cy = ring.y;
+    const n = ring.list.length;
+    this.tweens.killTweensOf(ring);
+
+    for (let i = 0; i < n; i++) {
+      const a = -Math.PI / 2 + (i + 0.5) * (Math.PI * 2 / Math.max(1, n));
+      const frag = this.add.rectangle(
+        cx + Math.cos(a) * GameScene.COMBO_RING_RADIUS,
+        cy + Math.sin(a) * GameScene.COMBO_RING_RADIUS,
+        4, 3, 0x99a0aa, 0.9,
+      ).setDepth(2).setRotation(a);
+      this.tweens.add({
+        targets: frag,
+        x: cx + Math.cos(a) * (GameScene.COMBO_RING_RADIUS + 14),
+        y: cy + Math.sin(a) * (GameScene.COMBO_RING_RADIUS + 14),
+        alpha: 0, duration: 220, ease: 'Power2',
+        onComplete: () => frag.destroy(),
+      });
+    }
+    ring.removeAll(true);
+    ring.setAlpha(1);
+  }
+
+  /**
+   * Suit le joueur, et fait CLIGNOTER l'anneau sur les derniers 40% de la grâce.
+   *
+   * Le clignotement n'est posé QUE si la grâce vaut au moins 250 ms. Pour la dague
+   * (grâce 160 ms), les 40% ne feraient que 64 ms de clignotement à 8 Hz : le
+   * joueur verrait une demi-alternance, c'est-à-dire rien. Mieux vaut aucun signal
+   * qu'un signal illisible — on ne ment pas au joueur avec une alerte qu'il n'a
+   * physiquement pas le temps de lire.
+   */
+  private static readonly COMBO_BLINK_MIN_GRACE_MS = 250;
+  private syncComboRing() {
+    const ring = this.comboRing;
+    if (!ring || !ring.active) return;
+    ring.setPosition(this.player.x, this.player.y);
+    if (ring.list.length === 0 || this.comboCount === 0) return;
+
+    if (this.comboGraceMs < GameScene.COMBO_BLINK_MIN_GRACE_MS) return;
+    const now = this.time.now;
+    const blinkFrom = this.comboDeadline - this.comboGraceMs * 0.4;
+    if (now < blinkFrom || now > this.comboDeadline) return;
+
+    // 8 Hz — piloté par l'horloge, pas par un tween : la deadline peut bouger (dash).
+    ring.setAlpha(Math.floor(now / 62.5) % 2 === 0 ? 1 : 0.25);
+  }
+
+  // ── FEEDBACK DE VITESSE — PALIERS DISCRETS ──────────────────
+  /**
+   * Le joueur doit SENTIR un cran quand sa build franchit un seuil. Une rampe
+   * continue ne se remarque pas : on ne perçoit pas +3% de cadence. Un palier, si.
+   *   1,25 → arc fantôme (l'arme laisse une trace)
+   *   1,50 → afterimage du joueur (même grammaire que le dash)
+   *   1,75 → pulse d'outline (le personnage « vibre » de vitesse)
+   */
+  private spawnSpeedTierVfx(aspd: number, angle: number) {
+    if (aspd < 1.25) return;
+
+    // 1,25 — arc fantôme : un 2e arc, décalé de 40 ms, très pâle.
+    this.time.delayedCall(40, () => {
+      if (!this.player?.active) return;
+      const g = this.add.graphics({ x: this.player.x, y: this.player.y }).setDepth(30);
+      g.lineStyle(3, 0xffffff, 0.30);
+      g.beginPath();
+      g.arc(0, 0, 52, angle - 0.6, angle + 0.6);
+      g.strokePath();
+      this.tweens.add({ targets: g, alpha: 0, duration: 120, onComplete: () => g.destroy() });
+    });
+
+    // 1,50 — afterimage du joueur à chaque attaque.
+    if (aspd >= 1.5) {
+      const ghost = this.add.rectangle(
+        this.player.x, this.player.y,
+        this.player.displayWidth, this.player.displayHeight,
+        0xffffff, 0.20,
+      ).setDepth(3).setOrigin(0.5);
+      this.tweens.add({ targets: ghost, alpha: 0, duration: 150, onComplete: () => ghost.destroy() });
+    }
+
+    // 1,75 — pulse d'outline : le personnage vibre.
+    if (aspd >= 1.75) {
+      const ring = this.add.circle(this.player.x, this.player.y, 16, 0x000000, 0)
+        .setStrokeStyle(2, 0xffffff, 0.25).setDepth(4);
+      this.tweens.add({
+        targets: ring, scale: 1.3, alpha: 0,
+        duration: 80, onComplete: () => ring.destroy(),
+      });
+    }
+  }
+
   // ── PLAYER HIT FX ───────────────────────────────────────────
   // Feedback quand le joueur encaisse un coup : shake léger + flash rouge caméra
   // + burst de particules rouges. Appelé aux trois points de dégâts joueur
@@ -3112,9 +3268,89 @@ export class GameScene extends Phaser.Scene {
     this.spawnHitParticles(this.player.x, this.player.y, undefined, 0xff3333);
   }
 
+  /**
+   * FEEDBACK DE COUP — et la décision la plus importante de cette passe :
+   * LE TELEGRAPH EST INVIOLABLE.
+   *
+   * Le telegraph de l'ennemi et le flash de coup vivaient dans le MÊME canal
+   * (`setTintFill`). Le flash du joueur ÉCRASAIT donc l'annonce de l'ennemi — et
+   * plus le joueur frappait vite, plus il s'aveuglait lui-même : à aspd 1,5 le
+   * sprite est blanc ~30% du temps et l'ennemi ne peut tout simplement plus
+   * annoncer son coup. Sur un jeu dont la règle est « telegraph before punish »,
+   * c'est la faute capitale : le joueur prend un coup qu'il ne pouvait PAS voir
+   * venir, et c'est SA propre vitesse qui le lui a caché.
+   *
+   * Règle : si l'ennemi est en train de télégraphier, on ne touche PAS à son tint.
+   * L'impact se lit alors sur une étoile blanche AU POINT DE CONTACT — un canal
+   * différent, qui n'entre en concurrence avec rien.
+   */
   private applyHitFeedback(sprite: Phaser.Physics.Arcade.Sprite, _ae: ActiveEnemy, _damage: number) {
+    const aiState = sprite.getData('aiState');
+    if (aiState === 'telegraph') {
+      this.spawnImpactStar(sprite.x, sprite.y);
+      return;
+    }
     sprite.setTintFill(0xffffff);
     this.time.delayedCall(80, () => { if (sprite.active) this.resetEnemyTint(sprite); });
+  }
+
+  /** Étoile d'impact — le feedback de coup quand le tint est RÉSERVÉ au telegraph. */
+  private spawnImpactStar(x: number, y: number) {
+    const star = this.add.star(x, y, 4, 2, 10, 0xffffff, 1).setDepth(36);
+    this.tweens.add({
+      targets: star,
+      scaleX: 0, scaleY: 0,
+      duration: 60,
+      ease: 'Power2',
+      onComplete: () => star.destroy(),
+    });
+  }
+
+  /**
+   * RECUL DU SPRITE — remplace le micro-shake de caméra du coup normal.
+   *
+   * Le coup banal secouait la CAMÉRA (40 ms / 0.002). À 1 coup/s c'est du punch ;
+   * à 4 coups/s (dague bufée) c'est un tremblement permanent qui rend le monde
+   * illisible — et le joueur ne peut plus lire les telegraphs pendant qu'il tape.
+   * Le feedback quitte donc la caméra pour le MONDE : c'est l'ennemi qui encaisse,
+   * pas l'écran. Le retour d'information est le même, le coût de lisibilité est nul.
+   */
+  private spawnHitRecoil(sprite: Phaser.Physics.Arcade.Sprite, angle: number) {
+    const homeX = sprite.x, homeY = sprite.y;
+    this.tweens.add({
+      targets: sprite,
+      x: homeX + Math.cos(angle) * 5,
+      y: homeY + Math.sin(angle) * 5,
+      duration: 70,
+      yoyo: true,
+      ease: 'Quad.easeOut',
+    });
+  }
+
+  // ── BUDGET DE SHAKE ─────────────────────────────────────────
+  /**
+   * UN SEUL shake de caméra par fenêtre de 250 ms, arbitré par PRIORITÉ.
+   *
+   * Les shakes s'empilaient : un finisher de dague sort 3 coups en 120 ms, chacun
+   * pouvant critiquer — donc jusqu'à 3 shakes qui se recouvrent, et l'écran ne se
+   * stabilise plus jamais. Un shake permanent n'est plus un shake : c'est du bruit,
+   * et il coûte exactement ce que le telegraph a besoin de payer, la lisibilité.
+   *
+   * Priorité : le plus GROS coup gagne la fenêtre (marteau/finisher > crit > lourd).
+   * Un coup plus faible pendant la fenêtre est simplement IGNORÉ — il a déjà son
+   * feedback dans le monde (recul du sprite, particules, chiffre).
+   */
+  private static readonly SHAKE_WINDOW_MS = 250;
+  private static readonly SHAKE_PRIO = { HEAVY_SWING: 1, CRIT: 2, FINISHER: 3 };
+  private shakeWindowUntil = 0;
+  private shakeWindowPrio  = 0;
+
+  private requestShake(durationMs: number, intensity: number, priority: number) {
+    const now = this.time.now;
+    if (now < this.shakeWindowUntil && priority <= this.shakeWindowPrio) return;
+    this.shakeWindowUntil = now + GameScene.SHAKE_WINDOW_MS;
+    this.shakeWindowPrio  = priority;
+    this.cameras.main.shake(durationMs, intensity);
   }
 
   private checkStagger(sprite: Phaser.Physics.Arcade.Sprite, ae: ActiveEnemy, damage: number) {
@@ -3146,7 +3382,16 @@ export class GameScene extends Phaser.Scene {
       [ElementType.DIVINE]:    0xffd700,
     };
     const color = colorOverride ?? (element ? (ELEMENT_HEX[element] ?? 0xffffff) : 0xffffff);
-    const count = 8;
+
+    // DENSITÉ DE PARTICULES — dégressive avec la CADENCE RÉELLE.
+    // 8 particules par coup est juste à 1-3 coups/s. À 6 coups/s (finisher de
+    // double-dague sous buff), c'est 48 cercles tweenés par seconde et par cible :
+    // le sprite disparaît sous ses propres particules, et l'ennemi ne peut plus
+    // rien annoncer. On mesure la cadence observée plutôt que de la supposer.
+    const now = this.time.now;
+    this.recentHitTimes.push(now);
+    while (this.recentHitTimes.length && now - this.recentHitTimes[0] > 1000) this.recentHitTimes.shift();
+    const count = this.recentHitTimes.length > 3 ? 5 : 8;
 
     for (let i = 0; i < count; i++) {
       const angle = (Math.PI * 2 / count) * i + Phaser.Math.Between(-10, 10) * 0.017;
@@ -3173,31 +3418,47 @@ export class GameScene extends Phaser.Scene {
   // Primitives Phaser uniquement (Graphics / shapes / tweens), ≤ 250ms,
   // tout objet détruit en onComplete — aucun résidu.
 
+  /**
+   * Durée d'un VFX de swing à l'aspd courante.
+   *
+   * Le VFX se compresse comme l'animation (sinon, à cadence élevée, trois arcs se
+   * superposent et l'écran devient une bouillie), MAIS il a un PLANCHER : sous
+   * ~100 ms un arc n'est plus lu, il clignote. Et les armes lourdes ont un plancher
+   * PLUS HAUT (greatsword 250, marteau 300) parce que leur identité visuelle est
+   * justement l'onde qui S'ÉTEND : un marteau dont l'onde de choc dure 80 ms n'est
+   * plus un marteau, c'est une dague grise.
+   */
+  private swingVfxMs(baseMs: number, aspd: number, floorMs = 100): number {
+    return Math.max(baseMs / aspd, floorMs);
+  }
+
   // hitIndex = index of this hit within the pattern (0-based, for dual/multi weapons)
   private spawnWeaponSwingVfx(
     fromX: number, fromY: number,
     toX: number, toY: number,
     weaponType: WeaponType | undefined,
     hitIndex = 0,
+    aspd = 1,
   ) {
     const angle = Math.atan2(toY - fromY, toX - fromX);
+    const dur = (baseMs: number, floorMs = 100) => this.swingVfxMs(baseMs, aspd, floorMs);
 
     switch (weaponType) {
       case WeaponType.DAGGER:
         // Silver, ultra-short, 150ms — instant stab feel (range 85 → radius ≈ 85 * 0.55)
-        this.spawnSlashArcVfx(fromX, fromY, angle, 0xcccccc, { radius: 47, thickness: 4, halfArc: 0.55, duration: 150 });
+        this.spawnSlashArcVfx(fromX, fromY, angle, 0xcccccc, { radius: 47, thickness: 4, halfArc: 0.55, duration: dur(150) });
         break;
 
       case WeaponType.DUAL_DAGGER: {
         // Each hit alternates left/right ±30° — double-stab rhythm (range 85 → radius ≈ 85 * 0.55)
         const ddOffset = hitIndex === 0 ? -0.52 : 0.52;
-        this.spawnSlashArcVfx(fromX, fromY, angle + ddOffset, 0xcccccc, { radius: 46, thickness: 4, halfArc: 0.50, duration: 150 });
+        this.spawnSlashArcVfx(fromX, fromY, angle + ddOffset, 0xcccccc, { radius: 46, thickness: 4, halfArc: 0.50, duration: dur(150) });
         break;
       }
 
       case WeaponType.SWORD:
         // Blue-steel, clean wide arc, 250ms (range 115 → radius ≈ 115 * 0.55)
-        this.spawnSlashArcVfx(fromX, fromY, angle, 0x88aaff, { radius: 63, thickness: 6, halfArc: 0.85, duration: 250 });
+        this.spawnSlashArcVfx(fromX, fromY, angle, 0x88aaff, { radius: 63, thickness: 6, halfArc: 0.85, duration: dur(250) });
         break;
 
       case WeaponType.DUAL_SWORD: {
@@ -3206,20 +3467,21 @@ export class GameScene extends Phaser.Scene {
         const dsAngle  = angle + (hitIndex - 1) * 0.35;
         const dsColor  = hitIndex === 1 ? 0xffffff : 0x88aaff;
         const dsRadius = 55 + hitIndex * 3;
-        this.spawnSlashArcVfx(fromX, fromY, dsAngle, dsColor, { radius: dsRadius, thickness: 5, halfArc: 0.78, duration: 200, alpha: 1.0 });
+        this.spawnSlashArcVfx(fromX, fromY, dsAngle, dsColor, { radius: dsRadius, thickness: 5, halfArc: 0.78, duration: dur(200), alpha: 1.0 });
         break;
       }
 
       case WeaponType.GREATSWORD: {
-        // Enormous semi-circle + white impact flash (fires after 300ms windup)
+        // Enormous semi-circle + white impact flash (fires after the windup)
         // Range 155 → radius ≈ 155 * 0.55, thickness ≈ range * 0.08, full brightness
-        this.spawnSlashArcVfx(fromX, fromY, angle, 0xffffff, { radius: 85, thickness: 12, halfArc: 1.20, duration: 400, alpha: 1.0 });
-        this.cameras.main.shake(60, 0.003);
+        // Plancher 250 ms : on doit VOIR l'onde s'étendre.
+        this.spawnSlashArcVfx(fromX, fromY, angle, 0xffffff, { radius: 85, thickness: 12, halfArc: 1.20, duration: dur(400, 250), alpha: 1.0 });
+        this.requestShake(60, 0.003, 2);
         const gsFlash = this.add.circle(fromX, fromY, 24, 0xffffff, 0.85).setDepth(32);
         this.tweens.add({
           targets: gsFlash,
           scaleX: 0.1, scaleY: 0.1, alpha: 0,
-          duration: 250,
+          duration: dur(250, 150),
           ease: 'Power3',
           onComplete: () => gsFlash.destroy(),
         });
@@ -3237,11 +3499,12 @@ export class GameScene extends Phaser.Scene {
         break;
 
       case WeaponType.AXE:
-        this.spawnAxeVfx(fromX, fromY, toX, toY, angle, 0xff6600);
+        this.spawnAxeVfx(fromX, fromY, toX, toY, angle, 0xff6600, dur(300, 160));
         break;
 
       case WeaponType.HAMMER:
-        this.spawnHammerVfx(toX, toY, 0xffdd00);
+        // Plancher 300 ms : l'onde de choc EST l'identité du marteau.
+        this.spawnHammerVfx(toX, toY, 0xffdd00, dur(500, 300));
         break;
 
       case WeaponType.STAFF:
@@ -3410,9 +3673,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   // Hache : demi-cercle orange lourd (300ms) + éclats de métal rouges à l'impact
-  private spawnAxeVfx(fromX: number, fromY: number, toX: number, toY: number, angle: number, color: number) {
-    // Orange heavy arc — wider and thicker than sword, 300ms (range 125 → radius ≈ 125 * 0.55)
-    this.spawnSlashArcVfx(fromX, fromY, angle, color, { radius: 69, thickness: 10, halfArc: 0.80, duration: 300 });
+  private spawnAxeVfx(fromX: number, fromY: number, toX: number, toY: number, angle: number, color: number, durationMs = 300) {
+    // Orange heavy arc — wider and thicker than sword (range 125 → radius ≈ 125 * 0.55)
+    this.spawnSlashArcVfx(fromX, fromY, angle, color, { radius: 69, thickness: 10, halfArc: 0.80, duration: durationMs });
     // Red metal sparks fanning out from impact point (max speed ~280px/s)
     const sparkCount = 10;
     for (let i = 0; i < sparkCount; i++) {
@@ -3433,10 +3696,12 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // Marteau : onde de choc expansive (500ms) + flash jaune intense + débris projetés
-  // Le plus lent, l'impact le plus massif — shake le plus fort
-  private spawnHammerVfx(x: number, y: number, color: number) {
-    // Large expanding shockwave ring — 500ms lifetime (range 105 → final radius ≈ 63px)
+  // Marteau : onde de choc expansive + flash jaune intense + débris projetés
+  // Le plus lent, l'impact le plus massif — shake le plus fort.
+  // `durationMs` se compresse avec l'aspd mais ne descend JAMAIS sous 300 ms : on
+  // doit VOIR l'onde s'étendre, sinon le marteau devient une dague grise.
+  private spawnHammerVfx(x: number, y: number, color: number, durationMs = 500) {
+    // Large expanding shockwave ring (range 105 → final radius ≈ 63px)
     const ring = this.add.graphics({ x, y }).setDepth(31);
     ring.lineStyle(8, color, 0.9);
     ring.strokeCircle(0, 0, 14);
@@ -3444,7 +3709,7 @@ export class GameScene extends Phaser.Scene {
       targets: ring,
       scaleX: 4.5, scaleY: 4.5,
       alpha: 0,
-      duration: 500,
+      duration: durationMs,
       ease: 'Power2.easeOut',
       onComplete: () => ring.destroy(),
     });
@@ -3456,7 +3721,7 @@ export class GameScene extends Phaser.Scene {
       targets: ring2,
       scaleX: 3.0, scaleY: 3.0,
       alpha: 0,
-      duration: 380,
+      duration: durationMs * 0.76,
       ease: 'Power2.easeOut',
       onComplete: () => ring2.destroy(),
     });
@@ -3486,7 +3751,8 @@ export class GameScene extends Phaser.Scene {
         onComplete: () => d.destroy(),
       });
     }
-    this.cameras.main.shake(150, 0.010);
+    // Le marteau gagne TOUJOURS sa fenêtre de shake — c'est le coup le plus lourd du jeu.
+    this.requestShake(150, 0.010, GameScene.SHAKE_PRIO.FINISHER);
   }
 
   // Windup : teinte jaune sur le joueur pendant le chargement d'une arme lourde
@@ -3878,7 +4144,48 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private showDamageNumber(x: number, y: number, amount: number, isCrit: boolean, element?: ElementType, isEnemy = false) {
+  // ── AGRÉGATION DES CHIFFRES DE DÉGÂTS ───────────────────────
+  /**
+   * Un texte par cible et par NATURE de coup (normal / critique), sur une fenêtre
+   * de 300 ms : un coup supplémentaire dans la fenêtre INCRÉMENTE le chiffre au
+   * lieu d'en créer un nouveau.
+   *
+   * Sans ça, un finisher de double-dague (6 coups en 360 ms) empile SIX textes qui
+   * se chevauchent sur le même sprite : le joueur ne lit plus aucun d'entre eux, et
+   * paie en plus le coût de rendu. Le chiffre qui monte est PLUS lisible que six
+   * chiffres qui se marchent dessus — et il dit la même chose.
+   *
+   * Les critiques gardent leur propre texte (c'est l'information qu'on veut voir
+   * ressortir), d'où la clé composite : au plus DEUX textes par cible.
+   */
+  private dmgAggregates: Map<string, { txt: Phaser.GameObjects.Text; total: number; expiresAt: number }> = new Map();
+  private static readonly DMG_AGGREGATE_MS = 300;
+
+  private showEnemyDamageNumber(
+    instanceId: string, x: number, y: number, amount: number, isCrit: boolean, element?: ElementType,
+  ) {
+    const now = this.time.now;
+    const key = `${instanceId}:${isCrit ? 'c' : 'n'}`;
+    const entry = this.dmgAggregates.get(key);
+
+    if (entry && now < entry.expiresAt && entry.txt.active) {
+      entry.total += amount;
+      entry.expiresAt = now + GameScene.DMG_AGGREGATE_MS;
+      entry.txt.setText(isCrit ? `${entry.total}!` : `${entry.total}`);
+      // Re-punch : le chiffre « encaisse » le coup supplémentaire.
+      this.tweens.add({
+        targets: entry.txt,
+        scale: entry.txt.scale * 1.15,
+        duration: 50, yoyo: true, ease: 'Quad.easeOut',
+      });
+      return;
+    }
+
+    const txt = this.showDamageNumber(x, y, amount, isCrit, element);
+    this.dmgAggregates.set(key, { txt, total: amount, expiresAt: now + GameScene.DMG_AGGREGATE_MS });
+  }
+
+  private showDamageNumber(x: number, y: number, amount: number, isCrit: boolean, element?: ElementType, isEnemy = false): Phaser.GameObjects.Text {
     const ELEMENT_COLORS: Partial<Record<ElementType, string>> = {
       [ElementType.FIRE]:      '#ff4400',
       [ElementType.WATER]:     '#2266ff',
@@ -3924,6 +4231,8 @@ export class GameScene extends Phaser.Scene {
         ease: 'Back.easeOut',
       });
     }
+
+    return txt;
   }
 
   /** Feedback flottant DODGE_PCT (loot stat rolls) — même style que showDamageNumber. */
@@ -4974,12 +5283,17 @@ export class GameScene extends Phaser.Scene {
    */
   private executeFinisherAttack(
     weaponType: WeaponType | undefined,
-    pattern: { hits: AttackHit[]; cooldown: number; windupMs?: number; isProjectile?: boolean },
+    pattern: AttackPattern,
     comboConfig: ComboConfig,
     _now: number,
+    aspd = 1,
   ) {
-    const windupMs = pattern.windupMs ?? 0;
+    // Le finisher se compresse comme le reste : mêmes planchers (windup 50%,
+    // délai 60 ms). Sinon un joueur rapide verrait son finisher — le coup qu'il a
+    // travaillé toute la chaîne pour obtenir — rester à la vitesse d'un joueur lent.
+    const windupMs = effectiveWindupMs(pattern, aspd);
     const finisher = comboConfig.finisher;
+    const delayOf  = (d: number) => effectiveHitDelayMs(d, aspd);
 
     // BLOCKER-E: heavyFinisherBonus multiplie le damageMultiplier pour GS/HAMMER/AXE
     const isHeavyWeapon = weaponType === WeaponType.GREATSWORD
@@ -4994,7 +5308,7 @@ export class GameScene extends Phaser.Scene {
       // BUG4 fix: passe le damageMultiplier de chaque hit à fireArrowProjectile.
       if (windupMs > 0) this.spawnWindupVfx(windupMs);
       finisher.hits.forEach(hit => {
-        this.time.delayedCall(windupMs + hit.delay, () => {
+        this.time.delayedCall(windupMs + delayOf(hit.delay), () => {
           if (!this.isTraveling) this.fireArrowProjectile(hit.damageMultiplier);
         });
       });
@@ -5002,12 +5316,12 @@ export class GameScene extends Phaser.Scene {
       if (windupMs > 0) this.spawnWindupVfx(windupMs);
       finisher.hits.forEach((hit, hitIndex) => {
         const effectiveDmgMult = hit.damageMultiplier * heavyFinisherFactor;
-        const fireAt = windupMs + hit.delay;
+        const fireAt = windupMs + delayOf(hit.delay);
         const doHit = () => {
           if (this.isTraveling) return;
           const tx = this.player.x + Math.cos(this.facingAngle) * hit.range * 0.7;
           const ty = this.player.y + Math.sin(this.facingAngle) * hit.range * 0.7;
-          this.spawnWeaponSwingVfx(this.player.x, this.player.y, tx, ty, weaponType, hitIndex);
+          this.spawnWeaponSwingVfx(this.player.x, this.player.y, tx, ty, weaponType, hitIndex, aspd);
           this.executeHitInCone(hit.range, hit.halfArc, effectiveDmgMult);
         };
         if (fireAt === 0) doHit();
@@ -5018,7 +5332,7 @@ export class GameScene extends Phaser.Scene {
     // Effets spéciaux — appliqués au timing du dernier hit
     if (finisher.effect) {
       const lastHit  = finisher.hits[finisher.hits.length - 1];
-      const effectAt = windupMs + (lastHit?.delay ?? 0);
+      const effectAt = windupMs + delayOf(lastHit?.delay ?? 0);
       const effect   = finisher.effect;
 
       const applyEffect = () => {
@@ -5078,7 +5392,7 @@ export class GameScene extends Phaser.Scene {
 
         // AoE shake si le finisher a une zone explicite (GREATSWORD, HAMMER)
         if (effect.aoeRadius) {
-          this.cameras.main.shake(120, 0.010);
+          this.requestShake(150, 0.010, GameScene.SHAKE_PRIO.FINISHER);
         }
       };
 

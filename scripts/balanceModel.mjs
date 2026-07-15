@@ -209,7 +209,22 @@ const CRIT_DENOM = 1 + REF_CRIT * (REF_CDMG - 1); // 1.20
  */
 export const CALIB = {
   ATK_FLAT: 0.649, ATK_PCT: 1.090, CRIT_RATE: 0.552, CRIT_DMG: 1.140,
-  ASPD_PCT: 1.010, ELEM_BONUS_PCT: 1.187, BOSS_DMG_PCT: 2.003,
+  // ASPD_PCT 1.010 → 2.197 (étape 3). La substat a changé de NATURE : elle est
+  // désormais bornée (softcap, asymptote 220) et elle ne coûte plus rien au combo
+  // (la deadline ne rétrécit plus avec la vitesse). Son prix devait être re-résolu.
+  //
+  // Résolu par MESURE APPARIÉE sur 140 sets Mythiques réels : une ligne d'ATK_PCT
+  // (+6,54%) rapporte +6,76% de DPS ; il faut une ligne d'ASPD de 13,18% pour
+  // acheter autant. D'où CALIB = 13,18 / 6 = 2,197 (fourchette 10–16%).
+  //
+  // ⚠ Le piège dans lequel je suis tombé, écrit ici pour qu'on n'y retombe pas :
+  // « une ligne vaut 6% de son axe » est le prix de la PREMIÈRE ligne, pas de la
+  // Nième. Une substat en POURCENTAGE est additive DANS un multiplicateur : passer
+  // de +18% à +24% d'ATK, c'est ×1,24/×1,18 = +5,1%, pas +6%. Chercher « +6% » au
+  // point fixe fait DIVERGER le solveur (il partait à un centre de 466%). La bonne
+  // cible n'est pas un absolu : c'est la PARITÉ avec la substat étalon (ATK_PCT),
+  // mesurée sur les mêmes sets. C'est ça, le pilier n°2.
+  ASPD_PCT: 2.197, ELEM_BONUS_PCT: 1.187, BOSS_DMG_PCT: 2.003,
   HP_FLAT: 1.040, HP_PCT: 1.729, DEF_FLAT: 1.294, DEF_PCT: 1.295,
   DODGE_PCT: 1.883, LIFESTEAL_PCT: 1.337, HP_ON_KILL_FLAT: 2.022,
   // ⚠ NON CALIBRÉES — et je le dis plutôt que de faire semblant.
@@ -319,16 +334,73 @@ export const OFFENSE_SLOTS = ['WEAPON', 'RING', 'AMULET'];
 export const ARMOR_SLOTS   = ['HELM', 'CHEST', 'LEGS', 'BOOTS', 'GLOVES', 'CAPE'];
 
 /**
- * TYPE_COEF — coefficient de main stat par type d'arme.
- * ⚠ HORS SCOPE DE CETTE ÉTAPE : ce sont les rapports actuels (genItems.dmgMult),
- * simplement NORMALISÉS pour que leur moyenne vaille 1.0 — sans quoi le budget
- * global dériverait avec le type d'arme tiré. La PARITÉ des 10 armes (DPS
- * effectif à portée et temps d'animation égaux) est l'étape 3 ; c'est là qu'on
- * touchera à ces rapports, pas ici.
+ * TYPE_COEF — coefficient de main stat par type d'arme. RÉSOLU (étape 3).
+ * ==================================================================
+ * Les anciennes valeurs (SWORD 1.00 · GREATSWORD 1.55 · DAGGER 0.78 · HAMMER 1.65…)
+ * étaient héritées de `genItems.dmgMult` : une intuition de « une arme lourde tape
+ * plus fort ». Mesurées, elles faisaient l'inverse de ce qu'il fallait.
+ *
+ * LA FAUTE, EN UNE PHRASE : le poids du marteau était payé DEUX FOIS.
+ * Son PATTERN lui donne déjà ×2,5 de dégâts par coup et 234° d'arc (il touche 1,53
+ * cible en moyenne contre 0,77 pour la dague) ; TYPE_COEF lui ajoutait ENSUITE ×1,41
+ * de main stat. La dague, elle, paie sa vitesse une fois (cooldown court) et la voit
+ * taxée deux fois : ×0,67 de main stat, ET elle doit frapper à 85 px — c'est-à-dire
+ * exactement la ligne à laquelle l'ennemi frappe, elle ne peut jamais sortir de la
+ * zone de danger. TYPE_COEF AMPLIFIAIT l'avantage de chaque pattern au lieu de le
+ * COMPENSER. Il était à l'envers.
+ *
+ * Mesuré sur les vrais modules (CombatSystem coup par coup, patterns réels, cycle de
+ * combo complet, main stat identique, élément NEUTRE pour ne pas mesurer le tableau
+ * des faiblesses à la place de l'arme) :
+ *
+ *   ÉCART max/min entre les 10 armes = ×3,7.   4 armes sur 10 DOMINÉES.
+ *   ÉPÉE 47% · DAGUE 46% · ARC 27% de la valeur du marteau. Du contenu MORT.
+ *
+ * LA CIBLE : ÉGALISER LE DPS MONO-CIBLE. Et pourquoi celle-là, pas une autre.
+ *
+ * J'ai d'abord réglé TYPE_COEF pour égaliser une VALEUR MÉLANGÉE (DPS × foule ×
+ * sûreté). C'était une faute, et la mesure me l'a renvoyée : la main stat est un
+ * levier de DÉGÂTS PURS. Elle monte le mono-cible ET la foule DU MÊME facteur, et ne
+ * touche NI l'aire du cône NI l'allonge NI la sûreté. Vouloir corriger un déficit de
+ * FOULE (que la main stat n'affecte pas) en gonflant les DÉGÂTS revient à sur-armer
+ * une dague déjà rapide : mesuré sur le vrai catalogue, ma première passe donnait une
+ * dague à ×2,9 les dégâts d'une épée SUR CHAQUE BOSS. Le contenu mort, retourné.
+ *
+ * UN LEVIER NE PEUT PAS RÉGLER TROIS AXES. Une arme a trois dimensions — DPS
+ * mono-cible, AoE, sûreté/allonge — et TYPE_COEF n'en pilote qu'une : le niveau de
+ * dégâts. Le bon choix n'est donc pas « tout égaliser » (impossible), c'est CHOISIR
+ * l'axe à égaliser. Réponse : le MONO-CIBLE. Parce que BOSS_SHARE = 0,40 — 40% des
+ * dégâts d'une run vont à un boss ou une élite, et un boss NE S'ÉVITE PAS. Une arme
+ * faible sur le mono-cible est vraiment morte ; une arme faible en AoE nettoie juste
+ * le trash un peu moins vite. On égalise donc là où l'échec est fatal.
+ *
+ * Ce qui RESTE — l'AoE, l'allonge, la sûreté — devient le GOÛT, gratuitement :
+ *   arme LENTE À GRAND ARC (greatsword, hammer, axe) : mono-cible à parité + fauchée.
+ *   arme RAPIDE COURTE (dague) : mono-cible à parité, mais elle vit dans la zone de
+ *     frappe ennemie (85 px) — plus de procs à l'impact, plus de risque.
+ *   arme À ALLONGE (lance, bâton, arc) : mono-cible à parité + sécurité de distance.
+ *
+ * Résolu par ITÉRATION sur le VRAI catalogue (coef ∝ 1/DPS mesuré, 7 passes) — et
+ * non sur un synthétique arme-seule, qui donnerait au coef un pouvoir qu'il n'a pas :
+ * la main stat n'est que ~40% de l'ATK totale, le reste vient de l'armure et des
+ * accessoires (partagés). C'est pourquoi le coef doit avoir une AMPLITUDE plus large
+ * qu'on ne l'imagine (dague 0,39 → bow 2,09) : il ne bouge qu'une fraction de l'ATK.
+ *
+ * Résultat : écart de DPS MONO-CIBLE ×3,57 → ×1,64.
+ *
+ * ⚠ LE BÂTON reste à ~61% du mono-cible, coef clampé, et c'est ASSUMÉ. Sa main stat
+ * est MATK (mitigée par la DEF magique) et surtout elle est DOUBLE USAGE : elle nourrit
+ * aussi les SORTS. Le pousser à parité au corps-à-corps le rendrait ingérable une fois
+ * les sorts équilibrés (étape 4). Le bâton est une arme de SORT ; son attaque de base
+ * a le droit d'être secondaire. À revoir à l'étape 4, pas avant.
+ *
+ * ⚠ BOSS_SHARE (0,40) est l'hypothèse qui CHOISIT l'axe. Si le playtest montre que le
+ * jeu est surtout du trash en meute, il faudra rééquilibrer vers l'AoE. C'est le
+ * premier nombre à réfuter — cf. rapport d'étape 3.
  */
 const RAW_DMG_MULT = {
-  SWORD: 1.00, GREATSWORD: 1.55, DAGGER: 0.78, AXE: 1.25, HAMMER: 1.65,
-  SPEAR: 1.08, STAFF: 1.55, BOW: 0.92, DUAL_DAGGER: 0.85, DUAL_SWORD: 1.10,
+  SWORD: 1.19, GREATSWORD: 1.27, DAGGER: 0.45, AXE: 0.90, HAMMER: 0.96,
+  SPEAR: 0.92, STAFF: 2.53, BOW: 2.42, DUAL_DAGGER: 0.40, DUAL_SWORD: 0.53,
 };
 const RAW_MEAN = Object.values(RAW_DMG_MULT).reduce((a, b) => a + b, 0) / Object.keys(RAW_DMG_MULT).length;
 export const TYPE_COEF = Object.fromEntries(
