@@ -132,6 +132,12 @@ export class InventoryScene extends Phaser.Scene {
    *  renderGrid) — ils vivent hors de dynamicObjs puisqu'ils sont reconstruits au
    *  fil du scroll, pas seulement au refresh. */
   private gridWindowDispose: (() => void) | null = null;
+  /** Position de scroll du sac, PRÉSERVÉE entre les refresh().
+   *  Équiper/utiliser/vendre appelle refresh() qui reconstruit la grille : sans ce
+   *  report, elle repartait toujours du haut, et le joueur perdait sa place à
+   *  chaque action. Remis à 0 seulement quand le contenu change vraiment (onglet,
+   *  recherche) — cf. renderGrid, l'init clampe au nouveau contentH. */
+  private bagScrollY = 0;
 
   // Static objects set once in create(), updated in refresh()
   private goldText!: Phaser.GameObjects.Text;
@@ -300,6 +306,7 @@ export class InventoryScene extends Phaser.Scene {
       autoFocus: false,
       onChange: (q) => {
         this.searchQuery = q;
+        this.bagScrollY = 0; // la liste filtrée change : on repart du haut
         // refresh() détruit `dynamicObjs` — le champ n'y est PAS, il survit.
         this.refresh();
       },
@@ -862,7 +869,9 @@ export class InventoryScene extends Phaser.Scene {
       return { category: g.category, slots: g.slots, headerY, itemsY };
     });
     const contentH = Math.max(0, cursorY - GROUP_GAP);
-    let   scrollY  = 0;
+    // Reprend la position préservée, clampée au contenu courant (le sac a pu
+    // rétrécir depuis le dernier rendu — un équipement retiré de la grille).
+    let   scrollY  = Phaser.Math.Clamp(this.bagScrollY, 0, Math.max(0, contentH - VISIBLE_H));
 
     // Geometry mask clips the scrollable grid area
     const maskGfx = this.make.graphics({ x: 0, y: 0 });
@@ -990,9 +999,9 @@ export class InventoryScene extends Phaser.Scene {
       }
     }
 
-    renderWindow(0);
+    renderWindow(scrollY);
     /** Scroll auquel la fenêtre courante a été construite. */
-    let windowScrollY = 0;
+    let windowScrollY = scrollY;
     // Les objets de fenêtre doivent mourir avec le reste au prochain refresh() :
     // on branche un porteur dans dynamicObjs qui les détruit en cascade.
     this.gridWindowDispose = () => {
@@ -1012,6 +1021,7 @@ export class InventoryScene extends Phaser.Scene {
 
       const applyScroll = (next: number) => {
         scrollY = Phaser.Math.Clamp(next, 0, maxScroll);
+        this.bagScrollY = scrollY; // préservé pour le prochain refresh()
         // Tant qu'on reste dans la marge, il suffit de déplacer le petit lot déjà
         // rendu. On ne reconstruit la fenêtre que lorsqu'on en sort.
         if (Math.abs(scrollY - windowScrollY) >= RENDER_BUFFER) {
@@ -1111,6 +1121,7 @@ export class InventoryScene extends Phaser.Scene {
         this.hideTabTooltip();
         if (this.bagFilter === tab.id) return;
         this.bagFilter = tab.id;
+        this.bagScrollY = 0; // catégorie différente : on repart du haut
         this.refresh(); // re-rend immédiatement — l'état actif EST le feedback
       });
       this.dynamicObjs.push(hit);
