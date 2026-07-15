@@ -336,10 +336,17 @@ export class GameScene extends Phaser.Scene {
   private comboWeaponType: WeaponType | undefined = undefined;
   private guardUntil = 0;       // timestamp fin de la garde (Sword finisher)
   private inWindup = false;     // true pendant le chargement (windup) d'une arme lourde
-  // GUARD_FINISHER (glacius_guarded_strikes) — bouclier temporisé (8% HP max, 3s, se
-  // rafraîchit) distinct de playerShieldHp (LOW_HP_SHIELD_30_PCT, pas de durée/expiry).
-  private guardFinisherShieldHp = 0;
-  private guardFinisherShieldUntil = 0;
+  // Bouclier temporisé générique (GUARD_FINISHER 8%/3s, LAST_BASTION 25%/5s) —
+  // le plus généreux gagne (jamais cumulatif), distinct de playerShieldHp
+  // (LOW_HP_SHIELD_30_PCT, qui n'a pas de durée/expiry).
+  private timedShieldHp = 0;
+  private timedShieldUntil = 0;
+  // MAGMA_GUARD (ignis_magma_armor) — 1 coup absorbé entièrement, 1 fois par combat.
+  private magmaGuardUsedThisCombat = false;
+  // LAST_BASTION (glacius_last_bastion) — 1 fois par combat.
+  private lastBastionUsedThisCombat = false;
+  // PRESERVED (glacius_deep_patience) — 1 fois par ZONE (pas par combat).
+  private preservedUsedThisZone = false;
   private playerModifiers!: TalentModifiers; // recalculé après unlock/respec/équipement
 
   // Interaction tracking
@@ -428,8 +435,11 @@ export class GameScene extends Phaser.Scene {
     this.comboWeaponType = undefined;
     this.guardUntil      = 0;
     this.inWindup        = false;
-    this.guardFinisherShieldHp    = 0;
-    this.guardFinisherShieldUntil = 0;
+    this.timedShieldHp    = 0;
+    this.timedShieldUntil = 0;
+    this.magmaGuardUsedThisCombat = false;
+    this.lastBastionUsedThisCombat = false;
+    this.preservedUsedThisZone = false;
     for (const z of this._finisherZones) { if (z.gfx.active) z.gfx.destroy(); }
     this._finisherZones = [];
     this.playerModifiers = TalentSystem.getModifiers(this.gameState.player);
@@ -686,9 +696,14 @@ export class GameScene extends Phaser.Scene {
         for (const id of Object.keys(this.cooldowns)) this.cooldowns[id] = 0;
       }
     }
-    // FROZEN_SANCTUARY_30_PCT : la stase est « une fois par combat » — le flag se
-    // réarme dès la sortie de combat (même transition que firstStrikeReady).
-    if (!inCombatNow) this.frozenSanctuaryUsedThisCombat = false;
+    // FROZEN_SANCTUARY_30_PCT / MAGMA_GUARD / LAST_BASTION : toutes « une fois par
+    // combat » — les flags se réarment dès la sortie de combat (même transition
+    // que firstStrikeReady).
+    if (!inCombatNow) {
+      this.frozenSanctuaryUsedThisCombat = false;
+      this.magmaGuardUsedThisCombat = false;
+      this.lastBastionUsedThisCombat = false;
+    }
     this.wasInCombat = inCombatNow;
 
     if (this.playtimeAccumulator - this.lastAutoSave > 180) {
@@ -1256,7 +1271,7 @@ export class GameScene extends Phaser.Scene {
         this.checkStagger(sprite, activeEnemy, finalDamage);
         // Talents Partie 1 : statuts sur coup + arc en chaîne (pas sur un
         // coup qui tue — la cible n'existe plus pour porter un statut).
-        this.applyOnHitTalentEffects(activeEnemy, finalDamage, false);
+        this.applyOnHitTalentEffects(activeEnemy, finalDamage, false, result.element);
       }
     }
 
@@ -1392,7 +1407,7 @@ export class GameScene extends Phaser.Scene {
         else {
           this.addMagmaStackIfEquipped(activeEnemy.instanceId);
           this.checkStagger(sprite, activeEnemy, arrowFinalDmg);
-          this.applyOnHitTalentEffects(activeEnemy, arrowFinalDmg, false);
+          this.applyOnHitTalentEffects(activeEnemy, arrowFinalDmg, false, result.element);
         }
         break;
       }
@@ -1456,7 +1471,7 @@ export class GameScene extends Phaser.Scene {
           this.addMagmaStackIfEquipped(activeEnemy.instanceId);
           this.checkStagger(nearest, activeEnemy, finalSkillDmg);
           // FREEZE_CHANCE_PCT (abyssal_ice_veil) est réservé aux sorts — isSpell=true.
-          this.applyOnHitTalentEffects(activeEnemy, finalSkillDmg, true);
+          this.applyOnHitTalentEffects(activeEnemy, finalSkillDmg, true, result.element);
         }
 
         // SKILL_ECHO_50_PCT (hidden_stormheart_staff) — rejoue la compétence à 50%
@@ -1729,7 +1744,16 @@ export class GameScene extends Phaser.Scene {
         if (slowEffect.duration <= 0) ae.statusEffects = ae.statusEffects.filter(e => e !== slowEffect);
       }
       const slowMult = slowEffect && slowEffect.duration > 0 ? Math.max(0, 1 - slowEffect.strength) : 1;
-      const moveSpeed = (def.moveSpeed ?? 90) * slowMult;
+
+      // CHILL_AURA (glacius_deep_stillness) — aura passive r130 : -10% vitesse de
+      // déplacement ET d'attaque pour les ennemis proches. Pas un statusEffect (pas
+      // de durée à décompter) : purement positionnel, recalculé chaque frame via
+      // `dist` déjà connu ici. chillMoveMult réduit la vitesse ; chillAtkMult
+      // ALLONGE les durées de télégraphe/cooldown (même -10%, sens inverse).
+      const inChillAura  = this.playerModifiers.chillAura && dist <= 130;
+      const chillMoveMult = inChillAura ? 0.90 : 1;
+      const chillAtkMult  = inChillAura ? 1.10 : 1;
+      const moveSpeed = (def.moveSpeed ?? 90) * slowMult * chillMoveMult;
 
       // ── Shock tick (talents Partie 2 — fulguris_spark_touch/overload) ────
       // Contrairement au SHOCK subi par le joueur (immobilise, cf. Phase 0),
@@ -1917,12 +1941,12 @@ export class GameScene extends Phaser.Scene {
           // Pick the best pattern given context
           const chosenPatternId = this.pickEnemyPattern(ae, dist, assignment);
           sprite.setData('aiState', 'telegraph');
-          sprite.setData('aiStateUntil', now + resolvePattern(ae.enemyId, chosenPatternId).telegraphMs);
+          sprite.setData('aiStateUntil', now + resolvePattern(ae.enemyId, chosenPatternId).telegraphMs * chillAtkMult);
           sprite.setData('aiPattern', chosenPatternId);
           sprite.setData('chargeTargetX', px);
           sprite.setData('chargeTargetY', py);
           body.setVelocity(0, 0);
-          this.startEnemyTelegraph(sprite, ae, chosenPatternId);
+          this.startEnemyTelegraph(sprite, ae, chosenPatternId, chillAtkMult);
         }
 
       // ── STATE: telegraph ─────────────────────────────────────
@@ -1953,7 +1977,7 @@ export class GameScene extends Phaser.Scene {
         if (now >= aiStateUntil) {
           sprite.setData('aiState', 'cooldown');
           const cfg = resolvePattern(ae.enemyId, (sprite.getData('aiPattern') as AttackPatternId | null) ?? 'melee_basic');
-          sprite.setData('aiStateUntil', now + cfg.cooldownMs);
+          sprite.setData('aiStateUntil', now + cfg.cooldownMs * chillAtkMult);
         }
 
       // ── STATE: cooldown ───────────────────────────────────────
@@ -2059,9 +2083,13 @@ export class GameScene extends Phaser.Scene {
     sprite: Phaser.Physics.Arcade.Sprite,
     ae: ActiveEnemy,
     patternId: AttackPatternId,
+    durationMult = 1,
   ) {
     const cfg = resolvePattern(ae.enemyId, patternId);
-    const duration = cfg.telegraphMs;
+    // CHILL_AURA (durationMult > 1 dans le rayon) : le tell visuel doit durer aussi
+    // longtemps que le FSM attend réellement avant d'exécuter — sinon l'avertissement
+    // s'arrête avant le coup, ce qui va à l'encontre de l'effet défensif du talent.
+    const duration = cfg.telegraphMs * durationMult;
     const tint = cfg.telegraphTint;
     // Real sprites rest at a scale far from 1.0 (upscaled so their padded native frame
     // reads at a legible size — see fitSpriteToContent). These telegraph "juice" tweens
@@ -2647,13 +2675,23 @@ export class GameScene extends Phaser.Scene {
     const equipment = this.gameState.player.equipment;
     let dmg = rawDamage;
 
-    // GUARD_FINISHER (glacius_guarded_strikes) — bouclier temporisé, absorbe avant
-    // TOUT le reste (y compris LOW_HP_SHIELD) : c'est le plus frais des deux, et il
-    // expire de toute façon tout seul si non consommé — autant qu'il serve en premier.
-    if (this.time.now > this.guardFinisherShieldUntil) this.guardFinisherShieldHp = 0;
-    if (this.guardFinisherShieldHp > 0) {
-      const absorbed = Math.min(this.guardFinisherShieldHp, dmg);
-      this.guardFinisherShieldHp -= absorbed;
+    // MAGMA_GUARD (ignis_magma_armor) — absorbe ENTIÈREMENT 1 coup par combat,
+    // avant tout le reste (bouclier total, pas un pourcentage à empiler).
+    if (this.playerModifiers.magmaGuard && !this.magmaGuardUsedThisCombat && dmg > 0) {
+      this.magmaGuardUsedThisCombat = true;
+      this.cameras.main.flash(150, 255, 100, 0);
+      this.events.emit('show_notification', 'Garde de Magma — coup absorbé !');
+      dmg = 0;
+    }
+
+    // Bouclier temporisé (GUARD_FINISHER/LAST_BASTION, cf. grantTimedShield) —
+    // absorbe avant TOUT le reste (y compris LOW_HP_SHIELD) : c'est le plus frais
+    // des deux, et il expire de toute façon tout seul si non consommé — autant
+    // qu'il serve en premier.
+    if (this.time.now > this.timedShieldUntil) this.timedShieldHp = 0;
+    if (this.timedShieldHp > 0) {
+      const absorbed = Math.min(this.timedShieldHp, dmg);
+      this.timedShieldHp -= absorbed;
       dmg -= absorbed;
     }
 
@@ -2697,12 +2735,45 @@ export class GameScene extends Phaser.Scene {
       const resistChance = PassiveSystem.getDeathResistChance(equipment);
       if (resistChance > 0 && Math.random() < resistChance) {
         dmg = Math.max(0, hpBefore - 1); // laisse le joueur à 1 HP pile
+      } else if (this.playerModifiers.preserved && !this.preservedUsedThisZone) {
+        // PRESERVED (glacius_deep_patience) — sauvetage GARANTI (pas une chance),
+        // 1 fois par ZONE, contrairement au death-resist d'objet ci-dessus (par coup,
+        // probabiliste). Fallback uniquement si l'objet n'a pas déjà sauvé le joueur.
+        this.preservedUsedThisZone = true;
+        dmg = Math.max(0, hpBefore - 1);
+        this.iframeUntil = this.time.now + 2000;
+        this.cameras.main.flash(220, 150, 220, 255);
+        this.events.emit('show_notification', 'Patience de la Montagne — vous survivez !');
       }
     }
 
     this.maybeTriggerLowHpShield(hpBefore - dmg);
     this.maybeTriggerFrozenSanctuary(hpBefore - dmg);
+    this.maybeTriggerLastBastion(hpBefore - dmg);
     return dmg;
+  }
+
+  /** Pool générique de bouclier temporisé (GUARD_FINISHER, LAST_BASTION) — le
+   *  plus généreux gagne, jamais cumulatif, sur les DEUX axes indépendamment
+   *  (HP ET expiration) : un Math.max sur un seul des deux aurait pu laisser une
+   *  source plus généreuse en HP raccourcir la durée d'une source antérieure
+   *  encore active (bug trouvé en review — GUARD_FINISHER écrasait Until sans
+   *  Math.max, pouvant couper court à un LAST_BASTION en cours). */
+  private grantTimedShield(hpAmount: number, durationMs: number): void {
+    this.timedShieldHp = Math.max(this.timedShieldHp, hpAmount);
+    this.timedShieldUntil = Math.max(this.timedShieldUntil, this.time.now + durationMs);
+  }
+
+  /** LAST_BASTION (glacius_last_bastion) — 1 fois par combat : passer sous 30%
+   *  HP accorde un bouclier temporisé de 25% des HP max pendant 5s. */
+  private maybeTriggerLastBastion(hpAfter: number): void {
+    if (!this.playerModifiers.lastBastion || this.lastBastionUsedThisCombat) return;
+    const maxHp = this.gameState.player.stats.maxHp;
+    if (maxHp <= 0 || hpAfter / maxHp >= 0.30) return;
+    this.lastBastionUsedThisCombat = true;
+    this.grantTimedShield(Math.round(maxHp * 0.25), 5000);
+    this.cameras.main.flash(200, 150, 220, 255);
+    this.events.emit('show_notification', 'Dernier Bastion — bouclier !');
   }
 
   /** FROZEN_SANCTUARY_30_PCT — déclenche la stase (invulnérabilité + soin 10%/s
@@ -3116,11 +3187,27 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /** PHANTOM_STRIKE_PCT (fulguris_directed_spark family) — chance qu'un coup
+   *  direct soit doublé d'un coup fantôme identique, instantané, sans consommer
+   *  de cooldown (juste une deuxième instance de dégâts sur la même cible). */
+  private rollPhantomStrike(ae: ActiveEnemy, hitDamage: number, element: ElementType): void {
+    if (this.playerModifiers.phantomStrikePct <= 0) return;
+    if (Math.random() >= this.playerModifiers.phantomStrikePct / 100) return;
+    if (ae.currentHp <= 0) return;
+    const sprite = this.findEnemySpriteByInstanceId(ae.instanceId);
+    if (sprite) {
+      this.showDamageNumber(sprite.x, sprite.y - 20, hitDamage, false, element);
+      this.spawnHitParticles(sprite.x, sprite.y, element);
+    }
+    this.applyDamageToEnemy(ae.instanceId, hitDamage, false);
+  }
+
   /** Point d'entrée unique pour les 3 canaux directs (mêlée/flèche/sort) —
-   *  statuts sur coup + arc en chaîne. */
-  private applyOnHitTalentEffects(ae: ActiveEnemy, hitDamage: number, isSpell: boolean): void {
+   *  statuts sur coup + arc en chaîne + coup fantôme. */
+  private applyOnHitTalentEffects(ae: ActiveEnemy, hitDamage: number, isSpell: boolean, element?: ElementType): void {
     this.rollOnHitStatuses(ae, hitDamage, isSpell);
     this.rollArcChain(ae, hitDamage);
+    this.rollPhantomStrike(ae, hitDamage, element ?? ElementType.NEUTRAL);
   }
 
   /**
@@ -5075,6 +5162,15 @@ export class GameScene extends Phaser.Scene {
    * mutent currentHp directement sans passer par applyDamageToEnemy (bleed et
    * Marque de Magma, instrumentés séparément dans tickEnemyAI).
    */
+  /** SOUL_STACK_BONUS (ins_soul_harvest) — +N stacks de Soul Echo par zone
+   *  élémentaire nettoyée (boss vaincu) CETTE run, cf. clearedZones. Offset
+   *  permanent ajouté à echoHits pour le calcul de palier ET l'affichage —
+   *  jamais un multiplicateur de dégâts, echoTier est purement visuel
+   *  (cf. ECHO_TIER_STYLES, aucun consommateur de combat). */
+  private getSoulStackOffset(): number {
+    return this.playerModifiers.soulStackBonus * this.gameState.player.clearedZones.length;
+  }
+
   private registerEchoDamage(instanceId: string, damage: number, direct: boolean, isCrit = false): void {
     if (damage <= 0) return;
     this.echoTotal += damage;
@@ -5087,9 +5183,9 @@ export class GameScene extends Phaser.Scene {
     // — sans cet appel, onEchoTierUp()/punchEchoText() ci-dessous seraient des
     // no-op silencieux (garde `if (!txt) return`) et le pulse de transition/les
     // motes de ce franchissement ne joueraient jamais.
-    if (this.echoHits >= GameScene.ECHO_VISIBILITY_HITS) this.ensureEchoContainer();
+    if (this.echoHits + this.getSoulStackOffset() >= GameScene.ECHO_VISIBILITY_HITS) this.ensureEchoContainer();
 
-    const tier = this.echoTierFor(this.echoHits);
+    const tier = this.echoTierFor(this.echoHits + this.getSoulStackOffset());
     if (tier > this.echoTier && this.echoTier > 0) {
       // Franchissement 1→2, 2→3 ou 3→4 : le pulse de transition (1.4) REMPLACE le
       // punch du coup qui franchit le seuil (1.12/1.25 < 1.4 — il serait invisible).
@@ -5306,7 +5402,7 @@ export class GameScene extends Phaser.Scene {
       .setAlpha(0.7);
     this.echoContainer = this.add.container(this.echoX, this.echoY, [this.echoTotalText, this.echoHitsText])
       .setDepth(101);
-    this.applyEchoTierStyle(this.echoTierFor(this.echoHits));
+    this.applyEchoTierStyle(this.echoTierFor(this.echoHits + this.getSoulStackOffset()));
   }
 
   private renderEcho(time: number): void {
@@ -5318,7 +5414,7 @@ export class GameScene extends Phaser.Scene {
 
     // Rolling count-up : on affiche la valeur qui ROULE vers echoTotal, pas echoTotal.
     this.echoTotalText?.setText(this.echoFormatTotal(Math.round(this.echoDisplayTotal)));
-    this.echoHitsText?.setText(`${t('hud.echo_label')} ×${this.echoFormatHits(this.echoHits)}`);
+    this.echoHitsText?.setText(`${t('hud.echo_label')} ×${this.echoFormatHits(this.echoHits + this.getSoulStackOffset())}`);
 
     // Pré-avertissement : 600 dernières ms avant expiration, alpha 1.0↔0.65 à 4Hz.
     const warnStart = this.echoDeadline - GameScene.ECHO_WARN_MS;
@@ -5423,7 +5519,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    if (this.echoHits >= GameScene.ECHO_VISIBILITY_HITS) {
+    if (this.echoHits + this.getSoulStackOffset() >= GameScene.ECHO_VISIBILITY_HITS) {
       this.ensureEchoContainer();
       this.renderEcho(time);
     }
@@ -6348,6 +6444,9 @@ export class GameScene extends Phaser.Scene {
     this.playerImmobilized   = false;
     this.knockbackX          = 0;
     this.knockbackY          = 0;
+    // PRESERVED (glacius_deep_patience) — réarmé dans buildZone() UNIQUEMENT sur
+    // un vrai changement de zone, PAS ici : cette fonction tourne aussi au respawn
+    // sur place (même zoneId), qui ne doit pas réarmer le talent (cf. buildZone).
 
     // Destroy all tracked physics colliders/overlaps individually
     for (const c of this.physicsColliders) c.destroy();
@@ -6470,6 +6569,12 @@ export class GameScene extends Phaser.Scene {
 
   private buildZone(zoneId: string, targetX: number, targetY: number) {
     try {
+    // PRESERVED (glacius_deep_patience) — « 1 fois par ZONE » : buildZone est
+    // aussi le chemin de RESPAWN sur place (onPlayerDeath → performZoneTransition
+    // avec le même zoneId) — sans cette garde, mourir réarmerait le talent à
+    // chaque mort au lieu d'une seule fois par vraie visite de zone (bug trouvé
+    // en review, le talent devenait "1 fois par vie" au lieu de "par zone").
+    if (zoneId !== this.gameState.player.currentZone) this.preservedUsedThisZone = false;
     this.gameState.player.currentZone = zoneId;
     this.gameState.player.position    = { x: targetX, y: targetY };
     this.layout = getZoneLayout(zoneId);
@@ -6790,13 +6895,10 @@ export class GameScene extends Phaser.Scene {
           }
         }
 
-        // GUARD_FINISHER — bouclier temporisé 8% HP max, 3s, se rafraîchit (pas cumulatif).
+        // GUARD_FINISHER — bouclier temporisé 8% HP max, 3s. Partage grantTimedShield
+        // (donc le pool) avec LAST_BASTION — le plus généreux gagne sur les deux axes.
         if (mods.guardFinisher) {
-          this.guardFinisherShieldHp = Math.max(
-            this.guardFinisherShieldHp,
-            Math.round(this.gameState.player.stats.maxHp * 0.08),
-          );
-          this.guardFinisherShieldUntil = this.time.now + 3000;
+          this.grantTimedShield(Math.round(this.gameState.player.stats.maxHp * 0.08), 3000);
         }
       };
 
