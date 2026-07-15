@@ -181,6 +181,11 @@ export interface TalentNode {
   lore?: string;
   requires?: string[];      // prérequis directs (AND) — IDs de nodes du tier précédent
   ngPlusOnly?: boolean;     // node visible mais verrouillé tant que player.isNewGamePlus === false
+  // ELEM_BONUS_PCT restreint à UN élément (« sorts de feu », …). Marque le nœud
+  // comme CONDITIONNEL : getStatContribs l'EXCLUT du bonus élémentaire global
+  // tant que le combat ne teste pas l'élément de la source (chantier signature).
+  // Sans ce flag, un +35% « feu uniquement » boosterait tous les éléments.
+  elementScoped?: boolean;
 }
 
 // ============================================================

@@ -235,6 +235,56 @@ export class TalentSystem {
     return (mult - 1) * 100;
   }
 
+  /**
+   * Contributions de talents à des STATS que StatsSystem calcule déjà, en POINTS
+   * DE POURCENTAGE ADDITIFS. Même logique que `getAspdPct` (précédent exact,
+   * étape 3) : ces points s'ADDITIONNENT aux substats d'équipement DANS
+   * `computeAll`, AVANT toute application — jamais en produit.
+   *
+   * Pourquoi additif et non le canal multiplicatif de `getModifiers()` :
+   * `dragon_soul` (+30% ATK) × `blood_pact` (+20%) × `world_ender` (+30%) en
+   * produit donnerait ×2,03 (+103%) au lieu de +80% ; c'est ainsi que naissent
+   * les builds runaway. En additif, trois nœuds à +30% valent +90%, toujours.
+   *
+   * NE contient QUE les effets INCONDITIONNELS mappant sur une stat existante.
+   * Sont volontairement EXCLUS (conditionnels / multiplicatifs — chantiers
+   * séparés, cf. rapport d'étape 4) :
+   *   - ELEM_BONUS_PCT des nœuds `elementScoped` (bonus restreint à UN élément :
+   *     il faut une vérification d'élément côté combat qui n'existe pas encore) ;
+   *   - LOW_HP_ATK_PCT / LOW_HP_DEF_PCT / ATK_PER_BURNING_PCT … (état runtime) ;
+   *   - MELEE_DMG_PCT / MAGIC_DMG_PCT / SKILL_DMG_PCT (canaux multiplicatifs
+   *     déjà consommés par GameScene/CombatSystem via `getModifiers`).
+   *
+   * NB — ATK_PCT s'applique à atk ET matk (« ATK globale physique + magique »,
+   * cf. TalentEffectKey). Un build physique n'utilise que atk, un mage que matk.
+   */
+  static getStatContribs(player: PlayerState): {
+    atkPct: number; hpPct: number; defPct: number; critPct: number;
+    elemBonusPct: number; lifestealPct: number; manaMaxPct: number; manaRegenPct: number;
+  } {
+    const c = {
+      atkPct: 0, hpPct: 0, defPct: 0, critPct: 0,
+      elemBonusPct: 0, lifestealPct: 0, manaMaxPct: 0, manaRegenPct: 0,
+    };
+    for (const id of player.unlockedTalents) {
+      const node = TALENT_MAP[id];
+      if (!node) continue;
+      const e = node.effects;
+      if (e.ATK_PCT        !== undefined) c.atkPct       += e.ATK_PCT;
+      if (e.MAX_HP_PCT     !== undefined) c.hpPct        += e.MAX_HP_PCT;
+      if (e.DEF_PCT        !== undefined) c.defPct       += e.DEF_PCT;
+      if (e.CRIT_PCT       !== undefined) c.critPct      += e.CRIT_PCT;
+      if (e.LIFESTEAL_PCT  !== undefined) c.lifestealPct += e.LIFESTEAL_PCT;
+      if (e.MANA_MAX_PCT   !== undefined) c.manaMaxPct   += e.MANA_MAX_PCT;
+      if (e.MANA_REGEN_PCT !== undefined) c.manaRegenPct += e.MANA_REGEN_PCT;
+      // ELEM_BONUS_PCT : seulement les nœuds NON restreints à un élément.
+      // Les nœuds `elementScoped` (pyroclast fire, leviathan water/ice, …) sont
+      // conditionnels — hors scope tant que le combat ne teste pas l'élément.
+      if (e.ELEM_BONUS_PCT !== undefined && !node.elementScoped) c.elemBonusPct += e.ELEM_BONUS_PCT;
+    }
+    return c;
+  }
+
   static getModifiers(player: PlayerState): TalentModifiers {
     const mods: TalentModifiers = {
       meleeDmgMult: 1.0,
@@ -347,7 +397,15 @@ export class TalentSystem {
       if (e.HEAVY_FINISHER_BONUS !== undefined)   mods.heavyFinisherBonus  += e.HEAVY_FINISHER_BONUS;
       if (e.HEAVY_CD_REDUCTION_PCT !== undefined) mods.heavyCdReductionPct += e.HEAVY_CD_REDUCTION_PCT;
       if (e.LIGHT_FINISHER_BLEED !== undefined)   mods.lightFinisherBleed   = true;
-      // TODO(talent-ui): DEF_PCT → ProgressionSystem.computeBaseStats(), MANA_COST_PCT → playerSkill(), POST_FINISHER_BUFF → executeFinisherAttack()
+      // ATK_PCT / MAX_HP_PCT / CRIT_PCT / ELEM_BONUS_PCT / LIFESTEAL_PCT /
+      // MANA_MAX_PCT / MANA_REGEN_PCT / DEF_PCT sont désormais LUS via
+      // getStatContribs() → StatsSystem.computeAll (additif), et outOfCombatRegen
+      // pour la régén. Les champs atkMult/critBonus/… de getModifiers ci-dessous
+      // restent calculés mais sont VESTIGIAUX (aucun consommateur) — exactement
+      // comme attackSpeedMult coexiste avec getAspdPct (étape 3). NE PAS les
+      // recâbler : le canal vivant est getStatContribs, et lui seul.
+      // TODO(combat-signature): MANA_COST_PCT → playerSkill(), POST_FINISHER_BUFF
+      // → executeFinisherAttack(), LOW_HP_ATK/DEF_PCT (conditionnels runtime).
 
       // ── Génériques (branches élémentaires) ──────────────────────────────
       if (e.ATK_PCT !== undefined)                mods.atkMult             *= 1 + e.ATK_PCT / 100;

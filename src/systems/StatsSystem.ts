@@ -153,16 +153,28 @@ export class StatsSystem {
     // ── 3 + 4) Nouveau système : main stats + substats ──
     const t = StatsSystem.collectEquipTotals(gear);
 
+    // ── TALENTS (étape 4) — % ADDITIFS, sommés AVANT application, jamais en
+    // produit (cf. TalentSystem.getStatContribs et getAspdPct). Ils
+    // s'additionnent aux substats % d'équipement dans la MÊME parenthèse : deux
+    // canaux qui portent le même nom doivent se sommer dans la même monnaie,
+    // sinon on empile les produits (dragon_soul × world_ender = runaway).
+    const tal = TalentSystem.getStatContribs(player);
+
     // Flats puis pourcentages (les % s'appliquent au total flat inclus)
-    atk  = Math.round((atk  + t.ATK_FLAT)  * (1 + t.ATK_PCT  / 100));
-    matk = Math.round((matk + t.MATK_FLAT) * (1 + t.MATK_PCT / 100));
-    def  = Math.round((def  + t.DEF_FLAT)  * (1 + t.DEF_PCT  / 100));
-    hp   = Math.round((hp   + t.HP_FLAT)   * (1 + t.HP_PCT   / 100));
-    mana = Math.round(mana + t.MANA_FLAT);
+    // ATK_PCT talent → atk ET matk (« ATK globale physique + magique »).
+    atk  = Math.round((atk  + t.ATK_FLAT)  * (1 + (t.ATK_PCT  + tal.atkPct) / 100));
+    matk = Math.round((matk + t.MATK_FLAT) * (1 + (t.MATK_PCT + tal.atkPct) / 100));
+    def  = Math.round((def  + t.DEF_FLAT)  * (1 + (t.DEF_PCT  + tal.defPct) / 100));
+    hp   = Math.round((hp   + t.HP_FLAT)   * (1 + (t.HP_PCT   + tal.hpPct)  / 100));
+    mana = Math.round((mana + t.MANA_FLAT) * (1 + tal.manaMaxPct / 100));
     spd  = Math.round(spd  + t.SPD_FLAT);
     // MDEF_FLAT (loot stat rolls) — comble le trou historique : magicDef n'avait
     // jusqu'ici aucune substat dédiée, seulement bonusStats.magicDef/end + defense d'armure.
-    magicDef += t.MDEF_FLAT;
+    // Le DEF_PCT des talents s'y applique AUSSI : leurs descriptions promettent
+    // « DEF et Magic DEF » (vig_stone_skin, terra_*). Les substats DEF_PCT
+    // d'équipement, elles, ne visent que la DEF physique — asymétrie voulue,
+    // fidèle à ce que chaque source affiche au joueur.
+    magicDef = Math.round((magicDef + t.MDEF_FLAT) * (1 + tal.defPct / 100));
 
     return {
       atk,
@@ -171,7 +183,7 @@ export class StatsSystem {
       magicDef,
       hp,
       mana,
-      crit: BASE_CRIT_PCT + player.attributes.agi * CRIT_PER_AGI_PCT + t.CRIT_RATE,
+      crit: BASE_CRIT_PCT + player.attributes.agi * CRIT_PER_AGI_PCT + t.CRIT_RATE + tal.critPct,
       critDmg: BASE_CRIT_MULT + t.CRIT_DMG / 100,
       // VITESSE D'ATTAQUE — le POINT D'ENTRÉE UNIQUE.
       //
@@ -186,8 +198,8 @@ export class StatsSystem {
       // deux canaux pour contourner le plafond de l'un par l'autre.
       aspd: Math.max(0.1, 1 + softcap(t.ASPD_PCT + TalentSystem.getAspdPct(player), ASPD_SOFT_PCT) / 100),
       spd,
-      elemBonus: t.ELEM_BONUS_PCT,
-      lifesteal: t.LIFESTEAL_PCT,
+      elemBonus: t.ELEM_BONUS_PCT + tal.elemBonusPct,
+      lifesteal: t.LIFESTEAL_PCT + tal.lifestealPct,
       // Rendements DÉCROISSANTS, plus de plafonds durs (cf. StatRollSystem.softcap).
       // Un mur rendait la ligne suivante rigoureusement nulle : 51% des points de
       // CDR d'un set Mythique partaient à la poubelle, et une ligne d'esquive de

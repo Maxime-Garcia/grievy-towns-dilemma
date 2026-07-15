@@ -3,6 +3,7 @@ import { GameScene } from './GameScene';
 import { PlayerState, TalentNode, TalentEffectKey } from '../types';
 import { TALENT_MAP } from '../data/talents';
 import { TalentSystem } from '../systems/TalentSystem';
+import { InventorySystem } from '../systems/InventorySystem';
 import { UI, TYPE, drawGlowPanel, uiStyle, fitText, openScreenTransition } from '../utils/UITheme';
 
 // ── Layout constants ──────────────────────────────────────────────────────────
@@ -716,6 +717,10 @@ export class SkillScene extends Phaser.Scene {
       hit.on('pointerdown', () => {
         const ok = TalentSystem.respec(this.player);
         if (ok) {
+          // Le respec RETIRE tous les bonus de stats de talents : il faut
+          // recalculer player.stats, sinon maxHp resterait gonflé après avoir
+          // rendu les points (et hp serait clampé de travers au combat suivant).
+          InventorySystem.recalcStats(this.player);
           this.selectedNodeId = null;
           this.pointsText?.setText(this.buildPointsLabel());
           this.renderBranch(this.activeBranch);
@@ -886,6 +891,11 @@ export class SkillScene extends Phaser.Scene {
       btnHit.on('pointerdown', () => {
         const ok = TalentSystem.unlock(this.player, nodeId);
         if (ok) {
+          // Les talents à stats (MAX_HP_PCT, DEF_PCT, MANA_MAX_PCT…) ne touchent
+          // player.stats.maxHp/def/maxMana que via recalcStats — sans cet appel,
+          // débloquer +25% HP ne relèverait la barre qu'au prochain changement
+          // d'équipement. (atk/crit/lifesteal, eux, sont lus live via computeAll.)
+          InventorySystem.recalcStats(this.player);
           this.selectedNodeId = null;
           this.pointsText?.setText(this.buildPointsLabel());
           this.renderBranch(this.activeBranch);

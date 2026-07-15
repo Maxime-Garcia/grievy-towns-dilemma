@@ -2,7 +2,7 @@ import {
   PlayerState, Enemy, ActiveEnemy, DamageResult,
   StatusEffect, ElementType, ELEMENT_WEAKNESS, DARK_MULTIPLIER, WEAKNESS_MULTIPLIER, Skill, WeaponType
 } from '../types';
-import { TalentModifiers } from './TalentSystem';
+import { TalentModifiers, TalentSystem } from './TalentSystem';
 import { StatsSystem, ComputedStats } from './StatsSystem';
 import { PassiveSystem } from './PassiveSystem';
 import { SKILL_MAP } from '../data/skills';
@@ -332,7 +332,10 @@ export class CombatSystem {
     const hpRegen = player.unlockedSkills.includes('elaras_gift')
       ? Math.floor(player.stats.maxHp * 0.01)
       : 0;
-    const manaRegen = Math.floor(player.stats.maxMana * 0.02);
+    // Base 2% du mana max par tick de 2 s (= 1%/s). MANA_REGEN_PCT des talents
+    // (abyssal_deep_current : 5%/s) s'y AJOUTE — exprimé /s, donc ×2 par tick.
+    const talentRegenPct = TalentSystem.getStatContribs(player).manaRegenPct;
+    const manaRegen = Math.floor(player.stats.maxMana * (0.02 + talentRegenPct / 100 * 2));
 
     // PassiveSystem.applyHeal (au lieu d'un clamp manuel) — convertit le surplus HP
     // au-delà de maxHp en bouclier si OVERHEAL_SHIELD_50_PCT est équipé (cohérent
