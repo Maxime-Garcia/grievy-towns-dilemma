@@ -203,10 +203,10 @@ export class GameScene extends Phaser.Scene {
     hit: boolean;
     destroyAt: number;
     dmgMult: number;
-    spawnZone?: boolean;   // STAFF_FINISHER_ZONE — pose une zone au point d'impact réel
-    zoneElement?: ElementType;
   }> = [];
-  // STAFF_FINISHER_ZONE (arc_elemental_wake) — zones élémentaires laissées au sol.
+  // STAFF_FINISHER_ZONE (arc_elemental_wake) — zones élémentaires laissées au sol
+  // (posées depuis executeFinisherAttack, pas depuis les flèches — le finisher STAFF
+  // est un cône, pas un projectile, cf. commentaire dans executeFinisherAttack).
   private _finisherZones: Array<{
     x: number; y: number;
     element: ElementType;
@@ -1355,23 +1355,28 @@ export class GameScene extends Phaser.Scene {
   // La détection de collision se fait manuellement dans updateArrowProjectiles()
   // — plus fiable que physics.add.overlap qui dépend d'une texture valide.
 
-  private fireArrowProjectile(dmgMult = 1.0, spawnZone = false, zoneElement?: ElementType) {
-    const SPEED = 600;  // px/s
-    const RANGE = 460;
+  private fireArrowProjectile(dmgMult = 1.0) {
+    const mods = this.playerModifiers;
+    // BOW_RANGE_DMG_PCT (ins_hunters_eye) — bundle "vitesse de projectile +20%" :
+    // pas de champ numérique séparé pour cette partie de la description, la seule
+    // source de ce bonus est ce talent (gate sur sa présence, pas sur sa valeur).
+    const SPEED = 600 * (mods.bowRangeDmgPct > 0 ? 1.20 : 1);
+    // PROJECTILE_RANGE_PCT (zephyr_wind_arrows) — portée de TOUS les projectiles
+    // (flèches BOW normales ET finisher, seul canal qui passe par cette fonction).
+    const RANGE = 460 * (1 + mods.projectileRangePct / 100);
     const angle = this.facingAngle;
 
     // Point de collision : rectangle transparent déplacé manuellement chaque frame
     const rect = this.add.rectangle(this.player.x, this.player.y, 16, 8, 0xffffff, 0);
-    const travelMs = (RANGE / SPEED) * 1000; // ~767ms
+    const travelMs = (RANGE / SPEED) * 1000; // ~767ms à vitesse/portée de base
     this._activeArrows.push({
       rect,
       vx: Math.cos(angle) * SPEED,
       vy: Math.sin(angle) * SPEED,
       hit: false,
       destroyAt: this.time.now + travelMs,
-      dmgMult,
-      spawnZone,
-      zoneElement,
+      // PROJECTILE_DMG_PCT (zephyr_wind_arrows) — dégâts de TOUS les projectiles.
+      dmgMult: dmgMult * (1 + mods.projectileDmgPct / 100),
     });
 
     // VFX cosmétique — voyage en parallèle, purement visuel
@@ -1389,7 +1394,6 @@ export class GameScene extends Phaser.Scene {
       const arrow = this._activeArrows[i];
 
       if (arrow.hit || this.time.now >= arrow.destroyAt) {
-        if (arrow.spawnZone) this.spawnFinisherZone(arrow.rect.x, arrow.rect.y, arrow.zoneElement ?? ElementType.NEUTRAL);
         if (arrow.rect.active) arrow.rect.destroy();
         this._activeArrows.splice(i, 1);
         continue;
@@ -1414,7 +1418,6 @@ export class GameScene extends Phaser.Scene {
         if (!Phaser.Geom.Rectangle.Overlaps(enemyRect, arrowRect)) continue;
 
         // Impact — un seul ennemi touché
-        if (arrow.spawnZone) this.spawnFinisherZone(arrow.rect.x, arrow.rect.y, arrow.zoneElement ?? ElementType.NEUTRAL);
         arrow.hit = true;
         arrow.rect.destroy();
         this._activeArrows.splice(i, 1);
@@ -1422,10 +1425,21 @@ export class GameScene extends Phaser.Scene {
         const activeEnemy = this.activeEnemies.get(sprite.name);
         if (!activeEnemy) break;
 
+        // RANGED_CRIT_PCT (zephyr_eagle_eye) — bonus de critique conditionnel à la
+        // distance, mesurée au moment de l'impact. cs est PARTAGÉ (calculé une fois
+        // par frame pour toutes les flèches) : jamais muté directement, un clone
+        // ponctuel avec crit ajusté évite de faire fuiter le bonus vers d'autres tirs
+        // résolus la même frame.
+        const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, sprite.x, sprite.y);
+        const mods = this.playerModifiers;
+        const csForHit = dist > 200 && mods.rangedCritPct > 0
+          ? { ...cs, crit: cs.crit + mods.rangedCritPct }
+          : cs;
+
         // See executeHitInCone() for why we snapshot HP before CombatSystem's own
         // (unmultiplied) clamped subtraction rather than patch a delta onto it.
         const hpBeforeHit = activeEnemy.currentHp;
-        const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy, cs);
+        const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy, csForHit);
         // SAME_TARGET_STACK_10_PCT (hidden_serpentgrip_gauntlets) — cf. executeHitInCone.
         const sameTargetMult = PassiveSystem.getSameTargetStackMultiplier(
           this.gameState.player.equipment, this.sameTargetStackState, activeEnemy.instanceId, this.time.now,
@@ -1434,10 +1448,19 @@ export class GameScene extends Phaser.Scene {
         const burningSynergyMult = this.getBurningSynergyMult();
         const stunDmgMult = this.getStunDmgMult(activeEnemy);
         const shockVulnMult = this.getShockVulnMult(activeEnemy);
+        // BOW_RANGE_DMG_PCT (ins_hunters_eye) — même principe que RANGED_CRIT_PCT,
+        // seuil de distance différent (250px).
+        const rangeDmgMult = dist > 250 && mods.bowRangeDmgPct > 0 ? 1 + mods.bowRangeDmgPct / 100 : 1;
         // BUG4 fix: apply the dmgMult from the finisher (or 1.0 for normal shots)
-        const arrowFinalDmg = Math.round(
-          result.damage * arrow.dmgMult * sameTargetMult * burningSynergyMult * stunDmgMult * shockVulnMult,
+        let arrowFinalDmg = Math.round(
+          result.damage * arrow.dmgMult * sameTargetMult * burningSynergyMult * stunDmgMult * shockVulnMult * rangeDmgMult,
         );
+        // BOW_ELEMENTAL_ARROWS (arc_imbued_arrows) — "Si INT ≥ 10" : bonus additif de
+        // 10% Magic ATK, pas un multiplicateur (les flèches BOW scalent sur l'ATK
+        // physique — un multiplicateur sur du Magic ATK n'aurait pas de sens ici).
+        if (mods.bowElementalArrows && this.gameState.player.attributes.int >= 10) {
+          arrowFinalDmg += Math.round(cs.matk * 0.10);
+        }
         // ÉCHO — canal DIRECT #2/3 (flèches). Une flèche ne touche qu'un seul ennemi
         // (break juste après), donc aucun batching multi-cible n'est nécessaire ici.
         this.registerEchoDamage(activeEnemy.instanceId, arrowFinalDmg, true, result.isCrit);
@@ -3357,8 +3380,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** STAFF_FINISHER_ZONE (arc_elemental_wake) — pose une zone élémentaire (r70, 2s,
-   *  tick 500ms, 20% ATK/tick) au point d'impact RÉEL du dernier tir du finisher STAFF
-   *  (position de la flèche au moment de l'impact/fin de portée, pas une estimation). */
+   *  tick 500ms, 20% ATK/tick) au point VISÉ par le dernier hit du finisher STAFF
+   *  (calculé via facingAngle/range, même formule que spawnWeaponSwingVfx — le
+   *  finisher STAFF est un cône instantané, pas un projectile : il n'y a pas de
+   *  position d'impact réelle à observer après coup, cf. executeFinisherAttack). */
   private spawnFinisherZone(x: number, y: number, element: ElementType): void {
     const radius = 70;
     const color = ELEMENT_PROJECTILE_COLORS[element] ?? 0xffffff;
@@ -6731,19 +6756,16 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (pattern.isProjectile) {
-      // BOW/STAFF finisher : projectiles en éventail via le système existant.
+      // BOW finisher : projectiles en éventail via le système existant. Seul BOW
+      // passe par cette branche — le pattern de base de STAFF (ATTACK_PATTERNS,
+      // partagé avec son attaque normale) n'a PAS isProjectile:true, son finisher
+      // est un cône (cf. combos.ts, effect.pierceCount 99) : branche `else` ci-dessous.
       // BUG4 fix: passe le damageMultiplier de chaque hit à fireArrowProjectile.
       if (windupMs > 0) this.spawnWindupVfx(windupMs);
-      const weaponElement = this.gameState.player.equipment.weapon?.element;
-      const isLastHitIdx = finisher.hits.length - 1;
-      finisher.hits.forEach((hit, hitIndex) => {
+      finisher.hits.forEach(hit => {
         this.time.delayedCall(windupMs + delayOf(hit.delay), () => {
           if (this.isTraveling) return;
-          // STAFF_FINISHER_ZONE : uniquement le dernier tir, uniquement STAFF.
-          const spawnZone = weaponType === WeaponType.STAFF
-            && this.playerModifiers.staffFinisherZone
-            && hitIndex === isLastHitIdx;
-          this.fireArrowProjectile(hit.damageMultiplier * sacrificeFactor, spawnZone, weaponElement);
+          this.fireArrowProjectile(hit.damageMultiplier * sacrificeFactor);
         });
       });
     } else {
@@ -6837,11 +6859,12 @@ export class GameScene extends Phaser.Scene {
     // Effets spéciaux des TALENTS (Partie 2, Phase 2) — universels : tout finisher,
     // quelle que soit l'arme, les déclenche si le nœud est débloqué. Indépendants de
     // comboConfig.finisher.effect (au-dessus), qui est spécifique à l'arme et peut
-    // être absent. STAFF_FINISHER_ZONE (position réelle d'impact projectile) et
-    // SACRIFICE_FINISHER (coût payé au cast) sont gérés ailleurs dans cette fonction.
+    // être absent. SACRIFICE_FINISHER (coût payé au cast) est géré ailleurs dans
+    // cette fonction.
     const mods = this.playerModifiers;
     const hasTalentFx = mods.finisherNova || mods.burnOnFinisher || mods.freezeOnFinisher
-      || mods.cycloneFinisher || mods.quakeFinisher || mods.chainFinisher || mods.guardFinisher;
+      || mods.cycloneFinisher || mods.quakeFinisher || mods.chainFinisher || mods.guardFinisher
+      || (weaponType === WeaponType.STAFF && mods.staffFinisherZone);
     if (hasTalentFx) {
       const lastHit = finisher.hits[finisher.hits.length - 1];
       const talentEffectAt = windupMs + delayOf(lastHit?.delay ?? 0);
@@ -6849,6 +6872,18 @@ export class GameScene extends Phaser.Scene {
       const applyTalentEffects = () => {
         if (this.isTraveling) return;
         const px = this.player.x, py = this.player.y;
+
+        // STAFF_FINISHER_ZONE (arc_elemental_wake) — le finisher STAFF est un cône
+        // (combos.ts, pas un projectile — cf. commentaire plus haut), donc le "point
+        // d'impact final" est le point visé par le dernier hit, comme le VFX de coup
+        // (spawnWeaponSwingVfx) le calcule déjà pour ce même weaponType.
+        if (weaponType === WeaponType.STAFF && mods.staffFinisherZone) {
+          const range = lastHit?.range ?? 260;
+          const tx = px + Math.cos(this.facingAngle) * range * 0.7;
+          const ty = py + Math.sin(this.facingAngle) * range * 0.7;
+          const zoneElement = this.gameState.player.equipment.weapon?.element ?? ElementType.NEUTRAL;
+          this.spawnFinisherZone(tx, ty, zoneElement);
+        }
 
         // BURN_ON_FINISHER / FREEZE_ON_FINISHER — mêmes cibles que effect.stunMs/
         // knockback ci-dessus : cône du dernier coup, proxy déjà établi pour "les

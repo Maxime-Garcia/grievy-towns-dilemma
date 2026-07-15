@@ -111,7 +111,7 @@ export class UIScene extends Phaser.Scene {
     // Vite (__BUILD_HASH__, cf. vite.config.ts) : l'écrire à la main était voué
     // à mentir, puisqu'un hash n'existe qu'une fois le commit fait — et l'écrire
     // dans le code refait le commit.
-    const BUILD_LABEL = `TALENTS P4: dash (3 noeuds) (${__BUILD_HASH__})`;
+    const BUILD_LABEL = `TALENTS P5: projectiles/arc (4 noeuds) + fix STAFF_FINISHER_ZONE (${__BUILD_HASH__})`;
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',
