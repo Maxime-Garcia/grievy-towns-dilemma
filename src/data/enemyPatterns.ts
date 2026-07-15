@@ -311,11 +311,34 @@ export const ENEMY_PATTERN_ASSIGNMENT: Record<string, EnemyPatternAssignment> = 
 
 const HANDMADE_EXTRA: Record<string, EnemyPatternAssignment> = {
   // Lanceurs (damageType: MAGIC) — il leur FAUT un pattern à projectile.
-  rune_shard_ghost:  { primary: 'homing',      secondary: 'burst_fan' },
+  //
+  // AUDIT POST-FIX PROJECTILES (cf. commit du fix spawnProjectile) — deux
+  // réassignations, chiffrées par simulation réelle (CombatSystem.enemyRangedDamage
+  // + scaledEnemyStats, panel 500 essais/pattern, joueur fraîchement créé) :
+  //
+  //   rune_shard_ghost (Terravast, profondeur 2, TRASH) était le SEUL ennemi de
+  //   profondeur ≤2 avec homing en PRIMARY — la doc de design elle-même réserve le
+  //   homing aux zones 3-4+ ("Zones 1-2 = Charge, Burst Fan"). Chiffré : son coup de
+  //   homing retire 58,8% des PV d'un joueur non équipé en un seul jet (77 dmg
+  //   médian), quasiment le double de terravast_serpent (28,2%, même profondeur,
+  //   burst_fan). Rétrogradé en secondary (30% de pick), comme cinder_sprite/
+  //   ash_revenant en zone 1 — même traitement, même logique.
+  //
+  //   grid_architect (Volterra, profondeur 5, TRASH invocateur immobile, spd 35)
+  //   était le SEUL invocateur immobile de sa famille (storm_caller, tide_shaper,
+  //   glacial_shaper) à porter circular_burst — le pattern 8 projectiles/360°,
+  //   catalogué "elite/boss only" dans docs/design/ENEMY_PATTERNS.md §Pattern 3 —
+  //   en PRIMARY plutôt que burst_fan. Chiffré : 51,1% des PV d'un joueur non
+  //   équipé par jet (67 dmg médian) + 42% de chance de toucher un joueur
+  //   totalement IMMOBILE à sa propre portée d'attaque (90px, Monte Carlo 20000
+  //   essais) — une TRASH qui frappe à l'échelle d'une élite. Aligné sur le
+  //   patron de ses pairs invocateurs immobiles : burst_fan primary / homing
+  //   secondary (identique à storm_caller).
+  rune_shard_ghost:  { primary: 'burst_fan',   secondary: 'homing' },
   storm_caller:      { primary: 'burst_fan',   secondary: 'homing' },
   cloudpiercer:      { primary: 'burst_fan',   secondary: 'homing',      minRangeForPattern: 60 },
   tide_shaper:       { primary: 'homing',      secondary: 'burst_fan' },
-  grid_architect:    { primary: 'circular_burst', secondary: 'homing' },
+  grid_architect:    { primary: 'burst_fan',   secondary: 'homing' },
   glacial_shaper:    { primary: 'homing',      secondary: 'burst_fan' },
   void_weaver:       { primary: 'circular_burst', secondary: 'homing' },
   // Traqueurs physiques.
