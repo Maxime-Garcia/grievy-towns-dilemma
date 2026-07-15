@@ -296,6 +296,11 @@ export class GameScene extends Phaser.Scene {
   // AUTO_DODGE (zephyr_eye_of_storm) — esquive automatique d'UNE attaque toutes
   // les 5s, indépendante du jet DODGE_PCT et de TRUE_DODGE_25_PCT.
   private autoDodgeCooldownUntil = 0;
+  // STATIC_RETORT_PCT (fulguris_static_retort) — cooldown 1s documenté dans le
+  // commentaire du type TalentEffectKey (src/types/index.ts), absent de la
+  // description du nœud lui-même — sans lui, plusieurs ennemis frappant le
+  // joueur dans la même fenêtre déclenchaient chacun leur propre jet indépendant.
+  private staticRetortCooldownUntil = 0;
   // ── État transitoire HIDDEN — VAGUE 2 (non persisté, même principe que
   // playerShieldHp/dashCooldown : reconstruit en jeu, remis à zéro dans init()
   // pour ne pas hériter de l'état d'une partie précédente sur Continuer) ──
@@ -467,6 +472,7 @@ export class GameScene extends Phaser.Scene {
     this.playerShieldHp          = 0;
     this.lowHpShieldCooldownUntil = 0;
     this.autoDodgeCooldownUntil  = 0;
+    this.staticRetortCooldownUntil = 0;
     this.wasInCombat             = false;
     this.lastPermanentRegenTime  = 0;
     // HIDDEN — VAGUE 2 : même reset que playerShieldHp (état de combat transitoire).
@@ -1171,11 +1177,22 @@ export class GameScene extends Phaser.Scene {
     // existait dans TalentSystem et n'était consommé NULLE PART : le talent ne faisait rien.
     if (now < this.critSurgeUntil) aspd *= 1 + this.playerModifiers.critSurgeAspdPct / 100;
 
+    // HEAVY_CD_REDUCTION_PCT (vig_war_march) — GS/HAMMER/AXE uniquement. "Les
+    // fenêtres de combo se recalculent" (description) : la réduction s'applique
+    // sur le cooldown de BASE (avant aspd), donc comboDeadline plus bas (posé sur
+    // cette même base) hérite automatiquement de la réduction.
+    const isHeavyAtkWeapon = weaponType === WeaponType.GREATSWORD
+      || weaponType === WeaponType.HAMMER
+      || weaponType === WeaponType.AXE;
+    const effectiveBaseCooldown = isHeavyAtkWeapon
+      ? pattern.cooldown * (1 - this.playerModifiers.heavyCdReductionPct / 100)
+      : pattern.cooldown;
+
     // NO_ATTACK_COOLDOWN (hidden_temporal_blade) : plus de cooldown propre à l'arme —
     // plancher à NO_ATTACK_COOLDOWN_FLOOR_MS (pas 0 : un cooldown nul rendait le DPS
     // quasi-infini, borné par le seul débit d'input).
     const noAttackCooldown = PassiveSystem.hasNoAttackCooldown(this.gameState.player.equipment);
-    const rawCooldown = noAttackCooldown ? PassiveSystem.NO_ATTACK_COOLDOWN_FLOOR_MS : pattern.cooldown / aspd;
+    const rawCooldown = noAttackCooldown ? PassiveSystem.NO_ATTACK_COOLDOWN_FLOOR_MS : effectiveBaseCooldown / aspd;
 
     // ── FINISHER ─────────────────────────────────────────────────
     let finisherFired = false;
@@ -1269,7 +1286,7 @@ export class GameScene extends Phaser.Scene {
       // l'aspd) et STOCKÉE — donc robuste à un buff qui expirerait entre deux coups.
       if (comboConfig) {
         this.comboGraceMs  = comboConfig.graceMs * this.playerModifiers.comboGraceMult;
-        this.comboDeadline = now + pattern.cooldown + this.comboGraceMs;
+        this.comboDeadline = now + effectiveBaseCooldown + this.comboGraceMs;
         this.redrawComboRing(this.comboCount, comboConfig.chainLength, weaponType);
       }
       this.spawnSpeedTierVfx(aspd, this.facingAngle);
@@ -1364,7 +1381,7 @@ export class GameScene extends Phaser.Scene {
         this.checkStagger(sprite, activeEnemy, finalDamage);
         // Talents Partie 1 : statuts sur coup + arc en chaîne (pas sur un
         // coup qui tue — la cible n'existe plus pour porter un statut).
-        this.applyOnHitTalentEffects(activeEnemy, finalDamage, false, result.element);
+        this.applyOnHitTalentEffects(activeEnemy, finalDamage, false, result.element, result.isCrit);
       }
     }
 
@@ -1525,7 +1542,7 @@ export class GameScene extends Phaser.Scene {
         else {
           this.addMagmaStackIfEquipped(activeEnemy.instanceId);
           this.checkStagger(sprite, activeEnemy, arrowFinalDmg);
-          this.applyOnHitTalentEffects(activeEnemy, arrowFinalDmg, false, result.element);
+          this.applyOnHitTalentEffects(activeEnemy, arrowFinalDmg, false, result.element, result.isCrit);
         }
         break;
       }
@@ -1590,7 +1607,7 @@ export class GameScene extends Phaser.Scene {
           this.addMagmaStackIfEquipped(activeEnemy.instanceId);
           this.checkStagger(nearest, activeEnemy, finalSkillDmg);
           // FREEZE_CHANCE_PCT (abyssal_ice_veil) est réservé aux sorts — isSpell=true.
-          this.applyOnHitTalentEffects(activeEnemy, finalSkillDmg, true, result.element);
+          this.applyOnHitTalentEffects(activeEnemy, finalSkillDmg, true, result.element, result.isCrit);
         }
 
         // SKILL_ECHO_50_PCT (hidden_stormheart_staff) — rejoue la compétence à 50%
@@ -3008,6 +3025,8 @@ export class GameScene extends Phaser.Scene {
       this.applyDamageToEnemy(ae.instanceId, retalDmg, false);
     }
 
+    this.rollStaticRetort();
+
     this.gameState.player.stats.hp = Math.max(0, Math.min(
       this.gameState.player.stats.maxHp, hpBeforeHit - finalDmg,
     ));
@@ -3189,6 +3208,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     damage = this.mitigatePlayerDamage(damage, this.gameState.player.stats.hp);
+    this.rollStaticRetort();
     this.gameState.player.stats.hp = Math.max(0, this.gameState.player.stats.hp - damage);
     this.iframeUntil = this.time.now + 800;
     this.showDamageNumber(this.player.x, this.player.y - 20, damage, false, undefined, true);
@@ -3276,6 +3296,35 @@ export class GameScene extends Phaser.Scene {
     if (this.time.now < this.autoDodgeCooldownUntil) return false;
     this.autoDodgeCooldownUntil = this.time.now + 5000;
     return true;
+  }
+
+  /** STATIC_RETORT_PCT (fulguris_static_retort) — chance, en subissant un coup,
+   *  d'émettre une nova électrique (r80 autour du joueur, 50% Magic ATK, applique
+   *  SHOCK) — nœud resté mort après la Phase 1 (ARC_CHANCE_PCT câblé, celui-ci
+   *  oublié — trouvé au balayage final du chantier). Appelé depuis les DEUX points
+   *  de dégât subi (mêlée + tout le reste), même précédent qu'AUTO_DODGE ci-dessus. */
+  private rollStaticRetort(): void {
+    if (this.playerModifiers.staticRetortPct <= 0) return;
+    if (this.time.now < this.staticRetortCooldownUntil) return;
+    if (Math.random() >= this.playerModifiers.staticRetortPct / 100) return;
+    this.staticRetortCooldownUntil = this.time.now + 1000;
+    const matk = StatsSystem.computeAll(this.gameState.player).matk;
+    const dmg = Math.max(1, Math.round(matk * 0.50));
+    const px = this.player.x, py = this.player.y;
+    for (const go of this.enemies.getChildren()) {
+      const sprite = go as Phaser.Physics.Arcade.Sprite;
+      if (!sprite.active) continue;
+      if (Phaser.Math.Distance.Between(px, py, sprite.x, sprite.y) > 80) continue;
+      const ae = this.activeEnemies.get(sprite.name);
+      if (!ae || ae.currentHp <= 0) continue;
+      this.showDamageNumber(sprite.x, sprite.y - 20, dmg, false, ElementType.LIGHTNING);
+      this.spawnHitParticles(sprite.x, sprite.y, ElementType.LIGHTNING);
+      this.applyDamageToEnemy(sprite.name, dmg, false);
+      if (ae.currentHp <= 0) continue; // tué par la nova — pas de statut sur un cadavre
+      // Même convention que rollOnHitStatuses (SHOCK = vulnérabilité +10%/3s, pas un CC).
+      ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'SHOCK');
+      ae.statusEffects.push({ type: 'SHOCK', duration: 3, strength: 10 });
+    }
   }
 
   /** LOW_HP_ATK_PCT — état RUNTIME (HP courants), volontairement absent de
@@ -3377,9 +3426,17 @@ export class GameScene extends Phaser.Scene {
    *  elle-même), en foudre. Pas un statut : dégâts directs (direct=false,
    *  même convention que les autres procs passifs — ne compte pas comme un
    *  coup pour l'Écho, ne déplace pas son ancre). */
-  private rollArcChain(ae: ActiveEnemy, hitDamage: number): void {
-    if (this.playerModifiers.arcChancePct <= 0) return;
-    if (Math.random() >= this.playerModifiers.arcChancePct / 100) return;
+  private rollArcChain(ae: ActiveEnemy, hitDamage: number, isCrit = false): void {
+    // CRIT_ARC (fulguris_directed_spark) — "chaque coup critique déclenche un arc
+    // GARANTI (60% des dégâts)" : nœud resté mort après la Phase 1 (ARC_CHANCE_PCT
+    // câblé, CRIT_ARC oublié — trouvé en review lors du balayage final du chantier).
+    // Priorité sur le jet normal plutôt que cumul : un seul arc par coup, jamais
+    // les deux déclencheurs sur le même hit.
+    const guaranteed = isCrit && this.playerModifiers.critArc;
+    if (!guaranteed) {
+      if (this.playerModifiers.arcChancePct <= 0) return;
+      if (Math.random() >= this.playerModifiers.arcChancePct / 100) return;
+    }
     let nearest: ActiveEnemy | null = null;
     let nearestDist = Infinity;
     for (const other of this.activeEnemies.values()) {
@@ -3388,7 +3445,7 @@ export class GameScene extends Phaser.Scene {
       if (d < nearestDist) { nearestDist = d; nearest = other; }
     }
     if (!nearest || nearestDist > 200) return; // portée d'arc raisonnable
-    const arcDmg = Math.max(1, Math.round(hitDamage * 0.4));
+    const arcDmg = Math.max(1, Math.round(hitDamage * (guaranteed ? 0.6 : 0.4)));
     this.applyDamageToEnemy(nearest.instanceId, arcDmg, false);
     const sprite = this.findEnemySpriteByInstanceId(nearest.instanceId);
     if (sprite) {
@@ -3414,9 +3471,11 @@ export class GameScene extends Phaser.Scene {
 
   /** Point d'entrée unique pour les 3 canaux directs (mêlée/flèche/sort) —
    *  statuts sur coup + arc en chaîne + coup fantôme. */
-  private applyOnHitTalentEffects(ae: ActiveEnemy, hitDamage: number, isSpell: boolean, element?: ElementType): void {
+  private applyOnHitTalentEffects(
+    ae: ActiveEnemy, hitDamage: number, isSpell: boolean, element?: ElementType, isCrit = false,
+  ): void {
     this.rollOnHitStatuses(ae, hitDamage, isSpell);
-    this.rollArcChain(ae, hitDamage);
+    this.rollArcChain(ae, hitDamage, isCrit);
     this.rollPhantomStrike(ae, hitDamage, element ?? ElementType.NEUTRAL);
   }
 

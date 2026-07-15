@@ -1,8 +1,19 @@
 // Pure system — zero Phaser imports.
 // Consomme PlayerState (types) et TALENT_MAP (data) uniquement.
 
-import { PlayerState, TalentBranch } from '../types';
+import { PlayerState, TalentBranch, ElementType } from '../types';
 import { TALENT_MAP } from '../data/talents';
+
+// Nœuds `elementScoped` (Phase 9) — ELEM_BONUS_PCT restreint aux sorts d'un ou
+// plusieurs éléments précis. Mappage explicite par ID (pas par branche) : ABYSSAL
+// couvre DEUX éléments (eau ET glace) quand les 3 autres n'en couvrent qu'un —
+// une table Record<TalentBranch, ElementType> ne suffirait pas.
+const ELEMENT_SCOPED_NODES: Record<string, ElementType[]> = {
+  ignis_pyroclast: [ElementType.FIRE],
+  abyssal_leviathan_call: [ElementType.WATER, ElementType.ICE],
+  terra_gorvuns_wrath: [ElementType.EARTH],
+  fulguris_storm_engine: [ElementType.LIGHTNING],
+};
 
 // Snapshot immutable des modificateurs actifs, calculé une seule fois après chaque
 // unlock/respec/changement d'équipement. NE PAS appeler à chaque frame.
@@ -293,6 +304,24 @@ export class TalentSystem {
       if (e.ELEM_BONUS_PCT !== undefined && !node.elementScoped) c.elemBonusPct += e.ELEM_BONUS_PCT;
     }
     return c;
+  }
+
+  /** Phase 9 — ELEM_BONUS_PCT des 4 nœuds `elementScoped` (ignis_pyroclast,
+   *  abyssal_leviathan_call, terra_gorvuns_wrath, fulguris_storm_engine),
+   *  applicable UNIQUEMENT si `skillElement` correspond. Canal séparé de
+   *  `getStatContribs().elemBonusPct` (générique, non scopé) — les deux
+   *  s'additionnent côté consommateur (CombatSystem.playerSkill), jamais l'un
+   *  sans l'autre : même monnaie (%), sources différentes. */
+  static getScopedElemBonusPct(player: PlayerState, skillElement?: ElementType): number {
+    if (!skillElement) return 0;
+    let total = 0;
+    for (const id of player.unlockedTalents) {
+      const scopedElements = ELEMENT_SCOPED_NODES[id];
+      if (!scopedElements || !scopedElements.includes(skillElement)) continue;
+      const pct = TALENT_MAP[id]?.effects.ELEM_BONUS_PCT;
+      if (pct !== undefined) total += pct;
+    }
+    return total;
   }
 
   static getModifiers(player: PlayerState): TalentModifiers {

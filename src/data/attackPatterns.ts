@@ -176,7 +176,14 @@ export function effectiveCooldownMs(
   return Math.max(rawCooldownMs, floor);
 }
 
-/** Cadence affichée : coups par seconde de l'attaque de base, à l'aspd du joueur. */
+/** Cadence affichée : coups par seconde de l'attaque de base, à l'aspd du joueur.
+ *  GAP CONNU (talents Partie 2) : ne connaît pas HEAVY_CD_REDUCTION_PCT
+ *  (vig_war_march, GS/HAMMER/AXE −10% cooldown, cf. GameScene.performBasicAttack)
+ *  — `playerModifiers` est privé sur GameScene, cette fonction pure (données
+ *  seules, zéro import Phaser) n'y a pas accès. Écart d'affichage mineur et
+ *  cosmétique (Arsenal sous-estime légèrement la cadence réelle avec ce talent),
+ *  jamais un écart de dégâts en combat. Fix reporté : exposerait un accesseur
+ *  public sur GameScene pour un gain d'exactitude d'affichage secondaire. */
 export function cadencePerSec(pattern: AttackPattern, aspd: number): number {
   return 1000 * aspd / pattern.cooldown;
 }

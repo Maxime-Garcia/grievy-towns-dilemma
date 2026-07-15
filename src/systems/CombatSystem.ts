@@ -182,8 +182,14 @@ export class CombatSystem {
     const mult = critRoll ? cs.critDmg : 1.0;
 
     const elemMult = CombatSystem.elementalMultiplier(skill.element, target);
+    // Phase 9 — ELEM_BONUS_PCT des nœuds `elementScoped` (ignis_pyroclast,
+    // abyssal_leviathan_call, terra_gorvuns_wrath, fulguris_storm_engine) : même
+    // canal % que cs.elemBonus (générique), s'additionne dedans plutôt qu'un
+    // multiplicateur séparé (cohérent avec le reste du fichier — jamais empiler
+    // deux canaux % qui portent le même nom en produit).
+    const scopedElemBonusPct = TalentSystem.getScopedElemBonusPct(player, skill.element);
     const elemBonusMult = skill.element && skill.element !== ElementType.NEUTRAL
-      ? 1 + cs.elemBonus / 100
+      ? 1 + (cs.elemBonus + scopedElemBonusPct) / 100
       : 1;
 
     const soulBonus = CombatSystem.getSoulEchoBonus(player);
