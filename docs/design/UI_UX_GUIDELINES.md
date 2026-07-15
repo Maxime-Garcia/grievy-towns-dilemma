@@ -448,9 +448,10 @@ doit aussi s'ouvrir au long-press (cf. §5.2, dette D3).
 1. **Toujours** dériver les positions de `this.cameras.main.width/height`. Les constantes de layout
    (largeurs de panneaux, tailles de slots) peuvent être fixes ; les **positions** sont relatives.
 2. Panneau bas ancré : `PANEL_TOP = H - PANEL_H - 4` ; éléments à droite : `W - marge - largeur`.
-3. **Zone de pouce** = moitié basse de l'écran. Y vivent : barres HP/MP (bas-gauche), skill slots
-   (bas-centre), boutons nav INV/SKL (bas-droite), boutons d'action des panneaux détail (bas du panneau),
-   panneau de dialogue (bande basse de 180 px).
+3. **Zone de pouce** = moitié basse de l'écran. Y vivent : skill slots (bas-centre), boutons nav
+   INV/SKL (bas-droite), boutons d'action des panneaux détail (bas du panneau), panneau de dialogue
+   (bande basse de 180 px). Les barres HP/MP (lecture pure, pas d'interaction) vivent en HAUT-gauche
+   sous le badge de build.
 4. **Safe zone basse** : la bande XP occupe les 4 derniers px ; garder les hit zones interactives à
    ≥ 7 px du bord bas (les skill slots sont à `H - SLOT_SZ - 7`).
 5. Grilles : nombre de colonnes **calculé** depuis la largeur disponible quand c'est possible.
@@ -534,8 +535,10 @@ Toute scène UI définit `shutdown()` : `events.off(...)` pour chaque `events.on
 
 ### 6.1 UIScene (HUD)
 Hérite de tout §1–5. Spécifique :
-- **Panneau stats bas-gauche** (66 px de haut, ancré `H - 66 - 4`) : nom joueur doré 11 px bold,
-  niveau 11 px à droite, barre HP 178×16 + barre MP 178×11, labels `HP`/`MP` vert/bleu 10 px bold,
+- **Panneau stats HAUT-gauche** (69 px de haut, ancré juste SOUS le badge de build DEV :
+  `PANEL_TOP = badgePad + bh + 4`, dérivé de la hauteur réelle du badge — jamais en dur, pour que
+  le panneau remonte seul quand le badge disparaîtra en prod) : nom joueur doré bold,
+  niveau à droite, barre HP 210×16 + barre MP 210×11, labels `HP`/`MP` vert/bleu 10 px bold,
   valeurs 9–10 px bold + stroke centrées sur les barres.
 - **Barres lerpées** (vitesse 8/s) — jamais de saut instantané, redraw seulement si delta > 0.001.
   Traîne de drain orange retardée sur la barre HP (lerp 1.5/s, snap sur soin).

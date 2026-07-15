@@ -31,7 +31,7 @@ import { getZoneLayout, ZoneLayout, LootableObject, WaterArea } from '../data/zo
 import { ALL_ITEMS } from '../data/items';
 import { loadBindings, KeyBindings } from '../data/keybindings';
 import { keyIconFrame, keyCodeLabel } from '../utils/KeyIcons';
-import { uiStyle, FONT } from '../utils/UITheme';
+import { uiStyle, FONT, FONT_HUD, UI, snapFontSize } from '../utils/UITheme';
 import { t, localizeItem } from '../i18n';
 import { BestiarySystem } from '../systems/BestiarySystem';
 import { ArsenalSystem, ARSENAL_ITEM_TYPES } from '../systems/ArsenalSystem';
@@ -362,6 +362,29 @@ export class GameScene extends Phaser.Scene {
     this.comboRing        = null;
     this.shakeWindowUntil = 0;
     this.shakeWindowPrio  = 0;
+    // Écho : même raison que comboRing ci-dessus — container/textes/tween référencent
+    // la scène PRÉCÉDENTE au redémarrage (menu principal → Continuer).
+    this.echoTotal                 = 0;
+    this.echoHits                  = 0;
+    this.echoDeadline              = 0;
+    this.echoAnchorInstanceId      = null;
+    this.echoFrozen                = false;
+    this.echoHasPosition           = false;
+    this.echoX                     = 0;
+    this.echoY                     = 0;
+    this.echoTweenT                = 1;
+    this.echoMoveTween             = null;
+    this.echoContainer             = null;
+    this.echoTotalText             = null;
+    this.echoHitsText              = null;
+    this.echoPendingAnchor         = null;
+    this.echoAnchorCommitScheduled = false;
+    this.echoTier                  = 0;
+    this.echoDisplayTotal          = 0;
+    this.echoCountTween            = null;
+    this.echoPunchTween            = null;
+    this.echoIdleTween             = null;
+    this.echoStrokeFlashEvt        = null;
     this.comboRushed     = false;
     this.bufferedAttack  = false;
     this.comboWeaponType = undefined;
@@ -495,6 +518,8 @@ export class GameScene extends Phaser.Scene {
 
     // L'anneau de combo suit le joueur et clignote à l'approche de l'expiration.
     this.syncComboRing();
+    // L'Écho suit son ancre et gère sa propre fenêtre d'expiration (2000ms fixes).
+    this.updateEcho(time);
 
     // NPC proximity via distance (le collider empêche le vrai overlap physique)
     this.nearbyNPC = null;
@@ -1041,6 +1066,9 @@ export class GameScene extends Phaser.Scene {
       );
       // Combiné : multiplicateur du pattern + talents mêlée + bonus de chaîne + stack cible.
       const finalDamage = Math.round(result.damage * damageMultiplier * appliedMeleeMult * stackBonus * sameTargetMult);
+      // ÉCHO — canal DIRECT #1/3 (mêlée). Plusieurs cibles dans la même salve de cône
+      // sont gérées par le batching de stageEchoAnchor (clé = this.time.now).
+      this.registerEchoDamage(activeEnemy.instanceId, finalDamage, true, result.isCrit);
       const isDummy = this.isInvincibleDummy(activeEnemy.enemyId);
       activeEnemy.currentHp = isDummy
         ? activeEnemy.maxHp
@@ -1167,6 +1195,9 @@ export class GameScene extends Phaser.Scene {
         );
         // BUG4 fix: apply the dmgMult from the finisher (or 1.0 for normal shots)
         const arrowFinalDmg = Math.round(result.damage * arrow.dmgMult * sameTargetMult);
+        // ÉCHO — canal DIRECT #2/3 (flèches). Une flèche ne touche qu'un seul ennemi
+        // (break juste après), donc aucun batching multi-cible n'est nécessaire ici.
+        this.registerEchoDamage(activeEnemy.instanceId, arrowFinalDmg, true, result.isCrit);
         const isArrowDummy = this.isInvincibleDummy(activeEnemy.enemyId);
         activeEnemy.currentHp = isArrowDummy
           ? activeEnemy.maxHp
@@ -1206,6 +1237,9 @@ export class GameScene extends Phaser.Scene {
     if (isSkillDummy && activeEnemy) activeEnemy.currentHp = activeEnemy.maxHp;
     if (result) {
       if (result.damage > 0 && nearest) {
+        // ÉCHO — canal DIRECT #3/3 (sorts). activateSkill ne cible jamais qu'un seul
+        // ennemi (this.findNearestEnemy) : aucun batching multi-cible nécessaire.
+        this.registerEchoDamage(activeEnemy!.instanceId, result.damage, true, result.isCrit);
         if (skill.isProjectile) {
           this.spawnCosmeticProjectile(this.player.x, this.player.y, nearest.x, nearest.y, skill.element);
         }
@@ -1501,6 +1535,10 @@ export class GameScene extends Phaser.Scene {
             ae.currentHp = Math.max(0, ae.currentHp - bleedEffect.strength);
           }
           this.cooldowns[bleedKey] = 1.0;
+          // ÉCHO — tick DOT : ne passe PAS par applyDamageToEnemy (mutation directe
+          // de currentHp ci-dessus), donc pas instrumenté par elle. Total seulement
+          // (direct=false) : pas de coup compté, jamais de déplacement d'ancre.
+          this.registerEchoDamage(instanceId, bleedEffect.strength, false);
           if (ae.currentHp <= 0) {
             this.onEnemyKilled(ae, sprite);
             return;
@@ -1524,6 +1562,9 @@ export class GameScene extends Phaser.Scene {
               ae.currentHp = Math.max(0, ae.currentHp - tickDmg);
             }
             this.cooldowns[magmaKey] = 1.0;
+            // ÉCHO — tick DOT : même raison que le BLEED ci-dessus (mutation directe
+            // de currentHp, pas de passage par applyDamageToEnemy).
+            this.registerEchoDamage(instanceId, tickDmg, false);
             const omnivampPct = PassiveSystem.getOmnivampPct(this.gameState.player.equipment);
             if (omnivampPct > 0) {
               PassiveSystem.applyHeal(this.gameState.player, Math.floor(tickDmg * omnivampPct / 100));
@@ -2561,9 +2602,19 @@ export class GameScene extends Phaser.Scene {
     return enemyId === 'training_dummy_iron';
   }
 
-  private applyDamageToEnemy(instanceId: string, damage: number) {
+  /**
+   * `direct` (défaut false) : ÉCHO — true pour un coup direct (aucun appelant actuel
+   * n'en a besoin, les 3 canaux directs — mêlée/flèches/sorts — mutent currentHp en
+   * scène sans passer par cette fonction, cf. registerEchoDamage) ; faux pour tout le
+   * reste (aura, riposte, écho de passif) — la sémantique "tick" par défaut de ce
+   * funnel correspond exactement à la sémantique "tick" attendue par l'Écho.
+   */
+  private applyDamageToEnemy(instanceId: string, damage: number, direct: boolean = false) {
     const ae = this.activeEnemies.get(instanceId);
     if (!ae) return;
+    // Le Mannequin de Fer compte NORMALEMENT pour l'Écho (banc de test de build
+    // valide, pas un bug) — enregistré AVANT le clamp isTrainingDummy ci-dessous.
+    this.registerEchoDamage(instanceId, damage, direct);
     // PV figés à 100% pour tester hitbox/dégâts en boucle sans le tuer — les
     // numéros de dégâts restent affichés (calculés en amont, indépendants de currentHp).
     const isTrainingDummy = this.isInvincibleDummy(ae.enemyId);
@@ -3048,6 +3099,9 @@ export class GameScene extends Phaser.Scene {
   private onPlayerDeath() {
     if (this.isTraveling) return;
     this.isTraveling = true;
+    // Écho : mort du JOUEUR (pas de l'ancre) — destruction IMMÉDIATE, sans
+    // l'animation de libération (réservée à l'expiration naturelle de la fenêtre).
+    this.destroyEchoImmediate();
     this.gameState.player.deaths++;
     this.gameState.player.stats.hp = Math.floor(this.gameState.player.stats.maxHp * 0.5);
     // DAMAGE_DEFERRAL_50_PCT : purger la file différée à la mort — sinon les moitiés
@@ -4276,6 +4330,465 @@ export class GameScene extends Phaser.Scene {
     return txt;
   }
 
+  // ── ÉCHO — COMPTEUR DE DÉGÂTS CUMULÉS ───────────────────────
+  /**
+   * Compteur in-world de dégâts infligés par le JOUEUR, ancré sur le dernier
+   * ennemi touché par un coup DIRECT. Coexiste avec showEnemyDamageNumber
+   * (chiffres par-cible, depth 100) sans le remplacer — l'Écho vit au-dessus
+   * (depth 101) et raconte le CUMUL de la salve en cours, pas chaque coup.
+   *
+   * État purement transitoire côté scène — jamais dans PlayerState/WorldState,
+   * aucun impact sur les saves. Le polish visuel (paliers couleur/taille par
+   * nombre de coups, punchs par coup, count-up roulant, pulsation idle du
+   * palier 4, motes de particules) vit dans les helpers echo* ci-dessous et ne
+   * touche à AUCUNE règle mécanique (fenêtre, ancrage, reset).
+   */
+  private static readonly ECHO_WINDOW_MS = 2000; // fenêtre FIXE depuis le dernier dégât — jamais indexée sur l'aspd, même principe que comboDeadline (cf. ~ligne 883)
+  private static readonly ECHO_WARN_MS = 600;    // pré-avertissement avant expiration
+  private static readonly ECHO_WARN_HZ = 4;      // fréquence du clignotement de pré-avertissement
+  private static readonly ECHO_ANCHOR_TWEEN_MS = 160;
+  private static readonly ECHO_ANCHOR_Y_OFFSET = 70;
+  private static readonly ECHO_RELEASE_MS = 350;
+
+  private echoTotal = 0;
+  private echoHits = 0;
+  private echoDeadline = 0;
+  private echoAnchorInstanceId: string | null = null;
+  /** true : l'ancre est morte (ou introuvable) — l'Écho gèle à sa dernière position monde. */
+  private echoFrozen = false;
+  /** true dès qu'une position monde valide a été posée — distingue le tout premier
+   *  ancrage (apparition directe, sans tween) d'un changement de cible (tween 160ms). */
+  private echoHasPosition = false;
+  private echoX = 0;
+  private echoY = 0;
+  private echoTweenStartX = 0;
+  private echoTweenStartY = 0;
+  /** 0→1 : progression du tween de transition d'ancrage. 1 = convergé — dans cet état,
+   *  Phaser.Math.Linear(start, target, 1) === target quel que soit `start`, donc le
+   *  MÊME calcul sert aussi bien pour "suit le sprite chaque frame" une fois convergé. */
+  private echoTweenT = 1;
+  private echoMoveTween: Phaser.Tweens.Tween | null = null;
+  private echoContainer: Phaser.GameObjects.Container | null = null;
+  private echoTotalText: Phaser.GameObjects.Text | null = null;
+  private echoHitsText: Phaser.GameObjects.Text | null = null;
+
+  // ── Polish visuel (spec design-agent) — purement cosmétique, aucune règle
+  //    mécanique ici : paliers de couleur/taille, punchs, count-up, particules. ──
+  /**
+   * Paliers par nombre de coups DIRECTS (echoHits). Index = numéro de palier ;
+   * l'index 0 est le palier invisible (< ECHO_VISIBILITY_HITS). Tailles 20/30 =
+   * multiples entiers de la grille 10px de Neatpixels Minimal (FONT_HUD, cf.
+   * FONT_GRIDS dans UITheme) — les seules tailles nettes de cette famille, d'où
+   * la création du texte en famille Minimal (uiStyle(10)) puis le passage par
+   * snapFontSize sur CETTE grille.
+   */
+  private static readonly ECHO_TIER_STYLES: ReadonlyArray<
+    { minHits: number; color: string; colorNum: number; size: number; stroke: string; strokeW: number } | null
+  > = [
+    null, // palier 0 (1-2 coups) : invisible — géré par ECHO_VISIBILITY_HITS
+    { minHits: 3,  color: '#ffffff', colorNum: 0xffffff, size: 20, stroke: '#000000', strokeW: 2 },
+    { minHits: 10, color: '#ffe28a', colorNum: 0xffe28a, size: 20, stroke: '#000000', strokeW: 3 },
+    { minHits: 20, color: '#ffd700', colorNum: 0xffd700, size: 30, stroke: '#000000', strokeW: 3 },
+    { minHits: 35, color: '#fff3c4', colorNum: 0xfff3c4, size: 30, stroke: '#ffd700', strokeW: 3 },
+  ];
+  // Dérivé de ECHO_TIER_STYLES[1] (jamais une valeur dupliquée en dur) : palier 0
+  // invisible tant que echoHits < ce seuil — sans ça, un seuil changé dans un seul
+  // des deux endroits désynchronise echoTierFor() et la porte de visibilité de
+  // updateEcho(). ECHO_TIER_STYLES doit rester déclaré AVANT (ordre d'init des
+  // champs statiques de classe).
+  private static readonly ECHO_VISIBILITY_HITS = GameScene.ECHO_TIER_STYLES[1]!.minHits;
+
+  /** Palier courant du cycle — ne monte que par onEchoTierUp, reset avec le cycle. */
+  private echoTier = 0;
+  /** Valeur AFFICHÉE du total : rattrape echoTotal via un tween ~100ms (rolling count-up). */
+  private echoDisplayTotal = 0;
+  private echoCountTween: Phaser.Tweens.Tween | null = null;
+  /** Punch/pulse d'échelle sur echoTotalText — un seul actif à la fois (même motif
+   *  de nettoyage que le re-punch de showEnemyDamageNumber). */
+  private echoPunchTween: Phaser.Tweens.Tween | null = null;
+  /** Pulsation idle continue du palier 4 (scale container 1.0↔1.04 à 1.5Hz). */
+  private echoIdleTween: Phaser.Tweens.Tween | null = null;
+  /** Retour du stroke à la couleur du palier après le flash blanc de crit (80ms). */
+  private echoStrokeFlashEvt: Phaser.Time.TimerEvent | null = null;
+  /**
+   * Batching d'ancrage AOE : plusieurs coups DIRECTS dans le MÊME appel synchrone
+   * (un cône de mêlée qui touche 3 ennemis dans `executeHitInCone`) doivent ancrer
+   * sur le PLUS GROS dégât de la salve, pas sur le dernier traité. Clé de lot =
+   * `this.time.now`, identique pour tous les coups d'un même appel synchrone
+   * puisque le temps ne change pas entre deux itérations d'une boucle JS. Le
+   * commit réel est différé d'un tick (`delayedCall(0)`) pour laisser la boucle
+   * se terminer avant de choisir le gagnant — même motif que les autres
+   * `time.delayedCall(0, ...)` de ce fichier (cf. performZoneTransition).
+   */
+  private echoPendingAnchor: { batchTime: number; instanceId: string; damage: number } | null = null;
+  private echoAnchorCommitScheduled = false;
+
+  /**
+   * Point d'entrée UNIQUE de tout dégât joueur pour l'Écho.
+   *
+   * `direct = true` : coup de mêlée/flèche/sort (voir executeHitInCone,
+   * updateArrowProjectiles, activateSkill) — incrémente le total ET le compteur
+   * de coups ET peut déplacer l'ancre.
+   * `direct = false` (défaut, ticks/passifs) : incrémente SEULEMENT le total —
+   * jamais de coup compté, jamais de déplacement d'ancre. Couvre applyDamageToEnemy
+   * (aura, riposte, écho de passif, auto-bolt) ainsi que les deux ticks DOT qui
+   * mutent currentHp directement sans passer par applyDamageToEnemy (bleed et
+   * Marque de Magma, instrumentés séparément dans tickEnemyAI).
+   */
+  private registerEchoDamage(instanceId: string, damage: number, direct: boolean, isCrit = false): void {
+    if (damage <= 0) return;
+    this.echoTotal += damage;
+    this.echoDeadline = this.time.now + GameScene.ECHO_WINDOW_MS;
+    this.tweenEchoDisplayTotal();
+    if (!direct) return; // ticks/passifs : total seulement — jamais de punch, de coup ni d'ancre
+    this.echoHits += 1;
+    // Un AOE massif peut faire passer echoHits de 0 à 10+ DANS LA MÊME frame,
+    // avant que updateEcho() n'ait tourné une seule fois pour créer le conteneur
+    // — sans cet appel, onEchoTierUp()/punchEchoText() ci-dessous seraient des
+    // no-op silencieux (garde `if (!txt) return`) et le pulse de transition/les
+    // motes de ce franchissement ne joueraient jamais.
+    if (this.echoHits >= GameScene.ECHO_VISIBILITY_HITS) this.ensureEchoContainer();
+
+    const tier = this.echoTierFor(this.echoHits);
+    if (tier > this.echoTier && this.echoTier > 0) {
+      // Franchissement 1→2, 2→3 ou 3→4 : le pulse de transition (1.4) REMPLACE le
+      // punch du coup qui franchit le seuil (1.12/1.25 < 1.4 — il serait invisible).
+      this.onEchoTierUp(tier);
+    } else {
+      this.echoTier = Math.max(this.echoTier, tier); // 0→1 : style posé par ensureEchoContainer, sans pulse
+      // Punch par coup direct. « Gros coup » = damage >= 25% du total APRÈS incrément.
+      const big = damage >= this.echoTotal * 0.25;
+      this.punchEchoText(big ? 1.25 : 1.12, 60);
+    }
+    if (isCrit) this.flashEchoStroke();
+
+    this.stageEchoAnchor(instanceId, damage);
+  }
+
+  private echoTierFor(hits: number): number {
+    for (let i = GameScene.ECHO_TIER_STYLES.length - 1; i >= 1; i--) {
+      if (hits >= GameScene.ECHO_TIER_STYLES[i]!.minHits) return i;
+    }
+    return 0;
+  }
+
+  private applyEchoTierStyle(tier: number): void {
+    const st = GameScene.ECHO_TIER_STYLES[tier];
+    const txt = this.echoTotalText;
+    if (!st || !txt || !txt.active) return;
+    txt.setFontSize(snapFontSize(st.size, FONT_HUD));
+    txt.setColor(st.color);
+    txt.setStroke(st.stroke, st.strokeW);
+  }
+
+  /** Franchissement de palier : restyle + pulse 1.0→1.4→1.0 (~200ms), et aux
+   *  paliers 3-4 uniquement, motes de pixels qui dérivent vers le haut. */
+  private onEchoTierUp(tier: number): void {
+    this.echoTier = tier;
+    this.applyEchoTierStyle(tier);
+    this.punchEchoText(1.4, 100);
+    if (tier >= 3) this.spawnEchoTierParticles(tier);
+    if (tier === 4) this.startEchoIdlePulse();
+  }
+
+  /** Punch d'échelle sur le texte du total. `duration` = demi-durée (yoyo).
+   *  Un seul punch actif : on tue le précédent et on repart d'une échelle neutre
+   *  (même motif que le re-punch de showEnemyDamageNumber). */
+  private punchEchoText(scale: number, duration: number): void {
+    const txt = this.echoTotalText;
+    if (!txt || !txt.active) return;
+    if (this.echoPunchTween) { this.echoPunchTween.remove(); this.echoPunchTween = null; }
+    txt.setScale(1);
+    this.echoPunchTween = this.tweens.add({
+      targets: txt,
+      scale,
+      duration,
+      yoyo: true,
+      ease: 'Quad.easeOut',
+      onComplete: () => { this.echoPunchTween = null; if (txt.active) txt.setScale(1); },
+    });
+  }
+
+  /** Coup critique : stroke flashé en blanc 80ms, puis retour à celui du palier. */
+  private flashEchoStroke(): void {
+    const txt = this.echoTotalText;
+    const st = GameScene.ECHO_TIER_STYLES[this.echoTier];
+    if (!txt || !txt.active || !st) return;
+    txt.setStroke('#ffffff', st.strokeW);
+    if (this.echoStrokeFlashEvt) this.echoStrokeFlashEvt.remove();
+    this.echoStrokeFlashEvt = this.time.delayedCall(80, () => {
+      this.echoStrokeFlashEvt = null;
+      // Le palier a pu monter pendant les 80ms — on restaure celui du moment.
+      this.applyEchoTierStyle(this.echoTier);
+    });
+  }
+
+  /** Palier 4 : pulsation idle continue (container 1.0↔1.04, cycle ~667ms = 1.5Hz),
+   *  ADDITIVE avec les punchs par coup — le punch vit sur le texte, l'idle sur le
+   *  container, les deux échelles se multiplient sans se disputer la propriété. */
+  private startEchoIdlePulse(): void {
+    if (this.echoIdleTween || !this.echoContainer || !this.echoContainer.active) return;
+    this.echoIdleTween = this.tweens.add({
+      targets: this.echoContainer,
+      scale: 1.04,
+      duration: 333, // demi-période
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+  }
+
+  /** 4-6 motes de pixels couleur du palier, dérive douce vers le haut + fade —
+   *  adaptation directe du motif de spawnHitParticles (primitives + tween,
+   *  destruction en onComplete, aucun résidu), en version ascendante. */
+  private spawnEchoTierParticles(tier: number): void {
+    const st = GameScene.ECHO_TIER_STYLES[tier];
+    const container = this.echoContainer;
+    if (!st || !container || !container.active) return;
+    const count = Phaser.Math.Between(4, 6);
+    for (let i = 0; i < count; i++) {
+      const size = Phaser.Math.Between(2, 3);
+      const mote = this.add.rectangle(
+        container.x + Phaser.Math.Between(-16, 16),
+        container.y + Phaser.Math.Between(-8, 4),
+        size, size, st.colorNum, 1,
+      ).setDepth(101);
+      this.tweens.add({
+        targets: mote,
+        x: mote.x + Phaser.Math.Between(-6, 6),
+        y: mote.y - Phaser.Math.Between(18, 32),
+        alpha: 0,
+        duration: Phaser.Math.Between(500, 800),
+        ease: 'Quad.easeOut',
+        onComplete: () => mote.destroy(),
+      });
+    }
+  }
+
+  /** Rolling count-up : la valeur AFFICHÉE rattrape echoTotal en ~100ms ;
+   *  snap immédiat si l'écart est < 3 (pas de tween pour 1-2 points de DOT). */
+  private tweenEchoDisplayTotal(): void {
+    if (this.echoCountTween) { this.echoCountTween.remove(); this.echoCountTween = null; }
+    const target = this.echoTotal;
+    if (Math.abs(target - this.echoDisplayTotal) < 3) {
+      this.echoDisplayTotal = target;
+      return;
+    }
+    this.echoCountTween = this.tweens.addCounter({
+      from: this.echoDisplayTotal,
+      to: target,
+      duration: 100,
+      ease: 'Quad.easeOut',
+      onUpdate: (tw) => { this.echoDisplayTotal = tw.getValue() ?? target; },
+      onComplete: () => { this.echoCountTween = null; this.echoDisplayTotal = target; },
+    });
+  }
+
+  private stageEchoAnchor(instanceId: string, damage: number): void {
+    const now = this.time.now;
+    if (!this.echoPendingAnchor || this.echoPendingAnchor.batchTime !== now) {
+      this.echoPendingAnchor = { batchTime: now, instanceId, damage };
+    } else if (damage > this.echoPendingAnchor.damage) {
+      this.echoPendingAnchor.instanceId = instanceId;
+      this.echoPendingAnchor.damage = damage;
+    }
+    if (this.echoAnchorCommitScheduled) return;
+    this.echoAnchorCommitScheduled = true;
+    this.time.delayedCall(0, () => this.commitEchoAnchor());
+  }
+
+  private findEnemySpriteByInstanceId(instanceId: string): Phaser.Physics.Arcade.Sprite | undefined {
+    return this.enemies.getChildren().find(
+      (c) => (c as Phaser.Physics.Arcade.Sprite).name === instanceId,
+    ) as Phaser.Physics.Arcade.Sprite | undefined;
+  }
+
+  /**
+   * Résout le lot en attente (le plus gros dégât de la salve gagne) et pose la
+   * nouvelle ancre. Si la cible retenue est déjà morte au moment du commit (kill
+   * dans la même salve — `sprite.active` passe à false synchroniquement dans
+   * onEnemyKilled via disableBody), l'Écho saute DIRECTEMENT sur sa dernière
+   * position (pas de tween — il n'y a plus rien à suivre) puis gèle : décision
+   * prise faute de pouvoir consulter le design sur ce cas précis, cohérente avec
+   * la règle "l'ancre va à la cible ayant reçu le plus gros dégât de la salve".
+   */
+  private commitEchoAnchor(): void {
+    this.echoAnchorCommitScheduled = false;
+    const pending = this.echoPendingAnchor;
+    this.echoPendingAnchor = null;
+    if (!pending) return;
+
+    const sprite = this.findEnemySpriteByInstanceId(pending.instanceId);
+    if (!sprite) return; // introuvable (edge case) : l'Écho reste où il était
+
+    this.echoAnchorInstanceId = pending.instanceId;
+    const targetX = sprite.x;
+    const targetY = sprite.y - sprite.displayHeight / 2 - GameScene.ECHO_ANCHOR_Y_OFFSET;
+    this.echoFrozen = !sprite.active;
+
+    if (this.echoMoveTween) { this.echoMoveTween.remove(); this.echoMoveTween = null; }
+
+    if (!this.echoHasPosition || this.echoFrozen) {
+      this.echoX = targetX;
+      this.echoY = targetY;
+      this.echoTweenT = 1;
+      this.echoHasPosition = true;
+      return;
+    }
+
+    this.echoTweenStartX = this.echoX;
+    this.echoTweenStartY = this.echoY;
+    this.echoTweenT = 0;
+    this.echoMoveTween = this.tweens.addCounter({
+      from: 0, to: 1, duration: GameScene.ECHO_ANCHOR_TWEEN_MS, ease: 'Quad.easeOut',
+      onUpdate: (tw) => { this.echoTweenT = tw.getValue() ?? 1; },
+    });
+  }
+
+  private echoFormatTotal(n: number): string {
+    if (n >= 100000) return `${Math.floor(n / 1000)}k`;
+    return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  }
+
+  private echoFormatHits(n: number): string {
+    return n > 999 ? '999+' : String(n);
+  }
+
+  private ensureEchoContainer(): void {
+    if (this.echoContainer && this.echoContainer.active) return;
+    // uiStyle(10) route vers Neatpixels Minimal (grille 10px) : c'est la SEULE
+    // famille où les tailles de palier 20/30 sont nettes — applyEchoTierStyle
+    // pose ensuite la taille/couleur réelles du palier courant.
+    this.echoTotalText = this.add.text(0, 0, '', uiStyle(10, UI.TXT_GOLD, { bold: true, stroke: true }))
+      .setOrigin(0.5, 1);
+    this.echoHitsText = this.add.text(0, 2, '', uiStyle(10, UI.TXT_PARCHMENT, { stroke: true }))
+      .setOrigin(0.5, 0)
+      .setAlpha(0.7);
+    this.echoContainer = this.add.container(this.echoX, this.echoY, [this.echoTotalText, this.echoHitsText])
+      .setDepth(101);
+    this.applyEchoTierStyle(this.echoTierFor(this.echoHits));
+  }
+
+  private renderEcho(time: number): void {
+    if (!this.echoContainer || !this.echoContainer.active) return;
+    const cam = this.cameras.main.worldView;
+    const clampedX = Phaser.Math.Clamp(this.echoX, cam.x + 10, cam.right - 10);
+    const clampedY = Phaser.Math.Clamp(this.echoY, cam.y + 10, cam.bottom - 10);
+    this.echoContainer.setPosition(clampedX, clampedY);
+
+    // Rolling count-up : on affiche la valeur qui ROULE vers echoTotal, pas echoTotal.
+    this.echoTotalText?.setText(this.echoFormatTotal(Math.round(this.echoDisplayTotal)));
+    this.echoHitsText?.setText(`${t('hud.echo_label')} ×${this.echoFormatHits(this.echoHits)}`);
+
+    // Pré-avertissement : 600 dernières ms avant expiration, alpha 1.0↔0.65 à 4Hz.
+    const warnStart = this.echoDeadline - GameScene.ECHO_WARN_MS;
+    if (time >= warnStart) {
+      const tSec = (time - warnStart) / 1000;
+      const alpha = 0.65 + 0.35 * (0.5 + 0.5 * Math.sin(tSec * GameScene.ECHO_WARN_HZ * 2 * Math.PI));
+      this.echoContainer.setAlpha(alpha);
+    } else {
+      this.echoContainer.setAlpha(1);
+    }
+  }
+
+  /** Expiration de la fenêtre : reset logique INSTANTANÉ + animation de libération
+   *  sur une COPIE détachée (le container n'est plus this.echoContainer dès cet
+   *  appel) — un nouveau cycle peut démarrer dès le prochain coup direct sans
+   *  attendre la fin des 350ms de fade. */
+  private releaseEcho(): void {
+    const container = this.echoContainer;
+    // Le texte figé dans l'animation de libération montre le TOTAL final réel —
+    // pas la valeur du count-up en cours (qui peut retarder de ~100ms).
+    this.echoTotalText?.setText(this.echoFormatTotal(this.echoTotal));
+    this.echoContainer  = null;
+    this.echoTotalText  = null;
+    this.echoHitsText   = null;
+    if (this.echoMoveTween)  { this.echoMoveTween.remove();  this.echoMoveTween = null; }
+    if (this.echoCountTween) { this.echoCountTween.remove(); this.echoCountTween = null; }
+    if (this.echoPunchTween) { this.echoPunchTween.remove(); this.echoPunchTween = null; }
+    if (this.echoIdleTween)  { this.echoIdleTween.remove();  this.echoIdleTween = null; }
+    if (this.echoStrokeFlashEvt) { this.echoStrokeFlashEvt.remove(); this.echoStrokeFlashEvt = null; }
+    this.echoPendingAnchor = null;
+
+    this.echoTotal            = 0;
+    this.echoHits             = 0;
+    this.echoAnchorInstanceId = null;
+    this.echoDeadline         = 0;
+    this.echoFrozen           = false;
+    this.echoHasPosition      = false;
+    this.echoTweenT           = 1;
+    this.echoTier             = 0;
+    this.echoDisplayTotal     = 0;
+
+    if (!container || !container.active) return;
+    this.tweens.add({
+      targets: container,
+      scale: 1.3,
+      y: container.y - 12,
+      alpha: 0,
+      duration: GameScene.ECHO_RELEASE_MS,
+      ease: 'Quad.easeOut',
+      onComplete: () => container.destroy(),
+    });
+  }
+
+  /** Destruction SANS animation — mort du joueur, changement de zone, shutdown
+   *  de la scène. Aucune de ces trois situations ne doit jouer la libération. */
+  private destroyEchoImmediate(): void {
+    if (this.echoMoveTween)  { this.echoMoveTween.remove();  this.echoMoveTween = null; }
+    if (this.echoCountTween) { this.echoCountTween.remove(); this.echoCountTween = null; }
+    if (this.echoPunchTween) { this.echoPunchTween.remove(); this.echoPunchTween = null; }
+    if (this.echoIdleTween)  { this.echoIdleTween.remove();  this.echoIdleTween = null; }
+    if (this.echoStrokeFlashEvt) { this.echoStrokeFlashEvt.remove(); this.echoStrokeFlashEvt = null; }
+    this.echoPendingAnchor        = null;
+    this.echoAnchorCommitScheduled = false;
+    if (this.echoContainer) {
+      this.tweens.killTweensOf(this.echoContainer);
+      this.echoContainer.destroy();
+      this.echoContainer = null;
+    }
+    this.echoTotalText  = null;
+    this.echoHitsText   = null;
+    this.echoTotal             = 0;
+    this.echoHits              = 0;
+    this.echoAnchorInstanceId  = null;
+    this.echoDeadline          = 0;
+    this.echoFrozen            = false;
+    this.echoHasPosition       = false;
+    this.echoTweenT            = 1;
+    this.echoTier              = 0;
+    this.echoDisplayTotal      = 0;
+  }
+
+  /** Appelé chaque frame depuis update() (déjà gardé par le early-return
+   *  isInDialogue/isTraveling/menuOpen — la fenêtre ne "coule" donc pas pendant
+   *  la pause, même principe que comboDeadline). */
+  private updateEcho(time: number): void {
+    if (!this.echoHasPosition && this.echoHits === 0 && this.echoTotal === 0) return;
+
+    if (this.echoDeadline > 0 && time >= this.echoDeadline) {
+      this.releaseEcho();
+      return;
+    }
+
+    if (!this.echoFrozen && this.echoAnchorInstanceId) {
+      const sprite = this.findEnemySpriteByInstanceId(this.echoAnchorInstanceId);
+      if (!sprite || !sprite.active) {
+        this.echoFrozen = true;
+      } else {
+        const targetX = sprite.x;
+        const targetY = sprite.y - sprite.displayHeight / 2 - GameScene.ECHO_ANCHOR_Y_OFFSET;
+        this.echoX = Phaser.Math.Linear(this.echoTweenStartX, targetX, this.echoTweenT);
+        this.echoY = Phaser.Math.Linear(this.echoTweenStartY, targetY, this.echoTweenT);
+      }
+    }
+
+    if (this.echoHits >= GameScene.ECHO_VISIBILITY_HITS) {
+      this.ensureEchoContainer();
+      this.renderEcho(time);
+    }
+  }
+
   /** Feedback flottant DODGE_PCT (loot stat rolls) — même style que showDamageNumber. */
   private showDodgeText(x: number, y: number) {
     const txt = this.add.text(x + Phaser.Math.Between(-6, 6), y, 'Esquive !', {
@@ -5146,6 +5659,9 @@ export class GameScene extends Phaser.Scene {
     // Reset iframes — pas de clignotement résiduel après une transition de zone
     this.iframeUntil = 0;
     if (this.player?.active) this.player.setAlpha(1);
+    // Écho : changement de zone = reset dur SILENCIEUX, jamais l'animation de
+    // libération (celle-ci n'a de sens que pour une expiration naturelle).
+    this.destroyEchoImmediate();
 
     // Destroy all tracked physics colliders/overlaps individually
     for (const c of this.physicsColliders) c.destroy();
@@ -5878,6 +6394,8 @@ export class GameScene extends Phaser.Scene {
 
   shutdown() {
     this.time.removeAllEvents();
+    // Écho : reset dur silencieux — même règle que destroyCurrentZoneObjects().
+    this.destroyEchoImmediate();
     this.input.keyboard?.removeAllKeys(true);
     // Clean up native window listeners — no memory leak on scene stop/restart.
     if (this._attackHandler) {

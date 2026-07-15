@@ -325,6 +325,10 @@ const EN_MANUAL: Record<string, string> = {
   'notif.loot_mineral': '[Mineral]',
   'hint.talk_action': 'Talk',
   'hint.loot_action': 'Loot',
+
+  // ── COMBAT HUD (in-world) ────────────────────────────────────
+  // Mot identique en FR et EN par choix design — cf. spec de la feature Écho.
+  'hud.echo_label': 'ÉCHO',
   'notif.loot_shrine': '[Shrine]',
   'notif.level_up': '✦ Level {level}! ✦',
   'notif.quest_done': 'Quest complete!',

@@ -307,6 +307,9 @@ export const FR: Record<string, string> = {
   'notif.loot_mineral': '[Minerai]',
   'hint.talk_action': 'Parler',
   'hint.loot_action': 'Ramasser',
+
+  // ── COMBAT HUD (in-world) ────────────────────────────────────
+  'hud.echo_label': 'ÉCHO',
   'notif.loot_shrine': '[Sanctuaire]',
   'notif.level_up': '✦ Niveau {level} ! ✦',
   'notif.quest_done': 'Quête accomplie !',
