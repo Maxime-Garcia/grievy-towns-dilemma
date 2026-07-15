@@ -2731,6 +2731,8 @@ export class GameScene extends Phaser.Scene {
       }
       if (burn.duration <= 0) this.playerStatusEffects = this.playerStatusEffects.filter(e => e.type !== 'BURN');
     }
+
+    this.updatePlayerStatusTint();
   }
 
   private static readonly PLAYER_STATUS_ON_HIT_CHANCE = 0.12; // 12%, milieu de la fourchette validée 10-15%
@@ -2766,6 +2768,7 @@ export class GameScene extends Phaser.Scene {
         : type === 'SLOW' ? 0.35
         : 1, // SHOCK : immobilise, strength non lue
     });
+    this.showPlayerStatusAppliedText(type);
   }
 
   /** Force par défaut (px/s) du knockback subi par le joueur sur un coup de
@@ -3764,6 +3767,17 @@ export class GameScene extends Phaser.Scene {
     }
     sprite.setTintFill(0xffee44);
     this.time.delayedCall(280, () => { if (sprite.active) this.resetEnemyTint(sprite); });
+    // Le flash 280ms peut passer inaperçu au milieu du combat — texte explicite,
+    // même patron que showDodgeText.
+    const label = this.add.text(
+      sprite.x + Phaser.Math.Between(-6, 6), sprite.y - sprite.displayHeight / 2 - 6,
+      ae.isBoss ? 'Ralenti !' : 'Étourdi !',
+      { fontSize: '13px', color: '#ffee44', fontFamily: FONT, stroke: '#000000', strokeThickness: 2 },
+    ).setDepth(100).setOrigin(0.5, 1);
+    this.tweens.add({
+      targets: label, y: label.y - 40, alpha: 0, duration: 900, ease: 'Quad.easeOut',
+      onComplete: () => label.destroy(),
+    });
   }
 
   private spawnHitParticles(x: number, y: number, element?: ElementType, colorOverride?: number) {
@@ -5091,6 +5105,43 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** Feedback flottant DODGE_PCT (loot stat rolls) — même style que showDamageNumber. */
+  /** « No mechanic without feedback » (cf. DODGE_PCT) — au moment où un statut
+   *  est posé sur le JOUEUR (talents Partie 2), sans quoi rien à l'écran ne
+   *  distingue "j'ai résisté" de "le jet a raté" de "le mécanisme est cassé". */
+  private static readonly PLAYER_STATUS_LABEL: Record<StatusEffect['type'], string> = {
+    BURN: 'Brûlure !', SLOW: 'Ralenti !', SHOCK: 'Choc !',
+    FREEZE: 'Gelé !', STUN: 'Étourdi !', BLEED: 'Saignement !', POISON: 'Poison !', EXPOSE: 'Exposé !',
+  };
+  private static readonly PLAYER_STATUS_COLOR: Record<StatusEffect['type'], string> = {
+    BURN: '#ff6644', SLOW: '#66ccff', SHOCK: '#ffee44',
+    FREEZE: '#aaeeff', STUN: '#ffcc44', BLEED: '#ff4444', POISON: '#88cc44', EXPOSE: '#ffaa44',
+  };
+
+  private showPlayerStatusAppliedText(type: StatusEffect['type']) {
+    const txt = this.add.text(
+      this.player.x + Phaser.Math.Between(-6, 6), this.player.y - 26,
+      GameScene.PLAYER_STATUS_LABEL[type],
+      { fontSize: '13px', color: GameScene.PLAYER_STATUS_COLOR[type], fontFamily: FONT, stroke: '#000000', strokeThickness: 2 },
+    ).setDepth(100).setOrigin(0.5, 1);
+    this.tweens.add({
+      targets: txt, y: txt.y - 40, alpha: 0, duration: 900, ease: 'Quad.easeOut',
+      onComplete: () => txt.destroy(),
+    });
+  }
+
+  /** Teinte le sprite joueur pendant qu'un statut subi est actif (talents
+   *  Partie 2) — priorité SHOCK/FREEZE/STUN (immobilise, le plus visible)
+   *  > SLOW > BURN si plusieurs sont actifs en même temps. Appelé chaque
+   *  frame depuis tickPlayerStatusEffects ; ne touche pas à l'alpha (déjà
+   *  utilisé par le clignotement i-frames, cf. update()). */
+  private updatePlayerStatusTint() {
+    const active = this.playerStatusEffects.find(e => e.type === 'SHOCK' || e.type === 'FREEZE' || e.type === 'STUN')
+      ?? this.playerStatusEffects.find(e => e.type === 'SLOW')
+      ?? this.playerStatusEffects.find(e => e.type === 'BURN');
+    if (!active) { if (this.player.isTinted) this.player.clearTint(); return; }
+    this.player.setTint(Phaser.Display.Color.HexStringToColor(GameScene.PLAYER_STATUS_COLOR[active.type]).color);
+  }
+
   private showDodgeText(x: number, y: number) {
     const txt = this.add.text(x + Phaser.Math.Between(-6, 6), y, 'Esquive !', {
       fontSize: '13px', color: '#88ddff', fontFamily: FONT,
