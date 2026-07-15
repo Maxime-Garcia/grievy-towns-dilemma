@@ -252,6 +252,13 @@ export class GameScene extends Phaser.Scene {
   private iframeUntil = 0;
   private wasDashReady = true;
   private isDashing = false;
+  // DOUBLE_DASH (zephyr_double_dash) — charge bonus indépendante du cooldown
+  // normal (dashCooldown, 1.5s) : recharge 8s, permet un second dash immédiat.
+  private dashBonusChargeReadyAt = 0;
+  // DASH_DMG_PCT (zephyr_aerial_mastery) — ennemis déjà touchés PENDANT le dash
+  // en cours, vidé à chaque nouveau dash (sinon un dash lent sur un gros ennemi
+  // le toucherait à chaque frame pendant les 300ms).
+  private dashHitEnemyIds: Set<string> = new Set();
   private lastDirX = 0;
   private lastDirY = 1;
   private facingAngle = 0;
@@ -374,6 +381,8 @@ export class GameScene extends Phaser.Scene {
     this.cooldowns           = {};
     this.dashCooldown        = 0;
     this.wasDashReady        = true;
+    this.dashBonusChargeReadyAt = 0;
+    this.dashHitEnemyIds.clear();
     this.playerVx            = 0;
     this.playerVy            = 0;
     this.dashMomentumX       = 0;
@@ -602,6 +611,7 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.handleMovement(dt);
+    this.tickDashDamage();
     this.handleAttackInput();
     this.handleSkillInput();
     this.updateArrowProjectiles(dt);
@@ -954,7 +964,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleDash() {
-    if (this.dashCooldown > 0) return;
+    // DOUBLE_DASH (zephyr_double_dash) — une charge bonus (recharge 8s,
+    // indépendante du cooldown normal) autorise un second dash même si
+    // dashCooldown n'est pas encore retombé à 0.
+    const useBonusCharge = this.dashCooldown > 0
+      && this.playerModifiers.doubleDash
+      && this.time.now >= this.dashBonusChargeReadyAt;
+    if (this.dashCooldown > 0 && !useBonusCharge) return;
     if (this.playerImmobilized) return; // STUN/FREEZE/SHOCK subi (talents Partie 2)
 
     const body = this.player.body as Phaser.Physics.Arcade.Body;
@@ -979,10 +995,20 @@ export class GameScene extends Phaser.Scene {
     // NO_DASH_COOLDOWN (hidden_zephyr_fang) — plancher anti-exploit à
     // NO_DASH_COOLDOWN_FLOOR_S (pas 0 : un dash-spam serait des iframes wallhack),
     // même garde-fou que NO_ATTACK_COOLDOWN sur l'attaque de base.
+    // DASH_CD_PCT (zephyr_featherfall) — réduction % du cooldown de BASE ; le
+    // plancher NO_DASH_COOLDOWN (objet) reste prioritaire, inchangé par le talent.
     const dashCd = PassiveSystem.hasNoDashCooldown(this.gameState.player.equipment)
-      ? PassiveSystem.NO_DASH_COOLDOWN_FLOOR_S : 1.5;
-    this.dashCooldown = dashCd;
+      ? PassiveSystem.NO_DASH_COOLDOWN_FLOOR_S
+      : Math.max(0.1, 1.5 * (1 - this.playerModifiers.dashCdReductionPct / 100));
+    if (useBonusCharge) {
+      // Le cooldown normal continue de tourner depuis le premier dash — seule la
+      // charge bonus est consommée ici.
+      this.dashBonusChargeReadyAt = this.time.now + 8000;
+    } else {
+      this.dashCooldown = dashCd;
+    }
     this.isDashing = true;
+    this.dashHitEnemyIds.clear(); // DASH_DMG_PCT — nouveau dash, nouvelle salve de touches
     body.setVelocity(nx, ny);
 
     // MOVE_25_DASH_ASPD_50_PCT (hidden_skyward_mantle) — un dash réussi octroie un
@@ -1014,7 +1040,31 @@ export class GameScene extends Phaser.Scene {
       },
     });
 
-    this.cooldowns['dash'] = dashCd;
+    // N'écrase ce miroir que si le cooldown normal a réellement bougé — sinon
+    // (useBonusCharge) il mentirait sur l'état réel de dashCooldown.
+    if (!useBonusCharge) this.cooldowns['dash'] = dashCd;
+  }
+
+  /** DASH_DMG_PCT (zephyr_aerial_mastery) — traverser un ennemi pendant un dash
+   *  lui inflige dashDmgPct% ATK, une fois par ennemi par dash (dashHitEnemyIds).
+   *  Avant ce talent, un dash n'inflige AUCUN dégât : c'est ce flag qui active la
+   *  mécanique, pas seulement un bonus sur des dégâts déjà existants. */
+  private tickDashDamage(): void {
+    if (!this.isDashing) return;
+    if (this.playerModifiers.dashDmgPct <= 0) return;
+    const atk = StatsSystem.computeAll(this.gameState.player).atk;
+    const dmg = Math.max(1, Math.round(atk * this.playerModifiers.dashDmgPct / 100));
+    for (const go of this.enemies.getChildren()) {
+      const sprite = go as Phaser.Physics.Arcade.Sprite;
+      if (!sprite.active || this.dashHitEnemyIds.has(sprite.name)) continue;
+      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, sprite.x, sprite.y) > 36) continue;
+      const ae = this.activeEnemies.get(sprite.name);
+      if (!ae || ae.currentHp <= 0) continue;
+      this.dashHitEnemyIds.add(sprite.name);
+      this.showDamageNumber(sprite.x, sprite.y - 20, dmg, false, ElementType.WIND);
+      this.spawnHitParticles(sprite.x, sprite.y, ElementType.WIND);
+      this.applyDamageToEnemy(sprite.name, dmg, false);
+    }
   }
 
   // ── SKILLS & ATTACK ──────────────────────────────────────────
