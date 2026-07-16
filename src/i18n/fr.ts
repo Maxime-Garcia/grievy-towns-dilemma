@@ -317,11 +317,11 @@ export const FR: Record<string, string> = {
 
   // ── SYSTÈME PITY (PITY/PITY.md) ──────────────────────────────
   'pity.title': 'Garanties de butin',
+  'pity.chip_label': 'GARANTIE',
   'pity.paid': 'Garantie honorée : {rarity} !',
-  'pity.remaining_label': 'restants',
-  'pity.since': '{n} / {max} depuis le dernier {rarity} ou mieux',
+  'pity.remaining_of': 'restants / {max}',
+  'pity.subtitle': 'Un kill = un pas. Obtenir la rareté remet son compteur à zéro.',
   'pity.guaranteed': 'GARANTI',
-  'pity.footer': 'Chaque monstre tué rapproche la garantie. Obtenir la rareté (ou mieux) remet le compteur à zéro.',
 
   // ── ACTIONS CLAVIER (keyBindings) ────────────────────────────
   'action.up': 'Haut',

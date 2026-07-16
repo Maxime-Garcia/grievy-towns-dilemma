@@ -66,11 +66,19 @@ export class UIScene extends Phaser.Scene {
   private zoneText!: Phaser.GameObjects.Text;
   private zoneBg!: Phaser.GameObjects.Graphics;
 
-  // ── Chip HUD Pity (PITY/PITY.md) — losange + nombre, discret à côté du
-  // panneau stats. Détail complet dans PityScene (touche pity / tap).
+  // ── Chip HUD Pity (PITY/PITY.md) — libellé "GARANTIE" + losange + nombre +
+  // micro-jauge, discret à côté du panneau stats. Détail complet dans PityScene
+  // (touche pity / tap). Auto-explicite en permanence (retour créateur 16/07 :
+  // "on ne comprend pas ce que c'est avant de taper dessus") — voir onPlayerUpdate.
+  private pityChipBg!: Phaser.GameObjects.Graphics;
   private pityChipDiamond!: Phaser.GameObjects.Graphics;
   private pityChipText!: Phaser.GameObjects.Text;
-  /** Dernière valeur affichée — évite un setText() par frame quand rien n'a changé. */
+  private pityChipGauge!: Phaser.GameObjects.Graphics;
+  private pityChipX = 0;
+  private pityChipY = 0;
+  private pityChipW = 0;
+  private pityChipH = 0;
+  /** Dernière valeur affichée — évite un setText()/redraw par frame quand rien n'a changé. */
   private lastPityRemaining = -1;
 
   // ── Combo HUD (pips sous le joueur — COMBO_TALENT_SPEC.md §2.3 / §6.2) ──
@@ -119,7 +127,7 @@ export class UIScene extends Phaser.Scene {
     // Vite (__BUILD_HASH__, cf. vite.config.ts) : l'écrire à la main était voué
     // à mentir, puisqu'un hash n'existe qu'une fois le commit fait — et l'écrire
     // dans le code refait le commit.
-    const BUILD_LABEL = `PITY: garanties EPIC/LEGENDARY/MYTHIC + panneau + chip HUD (${__BUILD_HASH__})`;
+    const BUILD_LABEL = `PITY: redesign chip auto-explicite + panneau epure (${__BUILD_HASH__})`;
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',
@@ -182,29 +190,44 @@ export class UIScene extends Phaser.Scene {
       uiStyle(9, UI.TXT_WHITE, { bold: true, stroke: true }),
     ).setOrigin(0.5).setDepth(1);
 
-    // ── Chip Pity (à droite du panneau stats) ────
+    // ── Chip Pity v2 (à droite du panneau stats) ────
     // Pilule discrète en permanence à l'écran (demande explicite du créateur :
     // « affiche le restant », pas seulement sur demande) — le détail complet vit
     // dans PityScene, ouverte par tap ou par la touche 'pity' (rebindable).
-    const CHIP_W = 84;
-    const CHIP_H = 24;
+    // Redesign 16/07 (retour créateur : "on ne comprend pas ce que c'est avant de
+    // taper dessus") — 3 canaux redondants mais discrets : le mot "GARANTIE"
+    // (texte muted, sous le niveau des barres HP/MP), le losange coloré, et une
+    // micro-jauge 2px qui se remplit (même sémantique que la barre du panneau —
+    // le panneau enseigne le chip, le chip rappelle le panneau).
+    const CHIP_W = 100;
+    const CHIP_H = 34;
     const CHIP_X = PANEL_W + 12;
     const CHIP_Y = PANEL_TOP + PANEL_H / 2 - CHIP_H / 2;
-    const chipBg = this.add.graphics();
-    drawGlowPanel(chipBg, CHIP_X, CHIP_Y, CHIP_W, CHIP_H, UI.ACCENT_ARCANE, UI.BTN_BG, 12, 0.92);
+    this.pityChipX = CHIP_X;
+    this.pityChipY = CHIP_Y;
+    this.pityChipW = CHIP_W;
+    this.pityChipH = CHIP_H;
+    this.pityChipBg = this.add.graphics();
+    drawGlowPanel(this.pityChipBg, CHIP_X, CHIP_Y, CHIP_W, CHIP_H, UI.ACCENT_ARCANE, UI.BTN_BG, 8, 0.92);
+    // fitText (pas un Text nu) : "GUARANTEE" (EN, 108px mesuré) déborde des 90px
+    // disponibles dans le chip (100px − 10px de marge gauche) — trouvé en review.
+    const chipLabelStyle = uiStyle(TYPE.SMALL, UI.TXT_MUTED);
+    this.add.text(CHIP_X + 10, CHIP_Y + 5,
+      fitText(this, t('pity.chip_label'), chipLabelStyle, CHIP_W - 16), chipLabelStyle);
     this.pityChipDiamond = this.add.graphics();
     this.pityChipDiamond.fillStyle(0x888888, 1);
     this.pityChipDiamond.fillRect(-4, -4, 8, 8);
-    this.pityChipDiamond.setRotation(Math.PI / 4).setPosition(CHIP_X + 16, CHIP_Y + CHIP_H / 2);
-    this.pityChipText = this.add.text(CHIP_X + 30, CHIP_Y + CHIP_H / 2, '—',
+    this.pityChipDiamond.setRotation(Math.PI / 4).setPosition(CHIP_X + 17, CHIP_Y + 22);
+    this.pityChipText = this.add.text(CHIP_X + 28, CHIP_Y + 22, '—',
       uiStyle(TYPE.SMALL, UI.TXT_PARCHMENT, { bold: true }),
     ).setOrigin(0, 0.5);
+    this.pityChipGauge = this.add.graphics().setPosition(CHIP_X, CHIP_Y);
     const chipHit = this.add.rectangle(
-      CHIP_X + CHIP_W / 2, CHIP_Y + CHIP_H / 2, CHIP_W + 4, CHIP_H + 20, 0, 0,
+      CHIP_X + CHIP_W / 2, CHIP_Y + CHIP_H / 2, CHIP_W + 4, CHIP_H + 10, 0, 0,
     ).setInteractive({ useHandCursor: true }).setDepth(6);
     chipHit.on('pointerdown', () => {
-      chipBg.setAlpha(0.6);
-      this.tweens.add({ targets: chipBg, alpha: 1, duration: 150 });
+      this.pityChipBg.setAlpha(0.6);
+      this.tweens.add({ targets: this.pityChipBg, alpha: 1, duration: 150 });
       this.game.events.emit('mobile_action', 'pity');
     });
 
@@ -624,21 +647,30 @@ export class UIScene extends Phaser.Scene {
     // raretés protégées). Comparaison sur le nombre affiché, pas sur un objet :
     // évite un setText()/redraw à chaque frame quand rien n'a changé.
     {
-      const candidates: [ItemRarity, number][] = [
-        [ItemRarity.EPIC,      Math.max(0, (PITY_THRESHOLDS[ItemRarity.EPIC]      ?? 0) - player.killsWithoutEpic)],
-        [ItemRarity.LEGENDARY, Math.max(0, (PITY_THRESHOLDS[ItemRarity.LEGENDARY] ?? 0) - player.killsWithoutLegendary)],
-        [ItemRarity.MYTHIC,    Math.max(0, (PITY_THRESHOLDS[ItemRarity.MYTHIC]    ?? 0) - player.killsWithoutMythic)],
+      const candidates: [ItemRarity, number, number][] = [
+        [ItemRarity.EPIC,      Math.max(0, (PITY_THRESHOLDS[ItemRarity.EPIC]      ?? 0) - player.killsWithoutEpic),      PITY_THRESHOLDS[ItemRarity.EPIC]      ?? 1],
+        [ItemRarity.LEGENDARY, Math.max(0, (PITY_THRESHOLDS[ItemRarity.LEGENDARY] ?? 0) - player.killsWithoutLegendary), PITY_THRESHOLDS[ItemRarity.LEGENDARY] ?? 1],
+        [ItemRarity.MYTHIC,    Math.max(0, (PITY_THRESHOLDS[ItemRarity.MYTHIC]    ?? 0) - player.killsWithoutMythic),    PITY_THRESHOLDS[ItemRarity.MYTHIC]    ?? 1],
       ];
-      const [closestRarity, remaining] = candidates.reduce((a, b) => b[1] < a[1] ? b : a);
+      const [closestRarity, remaining, threshold] = candidates.reduce((a, b) => b[1] < a[1] ? b : a);
       if (remaining !== this.lastPityRemaining) {
         this.lastPityRemaining = remaining;
         const ready = remaining <= 0;
         const color = RARITY_COLORS[closestRarity] ?? '#888888';
+        const colorNum = parseInt(color.slice(1), 16);
         this.pityChipDiamond.clear();
-        this.pityChipDiamond.fillStyle(parseInt(color.slice(1), 16), 1);
+        this.pityChipDiamond.fillStyle(colorNum, 1);
         this.pityChipDiamond.fillRect(-4, -4, 8, 8);
-        this.pityChipText.setText(ready ? `◆ ${t('pity.guaranteed')}` : `◆ ${remaining}`);
+        this.pityChipText.setText(ready ? t('pity.guaranteed') : String(remaining));
         this.pityChipText.setColor(ready ? color : UI.TXT_PARCHMENT);
+        // Micro-jauge (2px) — même sémantique que la barre de PityScene : se
+        // remplit en approchant la garantie, jamais l'inverse.
+        const pct = Math.max(0, Math.min(1, (threshold - remaining) / threshold));
+        this.pityChipGauge.clear();
+        this.pityChipGauge.fillStyle(UI.BG_DEEP, 1);
+        this.pityChipGauge.fillRect(8, 28, 84, 2);
+        this.pityChipGauge.fillStyle(colorNum, 1);
+        this.pityChipGauge.fillRect(8, 28, Math.round(84 * pct), 2);
       }
     }
 
@@ -793,6 +825,11 @@ export class UIScene extends Phaser.Scene {
       duration: 3200,
       shimmer: true,
     });
+    // Flash du chip en même temps que la notif : le joueur associe le chip à
+    // l'événement "Garantie honorée" sans un mot de plus à l'écran (retour ux-agent).
+    const flash = this.add.rectangle(0, 0, this.pityChipW, this.pityChipH, 0xffffff, 0.3)
+      .setOrigin(0, 0).setPosition(this.pityChipX, this.pityChipY);
+    this.tweens.add({ targets: flash, alpha: 0, duration: 250, onComplete: () => flash.destroy() });
   }
 
   private onSkillUnlocked(skillId: string) {

@@ -15,11 +15,18 @@ import { t } from '../i18n';
 // Le jeu est en pause pendant que ce panneau est ouvert (comme Inventaire/
 // Talents) : les compteurs sont donc figés, aucune mise à jour "live" nécessaire.
 
-const ROW_H   = 84;
+// Redesign 16/07 (retour créateur : panneau "trop chargé en info") — chaque
+// carte affichait la même quantité 3 fois (nombre restant, barre, phrase
+// "n/seuil depuis..."). Une info = un seul canal ; la règle du jeu (le reset)
+// s'explique UNE fois dans le sous-titre, pas répétée sur 3 cartes + footer.
+const ROW_H   = 64;   // 84 → 64 : plus de ligne "depuis le dernier..." à loger
 const ROW_GAP = 10;
 const PANEL_W = 460;
-const HEADER_H = 48;
-const FOOTER_H = 40;
+// 74 (pas 60) : le sous-titre FR/EN mesure ~600px non-wrappé contre 432px
+// disponibles (PANEL_W - PAD*2) — il wrap sur 2 lignes (~30px), 60 n'aurait
+// laissé que 24px avant le divider et l'aurait chevauché (trouvé en review,
+// mesure des glyphes réels de la police Minimal 10px).
+const HEADER_H = 74;
 const PAD = 14;
 
 // Ordre d'affichage : croissant en rareté (la lecture descend vers le plus précieux).
@@ -59,7 +66,7 @@ export class PityScene extends Phaser.Scene {
       .map(rarity => ({ rarity, threshold: PITY_THRESHOLDS[rarity] }))
       .filter((r): r is { rarity: ItemRarity; threshold: number } => r.threshold !== undefined);
 
-    const panelH = PAD + HEADER_H + rows.length * ROW_H + (rows.length - 1) * ROW_GAP + PAD + FOOTER_H + PAD;
+    const panelH = PAD + HEADER_H + rows.length * ROW_H + (rows.length - 1) * ROW_GAP + PAD;
     const panelX = (W - PANEL_W) / 2;
     const panelY = (H - panelH) / 2;
 
@@ -69,6 +76,12 @@ export class PityScene extends Phaser.Scene {
 
     this.add.text(W / 2, panelY + PAD + 6, t('pity.title'), titleStyle(UI.TXT_GOLD, { stroke: true }))
       .setOrigin(0.5, 0);
+    // Sous-titre : explique la règle du jeu UNE fois, avant les données —
+    // remplace le footer répété après 3 cartes identiques.
+    this.add.text(
+      W / 2, panelY + PAD + 30, t('pity.subtitle'),
+      uiStyle(TYPE.SMALL, UI.TXT_MUTED, { align: 'center', wordWrapWidth: PANEL_W - PAD * 2 }),
+    ).setOrigin(0.5, 0);
     addCloseButton(this, panelX + PANEL_W - 24, panelY + PAD + 10, () => this.gameScene.closeOverlay('PityScene'));
 
     const sepGfx = this.add.graphics();
@@ -89,11 +102,6 @@ export class PityScene extends Phaser.Scene {
       rowY += ROW_H + ROW_GAP;
     }
 
-    this.add.text(
-      W / 2, panelY + panelH - PAD - FOOTER_H / 2, t('pity.footer'),
-      uiStyle(TYPE.SMALL, UI.TXT_MUTED, { align: 'center', wordWrapWidth: PANEL_W - PAD * 2 }),
-    ).setOrigin(0.5);
-
     // Pas de handler ESC ici : GameScene.escKey est le propriétaire UNIQUE de
     // l'ESC des overlays (cf. son commentaire) et gère déjà 'PityScene' — un
     // second handler ici la refermerait en double (pattern InventoryScene, pas
@@ -109,34 +117,38 @@ export class PityScene extends Phaser.Scene {
     const card = this.add.graphics();
     drawCard(card, x, y, w, ROW_H, { accent: color, radius: 6 });
 
-    // Badge nom de rareté (haut-gauche)
+    // Badge nom de rareté (haut-gauche) — positionné avec sa largeur RÉELLE
+    // mesurée après création (drawBadge centre son contenu sur (x,y) donné) :
+    // un décalage fixe supposait une demi-largeur constante, fausse dès qu'un
+    // libellé de rareté est plus long qu'un autre (surtout en anglais).
+    // PAS badge.getBounds() : Container.getBounds() SKIP les enfants Graphics
+    // (le fond arrondi du badge, cf. source Phaser) — ne mesurerait que le
+    // Text et sous-estimerait de padX*2=12px (trouvé en review). On relit le
+    // Text enfant directement et on ajoute le padding de drawBadge (padX=6).
     const badgeLabel = t(`rarity.${rarity}`).toUpperCase();
-    drawBadge(this, x + 14 + 30, y + 10 + 10, badgeLabel, color, badgeTextColor(rarity));
+    const badge = drawBadge(this, x + 14, y + 20, badgeLabel, color, badgeTextColor(rarity));
+    const badgeTxt = badge.list[1] as Phaser.GameObjects.Text;
+    badge.setX(x + 14 + (Math.ceil(badgeTxt.width) + 12) / 2);
 
-    // Nombre restant (héros de la ligne, haut-droite) + libellé sous lui
+    // Nombre restant (héros de la ligne, haut-droite) — seule info actionnable,
+    // c'est la seule à mériter TYPE.HEADING. Le seuil (perdu par la suppression
+    // de la phrase "n/seuil depuis...") survit en registre secondaire dessous.
     const heroText = ready ? t('pity.guaranteed') : String(remaining);
-    this.add.text(x + w - 14, y + 8, heroText,
+    this.add.text(x + w - 14, y + 6, heroText,
       uiStyle(TYPE.HEADING, ready ? UI.TXT_GOLD : UI.TXT_PARCHMENT, { bold: true, stroke: ready }),
     ).setOrigin(1, 0);
     if (!ready) {
-      this.add.text(x + w - 14, y + 30, t('pity.remaining_label'),
+      this.add.text(x + w - 14, y + 34, t('pity.remaining_of').replace('{max}', String(threshold)),
         uiStyle(TYPE.SMALL, UI.TXT_MUTED),
       ).setOrigin(1, 0);
     }
 
-    // Barre de progression
+    // Barre de progression — insérée DANS la carte (14px de marge de chaque
+    // côté, comme le badge) : elle s'étendait avant bord à bord et chevauchait
+    // la barre d'accent gauche de drawCard.
     const barY = y + 46;
-    const barW = w;
     const bar = this.add.graphics();
-    drawBar(bar, x, barY, barW, 10, pct, color, UI.BG_DEEP, 0xffffff);
-
-    // Sous-ligne : kills / seuil
-    this.add.text(x, barY + 16, t('pity.since')
-      .replace('{n}', String(kills))
-      .replace('{max}', String(threshold))
-      .replace('{rarity}', t(`rarity.${rarity}`)),
-      uiStyle(TYPE.SMALL, UI.TXT_MUTED),
-    ).setOrigin(0, 0);
+    drawBar(bar, x + 14, barY, w - 28, 8, pct, color, UI.BG_DEEP, 0xffffff);
 
     // État GARANTI : halo pulsant discret autour de la carte. Ne se déclenche pas
     // en jeu normal (LootSystem paie la dette dans le MÊME rollLoot qui fait
