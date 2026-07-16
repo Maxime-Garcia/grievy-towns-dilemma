@@ -107,25 +107,26 @@ confondre — deux étages de décision, pas un.**
 
 ### Un seul sac, deux natures d'emplacements
 
-**Valeurs de départ posées par le créateur : 20 emplacements, dont 8 SÛRS.**
-Les deux nombres s'améliorent **chez un marchand**, avec de l'or.
+**Valeurs de départ posées par le créateur : 20 emplacements, dont 4 SÛRS**
+(révisé le 17/07/2026 — c'est le chiffre que le créateur avait en tête depuis le début ; la valeur 8
+inscrite entre-temps est abandonnée). Les deux nombres s'améliorent **chez un marchand**, avec de l'or.
 
 | | Départ | Rôle |
 |---|---|---|
 | **Emplacements totaux** | **20** | La capacité du sac de run. Plein → on ne ramasse plus. |
-| dont **emplacements sûrs** | **8** | Leur contenu remonte **quoi qu'il arrive** en cas d'exfiltration. |
-| emplacements ordinaires | 12 | **Perdus** si on s'exfiltre. Conservés si on va au bout. |
+| dont **emplacements sûrs** | **4** | Leur contenu remonte **quoi qu'il arrive** en cas d'exfiltration. |
+| emplacements ordinaires | 16 | **Perdus** si on s'exfiltre. Conservés si on va au bout. |
 
 **Étage 1 — le sac se remplit.** L'arbitrage seconde par seconde.
 - Ramasser alors qu'il est plein est **impossible** → message **« Inventaire plein »**.
 - Les objets sont **jetables au sol**, à tout moment, pour faire de la place.
 - Question posée en permanence : *ce butin vaut-il plus que celui que je porte déjà ?*
 
-**Étage 2 — quels objets vont dans les 8 sûrs ?** L'arbitrage global.
+**Étage 2 — quels objets vont dans les 4 sûrs ?** L'arbitrage global.
 - Le joueur **place lui-même** ses objets dans les emplacements sûrs. C'est un acte délibéré.
 - **Aller au bout de toutes les zones → on conserve les 20.** Sans condition. La distinction
   sûr/ordinaire s'efface : c'est la récompense de la foi, et le seul moyen de tout ramener.
-- **S'exfiltrer → on ne conserve que les 8.** Les 12 autres sont perdus.
+- **S'exfiltrer → on ne conserve que les 4.** Les 16 autres sont perdus.
 
 > **Recommandation de mise en œuvre** (à confirmer par le `ux-agent`) : que les emplacements sûrs soient
 > une **zone visuellement distincte de la grille**, et que le joueur doive **y déposer physiquement** ses
@@ -180,13 +181,13 @@ geste le plus répété de la run.
 
 ### Ce qui reste ouvert : le RÉGLAGE
 
-**20 et 8 sont les valeurs de départ du créateur. Le `balance-agent` les VALIDE ou les CORRIGE — il ne
+**20 et 4 sont les valeurs de départ du créateur. Le `balance-agent` les VALIDE ou les CORRIGE — il ne
 les réinvente pas.** Il doit établir, par simulation :
 
 1. **20 emplacements tiennent-ils face au débit de loot réel ?** Combien d'objets tombent par zone, et
    donc à quelle **fréquence le joueur doit trier** ? C'est le vrai indicateur de confort : trop souvent,
    la run se joue dans les menus, et le flow d'un roguelite n'y survit pas.
-2. **8 sûrs sur 20 : l'exfiltration fait-elle assez mal ?** Il faut un **écart** suffisant entre les deux
+2. **4 sûrs sur 20 : l'exfiltration fait-elle assez mal ?** Il faut un **écart** suffisant entre les deux
    nombres, sinon partir tôt ne coûte presque rien et l'étage 2 ne mord plus.
 3. **Les deux courbes d'upgrade chez le marchand** — coût en or d'un emplacement total, coût d'un
    emplacement sûr, et plafonds éventuels. ⚠️ **Le ratio sûrs/totaux ne doit jamais pouvoir tendre vers
