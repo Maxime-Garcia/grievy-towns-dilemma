@@ -9,7 +9,7 @@ import {
   effectiveWindupMs, effectiveHitDelayMs, effectiveCooldownMs,
 } from '../data/attackPatterns';
 import { TalentSystem, TalentModifiers } from '../systems/TalentSystem';
-import { LootSystem } from '../systems/LootSystem';
+import { LootSystem, PITY_THRESHOLDS } from '../systems/LootSystem';
 import { StatRollSystem } from '../systems/StatRollSystem';
 import { QuestSystem } from '../systems/QuestSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
@@ -188,6 +188,7 @@ export class GameScene extends Phaser.Scene {
   private debugSpeedMult = 1;
   private giveAllWeaponsKey!: Phaser.Input.Keyboard.Key;
   private toggleDummiesKey!: Phaser.Input.Keyboard.Key;
+  private advancePityKey!: Phaser.Input.Keyboard.Key;
 
   private xpOrbs!: Phaser.Physics.Arcade.Group;
   private readonly XP_ATTRACT_RANGE = 96;
@@ -524,6 +525,7 @@ export class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.giveAllWeaponsKey)) this.debugGiveAllWeapons();
     // Debug: press T to toggle the training dummies flag (loot stat rolls test aid, cf. LOOT_STAT_ROLLS.md §10)
     if (Phaser.Input.Keyboard.JustDown(this.toggleDummiesKey)) this.debugToggleTrainingDummies();
+    if (Phaser.Input.Keyboard.JustDown(this.advancePityKey)) this.debugAdvancePity();
 
     // ── IFRAMES : clignotement du joueur pendant l'invincibilité post-hit ──
     // Alterne alpha 0.25 / 1 toutes les 80ms ; alpha restauré à la fin de la fenêtre.
@@ -628,6 +630,19 @@ export class GameScene extends Phaser.Scene {
    * fix, seules les armes étaient données → les armures restaient jamais
    * "découvertes" côté Arsenal, d'où des stats masquées et le cross-link
    * Bestiaire → Arsenal absent pour elles, cf. bug reporté). */
+  /** Debug aid (press M) : avance les 3 compteurs de pitié à 3 kills de leur
+   *  garantie respective (pas directement au seuil : le joueur doit encore tuer
+   *  quelque chose pour voir la garantie se déclencher ET la notif "Garantie
+   *  honorée !" se jouer, plutôt que de sauter l'état "sur le point de payer"). */
+  private debugAdvancePity(): void {
+    const p = this.gameState.player;
+    p.killsWithoutEpic      = Math.max(0, PITY_THRESHOLDS[ItemRarity.EPIC]!      - 3);
+    p.killsWithoutLegendary = Math.max(0, PITY_THRESHOLDS[ItemRarity.LEGENDARY]! - 3);
+    p.killsWithoutMythic    = Math.max(0, PITY_THRESHOLDS[ItemRarity.MYTHIC]!    - 3);
+    this.events.emit('player_update', p);
+    this.events.emit('show_notification', '[DEBUG] Pitié avancée à 3 kills de la garantie (Épique/Légendaire/Mythique)');
+  }
+
   private debugGiveAllWeapons(): void {
     this.gameState.player.inventory = [];
     const gear = Object.values(ALL_ITEMS).filter(item => ARSENAL_ITEM_TYPES.has(item.type));
@@ -4900,6 +4915,8 @@ export class GameScene extends Phaser.Scene {
     this.giveAllWeaponsKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.G);
     // Debug: press T to toggle the training dummies flag (loot stat rolls test aid)
     this.toggleDummiesKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.T);
+    // Debug: press M to fast-forward the 3 pity counters near their guarantee (playtest aid)
+    this.advancePityKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.M);
     // Remaining keys (attack, dash, inventory, skill menu, skill slots)
     // are all wired by applyKeyBindings() called right after setupInput().
   }
