@@ -136,7 +136,7 @@ export class PityScene extends Phaser.Scene {
       // documenté dans UITheme (calé sur PANEL_BG, plus sombre). TXT_PARCHMENT
       // reste visuellement secondaire par la taille (10px) et l'absence de gras,
       // pas par une couleur trop proche du fond.
-      this.add.text(x + w - 14, y + 34, t('pity.remaining_of').replace('{max}', String(threshold)),
+      this.add.text(x + w - 14, y + 32, t('pity.remaining_of').replace('{max}', String(threshold)),
         uiStyle(TYPE.SMALL, UI.TXT_PARCHMENT),
       ).setOrigin(1, 0);
     }
@@ -144,7 +144,12 @@ export class PityScene extends Phaser.Scene {
     // Barre de progression — insérée DANS la carte (14px de marge de chaque
     // côté, comme le badge) : elle s'étendait avant bord à bord et chevauchait
     // la barre d'accent gauche de drawCard.
-    const barY = y + 46;
+    // y+46 → y+52 : le label juste au-dessus (10px, ~15px de hauteur réelle
+    // avec ascender/descender) descendait jusqu'à y+49 et la barre — dessinée
+    // PAR-DESSUS puisque tracée après — mangeait ses 3 derniers pixels du bas.
+    // "Le texte est mangé" (retour créateur) : c'était ça, pas une histoire de
+    // taille de fenêtre.
+    const barY = y + 52;
     const bar = this.add.graphics();
     drawBar(bar, x + 14, barY, w - 28, 8, pct, color, UI.BG_DEEP, 0xffffff);
 
