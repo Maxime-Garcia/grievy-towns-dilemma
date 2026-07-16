@@ -111,7 +111,7 @@ export const TALENTS: TalentNode[] = [
   {
     id: 'vig_titans_echo',
     name: 'Écho du Titan',
-    description: 'Après un finisher : la prochaine attaque dans les 2.5s inflige +50% et démarre la chaîne à 2.',
+    description: 'Après un finisher : la prochaine attaque dans les 2.5s inflige +50% et avance la chaîne de combo (jusqu\'à 2 coups selon l\'arme).',
     branch: TalentBranch.VIGOR,
     tier: 4,
     cost: 2,

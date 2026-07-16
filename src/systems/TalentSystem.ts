@@ -111,7 +111,7 @@ export interface TalentModifiers {
 
   // ── Phase 8 (divers) ─────────────────────────────────────────────────────
   manaCostPct: number;          // % de réduction des coûts de mana des sorts
-  postFinisherBuff: boolean;    // après un finisher : prochaine attaque <2.5s +50% dmg, chaîne démarre à 2
+  postFinisherBuff: boolean;    // après un finisher : prochaine attaque <2.5s +50% dmg, avance la chaîne (jusqu'à 2 coups selon l'arme)
 }
 
 export class TalentSystem {

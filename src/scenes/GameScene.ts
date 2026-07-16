@@ -1203,13 +1203,19 @@ export class GameScene extends Phaser.Scene {
       // ET la prochaine attaque normale a une fenêtre de 2.5s pour infliger +50%
       // (consommé dans la branche ATTAQUE NORMALE ci-dessous, cf. postFinisherBuffUntil).
       if (this.playerModifiers.postFinisherBuff) {
-        // Clampé à chainLength-1 : sur HAMMER (chainLength 2) ou DUAL_SWORD/
-        // GREATSWORD/BOW (chainLength 3), poser comboCount=2 tel quel satisfait
-        // DÉJÀ comboCount>=chainLength — le tout prochain coup redéclencherait
-        // le finisher au lieu de rentrer dans la branche ATTAQUE NORMALE, qui ne
-        // relâcherait donc jamais postFinisherMult (bug trouvé en review : boucle
-        // de finisher permanente sur ces armes, +50% jamais délivré).
-        this.comboCount = Math.min(2, comboConfig.chainLength - 1);
+        // Clampé à chainLength-2 (PAS chainLength-1, erreur trouvée en playtest) :
+        // comboCount++ tourne AU DÉBUT de chaque attaque, avant ce test — donc le
+        // coup suivant part de (comboCount+1). Avec chainLength-1, HAMMER
+        // (chainLength 2) démarrait à 1 : le TOUT PROCHAIN coup passait à 2 et
+        // redéclenchait le finisher SANS AUCUN coup normal entre les deux — boucle
+        // de finisher permanente, +50% jamais délivré (le joueur ne voit jamais la
+        // branche ATTAQUE NORMALE où postFinisherMult est consommé). Avec
+        // chainLength-2, HAMMER démarre à 0 (aucune avance possible sur une chaîne
+        // de seulement 2 coups — dégrade proprement vers le rythme normal) ; les
+        // armes à chainLength 3 démarrent à 1 (1 coup normal requis avant le
+        // prochain finisher, au lieu de 2) : c'est ça, une "avance", pas un
+        // deuxième finisher immédiat.
+        this.comboCount = Math.max(0, Math.min(2, comboConfig.chainLength - 2));
         this.postFinisherBuffUntil = now + 2500;
         // Sans ceci, comboDeadline resterait à sa valeur PRÉ-finisher (déjà
         // dépassée) : la branche ATTAQUE NORMALE plus haut casserait le combo
