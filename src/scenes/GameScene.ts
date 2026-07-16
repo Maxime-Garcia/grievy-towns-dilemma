@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType, ItemRarity } from '../types';
+import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType, ItemRarity, ItemType, Equipment, Item } from '../types';
 import { CombatSystem } from '../systems/CombatSystem';
 import { StatsSystem } from '../systems/StatsSystem';
 import { PassiveSystem, SameTargetStackState, CritCdResetState } from '../systems/PassiveSystem';
@@ -9,11 +9,12 @@ import {
   effectiveWindupMs, effectiveHitDelayMs, effectiveCooldownMs,
 } from '../data/attackPatterns';
 import { TalentSystem, TalentModifiers } from '../systems/TalentSystem';
-import { LootSystem } from '../systems/LootSystem';
+import { LootSystem, PITY_THRESHOLDS } from '../systems/LootSystem';
 import { StatRollSystem } from '../systems/StatRollSystem';
 import { QuestSystem } from '../systems/QuestSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { SkillSystem } from '../systems/SkillSystem';
+import { InventorySystem } from '../systems/InventorySystem';
 import { SaveSystem } from '../systems/SaveSystem';
 import { ENEMY_MAP } from '../data/enemies';
 import { elitePromotionAt, depthOfZone } from '../data/enemyScaling';
@@ -182,11 +183,14 @@ export class GameScene extends Phaser.Scene {
   private interactKeyCode = 0;
   private inventoryKey!: Phaser.Input.Keyboard.Key;
   private skillMenuKey!: Phaser.Input.Keyboard.Key;
+  private pityKey!: Phaser.Input.Keyboard.Key;
   private escKey!: Phaser.Input.Keyboard.Key;
   private speedBoostKey!: Phaser.Input.Keyboard.Key;
   private debugSpeedMult = 1;
   private giveAllWeaponsKey!: Phaser.Input.Keyboard.Key;
   private toggleDummiesKey!: Phaser.Input.Keyboard.Key;
+  private advancePityKey!: Phaser.Input.Keyboard.Key;
+  private fullLoadoutKey!: Phaser.Input.Keyboard.Key;
 
   private xpOrbs!: Phaser.Physics.Arcade.Group;
   private readonly XP_ATTRACT_RANGE = 96;
@@ -523,6 +527,8 @@ export class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.giveAllWeaponsKey)) this.debugGiveAllWeapons();
     // Debug: press T to toggle the training dummies flag (loot stat rolls test aid, cf. LOOT_STAT_ROLLS.md §10)
     if (Phaser.Input.Keyboard.JustDown(this.toggleDummiesKey)) this.debugToggleTrainingDummies();
+    if (Phaser.Input.Keyboard.JustDown(this.advancePityKey)) this.debugAdvancePity();
+    if (Phaser.Input.Keyboard.JustDown(this.fullLoadoutKey)) this.debugFullLoadoutEmptyBag();
 
     // ── IFRAMES : clignotement du joueur pendant l'invincibilité post-hit ──
     // Alterne alpha 0.25 / 1 toutes les 80ms ; alpha restauré à la fin de la fenêtre.
@@ -627,6 +633,19 @@ export class GameScene extends Phaser.Scene {
    * fix, seules les armes étaient données → les armures restaient jamais
    * "découvertes" côté Arsenal, d'où des stats masquées et le cross-link
    * Bestiaire → Arsenal absent pour elles, cf. bug reporté). */
+  /** Debug aid (press M) : avance les 3 compteurs de pitié à 3 kills de leur
+   *  garantie respective (pas directement au seuil : le joueur doit encore tuer
+   *  quelque chose pour voir la garantie se déclencher ET la notif "Garantie
+   *  honorée !" se jouer, plutôt que de sauter l'état "sur le point de payer"). */
+  private debugAdvancePity(): void {
+    const p = this.gameState.player;
+    p.killsWithoutEpic      = Math.max(0, PITY_THRESHOLDS[ItemRarity.EPIC]!      - 3);
+    p.killsWithoutLegendary = Math.max(0, PITY_THRESHOLDS[ItemRarity.LEGENDARY]! - 3);
+    p.killsWithoutMythic    = Math.max(0, PITY_THRESHOLDS[ItemRarity.MYTHIC]!    - 3);
+    this.events.emit('player_update', p);
+    this.events.emit('show_notification', '[DEBUG] Pitié avancée à 3 kills de la garantie (Épique/Légendaire/Mythique)');
+  }
+
   private debugGiveAllWeapons(): void {
     this.gameState.player.inventory = [];
     const gear = Object.values(ALL_ITEMS).filter(item => ARSENAL_ITEM_TYPES.has(item.type));
@@ -636,6 +655,43 @@ export class GameScene extends Phaser.Scene {
     }
     this.events.emit('player_update', this.gameState.player);
     this.events.emit('show_notification', `[DEBUG] Sac vidé — ${gear.length} équipements ajoutés (armes+armures+accessoires)`);
+  }
+
+  /** Debug aid (press N) : équipe une pièce de chaque slot (arme, 6 pièces
+   *  d'armure, 2 anneaux, amulette) DIRECTEMENT — sac vide derrière. Contrairement
+   *  à la touche G (tout dans le sac, non équipé), sert à tester le ramassage
+   *  de loot sans se heurter tout de suite au plafond de 400 emplacements. */
+  private debugFullLoadoutEmptyBag(): void {
+    const player = this.gameState.player;
+    const pick = (type: ItemType) => Object.values(ALL_ITEMS).find(item => item.type === type);
+    const rings = Object.values(ALL_ITEMS).filter(item => item.type === ItemType.RING);
+
+    const slots: [keyof Equipment, Item | undefined][] = [
+      ['weapon', pick(ItemType.WEAPON)],
+      ['helm',   pick(ItemType.HELM)],
+      ['chest',  pick(ItemType.CHEST)],
+      ['legs',   pick(ItemType.LEGS)],
+      ['boots',  pick(ItemType.BOOTS)],
+      ['gloves', pick(ItemType.GLOVES)],
+      ['cape',   pick(ItemType.CAPE)],
+      ['ring1',  rings[0]],
+      // Clone si un seul RING existe dans ALL_ITEMS : ring1/ring2 ne doivent JAMAIS
+      // partager la même référence d'objet — equippedSlotOf() (InventoryScene) résout
+      // par identité (===) et ne retournerait jamais que ring1 pour cet objet,
+      // laissant ring2 invisible/indéséquipable dans l'inventaire.
+      ['ring2',  rings[1] ?? (rings[0] ? { ...rings[0] } : undefined)],
+      ['amulet', pick(ItemType.AMULET)],
+    ];
+
+    player.inventory = [];
+    for (const [slot, item] of slots) {
+      if (!item) continue;
+      (player.equipment as any)[slot] = item;
+      ArsenalSystem.discover(this.gameState.world, item.id);
+    }
+    InventorySystem.recalcStats(player);
+    this.events.emit('player_update', player);
+    this.events.emit('show_notification', '[DEBUG] Équipement complet, sac vidé — prêt à tester le ramassage de loot');
   }
 
   /** Debug aid (press T) : bascule player.flags['dev_training_dummies'] pour tester
@@ -1243,14 +1299,26 @@ export class GameScene extends Phaser.Scene {
 
   public openInventory() {
     if (this.scene.isActive('InventoryScene')) return;
+    if (this.scene.isActive('SkillScene')) { this.setPaused(false); this.scene.stop('SkillScene'); }
+    if (this.scene.isActive('PityScene'))  { this.setPaused(false); this.scene.stop('PityScene'); }
     this.setPaused(true);
     this.scene.launch('InventoryScene', { gameScene: this });
   }
 
   public openSkills() {
     if (this.scene.isActive('SkillScene')) return;
+    if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
+    if (this.scene.isActive('PityScene'))      { this.setPaused(false); this.scene.stop('PityScene'); }
     this.setPaused(true);
     this.scene.launch('SkillScene', { gameScene: this });
+  }
+
+  public openPity() {
+    if (this.scene.isActive('PityScene')) return;
+    if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
+    if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); }
+    this.setPaused(true);
+    this.scene.launch('PityScene', { gameScene: this });
   }
 
   public goToMainMenu() {
@@ -1259,7 +1327,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.pause();
 
     // Stop overlay scenes immediately
-    for (const key of ['PauseScene', 'InventoryScene', 'SkillScene', 'DialogueScene', 'ShopScene', 'BestiaryScene', 'ArsenalScene']) {
+    for (const key of ['PauseScene', 'InventoryScene', 'SkillScene', 'PityScene', 'DialogueScene', 'ShopScene', 'BestiaryScene', 'ArsenalScene']) {
       if (this.scene.isActive(key) || this.scene.isPaused(key)) this.scene.stop(key);
     }
 
@@ -1322,22 +1390,24 @@ export class GameScene extends Phaser.Scene {
       r: kb.addKey(b.skill3),
       f: kb.addKey(b.skill4),
     };
-    // Rewire inventory / skill menu keys with their handlers
+    // Rewire inventory / skill / pity menu keys with their handlers
     this.inventoryKey?.removeAllListeners();
     this.skillMenuKey?.removeAllListeners();
+    this.pityKey?.removeAllListeners();
     this.inventoryKey = kb.addKey(b.inventory);
     this.skillMenuKey = kb.addKey(b.skills);
+    this.pityKey      = kb.addKey(b.pity);
     this.inventoryKey.on('down', () => {
       if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); return; }
-      if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); }
-      this.setPaused(true);
-      this.scene.launch('InventoryScene', { gameScene: this });
+      this.openInventory();
     });
     this.skillMenuKey.on('down', () => {
-      if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); return; }
-      if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
-      this.setPaused(true);
-      this.scene.launch('SkillScene', { gameScene: this });
+      if (this.scene.isActive('SkillScene')) { this.setPaused(false); this.scene.stop('SkillScene'); return; }
+      this.openSkills();
+    });
+    this.pityKey.on('down', () => {
+      if (this.scene.isActive('PityScene')) { this.setPaused(false); this.scene.stop('PityScene'); return; }
+      this.openPity();
     });
   }
 
@@ -2872,6 +2942,11 @@ export class GameScene extends Phaser.Scene {
     );
 
     this.gameState.player.gold += loot.gold;
+    // Raretés dont un item a RÉELLEMENT rejoint l'inventaire ce kill-ci — sert à
+    // filtrer loot.pityPaid plus bas (même piège que item_looted : sac plein →
+    // l'item est jeté au sol, la notif « Garantie honorée ! » ne doit pas mentir
+    // en s'affichant quand même).
+    const addedRarities = new Set<ItemRarity>();
     for (const { item, quantity } of loot.items) {
       // Le retour d'addToInventory était ignoré : sac plein → l'item était jeté,
       // MAIS la notification de loot s'affichait quand même. Le joueur voyait un
@@ -2881,9 +2956,15 @@ export class GameScene extends Phaser.Scene {
         this.events.emit('show_notification', `Sac plein — ${item.name} laissé au sol !`);
         continue;
       }
+      addedRarities.add(item.rarity);
       this.events.emit('item_looted', { item, quantity });
       // Bestiaire — révéler les drops hidden au premier loot
       BestiarySystem.revealDrop(this.gameState.world, activeEnemy.enemyId, item.id);
+    }
+    // Notif « Garantie honorée ! » APRÈS la boucle d'inventaire (pas avant) —
+    // seulement pour les raretés dont l'item a survécu au test du sac plein.
+    for (const rarity of loot.pityPaid) {
+      if (addedRarities.has(rarity)) this.events.emit('pity_paid', rarity);
     }
 
     // ⚠ DEV TOOL — Mannequin d'Essai (training_dummy_arsenal) : au lieu d'une table
@@ -4843,6 +4924,7 @@ export class GameScene extends Phaser.Scene {
         this.setPaused(false); this.scene.stop('InventoryScene'); return;
       }
       if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene');     return; }
+      if (this.scene.isActive('PityScene'))      { this.setPaused(false); this.scene.stop('PityScene');      return; }
       // Bestiaire/Arsenal sont toujours ouverts depuis PauseScene (mise en pause
       // dessous) — leur propre close() sait la reprendre correctement, contrairement
       // à un setPaused(false) qui la laisserait bloquée en pause indéfiniment.
@@ -4873,6 +4955,10 @@ export class GameScene extends Phaser.Scene {
     this.giveAllWeaponsKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.G);
     // Debug: press T to toggle the training dummies flag (loot stat rolls test aid)
     this.toggleDummiesKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.T);
+    // Debug: press M to fast-forward the 3 pity counters near their guarantee (playtest aid)
+    this.advancePityKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.M);
+    // Debug: press N to equip one of every gear slot directly + empty the bag (loot-pickup test aid)
+    this.fullLoadoutKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.N);
     // Remaining keys (attack, dash, inventory, skill menu, skill slots)
     // are all wired by applyKeyBindings() called right after setupInput().
   }
@@ -5806,22 +5892,16 @@ export class GameScene extends Phaser.Scene {
       case 'skill2': this.triggerSkillBySlot(2); break;
       case 'skill3': this.triggerSkillBySlot(3); break;
       case 'inventory':
-        if (this.scene.isActive('InventoryScene')) {
-          this.setPaused(false); this.scene.stop('InventoryScene');
-        } else {
-          if (this.scene.isActive('SkillScene')) { this.setPaused(false); this.scene.stop('SkillScene'); }
-          this.setPaused(true);
-          this.scene.launch('InventoryScene', { gameScene: this });
-        }
+        if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
+        else this.openInventory();
         break;
       case 'skills':
-        if (this.scene.isActive('SkillScene')) {
-          this.setPaused(false); this.scene.stop('SkillScene');
-        } else {
-          if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
-          this.setPaused(true);
-          this.scene.launch('SkillScene', { gameScene: this });
-        }
+        if (this.scene.isActive('SkillScene')) { this.setPaused(false); this.scene.stop('SkillScene'); }
+        else this.openSkills();
+        break;
+      case 'pity':
+        if (this.scene.isActive('PityScene')) { this.setPaused(false); this.scene.stop('PityScene'); }
+        else this.openPity();
         break;
     }
   }

@@ -59,6 +59,7 @@ const EN_MANUAL: Record<string, string> = {
   'pause.resume': 'Resume',
   'pause.inventory': 'Inventory',
   'pause.skills': 'Skills',
+  'pause.pity': 'Loot guarantees',
   'pause.bestiary': 'Bestiary',
   'bestiary.title': 'BESTIARY',
   'bestiary.progress': '{seen} discovered · {slain} slain / {total}',
@@ -203,6 +204,7 @@ const EN_MANUAL: Record<string, string> = {
   'inventory.close': '[I] Close',
   'inventory.equip_hint': '[Z] Equip',
   'inventory.unequip_hint': 'Unequip',
+  'inventory.unequip_bag_full': 'Bag full — can\'t unequip this piece.',
   'inventory.use_hint': '[Z] Use',
   'inventory.sell_hint': '[X] Sell ({value} G)',
   'inventory.close_hint': '[C] Close',
@@ -331,6 +333,12 @@ const EN_MANUAL: Record<string, string> = {
   'notif.skill_unlocked': 'Skill: {name}',
   'notif.zone_cleared': '{name} — Zone cleared',
 
+  // ── PITY SYSTEM (PITY/PITY.md) ───────────────────────────────
+  'pity.title': 'Loot guarantees',
+  'pity.paid': 'Guarantee honored: {rarity}!',
+  'pity.remaining_of': 'left of {max}',
+  'pity.guaranteed': 'GUARANTEED',
+
   // ── KEY ACTIONS ─────────────────────────────────────────────
   'action.up': 'Up',
   'action.down': 'Down',
@@ -344,6 +352,7 @@ const EN_MANUAL: Record<string, string> = {
   'action.skill4': 'Skill 4',
   'action.inventory': 'Inventory',
   'action.skills': 'Skills',
+  'action.pity': 'Loot guarantees',
 
   // ── ZONES ────────────────────────────────────────────────────
   'zone.grievy_town': 'Grievy Town',

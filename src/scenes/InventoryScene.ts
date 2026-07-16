@@ -799,13 +799,24 @@ export class InventoryScene extends Phaser.Scene {
       // l'était déjà, et il n'existait AUCUN moyen de retirer une pièce.
       const equippedSlot = this.equippedSlotOf(item);
       if (equippedSlot) {
+        const rowY = btnY; // capturé AVANT addBtn (qui incrémente btnY) — sinon le
+                            // toast se positionnerait sur la ligne du bouton SUIVANT.
         addBtn(t('inventory.unequip_hint'), UI.TXT_ORANGE, () => {
-          // unequip renvoie false si le sac est plein — impossible tant que le sac
-          // fait 400 slots. À revisiter (toast « sac plein ») quand le sac de run à
-          // 20 emplacements arrivera : là, l'échec sera un cas réel à signaler.
+          // unequip renvoie false si le sac est plein — improbable mais pas
+          // impossible avant que le sac de run à 20 emplacements arrive avec le
+          // RunSystem (le vrai fix, objet qui tombe au sol, est documenté et
+          // délibérément reporté à ce chantier-là, cf. ROGUELITE_POC.md). En
+          // attendant, ne pas échouer SILENCIEUSEMENT — le joueur doit comprendre
+          // pourquoi rien ne s'est passé plutôt que de croire le bouton cassé.
           if (InventorySystem.unequip(this.player, equippedSlot)) {
             this.selectedItem = null;
             this.refresh();
+          } else {
+            // PAS this.gameScene.events.emit('show_notification', ...) : InventoryScene
+            // se rend au-dessus de UIScene (ordre fixe dans main.ts), son overlay
+            // 0.88 d'opacité rendrait ce toast invisible — le "ne pas échouer
+            // silencieusement" resterait silencieux. Toast local, garanti visible.
+            this.showLocalToast(t('inventory.unequip_bag_full'), BTN_X + BTN_W / 2, rowY - 14);
           }
         });
       } else {
@@ -840,6 +851,16 @@ export class InventoryScene extends Phaser.Scene {
       this.selectedItem = null;
       this.refresh();
     });
+  }
+
+  /** Message éphémère au-dessus d'un bouton, garanti visible (contrairement à un
+   *  `show_notification` cross-scène : InventoryScene se rend au-dessus de UIScene,
+   *  cf. ordre dans main.ts). Poussé dans dynamicObjs pour être nettoyé au refresh(). */
+  private showLocalToast(msg: string, x: number, y: number) {
+    const txt = this.add.text(x, y, msg, uiStyle(TYPE.SMALL, UI.TXT_ORANGE, { bold: true }))
+      .setOrigin(0.5).setDepth(50);
+    this.dynamicObjs.push(txt);
+    this.tweens.add({ targets: txt, alpha: 0, delay: 1400, duration: 500, onComplete: () => txt.destroy() });
   }
 
   /** Slot d'équipement occupé par CETTE instance d'item, ou null si non équipée.

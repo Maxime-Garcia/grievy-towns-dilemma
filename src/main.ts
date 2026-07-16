@@ -15,6 +15,7 @@ import { ShopScene }      from './scenes/ShopScene';
 import { PauseScene }     from './scenes/PauseScene';
 import { BestiaryScene }  from './scenes/BestiaryScene';
 import { ArsenalScene }   from './scenes/ArsenalScene';
+import { PityScene }      from './scenes/PityScene';
 import { setTextResolution } from './utils/UITheme';
 
 // Le monkeypatch qui forçait LINEAR sur la texture de chaque `add.text()` a été
@@ -102,6 +103,7 @@ const config: Phaser.Types.Core.GameConfig = {
     PauseScene,
     BestiaryScene,
     ArsenalScene,
+    PityScene,
   ],
 };
 

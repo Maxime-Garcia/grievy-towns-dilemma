@@ -3,6 +3,7 @@ import { GameScene } from './GameScene';
 import { SKILL_MAP } from '../data/skills';
 import { UI, drawGlowPanel, drawSlot, drawBar, addUiFrame, uiStyle, resonanceColor, TYPE, fitText, formatResonanceLine } from '../utils/UITheme';
 import { StatRollSystem } from '../systems/StatRollSystem';
+import { PITY_THRESHOLDS } from '../systems/LootSystem';
 import { t, localizeItem, localizeSkill } from '../i18n';
 
 const BAR_W = 210;
@@ -65,6 +66,21 @@ export class UIScene extends Phaser.Scene {
   private zoneText!: Phaser.GameObjects.Text;
   private zoneBg!: Phaser.GameObjects.Graphics;
 
+  // ── Chip HUD Pity (PITY/PITY.md) — 3 lignes (Épique/Légendaire/Mythique),
+  // chacune un losange coloré + le nombre restant. Aucun texte (retour créateur
+  // 16/07, 2e passe : "pas de texte", losange + nombre suffisent, une ligne par
+  // rareté plutôt qu'un résumé de la plus proche).
+  private pityChipBg!: Phaser.GameObjects.Graphics;
+  private pityChipDiamonds: Phaser.GameObjects.Graphics[] = [];
+  private pityChipTexts: Phaser.GameObjects.Text[] = [];
+  private pityChipX = 0;
+  private pityChipY = 0;
+  private pityChipW = 0;
+  private pityChipH = 0;
+  /** Dernière valeur affichée par rareté (index = DISPLAY_ORDER) — évite un
+   *  setText()/redraw par frame sur une ligne dont rien n'a changé. */
+  private lastPityRemaining: number[] = [-1, -1, -1];
+
   // ── Combo HUD (pips sous le joueur — COMBO_TALENT_SPEC.md §2.3 / §6.2) ──
   private comboPips!: Phaser.GameObjects.Container;
   private comboMaxPips = 0;
@@ -111,7 +127,7 @@ export class UIScene extends Phaser.Scene {
     // Vite (__BUILD_HASH__, cf. vite.config.ts) : l'écrire à la main était voué
     // à mentir, puisqu'un hash n'existe qu'une fois le commit fait — et l'écrire
     // dans le code refait le commit.
-    const BUILD_LABEL = `ASPD: cadence + combos permissifs + parite armes (${__BUILD_HASH__})`;
+    const BUILD_LABEL = `PITY: fix chevauchement texte/barre dans le panneau (${__BUILD_HASH__})`;
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',
@@ -173,6 +189,55 @@ export class UIScene extends Phaser.Scene {
     this.manaText = this.add.text(BAR_X + BAR_W / 2, this.MP_Y + MP_H / 2, '',
       uiStyle(9, UI.TXT_WHITE, { bold: true, stroke: true }),
     ).setOrigin(0.5).setDepth(1);
+
+    // ── Chip Pity v3 (à droite du panneau stats) ────
+    // Pilule discrète en permanence à l'écran (demande explicite du créateur :
+    // « affiche le restant », pas seulement sur demande) — le détail complet vit
+    // dans PityScene, ouverte par tap ou par la touche 'pity' (rebindable).
+    // Redesign 16/07, 2e passe (retour créateur sur le v2 texte+jauge : "pas
+    // lisible, pas de texte, 3 lignes pour les 3 raretés") — 3 lignes fixes
+    // (Épique/Légendaire/Mythique, toujours dans cet ordre), chacune un losange
+    // de la couleur de rareté + le nombre restant, zéro texte.
+    const CHIP_ROW_H = 16;
+    const CHIP_GAP   = 2;
+    const CHIP_PAD   = 6;
+    // 66 → 72 : "1000" (seuil MYTHIC, visible dès le tout début de partie et à
+    // chaque reset du compteur — pas un cas limite rare) mesure ~44px en
+    // Minimal 10px, débordait des 40px dispo entre le texte (x+26) et le bord
+    // du chip à 66px. Un chiffre tronqué serait pire qu'un chip 6px plus large
+    // (trouvé en review, mesure des glyphes réels du .ttf).
+    const CHIP_W = 72;
+    const CHIP_H = CHIP_PAD * 2 + 3 * CHIP_ROW_H + 2 * CHIP_GAP;
+    const CHIP_X = PANEL_W + 12;
+    const CHIP_Y = PANEL_TOP + PANEL_H / 2 - CHIP_H / 2;
+    this.pityChipX = CHIP_X;
+    this.pityChipY = CHIP_Y;
+    this.pityChipW = CHIP_W;
+    this.pityChipH = CHIP_H;
+    this.pityChipBg = this.add.graphics();
+    drawGlowPanel(this.pityChipBg, CHIP_X, CHIP_Y, CHIP_W, CHIP_H, UI.ACCENT_ARCANE, UI.BTN_BG, 8, 0.92);
+    this.pityChipDiamonds = [];
+    this.pityChipTexts = [];
+    for (let i = 0; i < 3; i++) {
+      const rowY = CHIP_Y + CHIP_PAD + i * (CHIP_ROW_H + CHIP_GAP) + CHIP_ROW_H / 2;
+      const diamond = this.add.graphics();
+      diamond.fillStyle(0x888888, 1);
+      diamond.fillRect(-4, -4, 8, 8);
+      diamond.setRotation(Math.PI / 4).setPosition(CHIP_X + 14, rowY);
+      this.pityChipDiamonds.push(diamond);
+      const txt = this.add.text(CHIP_X + 26, rowY, '—',
+        uiStyle(TYPE.SMALL, UI.TXT_PARCHMENT, { bold: true }),
+      ).setOrigin(0, 0.5);
+      this.pityChipTexts.push(txt);
+    }
+    const chipHit = this.add.rectangle(
+      CHIP_X + CHIP_W / 2, CHIP_Y + CHIP_H / 2, CHIP_W + 4, CHIP_H + 10, 0, 0,
+    ).setInteractive({ useHandCursor: true }).setDepth(6);
+    chipHit.on('pointerdown', () => {
+      this.pityChipBg.setAlpha(0.6);
+      this.tweens.add({ targets: this.pityChipBg, alpha: 1, duration: 150 });
+      this.game.events.emit('mobile_action', 'pity');
+    });
 
     // ── XP bar (bottom strip) ────────────────────
     this.xpBar = this.add.graphics();
@@ -322,6 +387,7 @@ export class UIScene extends Phaser.Scene {
     this.gameScene.events.on('combo-broken',            this.onComboBroken,           this);
     this.gameScene.events.on('finisher-executed',       this.onFinisherExecuted,      this);
     this.gameScene.events.on('new_creature_discovered', this.onNewCreatureDiscovered, this);
+    this.gameScene.events.on('pity_paid',               this.onPityPaid,              this);
   }
 
   shutdown() {
@@ -338,6 +404,7 @@ export class UIScene extends Phaser.Scene {
     this.gameScene.events.off('combo-broken',            this.onComboBroken,           this);
     this.gameScene.events.off('finisher-executed',       this.onFinisherExecuted,      this);
     this.gameScene.events.off('new_creature_discovered', this.onNewCreatureDiscovered, this);
+    this.gameScene.events.off('pity_paid',               this.onPityPaid,              this);
     this.pipTween = null;
     this.notifShimmerTweens = [];
   }
@@ -584,6 +651,33 @@ export class UIScene extends Phaser.Scene {
     }
     this.levelText.setText(`${t('ui.level')}${player.level}`);
 
+    // Chip Pity — une ligne par rareté protégée, toutes affichées en permanence
+    // (retour créateur 16/07, 2e passe : "3 lignes pour les 3 raretés, pas de
+    // texte"). Comparaison sur le nombre affiché par ligne, pas sur un objet :
+    // évite un setText()/redraw à chaque frame quand rien n'a changé sur CETTE ligne.
+    {
+      const rows: [ItemRarity, number][] = [
+        [ItemRarity.EPIC,      Math.max(0, (PITY_THRESHOLDS[ItemRarity.EPIC]      ?? 0) - player.killsWithoutEpic)],
+        [ItemRarity.LEGENDARY, Math.max(0, (PITY_THRESHOLDS[ItemRarity.LEGENDARY] ?? 0) - player.killsWithoutLegendary)],
+        [ItemRarity.MYTHIC,    Math.max(0, (PITY_THRESHOLDS[ItemRarity.MYTHIC]    ?? 0) - player.killsWithoutMythic)],
+      ];
+      rows.forEach(([rarity, remaining], i) => {
+        if (remaining === this.lastPityRemaining[i]) return;
+        this.lastPityRemaining[i] = remaining;
+        const color = RARITY_COLORS[rarity] ?? '#888888';
+        const colorNum = parseInt(color.slice(1), 16);
+        const diamond = this.pityChipDiamonds[i];
+        diamond.clear();
+        diamond.fillStyle(colorNum, 1);
+        diamond.fillRect(-4, -4, 8, 8);
+        // "0" (pas de mot "GARANTI") + couleur pleine de la rareté : le nombre
+        // à zéro dans SA couleur suffit à signaler l'état, sans texte (règle
+        // stricte du 2e retour créateur).
+        this.pityChipTexts[i].setText(String(remaining));
+        this.pityChipTexts[i].setColor(remaining <= 0 ? color : UI.TXT_PARCHMENT);
+      });
+    }
+
     this.targetHp    = Math.max(0, player.stats.hp / player.stats.maxHp);
     this.targetMp    = Math.max(0, player.stats.mana / player.stats.maxMana);
     this.cachedMaxHp = player.stats.maxHp;
@@ -722,6 +816,24 @@ export class UIScene extends Phaser.Scene {
 
   private onQuestCompleted() {
     this.pushNotif(t('notif.quest_done'), UI.TXT_ORANGE);
+  }
+
+  /** Système Pity (PITY/PITY.md) — distingue un paiement de dette d'un drop
+   *  chanceux (LootSystem ne pousse ici que les raretés PAYÉES par la pitié). */
+  private onPityPaid(rarity: ItemRarity) {
+    const color = RARITY_COLORS[rarity] ?? '#ffffff';
+    this.pushNotifEntry({
+      msg: t('pity.paid').replace('{rarity}', t(`rarity.${rarity}`)),
+      color,
+      glow: parseInt(color.slice(1), 16),
+      duration: 3200,
+      shimmer: true,
+    });
+    // Flash du chip en même temps que la notif : le joueur associe le chip à
+    // l'événement "Garantie honorée" sans un mot de plus à l'écran (retour ux-agent).
+    const flash = this.add.rectangle(0, 0, this.pityChipW, this.pityChipH, 0xffffff, 0.3)
+      .setOrigin(0, 0).setPosition(this.pityChipX, this.pityChipY);
+    this.tweens.add({ targets: flash, alpha: 0, duration: 250, onComplete: () => flash.destroy() });
   }
 
   private onSkillUnlocked(skillId: string) {

@@ -142,6 +142,7 @@ export class ProgressionSystem {
       totalKills: 0,
       killsWithoutEpic: 0,
       killsWithoutLegendary: 0,
+      killsWithoutMythic: 0,
       isNewGamePlus: false,
       ngPlusCount: 0,
       questProgress: {},

@@ -51,6 +51,51 @@ function applyRandomElement(item: Item): Item {
 
 const PITY_EPIC      = 250;
 const PITY_LEGENDARY = 500;
+/**
+ * Seuil de pitié MYTHIC — simulé, pas extrapolé.
+ *
+ * L'extrapolation naïve sur le ratio des taux (0,004 / 0,010 = 0,4 → 500 / 0,4 =
+ * 1250) ignore que les tables FIXES des ennemis ne suivent PAS RARITY_DROP_RATES :
+ * les ~139 créatures générées (enemiesGenerated.ts) portent des entrées
+ * EPIC/LEGENDARY/MYTHIC à un taux moyen de ~11 % chacune (mesuré : EPIC 0,107,
+ * LEGENDARY 0,108, MYTHIC 0,114 — quasiment IDENTIQUES entre elles, et proches du
+ * taux RARE 0,113), pendant que les entrées COMMON/UNCOMMON restent, elles, sur
+ * l'ancienne économie (0,266 / 0,227). Résultat mesuré sur 378 000 kills simulés
+ * (rollLoot réel, ALL_ENEMIES réel, progression pondérée par spawnWeight à travers
+ * les 7 zones) : la pitié EPIC (250) ne s'est déclenchée QUE 2 fois sur 27 171
+ * obtentions d'Épique+ (rang ≈ p99,99 de l'écart naturel — un filet qui ne
+ * mord quasiment jamais), la pitié LEGENDARY (500) 44 fois sur 15 605 (rang ≈
+ * p99,6 — un filet qui mord occasionnellement, le comportement qu'on veut).
+ *
+ * MYTHIC calé sur ce DEUXIÈME rang (celui qui fonctionne réellement, pas celui
+ * qui ne sert à rien) : la valeur d'écart naturel au rang p99,6 de la
+ * distribution MYTHIC mesurée est ~1000-1060 (contre p99,99 ≈ 1400, l'équivalent
+ * du comportement inerte d'EPIC). 1000 est aussi exactement 2× PITY_LEGENDARY,
+ * qui est lui-même 2× PITY_EPIC — une progression cohérente et lisible au HUD,
+ * ARRIVÉE PAR LA SIMULATION, pas choisie pour la forme.
+ *
+ * Pire cas observé sur les 378 000 kills : écart naturel maximal 1468-1627 selon
+ * les runs — 1000 reste sous ce plafond (le filet peut donc réellement mordre
+ * pour le joueur le plus malchanceux), sans être aussi lâche que les 250 d'EPIC.
+ *
+ * ⚠️ Constante posée mais PAS ENCORE câblée : `player.killsWithoutMythic`
+ * n'existe pas dans PlayerState. Câblage prévu dans une passe séparée (même
+ * schéma que killsWithoutEpic/killsWithoutLegendary dans rollLoot : incrément à
+ * chaque kill, reset à 0 sur tout drop MYTHIC/HIDDEN, entrée dans le calcul
+ * d'`owed` juste avant EPIC en priorité — LEGENDARY > MYTHIC > EPIC, la dette la
+ * plus chère d'abord).
+ */
+const PITY_MYTHIC = 1000;
+
+/** Source de vérité unique des seuils de pitié — consommée par PityScene (HUD) pour
+ *  ne jamais dupliquer un seuil dans l'UI. Une rareté absente de cette table n'a
+ *  pas de garantie (HIDDEN : uniques attachés à des boss précis, hors du pool
+ *  générique `gen_*` du world drop, structurellement incompatible avec ce système). */
+export const PITY_THRESHOLDS: Partial<Record<ItemRarity, number>> = {
+  [ItemRarity.EPIC]: PITY_EPIC,
+  [ItemRarity.LEGENDARY]: PITY_LEGENDARY,
+  [ItemRarity.MYTHIC]: PITY_MYTHIC,
+};
 
 // ════════════════════════════════════════════════════════════════════
 // WORLD DROP — le catalogue générique (`gen_*`, ~390 armes/armures issues des
@@ -120,6 +165,10 @@ export interface LootResult {
   items: { item: Item; quantity: number }[];
   gold: number;
   xp: number;
+  /** Raretés dont la dette de pitié a été PAYÉE ce kill-ci (roll forcé à 0, pas un
+   *  drop chanceux) — sert uniquement à déclencher la notif « Garantie honorée ! »
+   *  côté scène (LootSystem n'importe pas Phaser, cf. TalentSystem). */
+  pityPaid: ItemRarity[];
 }
 
 export class LootSystem {
@@ -140,33 +189,53 @@ export class LootSystem {
     enemyLevel: number, isElite: boolean, isBoss: boolean,
     /**
      * Rareté DUE au titre de la pitié (cf. rollLoot). Quand elle est fournie, le
-     * world drop est garanti et forcé sur cette rareté : c'est la pitié qui paie.
+     * world drop est garanti et forcé sur cette rareté, SANS verrou de niveau
+     * (cf. commentaire dans le corps de la fonction) : c'est la pitié qui paie.
      *
-     * Elle ne payait pas. La pitié ne savait forcer un drop que si la table de
-     * butin FIXE de l'ennemi contenait justement un item de la rareté due — or
-     * 136 ennemis sur 196 n'ont aucun EPIC dans leur table, et 155 sur 196 aucun
-     * LEGENDARY. Sur ces ennemis-là, le compteur atteignait 250 kills, ne trouvait
-     * rien à forcer… et se faisait remettre à zéro quand même. La pitié ne pouvait
-     * mathématiquement jamais payer, et détruisait 250 kills de progression à
-     * chaque fois. Le pool générique, lui, contient bien 51 EPIC et 31 LEGENDARY :
-     * c'est par là qu'elle doit passer.
+     * Elle ne payait pas, deux fois de suite :
+     * 1. La pitié ne savait forcer un drop que si la table de butin FIXE de
+     *    l'ennemi contenait justement un item de la rareté due — sur ALL_ENEMIES
+     *    (196 ennemis, table fixe + ennemis générés), 132 n'ont aucun EPIC, 128
+     *    aucun LEGENDARY, 145 aucun MYTHIC. Le pool générique du world drop existe
+     *    pour ça (90 items par rareté, cf. getWorldPool()).
+     * 2. Le world drop lui-même refusait de payer sous WORLD_DROP_MIN_LEVEL — un
+     *    verrou pensé pour le tirage NORMAL (empêcher un ennemi trivial de lâcher
+     *    du loot de fin de jeu par pure chance), mais qui s'appliquait AUSSI au
+     *    paiement d'une dette déjà due, ce qui n'a plus de sens après 250+ kills
+     *    sans rien recevoir. C'est le piège niveau 11 (`ember_wyrm`, zone Feu,
+     *    niveau 8, aucun EPIC dans sa table) : retiré, cf. le corps de la fonction.
      */
     owedRarity?: ItemRarity,
   ): Item | null {
     const pool = getWorldPool();
 
     // Dette de pitié : drop garanti, rareté imposée. On court-circuite le tirage
-    // de chance ET le tirage de rareté — mais pas le verrou de niveau, qui reste
-    // la garantie qu'un rat de niveau 1 ne lâche pas une arme de fin de jeu.
+    // de chance ET le tirage de rareté — ET, depuis cette passe, le verrou de
+    // niveau (WORLD_DROP_MIN_LEVEL) aussi. Ce verrou reste appliqué plus bas, au
+    // tirage NORMAL (non dû) : c'est lui qui empêche un rat de niveau 1 de lâcher
+    // une arme de fin de jeu par pur coup de chance.
     //
-    // Ennemi trop bas pour la rareté due : on ne paie pas, la dette reste due
-    // (le compteur n'est pas remis à zéro, cf. rollLoot) — mais on RETOMBE sur le
-    // tirage normal, sinon le joueur perdrait aussi son world drop ordinaire, et
-    // se trouverait puni d'avoir une dette en cours.
+    // Mais un PAIEMENT de dette n'est pas un coup de chance : le joueur vient de
+    // tuer 250/500/1000 ennemis SANS RIEN recevoir de la rareté due. À ce stade,
+    // le verrou de niveau ne protège plus rien — il PUNIT. C'était exactement le
+    // piège niveau 11 : `ember_wyrm` (ennemi de base de la toute première zone,
+    // niveau 8) n'a aucun EPIC dans sa table fixe ET son niveau est sous le
+    // WORLD_DROP_MIN_LEVEL[EPIC]=11 — la dette ne pouvait jamais être payée par un
+    // joueur qui grinderait cette zone, indéfiniment. Chiffré sur ALL_ENEMIES
+    // (196 ennemis, cf. balance-agent, kills simulés 2026-07) : 35 ennemis sont
+    // sous le niveau 11 (EPIC), 123 sous le niveau 17 (LEGENDARY), 170 sous le
+    // niveau 24 (MYTHIC) — et parmi eux, 31 / 91 / 136 respectivement n'ont AUCUN
+    // repli dans leur propre table fixe. Le contrat du pity
+    // (docs/design/ROGUELITE_POC.md §4 : « tenu au kill près, sur TOUS les
+    // ennemis ») ne tient pas tant qu'un seul de ces ennemis existe et peut être
+    // le kill qui déclenche la dette.
+    //
+    // Ennemi trop bas pour la rareté due : la dette n'est PAS gelée, elle EST
+    // payée, quel que soit le niveau — le pool générique a toujours du stock
+    // (90 items par rareté, y compris MYTHIC, cf. getWorldPool()).
     if (owedRarity) {
       const owedPool = pool[owedRarity];
-      const minLevel = WORLD_DROP_MIN_LEVEL[owedRarity];
-      if (owedPool?.length && minLevel !== undefined && enemyLevel >= minLevel) {
+      if (owedPool?.length) {
         return owedPool[Math.floor(Math.random() * owedPool.length)]!;
       }
     }
@@ -229,10 +298,14 @@ export class LootSystem {
 
     player.killsWithoutEpic++;
     player.killsWithoutLegendary++;
+    player.killsWithoutMythic++;
     player.totalKills++;
+
+    const pityPaid: ItemRarity[] = [];
 
     let pityEpicForced   = player.killsWithoutEpic     >= PITY_EPIC;
     let pityLegendForced = player.killsWithoutLegendary >= PITY_LEGENDARY;
+    let pityMythicForced = player.killsWithoutMythic    >= PITY_MYTHIC;
 
     for (const entry of entries) {
       const item = ALL_ITEMS[entry.itemId];
@@ -240,15 +313,23 @@ export class LootSystem {
 
       let roll = Math.random();
 
+      if (pityMythicForced && item.rarity === ItemRarity.MYTHIC) {
+        roll = 0;
+        pityMythicForced = false;
+        player.killsWithoutMythic = 0;
+        pityPaid.push(ItemRarity.MYTHIC);
+      }
       if (pityEpicForced && item.rarity === ItemRarity.EPIC) {
         roll = 0;
         pityEpicForced = false;
         player.killsWithoutEpic = 0;
+        pityPaid.push(ItemRarity.EPIC);
       }
       if (pityLegendForced && item.rarity === ItemRarity.LEGENDARY) {
         roll = 0;
         pityLegendForced = false;
         player.killsWithoutLegendary = 0;
+        pityPaid.push(ItemRarity.LEGENDARY);
       }
 
       if (roll <= entry.dropRate) {
@@ -260,11 +341,23 @@ export class LootSystem {
         const rolledItem = StatRollSystem.rollItem(droppedItem, qFloor);
         items.push({ item: rolledItem, quantity: qty });
 
+        // Remettre aussi les FLAGS locaux à false (pas seulement le compteur) :
+        // sans ça, un ennemi dont la table fixe contient plusieurs raretés
+        // (ex. pyrath_boss : LEGENDARY garanti + EPIC 25%) éteint la dette EPIC
+        // via le premier item, mais pityEpicForced restait true — l'entrée EPIC
+        // plus loin dans le tableau forçait ENCORE un roll à 0, payant la dette
+        // une seconde fois pour rien (double-paiement trouvé en review).
         if ([ItemRarity.EPIC, ItemRarity.LEGENDARY, ItemRarity.MYTHIC, ItemRarity.HIDDEN].includes(item.rarity)) {
           player.killsWithoutEpic = 0;
+          pityEpicForced = false;
         }
         if ([ItemRarity.LEGENDARY, ItemRarity.MYTHIC, ItemRarity.HIDDEN].includes(item.rarity)) {
           player.killsWithoutLegendary = 0;
+          pityLegendForced = false;
+        }
+        if ([ItemRarity.MYTHIC, ItemRarity.HIDDEN].includes(item.rarity)) {
+          player.killsWithoutMythic = 0;
+          pityMythicForced = false;
         }
       }
     }
@@ -274,10 +367,15 @@ export class LootSystem {
     // un LEGENDARY obtenu en world drop doit bien remettre le compteur à zéro,
     // sinon la pity finirait par en garantir un second juste derrière.
     //
-    // Si la table FIXE n'a pas pu honorer une dette de pitié (le cas courant : 136
-    // ennemis sur 196 n'ont aucun EPIC dans leur table), on la présente ICI. Le
-    // LEGENDARY prime sur l'EPIC : c'est la dette la plus ancienne et la plus chère.
-    const owed = pityLegendForced ? ItemRarity.LEGENDARY
+    // Si la table FIXE n'a pas pu honorer une dette de pitié (le cas courant : 132
+    // ennemis sur 196 n'ont aucun EPIC dans leur table, 128 aucun LEGENDARY, 145
+    // aucun MYTHIC), on la présente ICI. MYTHIC prime sur LEGENDARY, qui prime sur
+    // EPIC : payer la dette la plus chère remet AUSSI les compteurs des raretés
+    // inférieures à zéro (cf. les resets ci-dessous), donc payer la plus chère
+    // d'abord résout plusieurs dettes en un seul item quand elles sont dues
+    // simultanément — jamais l'inverse.
+    const owed = pityMythicForced ? ItemRarity.MYTHIC
+               : pityLegendForced ? ItemRarity.LEGENDARY
                : pityEpicForced   ? ItemRarity.EPIC
                : undefined;
     const worldItem = LootSystem.rollWorldDrop(enemyLevel, !!opts.isElite, !!opts.isBoss, owed);
@@ -291,17 +389,29 @@ export class LootSystem {
         player.killsWithoutLegendary = 0;
         pityLegendForced = false;
       }
+      if ([ItemRarity.MYTHIC, ItemRarity.HIDDEN].includes(worldItem.rarity)) {
+        player.killsWithoutMythic = 0;
+        pityMythicForced = false;
+      }
+      // Un item de rareté INFÉRIEURE à `owed` ne peut sortir d'ici que si le pool
+      // générique de `owed` était vide (cf. rollWorldDrop) — ce n'est alors pas un
+      // paiement de la dette due, elle reste ouverte malgré cet item bonus.
+      if (owed && worldItem.rarity === owed) pityPaid.push(owed);
     }
 
     // Une dette encore due ici n'est PAS effacée : le compteur reste à son niveau
     // et la pitié retentera au kill suivant. Le code remettait au contraire les
     // compteurs à zéro « si aucun item éligible n'existait dans la table » — il
     // détruisait donc 250 kills de progression sans rien donner en échange, à
-    // chaque fois, sur la majorité des ennemis du jeu. Le seul cas où une dette
-    // reste due après un world drop forcé est le verrou de niveau (un ennemi trop
-    // bas pour la rareté due) : là aussi, la dette doit survivre au kill.
+    // chaque fois, sur la majorité des ennemis du jeu.
+    //
+    // Depuis le retrait du verrou de niveau sur le paiement (cf. rollWorldDrop),
+    // le seul cas où une dette EPIC/LEGENDARY/MYTHIC reste due après ce kill est un
+    // pool générique vide pour cette rareté — situation qui n'existe pas aujourd'hui
+    // (90 items par rareté, cf. getWorldPool()) mais que le code ne suppose pas
+    // impossible pour autant.
 
-    return { items, gold, xp: Math.max(1, scaledXp) };
+    return { items, gold, xp: Math.max(1, scaledXp), pityPaid };
   }
 
   /**

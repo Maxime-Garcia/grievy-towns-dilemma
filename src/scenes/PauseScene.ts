@@ -85,6 +85,7 @@ export class PauseScene extends Phaser.Scene {
       { label: t('pause.resume'),    action: () => this.resume()                                      },
       { label: t('pause.inventory'), action: () => { this.resume(); this.gameScene.openInventory(); } },
       { label: t('pause.skills'),    action: () => { this.resume(); this.gameScene.openSkills();    } },
+      { label: t('pause.pity'),      action: () => { this.resume(); this.gameScene.openPity();      } },
       { label: t('pause.bestiary'),  action: () => this.openBestiary()                               },
       { label: t('pause.arsenal'),   action: () => this.openArsenal()                                },
       { label: t('pause.save'),      action: () => this.saveGame()                                    },
@@ -102,7 +103,7 @@ export class PauseScene extends Phaser.Scene {
   private renderKeysTab(W: number, H: number) {
     const actions: (keyof KeyBindings)[] = [
       'up', 'down', 'left', 'right', 'attack', 'dash',
-      'skill1', 'skill2', 'skill3', 'skill4', 'inventory', 'skills',
+      'skill1', 'skill2', 'skill3', 'skill4', 'inventory', 'skills', 'pity',
     ];
     // rowH 30 → 36 : libellés en BODY 14 (l'ancien 10 tombait en Minimal) +
     // chips plus hautes. Les hit zones restent = rowH (non chevauchantes) :
