@@ -127,7 +127,7 @@ export class UIScene extends Phaser.Scene {
     // Vite (__BUILD_HASH__, cf. vite.config.ts) : l'écrire à la main était voué
     // à mentir, puisqu'un hash n'existe qu'une fois le commit fait — et l'écrire
     // dans le code refait le commit.
-    const BUILD_LABEL = `PITY: fix chevauchement texte/barre dans le panneau (${__BUILD_HASH__})`;
+    const BUILD_LABEL = `MERGE: Talents Partie 2 + Systeme Pity dans feat/roguelite (${__BUILD_HASH__})`;
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',
@@ -140,7 +140,7 @@ export class UIScene extends Phaser.Scene {
       .setOrigin(0, 0).setDepth(199);
     badgeText.setPosition(badgePad + 10, badgePad + 3);
 
-    // ── Player stat panel (bottom-left) ─────────
+    // ── Player stat panel (top-left, sous le badge de build) ─────────
     // Le panneau est reconstruit sur une BANDE DE TITRE dimensionnée pour le texte
     // réel. Avant : le nom démarrait à PANEL_TOP+5 et, rendu en 14 px, descendait
     // jusqu'à +24 — alors que la barre HP commençait à +22. Le nom mordait la barre.
@@ -149,7 +149,12 @@ export class UIScene extends Phaser.Scene {
     const BAR_GAP    = 6;
     const PANEL_H    = TITLE_BAND + HP_H + BAR_GAP + MP_H + 12;
     const PANEL_W    = BAR_X + BAR_W + 12;
-    const PANEL_TOP  = H - PANEL_H - 4;
+    // Ancré juste SOUS le badge de build DEV (jamais par-dessus : règle CLAUDE.md,
+    // le badge identifie la build en cours). Dérivé de la hauteur RÉELLE du badge
+    // (badgePad + bh) et non d'une valeur en dur : le jour où le badge disparaît
+    // en prod (bh = 0 si on le retire), le panneau remonte tout seul à y = 10
+    // au lieu de laisser un trou.
+    const PANEL_TOP  = badgePad + bh + 4;
     this.HP_Y = PANEL_TOP + TITLE_BAND;
     this.MP_Y = this.HP_Y + HP_H + BAR_GAP;
     // Largeur disponible pour le nom : tout ce qui reste à gauche du « Nv.XX ».

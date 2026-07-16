@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType, ItemRarity, ItemType, Equipment, Item } from '../types';
+import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType, ItemRarity, ItemType, Equipment, Item, StatusEffect } from '../types';
 import { CombatSystem } from '../systems/CombatSystem';
 import { StatsSystem } from '../systems/StatsSystem';
 import { PassiveSystem, SameTargetStackState, CritCdResetState } from '../systems/PassiveSystem';
@@ -32,7 +32,7 @@ import { getZoneLayout, ZoneLayout, LootableObject, WaterArea } from '../data/zo
 import { ALL_ITEMS } from '../data/items';
 import { loadBindings, KeyBindings } from '../data/keybindings';
 import { keyIconFrame, keyCodeLabel } from '../utils/KeyIcons';
-import { uiStyle, FONT } from '../utils/UITheme';
+import { uiStyle, FONT, FONT_HUD, UI, snapFontSize } from '../utils/UITheme';
 import { t, localizeItem } from '../i18n';
 import { BestiarySystem } from '../systems/BestiarySystem';
 import { ArsenalSystem, ARSENAL_ITEM_TYPES } from '../systems/ArsenalSystem';
@@ -40,6 +40,7 @@ import { getBestiaryEntry } from '../data/bestiary';
 import type { BestiaryScene } from './BestiaryScene';
 import type { ArsenalScene } from './ArsenalScene';
 import type { InventoryScene } from './InventoryScene';
+import type { SkillScene } from './SkillScene';
 import { ENEMY_SPRITE_BBOX, NPC_SPRITE_BBOX, PLAYER_SPRITE_BBOX } from '../data/spriteGeometry';
 import { fitSpriteToContent } from '../utils/SpriteFit';
 import {
@@ -191,6 +192,8 @@ export class GameScene extends Phaser.Scene {
   private toggleDummiesKey!: Phaser.Input.Keyboard.Key;
   private advancePityKey!: Phaser.Input.Keyboard.Key;
   private fullLoadoutKey!: Phaser.Input.Keyboard.Key;
+  private givePointsKey!: Phaser.Input.Keyboard.Key;
+  private spawnTestEnemiesKey!: Phaser.Input.Keyboard.Key;
 
   private xpOrbs!: Phaser.Physics.Arcade.Group;
   private readonly XP_ATTRACT_RANGE = 96;
@@ -205,6 +208,17 @@ export class GameScene extends Phaser.Scene {
     destroyAt: number;
     dmgMult: number;
   }> = [];
+  // STAFF_FINISHER_ZONE (arc_elemental_wake) — zones élémentaires laissées au sol
+  // (posées depuis executeFinisherAttack, pas depuis les flèches — le finisher STAFF
+  // est un cône, pas un projectile, cf. commentaire dans executeFinisherAttack).
+  private _finisherZones: Array<{
+    x: number; y: number;
+    element: ElementType;
+    radius: number;
+    expiresAt: number;
+    nextTickAt: number;
+    gfx: Phaser.GameObjects.Arc;
+  }> = [];
   private lootableLooted: Set<string> = new Set();
 
   // ── HOMING PROJECTILE TRACKING ───────────────────────────────
@@ -218,6 +232,7 @@ export class GameScene extends Phaser.Scene {
     destroyAt: number;
     damage: number;
     hit: boolean;
+    element: ElementType;
   }> = [];
 
   // Zone-scoped objects destroyed/recreated on each transition
@@ -241,6 +256,13 @@ export class GameScene extends Phaser.Scene {
   private iframeUntil = 0;
   private wasDashReady = true;
   private isDashing = false;
+  // DOUBLE_DASH (zephyr_double_dash) — charge bonus indépendante du cooldown
+  // normal (dashCooldown, 1.5s) : recharge 8s, permet un second dash immédiat.
+  private dashBonusChargeReadyAt = 0;
+  // DASH_DMG_PCT (zephyr_aerial_mastery) — ennemis déjà touchés PENDANT le dash
+  // en cours, vidé à chaque nouveau dash (sinon un dash lent sur un gros ennemi
+  // le toucherait à chaque frame pendant les 300ms).
+  private dashHitEnemyIds: Set<string> = new Set();
   private lastDirX = 0;
   private lastDirY = 1;
   private facingAngle = 0;
@@ -248,6 +270,21 @@ export class GameScene extends Phaser.Scene {
   private playerVy = 0;
   private dashMomentumX = 0;
   private dashMomentumY = 0;
+  // KNOCKBACK_RES_PCT/UNSHAKABLE (talents Partie 2) : overlay de vélocité additif
+  // séparé de dashMomentumX/Y — même mécanisme (décroissance linéaire indépendante
+  // du mouvement), mais un champ dédié pour ne pas mélanger la glisse post-dash
+  // du joueur avec une poussée subie d'un coup ennemi.
+  private knockbackX = 0;
+  private knockbackY = 0;
+  // Statuts subis par le joueur (talents Partie 2 — BURN_BLEED_IMMUNITY,
+  // STATUS_RES_DURATION_PCT) : aucun ennemi n'infligeait de statut au joueur
+  // avant ce chantier. Même StatusEffect[] que ActiveEnemy.statusEffects, tické
+  // dans tickPlayerStatusEffects() (cf. handleMovement pour la consommation).
+  private playerStatusEffects: StatusEffect[] = [];
+  private playerSlowMult = 1;
+  private playerImmobilized = false;
+  // Debug aid (touche Y) : force rollPlayerStatusOnHit à 100% au lieu de 12%.
+  private debugForceStatusProc = false;
   private menuOpen = false;
   private isInDialogue = false;
   private isTraveling = false;
@@ -260,6 +297,14 @@ export class GameScene extends Phaser.Scene {
   // dashCooldown/iframeUntil) : pas persisté en save, se reconstitue en jeu.
   private playerShieldHp = 0;
   private lowHpShieldCooldownUntil = 0;
+  // AUTO_DODGE (zephyr_eye_of_storm) — esquive automatique d'UNE attaque toutes
+  // les 5s, indépendante du jet DODGE_PCT et de TRUE_DODGE_25_PCT.
+  private autoDodgeCooldownUntil = 0;
+  // STATIC_RETORT_PCT (fulguris_static_retort) — cooldown 1s documenté dans le
+  // commentaire du type TalentEffectKey (src/types/index.ts), absent de la
+  // description du nœud lui-même — sans lui, plusieurs ennemis frappant le
+  // joueur dans la même fenêtre déclenchaient chacun leur propre jet indépendant.
+  private staticRetortCooldownUntil = 0;
   // ── État transitoire HIDDEN — VAGUE 2 (non persisté, même principe que
   // playerShieldHp/dashCooldown : reconstruit en jeu, remis à zéro dans init()
   // pour ne pas hériter de l'état d'une partie précédente sur Continuer) ──
@@ -303,6 +348,11 @@ export class GameScene extends Phaser.Scene {
   private comboDeadline = 0;
   /** Fin de la fenêtre de vitesse d'attaque octroyée par un critique (talent CRIT_SURGE_ASPD_PCT). */
   private critSurgeUntil = 0;
+  /** POST_FINISHER_BUFF (vig_titans_echo) — fenêtre (2.5s) pendant laquelle la
+   *  PROCHAINE attaque normale (mêlée/flèche, pas un sort — le combo est une
+   *  notion d'arme) inflige +50%, consommée une seule fois au dispatch de cette
+   *  attaque (pas par coup dans un swing multi-hits — un seul déclenchement par attaque). */
+  private postFinisherBuffUntil = 0;
   /** Horodatage des coups portés sur la dernière seconde — sert à MESURER la cadence réelle (particules). */
   private recentHitTimes: number[] = [];
   private comboRushed = false;  // un input a été reçu en zone morte
@@ -310,6 +360,17 @@ export class GameScene extends Phaser.Scene {
   private comboWeaponType: WeaponType | undefined = undefined;
   private guardUntil = 0;       // timestamp fin de la garde (Sword finisher)
   private inWindup = false;     // true pendant le chargement (windup) d'une arme lourde
+  // Bouclier temporisé générique (GUARD_FINISHER 8%/3s, LAST_BASTION 25%/5s) —
+  // le plus généreux gagne (jamais cumulatif), distinct de playerShieldHp
+  // (LOW_HP_SHIELD_30_PCT, qui n'a pas de durée/expiry).
+  private timedShieldHp = 0;
+  private timedShieldUntil = 0;
+  // MAGMA_GUARD (ignis_magma_armor) — 1 coup absorbé entièrement, 1 fois par combat.
+  private magmaGuardUsedThisCombat = false;
+  // LAST_BASTION (glacius_last_bastion) — 1 fois par combat.
+  private lastBastionUsedThisCombat = false;
+  // PRESERVED (glacius_deep_patience) — 1 fois par ZONE (pas par combat).
+  private preservedUsedThisZone = false;
   private playerModifiers!: TalentModifiers; // recalculé après unlock/respec/équipement
 
   // Interaction tracking
@@ -337,10 +398,18 @@ export class GameScene extends Phaser.Scene {
     this.cooldowns           = {};
     this.dashCooldown        = 0;
     this.wasDashReady        = true;
+    this.dashBonusChargeReadyAt = 0;
+    this.dashHitEnemyIds.clear();
     this.playerVx            = 0;
     this.playerVy            = 0;
     this.dashMomentumX       = 0;
     this.dashMomentumY       = 0;
+    this.knockbackX          = 0;
+    this.knockbackY          = 0;
+    this.playerStatusEffects = [];
+    this.playerSlowMult      = 1;
+    this.playerImmobilized   = false;
+    this.debugForceStatusProc = false;
     this.playtimeAccumulator = 0;
     this.lastAutoSave        = 0;
     this.attackCooldownUntil    = 0;
@@ -355,6 +424,7 @@ export class GameScene extends Phaser.Scene {
     this.lastAttackEnd   = 0;
     this.comboDeadline   = 0;
     this.critSurgeUntil  = 0;
+    this.postFinisherBuffUntil = 0;
     this.recentHitTimes  = [];
     this.comboGraceMs    = 0;
     // Les textes agrégés et l'anneau référencent des GameObjects de la scène
@@ -364,17 +434,49 @@ export class GameScene extends Phaser.Scene {
     this.comboRing        = null;
     this.shakeWindowUntil = 0;
     this.shakeWindowPrio  = 0;
+    // Écho : même raison que comboRing ci-dessus — container/textes/tween référencent
+    // la scène PRÉCÉDENTE au redémarrage (menu principal → Continuer).
+    this.echoTotal                 = 0;
+    this.echoHits                  = 0;
+    this.echoDeadline              = 0;
+    this.echoAnchorInstanceId      = null;
+    this.echoFrozen                = false;
+    this.echoHasPosition           = false;
+    this.echoX                     = 0;
+    this.echoY                     = 0;
+    this.echoTweenT                = 1;
+    this.echoMoveTween             = null;
+    this.echoContainer             = null;
+    this.echoTotalText             = null;
+    this.echoHitsText              = null;
+    this.echoPendingAnchor         = null;
+    this.echoAnchorCommitScheduled = false;
+    this.echoTier                  = 0;
+    this.echoDisplayTotal          = 0;
+    this.echoCountTween            = null;
+    this.echoPunchTween            = null;
+    this.echoIdleTween             = null;
+    this.echoStrokeFlashEvt        = null;
     this.comboRushed     = false;
     this.bufferedAttack  = false;
     this.comboWeaponType = undefined;
     this.guardUntil      = 0;
     this.inWindup        = false;
+    this.timedShieldHp    = 0;
+    this.timedShieldUntil = 0;
+    this.magmaGuardUsedThisCombat = false;
+    this.lastBastionUsedThisCombat = false;
+    this.preservedUsedThisZone = false;
+    for (const z of this._finisherZones) { if (z.gfx.active) z.gfx.destroy(); }
+    this._finisherZones = [];
     this.playerModifiers = TalentSystem.getModifiers(this.gameState.player);
     // Passifs d'objet (code-reviewer BUG) : sans ce reset, recharger une partie
     // dans la même instance de Scene (menu principal → Continuer) hérite d'un
     // bouclier/état de combat résiduel de la session précédente.
     this.playerShieldHp          = 0;
     this.lowHpShieldCooldownUntil = 0;
+    this.autoDodgeCooldownUntil  = 0;
+    this.staticRetortCooldownUntil = 0;
     this.wasInCombat             = false;
     this.lastPermanentRegenTime  = 0;
     // HIDDEN — VAGUE 2 : même reset que playerShieldHp (état de combat transitoire).
@@ -497,6 +599,16 @@ export class GameScene extends Phaser.Scene {
 
     // L'anneau de combo suit le joueur et clignote à l'approche de l'expiration.
     this.syncComboRing();
+    // L'Écho suit son ancre et gère sa propre fenêtre d'expiration (2000ms fixes).
+    this.updateEcho(time);
+    // Statuts subis par le joueur (talents Partie 2) — AVANT handleMovement(dt)
+    // plus bas : playerImmobilized/playerSlowMult doivent être à jour pour la
+    // même frame.
+    this.tickPlayerStatusEffects(dt);
+    // Un tick BURN peut déclencher onPlayerDeath() ci-dessus (pose isTraveling) —
+    // couper la frame ici, comme le garde déjà fait en haut d'update() pour tout
+    // le reste (inputs, IA ennemie ne doivent pas tourner sur un joueur mort).
+    if (this.isTraveling) return;
 
     // NPC proximity via distance (le collider empêche le vrai overlap physique)
     this.nearbyNPC = null;
@@ -519,6 +631,7 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.handleMovement(dt);
+    this.tickDashDamage();
     this.handleAttackInput();
     this.handleSkillInput();
     this.updateArrowProjectiles(dt);
@@ -529,6 +642,10 @@ export class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.toggleDummiesKey)) this.debugToggleTrainingDummies();
     if (Phaser.Input.Keyboard.JustDown(this.advancePityKey)) this.debugAdvancePity();
     if (Phaser.Input.Keyboard.JustDown(this.fullLoadoutKey)) this.debugFullLoadoutEmptyBag();
+    // Debug: press P to grant 20 talent points (talent unlock test aid, étape 4 roguelite)
+    if (Phaser.Input.Keyboard.JustDown(this.givePointsKey)) this.debugGiveTalentPoints();
+    // Debug: press Y to spawn one enemy per element tested by Phase 0 (talents Partie 2) + a boss
+    if (Phaser.Input.Keyboard.JustDown(this.spawnTestEnemiesKey)) this.debugSpawnTestEnemies();
 
     // ── IFRAMES : clignotement du joueur pendant l'invincibilité post-hit ──
     // Alterne alpha 0.25 / 1 toutes les 80ms ; alpha restauré à la fin de la fenêtre.
@@ -591,7 +708,7 @@ export class GameScene extends Phaser.Scene {
       const regenFrac = permanentRegenPct / 100 * 2; // 1%/s × 2s d'intervalle
       // applyHeal pour convertir le surplus en bouclier si OVERHEAL_SHIELD équipé
       // (cf. §3.11) ; le mana n'a pas d'équivalent bouclier → clamp manuel.
-      PassiveSystem.applyHeal(p, Math.floor(p.stats.maxHp * regenFrac));
+      PassiveSystem.applyHeal(p, Math.floor(p.stats.maxHp * regenFrac), this.playerModifiers);
       p.stats.mana = Math.min(p.stats.maxMana, p.stats.mana + Math.floor(p.stats.maxMana * regenFrac));
     }
 
@@ -600,6 +717,7 @@ export class GameScene extends Phaser.Scene {
     this.tickAutoBolt(time);
     this.tickDeferredDamage(time);
     this.tickFrozenSanctuaryHeal(time);
+    this.tickFinisherZones(time);
 
     // Transition hors-combat → en-combat : reset des passifs "premier coup"/"cooldowns
     // à zéro au début du combat" (FIRST_STRIKE_500_PCT, COMBAT_START_ZERO_CD).
@@ -610,9 +728,14 @@ export class GameScene extends Phaser.Scene {
         for (const id of Object.keys(this.cooldowns)) this.cooldowns[id] = 0;
       }
     }
-    // FROZEN_SANCTUARY_30_PCT : la stase est « une fois par combat » — le flag se
-    // réarme dès la sortie de combat (même transition que firstStrikeReady).
-    if (!inCombatNow) this.frozenSanctuaryUsedThisCombat = false;
+    // FROZEN_SANCTUARY_30_PCT / MAGMA_GUARD / LAST_BASTION : toutes « une fois par
+    // combat » — les flags se réarment dès la sortie de combat (même transition
+    // que firstStrikeReady).
+    if (!inCombatNow) {
+      this.frozenSanctuaryUsedThisCombat = false;
+      this.magmaGuardUsedThisCombat = false;
+      this.lastBastionUsedThisCombat = false;
+    }
     this.wasInCombat = inCombatNow;
 
     if (this.playtimeAccumulator - this.lastAutoSave > 180) {
@@ -712,10 +835,110 @@ export class GameScene extends Phaser.Scene {
     this.performZoneTransition(this.gameState.player.currentZone, this.player.x, this.player.y);
   }
 
+  /** Debug aid (press P) : porte player.talentPoints au cap de 20 sans grinder l'XP
+   * (cf. ProgressionSystem.addXp — cap identique). Sert à débloquer des talents pour
+   * tester en jeu l'impact d'un unlock sur les dégâts (étape 4 roguelite, §2 handoff). */
+  private debugGiveTalentPoints(): void {
+    const gained = 20 - this.gameState.player.talentPoints;
+    this.gameState.player.talentPoints = 20;
+    this.events.emit('player_update', this.gameState.player);
+    this.events.emit('show_notification', `[DEBUG] Talents au plafond (20) — +${Math.max(0, gained)}`);
+  }
+
+  // Un ennemi par élément testé par la Phase 0 (talents Partie 2) + un boss
+  // pour vérifier l'exemption anti-stun-lock du stagger réel (SLOW au lieu
+  // de STUN, cf. triggerRealStagger).
+  private static readonly DEBUG_TEST_ENEMY_IDS = ['ember_wyrm', 'frost_wolf', 'spark_imp', 'pyrath_boss'];
+
+  /** Debug aid (press Y) : invoque les ennemis nécessaires pour tester le
+   *  knockback/statuts/stagger subis par le joueur (Phase 0 du chantier
+   *  talents) sans voyager entre zones — FIRE→BURN, ICE→SLOW, LIGHTNING→SHOCK,
+   *  + 1 boss. Positionnés en cercle autour du joueur. Jamais persistés,
+   *  retirés comme n'importe quel ennemi normal en changeant de zone. */
+  private debugSpawnTestEnemies(): void {
+    if (this.isTraveling) return;
+    const px = this.player.x, py = this.player.y, radius = 90;
+    GameScene.DEBUG_TEST_ENEMY_IDS.forEach((enemyId, i) => {
+      const angle = (i / GameScene.DEBUG_TEST_ENEMY_IDS.length) * Math.PI * 2;
+      this.spawnDebugEnemy(enemyId, px + Math.cos(angle) * radius, py + Math.sin(angle) * radius);
+    });
+    // Force le jet de statut-sur-coup (rollPlayerStatusOnHit) à 100% — sans ça,
+    // vérifier BURN/SLOW/SHOCK à 12% de chance demande beaucoup trop de coups
+    // pour être un test fiable. Reste actif tant que la scène tourne (reset
+    // par init(), donc à chaque nouvelle partie/rechargement) : c'est un outil
+    // de test, pas un mode qui doit survivre discrètement à une vraie session.
+    this.debugForceStatusProc = true;
+    this.events.emit('show_notification', '[DEBUG] Ennemis de test invoqués (Feu/Glace/Foudre/Boss) — statuts à 100%');
+  }
+
+  /** Fait à la main ce que la boucle fixedEnemies/le spawn de boss font pour la
+   *  population normale d'une zone (cf. les deux blocs dans createEnemiesForZone),
+   *  généralisé pour accepter un ennemi OU un boss à une position arbitraire. */
+  private spawnDebugEnemy(enemyId: string, x: number, y: number): void {
+    const def = ENEMY_MAP[enemyId];
+    if (!def) return;
+    const zoneColor = ZONE_ENEMY_COLORS[def.zone] ?? 0xaa4444;
+    const texKey = `enemy_${enemyId}`;
+    const hasRealSprite = this.textures.exists(`${texKey}_idle`);
+    const fallbackSize = def.isBoss ? 64 : 28;
+    if (!hasRealSprite) this.ensureTexture(texKey, zoneColor, fallbackSize, fallbackSize);
+
+    const bbox = ENEMY_SPRITE_BBOX[enemyId];
+    const fit = hasRealSprite && bbox ? fitSpriteToContent(bbox, def.isBoss ? 68 : 36) : null;
+    const dispSize = fit ? fit.dispSize : fallbackSize;
+    const sprite = hasRealSprite
+      ? this.physics.add.sprite(x, y, `${texKey}_idle`)
+      : this.physics.add.sprite(x, y, texKey);
+    sprite.setDisplaySize(dispSize, dispSize);
+    const body = sprite.body as Phaser.Physics.Arcade.Body;
+    if (fit && bbox) {
+      body.setSize(bbox.w, bbox.h);
+      body.setOffset(bbox.x, bbox.y);
+    } else {
+      body.setSize(dispSize - (def.isBoss ? 4 : 8), dispSize - (def.isBoss ? 4 : 8));
+    }
+    sprite.setDepth(def.isBoss ? 5 : 4);
+    sprite.setData('baseScale', sprite.scale);
+    if (hasRealSprite) {
+      sprite.setData('hasRealSprite', true);
+      sprite.play(`${texKey}_idle`);
+    }
+
+    const active = CombatSystem.spawnEnemy(def, this.gameState.player.currentZone);
+    active.x = x;
+    active.y = y;
+    sprite.name = active.instanceId;
+    this.activeEnemies.set(active.instanceId, active);
+    this.enemies.add(sprite);
+
+    const contentTopGap = fit ? dispSize / 2 - fit.offsetY : dispSize / 2;
+    const barW = (fit ? fit.bodyW : dispSize) + 4;
+    const barY = y - contentTopGap - (def.isBoss ? 12 : 8);
+    const barBg = this.add.rectangle(x, barY, barW, def.isBoss ? 8 : 6, 0x220000).setDepth(8);
+    const barFg = this.add.rectangle(x - barW / 2, barY, barW, def.isBoss ? 6 : 4, def.isBoss ? 0xffd700 : 0xff2222)
+      .setDepth(9).setOrigin(0, 0.5);
+    this.enemyHpBars.set(active.instanceId, { bg: barBg, bar: barFg, baseW: barW });
+
+    // La population normale de zone annonce le nom du boss à l'apparition
+    // (showBossAnnouncement, cf. createEnemiesForZone) — absent ici, le nom
+    // n'apparaissait donc qu'à sa mort (playBossDeathSequence).
+    if (def.isBoss) this.showBossAnnouncement(def.name, def.element);
+  }
+
   // ── MOVEMENT ─────────────────────────────────────────────────
 
   private handleMovement(dt: number) {
     if (this.isDashing) return;
+    // Statuts subis (talents Partie 2) — STUN/FREEZE/SHOCK immobilisent le joueur
+    // exactement comme un ennemi (cf. tickPlayerStatusEffects) : aucun déplacement,
+    // le knockback/dash-momentum continue de s'appliquer (subi, pas choisi).
+    if (this.playerImmobilized) {
+      const body = this.player.body as Phaser.Physics.Arcade.Body;
+      this.playerVx = 0;
+      this.playerVy = 0;
+      body.setVelocity(this.dashMomentumX + this.knockbackX, this.dashMomentumY + this.knockbackY);
+      return;
+    }
 
     this.debugSpeedMult = this.speedBoostKey?.isDown ? 5 : 1;
 
@@ -725,7 +948,8 @@ export class GameScene extends Phaser.Scene {
     const passiveSpeedMult = 1
       + PassiveSystem.getMoveSpeedBonusPct(player.equipment) / 100
       + PassiveSystem.getSkywardMoveSpeedPct(player.equipment) / 100;
-    const speed  = (90 + player.stats.spd * 4) * this.playerModifiers.moveSpeedMult * passiveSpeedMult * this.debugSpeedMult;
+    // SLOW subi (talents Partie 2) : playerSlowMult ∈ [0,1], 1 = pas ralenti.
+    const speed  = (90 + player.stats.spd * 4) * this.playerModifiers.moveSpeedMult * passiveSpeedMult * this.debugSpeedMult * this.playerSlowMult;
     const body   = this.player.body as Phaser.Physics.Arcade.Body;
 
     let targetVx = 0, targetVy = 0;
@@ -762,8 +986,18 @@ export class GameScene extends Phaser.Scene {
       this.dashMomentumX = Math.abs(this.dashMomentumX) <= dm ? 0 : this.dashMomentumX - Math.sign(this.dashMomentumX) * dm;
       this.dashMomentumY = Math.abs(this.dashMomentumY) <= dm ? 0 : this.dashMomentumY - Math.sign(this.dashMomentumY) * dm;
     }
+    // Knockback subi (talents Partie 2) — même mécanisme que dashMomentum ci-dessus,
+    // overlay séparé pour ne pas se mélanger à la glisse post-dash.
+    if (this.knockbackX !== 0 || this.knockbackY !== 0) {
+      const kb = 560 * dt;
+      this.knockbackX = Math.abs(this.knockbackX) <= kb ? 0 : this.knockbackX - Math.sign(this.knockbackX) * kb;
+      this.knockbackY = Math.abs(this.knockbackY) <= kb ? 0 : this.knockbackY - Math.sign(this.knockbackY) * kb;
+    }
 
-    body.setVelocity(this.playerVx + this.dashMomentumX, this.playerVy + this.dashMomentumY);
+    body.setVelocity(
+      this.playerVx + this.dashMomentumX + this.knockbackX,
+      this.playerVy + this.dashMomentumY + this.knockbackY,
+    );
 
     const isMoving = targetVx !== 0 || targetVy !== 0;
 
@@ -802,7 +1036,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleDash() {
-    if (this.dashCooldown > 0) return;
+    // DOUBLE_DASH (zephyr_double_dash) — une charge bonus (recharge 8s,
+    // indépendante du cooldown normal) autorise un second dash même si
+    // dashCooldown n'est pas encore retombé à 0.
+    const useBonusCharge = this.dashCooldown > 0
+      && this.playerModifiers.doubleDash
+      && this.time.now >= this.dashBonusChargeReadyAt;
+    if (this.dashCooldown > 0 && !useBonusCharge) return;
+    if (this.playerImmobilized) return; // STUN/FREEZE/SHOCK subi (talents Partie 2)
 
     const body = this.player.body as Phaser.Physics.Arcade.Body;
 
@@ -826,10 +1067,20 @@ export class GameScene extends Phaser.Scene {
     // NO_DASH_COOLDOWN (hidden_zephyr_fang) — plancher anti-exploit à
     // NO_DASH_COOLDOWN_FLOOR_S (pas 0 : un dash-spam serait des iframes wallhack),
     // même garde-fou que NO_ATTACK_COOLDOWN sur l'attaque de base.
+    // DASH_CD_PCT (zephyr_featherfall) — réduction % du cooldown de BASE ; le
+    // plancher NO_DASH_COOLDOWN (objet) reste prioritaire, inchangé par le talent.
     const dashCd = PassiveSystem.hasNoDashCooldown(this.gameState.player.equipment)
-      ? PassiveSystem.NO_DASH_COOLDOWN_FLOOR_S : 1.5;
-    this.dashCooldown = dashCd;
+      ? PassiveSystem.NO_DASH_COOLDOWN_FLOOR_S
+      : Math.max(0.1, 1.5 * (1 - this.playerModifiers.dashCdReductionPct / 100));
+    if (useBonusCharge) {
+      // Le cooldown normal continue de tourner depuis le premier dash — seule la
+      // charge bonus est consommée ici.
+      this.dashBonusChargeReadyAt = this.time.now + 8000;
+    } else {
+      this.dashCooldown = dashCd;
+    }
     this.isDashing = true;
+    this.dashHitEnemyIds.clear(); // DASH_DMG_PCT — nouveau dash, nouvelle salve de touches
     body.setVelocity(nx, ny);
 
     // MOVE_25_DASH_ASPD_50_PCT (hidden_skyward_mantle) — un dash réussi octroie un
@@ -861,7 +1112,31 @@ export class GameScene extends Phaser.Scene {
       },
     });
 
-    this.cooldowns['dash'] = dashCd;
+    // N'écrase ce miroir que si le cooldown normal a réellement bougé — sinon
+    // (useBonusCharge) il mentirait sur l'état réel de dashCooldown.
+    if (!useBonusCharge) this.cooldowns['dash'] = dashCd;
+  }
+
+  /** DASH_DMG_PCT (zephyr_aerial_mastery) — traverser un ennemi pendant un dash
+   *  lui inflige dashDmgPct% ATK, une fois par ennemi par dash (dashHitEnemyIds).
+   *  Avant ce talent, un dash n'inflige AUCUN dégât : c'est ce flag qui active la
+   *  mécanique, pas seulement un bonus sur des dégâts déjà existants. */
+  private tickDashDamage(): void {
+    if (!this.isDashing) return;
+    if (this.playerModifiers.dashDmgPct <= 0) return;
+    const atk = StatsSystem.computeAll(this.gameState.player).atk;
+    const dmg = Math.max(1, Math.round(atk * this.playerModifiers.dashDmgPct / 100));
+    for (const go of this.enemies.getChildren()) {
+      const sprite = go as Phaser.Physics.Arcade.Sprite;
+      if (!sprite.active || this.dashHitEnemyIds.has(sprite.name)) continue;
+      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, sprite.x, sprite.y) > 36) continue;
+      const ae = this.activeEnemies.get(sprite.name);
+      if (!ae || ae.currentHp <= 0) continue;
+      this.dashHitEnemyIds.add(sprite.name);
+      this.showDamageNumber(sprite.x, sprite.y - 20, dmg, false, ElementType.WIND);
+      this.spawnHitParticles(sprite.x, sprite.y, ElementType.WIND);
+      this.applyDamageToEnemy(sprite.name, dmg, false);
+    }
   }
 
   // ── SKILLS & ATTACK ──────────────────────────────────────────
@@ -899,6 +1174,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private performBasicAttack() {
+    if (this.playerImmobilized) return; // STUN/FREEZE/SHOCK subi (talents Partie 2)
     const now = this.time.now;
 
     const weapon = this.gameState.player.equipment.weapon;
@@ -957,18 +1233,54 @@ export class GameScene extends Phaser.Scene {
     // existait dans TalentSystem et n'était consommé NULLE PART : le talent ne faisait rien.
     if (now < this.critSurgeUntil) aspd *= 1 + this.playerModifiers.critSurgeAspdPct / 100;
 
+    // HEAVY_CD_REDUCTION_PCT (vig_war_march) — GS/HAMMER/AXE uniquement. "Les
+    // fenêtres de combo se recalculent" (description) : la réduction s'applique
+    // sur le cooldown de BASE (avant aspd), donc comboDeadline plus bas (posé sur
+    // cette même base) hérite automatiquement de la réduction.
+    const isHeavyAtkWeapon = weaponType === WeaponType.GREATSWORD
+      || weaponType === WeaponType.HAMMER
+      || weaponType === WeaponType.AXE;
+    const effectiveBaseCooldown = isHeavyAtkWeapon
+      ? pattern.cooldown * (1 - this.playerModifiers.heavyCdReductionPct / 100)
+      : pattern.cooldown;
+
     // NO_ATTACK_COOLDOWN (hidden_temporal_blade) : plus de cooldown propre à l'arme —
     // plancher à NO_ATTACK_COOLDOWN_FLOOR_MS (pas 0 : un cooldown nul rendait le DPS
     // quasi-infini, borné par le seul débit d'input).
     const noAttackCooldown = PassiveSystem.hasNoAttackCooldown(this.gameState.player.equipment);
-    const rawCooldown = noAttackCooldown ? PassiveSystem.NO_ATTACK_COOLDOWN_FLOOR_MS : pattern.cooldown / aspd;
+    const rawCooldown = noAttackCooldown ? PassiveSystem.NO_ATTACK_COOLDOWN_FLOOR_MS : effectiveBaseCooldown / aspd;
 
     // ── FINISHER ─────────────────────────────────────────────────
     let finisherFired = false;
     if (comboConfig && this.comboCount >= comboConfig.chainLength) {
       finisherFired = true;
       this.executeFinisherAttack(weaponType, pattern, comboConfig, now, aspd);
-      this.comboCount = 0;
+      // POST_FINISHER_BUFF (vig_titans_echo) — la chaîne démarre à 2 (au lieu de 0)
+      // ET la prochaine attaque normale a une fenêtre de 2.5s pour infliger +50%
+      // (consommé dans la branche ATTAQUE NORMALE ci-dessous, cf. postFinisherBuffUntil).
+      if (this.playerModifiers.postFinisherBuff) {
+        // Clampé à chainLength-2 (PAS chainLength-1, erreur trouvée en playtest) :
+        // comboCount++ tourne AU DÉBUT de chaque attaque, avant ce test — donc le
+        // coup suivant part de (comboCount+1). Avec chainLength-1, HAMMER
+        // (chainLength 2) démarrait à 1 : le TOUT PROCHAIN coup passait à 2 et
+        // redéclenchait le finisher SANS AUCUN coup normal entre les deux — boucle
+        // de finisher permanente, +50% jamais délivré (le joueur ne voit jamais la
+        // branche ATTAQUE NORMALE où postFinisherMult est consommé). Avec
+        // chainLength-2, HAMMER démarre à 0 (aucune avance possible sur une chaîne
+        // de seulement 2 coups — dégrade proprement vers le rythme normal) ; les
+        // armes à chainLength 3 démarrent à 1 (1 coup normal requis avant le
+        // prochain finisher, au lieu de 2) : c'est ça, une "avance", pas un
+        // deuxième finisher immédiat.
+        this.comboCount = Math.max(0, Math.min(2, comboConfig.chainLength - 2));
+        this.postFinisherBuffUntil = now + 2500;
+        // Sans ceci, comboDeadline resterait à sa valeur PRÉ-finisher (déjà
+        // dépassée) : la branche ATTAQUE NORMALE plus haut casserait le combo
+        // (comboCount>0 && now>comboDeadline) dès le tout premier coup suivant,
+        // annulant comboCount=2 avant même que le joueur ait pu en profiter.
+        this.comboDeadline = now + 2500;
+      } else {
+        this.comboCount = 0;
+      }
       // Le PLANCHER D'INTÉGRITÉ s'applique aussi ici, et sur les coups du FINISHER
       // (qui sont souvent plus étalés que ceux de l'attaque normale) : on ne relance
       // jamais une attaque avant que la précédente ait fini de sortir ses coups.
@@ -978,10 +1290,11 @@ export class GameScene extends Phaser.Scene {
       const finisherCd = effectiveCooldownMs(pattern, aspd, rawFinisherCd, comboConfig.finisher.hits);
       this.lastAttackEnd      = now + finisherCd;
       this.attackCooldownUntil = this.lastAttackEnd;
-      // Après un finisher le combo est remis à zéro : aucune deadline à poser.
+      // Après un finisher le combo est remis à zéro (ou à 2 avec POST_FINISHER_BUFF,
+      // cf. plus haut) : aucune deadline à poser côté finisher lui-même.
       // L'anneau se vide (sans éclat : ce n'est pas une rupture, c'est un ABOUTISSEMENT).
       this.comboGraceMs = 0;
-      this.redrawComboRing(0, 0, weaponType);
+      this.redrawComboRing(this.comboCount, comboConfig.chainLength, weaponType);
       this.spawnSpeedTierVfx(aspd, this.facingAngle);
     } else {
       // ── ATTAQUE NORMALE ──────────────────────────────────────
@@ -991,14 +1304,22 @@ export class GameScene extends Phaser.Scene {
       // En compressant, le ratio reste 31% : la signature rythmique de l'arme tient.
       const windupMs = effectiveWindupMs(pattern, aspd);
 
+      // POST_FINISHER_BUFF — consommé UNE FOIS ici, au dispatch de CETTE attaque
+      // (pas par coup individuel dans un swing multi-hits) : snapshot avant les
+      // delayedCall plus bas, jamais relu à l'intérieur (état pourrait changer
+      // entre le dispatch et l'exécution réelle du coup).
+      const postFinisherMult = this.playerModifiers.postFinisherBuff && now < this.postFinisherBuffUntil
+        ? 1.5 : 1;
+      if (postFinisherMult > 1) this.postFinisherBuffUntil = 0;
+
       if (pattern.isProjectile) {
         // BOW : rectangle physique, pas un cône.
         if (windupMs > 0) this.spawnWindupVfx(windupMs);
         if (windupMs === 0) {
-          this.fireArrowProjectile();
+          this.fireArrowProjectile(postFinisherMult);
         } else {
           this.time.delayedCall(windupMs, () => {
-            if (!this.isTraveling) this.fireArrowProjectile();
+            if (!this.isTraveling) this.fireArrowProjectile(postFinisherMult);
           });
         }
       } else {
@@ -1012,7 +1333,7 @@ export class GameScene extends Phaser.Scene {
             const tx = this.player.x + Math.cos(this.facingAngle) * hit.range * 0.7;
             const ty = this.player.y + Math.sin(this.facingAngle) * hit.range * 0.7;
             this.spawnWeaponSwingVfx(this.player.x, this.player.y, tx, ty, weaponType, hitIndex, aspd);
-            this.executeHitInCone(hit.range, hit.halfArc, hit.damageMultiplier);
+            this.executeHitInCone(hit.range, hit.halfArc, hit.damageMultiplier * postFinisherMult);
           };
           if (fireDelay === 0) doHit();
           else this.time.delayedCall(fireDelay, doHit);
@@ -1027,15 +1348,19 @@ export class GameScene extends Phaser.Scene {
       // l'aspd) et STOCKÉE — donc robuste à un buff qui expirerait entre deux coups.
       if (comboConfig) {
         this.comboGraceMs  = comboConfig.graceMs * this.playerModifiers.comboGraceMult;
-        this.comboDeadline = now + pattern.cooldown + this.comboGraceMs;
+        this.comboDeadline = now + effectiveBaseCooldown + this.comboGraceMs;
         this.redrawComboRing(this.comboCount, comboConfig.chainLength, weaponType);
       }
       this.spawnSpeedTierVfx(aspd, this.facingAngle);
     }
 
     // ── ÉVÉNEMENT COMBO HUD ──────────────────────────────────────
-    // BUG3 fix: ne pas émettre combo-changed si le finisher a déjà réinitialisé l'état
-    if (!finisherFired) {
+    // BUG3 fix: ne pas émettre combo-changed si le finisher a réinitialisé l'état à
+    // 0 — SAUF si POST_FINISHER_BUFF a posé un comboCount>0 (2, clampé), auquel cas
+    // le HUD doit refléter ce nouveau départ plutôt que rester sur le fade-out de
+    // 'finisher-executed' (sinon désync entre l'anneau en jeu, correct, et les pips
+    // HUD, qui retombaient toujours à vide — trouvé en review).
+    if (!finisherFired || this.comboCount > 0) {
       this.events.emit('combo-changed', {
         count: this.comboCount,
         max: comboConfig?.chainLength ?? 0,
@@ -1081,10 +1406,26 @@ export class GameScene extends Phaser.Scene {
       const sameTargetMult = PassiveSystem.getSameTargetStackMultiplier(
         this.gameState.player.equipment, this.sameTargetStackState, activeEnemy.instanceId, this.time.now,
       );
+      // Talents Partie 1 : synergie Brûlure (ATK_PER_BURNING_PCT/BURNING_PACK_DMG_PCT,
+      // globales) + bonus vs contrôle dur (STUN_DMG_PCT) + vulnérabilité SHOCK
+      // (posée sur CETTE cible) — combinés au même niveau que les autres multiplicateurs.
+      const burningSynergyMult = this.getBurningSynergyMult();
+      const stunDmgMult = this.getStunDmgMult(activeEnemy);
+      const shockVulnMult = this.getShockVulnMult(activeEnemy);
+      const lowHpAtkMult = this.getLowHpAtkMult();
       // Combiné : multiplicateur du pattern + talents mêlée + bonus de chaîne + stack cible.
-      const finalDamage = Math.round(result.damage * damageMultiplier * appliedMeleeMult * stackBonus * sameTargetMult);
-      activeEnemy.currentHp = Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - finalDamage));
-      const isKill = activeEnemy.currentHp <= 0;
+      const finalDamage = Math.round(
+        result.damage * damageMultiplier * appliedMeleeMult * stackBonus * sameTargetMult
+          * burningSynergyMult * stunDmgMult * shockVulnMult * lowHpAtkMult,
+      );
+      // ÉCHO — canal DIRECT #1/3 (mêlée). Plusieurs cibles dans la même salve de cône
+      // sont gérées par le batching de stageEchoAnchor (clé = this.time.now).
+      this.registerEchoDamage(activeEnemy.instanceId, finalDamage, true, result.isCrit);
+      const isDummy = this.isInvincibleDummy(activeEnemy.enemyId);
+      activeEnemy.currentHp = isDummy
+        ? activeEnemy.maxHp
+        : Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - finalDamage));
+      const isKill = !isDummy && activeEnemy.currentHp <= 0;
 
       this.showEnemyDamageNumber(activeEnemy.instanceId, sprite.x, sprite.y - 20, finalDamage, result.isCrit, result.element);
       this.spawnHitParticles(sprite.x, sprite.y, result.element);
@@ -1100,6 +1441,9 @@ export class GameScene extends Phaser.Scene {
       } else {
         this.addMagmaStackIfEquipped(activeEnemy.instanceId);
         this.checkStagger(sprite, activeEnemy, finalDamage);
+        // Talents Partie 1 : statuts sur coup + arc en chaîne (pas sur un
+        // coup qui tue — la cible n'existe plus pour porter un statut).
+        this.applyOnHitTalentEffects(activeEnemy, finalDamage, false, result.element, result.isCrit);
       }
     }
 
@@ -1134,20 +1478,27 @@ export class GameScene extends Phaser.Scene {
   // — plus fiable que physics.add.overlap qui dépend d'une texture valide.
 
   private fireArrowProjectile(dmgMult = 1.0) {
-    const SPEED = 600;  // px/s
-    const RANGE = 460;
+    const mods = this.playerModifiers;
+    // BOW_RANGE_DMG_PCT (ins_hunters_eye) — bundle "vitesse de projectile +20%" :
+    // pas de champ numérique séparé pour cette partie de la description, la seule
+    // source de ce bonus est ce talent (gate sur sa présence, pas sur sa valeur).
+    const SPEED = 600 * (mods.bowRangeDmgPct > 0 ? 1.20 : 1);
+    // PROJECTILE_RANGE_PCT (zephyr_wind_arrows) — portée de TOUS les projectiles
+    // (flèches BOW normales ET finisher, seul canal qui passe par cette fonction).
+    const RANGE = 460 * (1 + mods.projectileRangePct / 100);
     const angle = this.facingAngle;
 
     // Point de collision : rectangle transparent déplacé manuellement chaque frame
     const rect = this.add.rectangle(this.player.x, this.player.y, 16, 8, 0xffffff, 0);
-    const travelMs = (RANGE / SPEED) * 1000; // ~767ms
+    const travelMs = (RANGE / SPEED) * 1000; // ~767ms à vitesse/portée de base
     this._activeArrows.push({
       rect,
       vx: Math.cos(angle) * SPEED,
       vy: Math.sin(angle) * SPEED,
       hit: false,
       destroyAt: this.time.now + travelMs,
-      dmgMult,
+      // PROJECTILE_DMG_PCT (zephyr_wind_arrows) — dégâts de TOUS les projectiles.
+      dmgMult: dmgMult * (1 + mods.projectileDmgPct / 100),
     });
 
     // VFX cosmétique — voyage en parallèle, purement visuel
@@ -1196,18 +1547,52 @@ export class GameScene extends Phaser.Scene {
         const activeEnemy = this.activeEnemies.get(sprite.name);
         if (!activeEnemy) break;
 
+        // RANGED_CRIT_PCT (zephyr_eagle_eye) — bonus de critique conditionnel à la
+        // distance, mesurée au moment de l'impact. cs est PARTAGÉ (calculé une fois
+        // par frame pour toutes les flèches) : jamais muté directement, un clone
+        // ponctuel avec crit ajusté évite de faire fuiter le bonus vers d'autres tirs
+        // résolus la même frame.
+        const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, sprite.x, sprite.y);
+        const mods = this.playerModifiers;
+        const csForHit = dist > 200 && mods.rangedCritPct > 0
+          ? { ...cs, crit: cs.crit + mods.rangedCritPct }
+          : cs;
+
         // See executeHitInCone() for why we snapshot HP before CombatSystem's own
         // (unmultiplied) clamped subtraction rather than patch a delta onto it.
         const hpBeforeHit = activeEnemy.currentHp;
-        const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy, cs);
+        const result = CombatSystem.playerAttack(this.gameState.player, activeEnemy, csForHit);
         // SAME_TARGET_STACK_10_PCT (hidden_serpentgrip_gauntlets) — cf. executeHitInCone.
         const sameTargetMult = PassiveSystem.getSameTargetStackMultiplier(
           this.gameState.player.equipment, this.sameTargetStackState, activeEnemy.instanceId, this.time.now,
         );
+        // Talents Partie 1 : mêmes synergies que executeHitInCone.
+        const burningSynergyMult = this.getBurningSynergyMult();
+        const stunDmgMult = this.getStunDmgMult(activeEnemy);
+        const shockVulnMult = this.getShockVulnMult(activeEnemy);
+        // BOW_RANGE_DMG_PCT (ins_hunters_eye) — même principe que RANGED_CRIT_PCT,
+        // seuil de distance différent (250px).
+        const rangeDmgMult = dist > 250 && mods.bowRangeDmgPct > 0 ? 1 + mods.bowRangeDmgPct / 100 : 1;
+        const lowHpAtkMult = this.getLowHpAtkMult();
         // BUG4 fix: apply the dmgMult from the finisher (or 1.0 for normal shots)
-        const arrowFinalDmg = Math.round(result.damage * arrow.dmgMult * sameTargetMult);
-        activeEnemy.currentHp = Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - arrowFinalDmg));
-        const arrowIsKill = activeEnemy.currentHp <= 0;
+        let arrowFinalDmg = Math.round(
+          result.damage * arrow.dmgMult * sameTargetMult * burningSynergyMult * stunDmgMult
+            * shockVulnMult * rangeDmgMult * lowHpAtkMult,
+        );
+        // BOW_ELEMENTAL_ARROWS (arc_imbued_arrows) — "Si INT ≥ 10" : bonus additif de
+        // 10% Magic ATK, pas un multiplicateur (les flèches BOW scalent sur l'ATK
+        // physique — un multiplicateur sur du Magic ATK n'aurait pas de sens ici).
+        if (mods.bowElementalArrows && this.gameState.player.attributes.int >= 10) {
+          arrowFinalDmg += Math.round(cs.matk * 0.10);
+        }
+        // ÉCHO — canal DIRECT #2/3 (flèches). Une flèche ne touche qu'un seul ennemi
+        // (break juste après), donc aucun batching multi-cible n'est nécessaire ici.
+        this.registerEchoDamage(activeEnemy.instanceId, arrowFinalDmg, true, result.isCrit);
+        const isArrowDummy = this.isInvincibleDummy(activeEnemy.enemyId);
+        activeEnemy.currentHp = isArrowDummy
+          ? activeEnemy.maxHp
+          : Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - arrowFinalDmg));
+        const arrowIsKill = !isArrowDummy && activeEnemy.currentHp <= 0;
         this.showEnemyDamageNumber(activeEnemy.instanceId, sprite.x, sprite.y - 20, arrowFinalDmg, result.isCrit, result.element);
         this.spawnHitParticles(sprite.x, sprite.y, result.element);
         this.applyHitFeedback(sprite, activeEnemy, arrowFinalDmg);
@@ -1219,6 +1604,7 @@ export class GameScene extends Phaser.Scene {
         else {
           this.addMagmaStackIfEquipped(activeEnemy.instanceId);
           this.checkStagger(sprite, activeEnemy, arrowFinalDmg);
+          this.applyOnHitTalentEffects(activeEnemy, arrowFinalDmg, false, result.element, result.isCrit);
         }
         break;
       }
@@ -1226,38 +1612,73 @@ export class GameScene extends Phaser.Scene {
   }
 
   private activateSkill(skillId: string) {
+    if (this.playerImmobilized) return; // STUN/FREEZE/SHOCK subi (talents Partie 2)
     const skill = SkillSystem.getSkill(skillId);
     if (!skill) return;
-    if (!SkillSystem.canUseSkill(this.gameState.player, skillId, this.cooldowns)) return;
+    if (!SkillSystem.canUseSkill(this.gameState.player, skillId, this.cooldowns, this.playerModifiers)) return;
 
     const nearest = this.findNearestEnemy(skill.range ?? 200);
     const activeEnemy = nearest ? this.activeEnemies.get(nearest.name) : undefined;
 
+    // Snapshot AVANT CombatSystem.playerSkill — même raison que executeHitInCone/
+    // updateArrowProjectiles : CombatSystem mute currentHp en interne avec le
+    // montant NON multiplié par les synergies talents Partie 1 (burningSynergy/
+    // stunDmg/shockVuln, calculées côté scène) — il faut recalculer depuis ce
+    // snapshot plutôt que patcher un delta sur un currentHp déjà clampé.
+    const hpBeforeHit = activeEnemy?.currentHp;
+    // Talents Partie 1 : synergies calculées AVANT l'appel, pas après — sinon un
+    // sort qui pose lui-même STUN/FREEZE/BURN sur sa cible (CombatSystem.playerSkill
+    // mute statusEffects EN INTERNE) bénéficierait de son propre statut fraîchement
+    // posé sur CE MÊME cast (auto-synergie non voulue, trouvée en review).
+    const burningSynergyMult = this.getBurningSynergyMult();
+    const stunDmgMult = activeEnemy ? this.getStunDmgMult(activeEnemy) : 1;
+    const shockVulnMult = activeEnemy ? this.getShockVulnMult(activeEnemy) : 1;
+    const lowHpAtkMult = this.getLowHpAtkMult();
     const result = CombatSystem.playerSkill(this.gameState.player, skill, activeEnemy, this.playerModifiers);
+    // CombatSystem.playerSkill mute target.currentHp EN INTERNE (systems/ reste
+    // agnostique du concept de dev-tool) — le Mannequin de Fer est donc restauré
+    // ICI, côté scène, et result.isKill (calculé avant restauration) est ignoré
+    // pour lui plutôt que recâblé dans CombatSystem.
+    const isSkillDummy = !!activeEnemy && this.isInvincibleDummy(activeEnemy.enemyId);
+    if (isSkillDummy && activeEnemy) activeEnemy.currentHp = activeEnemy.maxHp;
     if (result) {
-      if (result.damage > 0 && nearest) {
+      if (result.damage > 0 && nearest && activeEnemy) {
+        const extraMult = burningSynergyMult * stunDmgMult * shockVulnMult * lowHpAtkMult;
+        const finalSkillDmg = extraMult === 1 ? result.damage : Math.max(1, Math.round(result.damage * extraMult));
+        if (extraMult !== 1 && !isSkillDummy && hpBeforeHit !== undefined) {
+          activeEnemy.currentHp = Math.max(0, Math.min(activeEnemy.maxHp, hpBeforeHit - finalSkillDmg));
+        }
+        // Toujours re-dérivé de currentHp (jamais result.isKill directement) —
+        // reste correct que extraMult ait bougé la cible ou non.
+        const isSkillKill = !isSkillDummy && activeEnemy.currentHp <= 0;
+
+        // ÉCHO — canal DIRECT #3/3 (sorts). activateSkill ne cible jamais qu'un seul
+        // ennemi (this.findNearestEnemy) : aucun batching multi-cible nécessaire.
+        this.registerEchoDamage(activeEnemy.instanceId, finalSkillDmg, true, result.isCrit);
         if (skill.isProjectile) {
           this.spawnCosmeticProjectile(this.player.x, this.player.y, nearest.x, nearest.y, skill.element);
         }
-        this.showDamageNumber(nearest.x, nearest.y - 20, result.damage, result.isCrit, skill.element);
+        this.showDamageNumber(nearest.x, nearest.y - 20, finalSkillDmg, result.isCrit, skill.element);
         this.spawnHitParticles(nearest.x, nearest.y, skill.element);
         if (result.isCrit) this.requestShake(150, 0.009, GameScene.SHAKE_PRIO.CRIT);
-        this.applyHitFeedback(nearest, activeEnemy!, result.damage);
+        this.applyHitFeedback(nearest, activeEnemy, finalSkillDmg);
         this.tryCritCdReset(result.isCrit);
-        if (result.isKill) {
-          this.onEnemyKilled(activeEnemy!, nearest);
+        if (isSkillKill) {
+          this.onEnemyKilled(activeEnemy, nearest);
         } else {
-          this.addMagmaStackIfEquipped(activeEnemy!.instanceId);
-          this.checkStagger(nearest, activeEnemy!, result.damage);
+          this.addMagmaStackIfEquipped(activeEnemy.instanceId);
+          this.checkStagger(nearest, activeEnemy, finalSkillDmg);
+          // FREEZE_CHANCE_PCT (abyssal_ice_veil) est réservé aux sorts — isSpell=true.
+          this.applyOnHitTalentEffects(activeEnemy, finalSkillDmg, true, result.element, result.isCrit);
         }
 
         // SKILL_ECHO_50_PCT (hidden_stormheart_staff) — rejoue la compétence à 50%
         // des dégâts après un court délai sur la MÊME cible (si toujours en vie),
         // sans reconsommer de mana ni relancer le cooldown (coup "gratuit").
-        if (PassiveSystem.hasSkillEcho(this.gameState.player.equipment) && result.damage > 0) {
-          const echoTargetId = activeEnemy!.instanceId;
+        if (PassiveSystem.hasSkillEcho(this.gameState.player.equipment) && finalSkillDmg > 0) {
+          const echoTargetId = activeEnemy.instanceId;
           const echoElement = skill.element;
-          const echoDmg = Math.round(result.damage * PassiveSystem.SKILL_ECHO_PCT / 100);
+          const echoDmg = Math.round(finalSkillDmg * PassiveSystem.SKILL_ECHO_PCT / 100);
           this.time.delayedCall(PassiveSystem.SKILL_ECHO_DELAY_MS, () => {
             if (this.isTraveling) return;
             const echoTarget = this.activeEnemies.get(echoTargetId);
@@ -1277,6 +1698,13 @@ export class GameScene extends Phaser.Scene {
         this.showHealNumber(this.player.x, this.player.y - 20,
           Math.floor(this.gameState.player.stats.maxHp * (skill.effect.healPercent ?? 0)));
       }
+      // SHIELD_SKILL_PCT — stone_shield/ice_barrier accordent un bouclier plat
+      // (même pool sans durée que LOW_HP_SHIELD_30_PCT, maybeTriggerLowHpShield) ;
+      // Math.max plutôt qu'écrasement : ne pas gâcher un bouclier existant plus
+      // généreux (ex. LOW_HP_SHIELD encore actif) en le recastant trop tôt.
+      if (result.shieldAmount !== undefined) {
+        this.playerShieldHp = Math.max(this.playerShieldHp, result.shieldAmount);
+      }
     }
 
     SkillSystem.startCooldown(this.cooldowns, skillId, this.gameState.player);
@@ -1290,11 +1718,6 @@ export class GameScene extends Phaser.Scene {
     this.menuOpen = paused;
     if (paused) this.physics.world.pause();
     else        this.physics.world.resume();
-  }
-
-  public closeOverlay(key: string) {
-    this.setPaused(false);
-    this.scene.stop(key);
   }
 
   public openInventory() {
@@ -1319,6 +1742,23 @@ export class GameScene extends Phaser.Scene {
     if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); }
     this.setPaused(true);
     this.scene.launch('PityScene', { gameScene: this });
+  }
+
+  /**
+   * BUG préexistant (trouvé pendant le chantier « Partie 2 des talents ») :
+   * `this.playerModifiers` n'était calculé QU'UNE FOIS, dans le bloc de reset de
+   * `init()` — aucun autre point du fichier ne le recalculait. Débloquer un talent
+   * ou faire un respec EN COURS DE RUN n'avait donc aucun effet sur les flags
+   * spéciaux (meleeDmgMult, comboStackDmg, windupArmor, heavyFinisherBonus,
+   * skillDmgMult, magicDmgMult, projectileSkillMult, lightFinisherBleed,
+   * critSurgeAspdPct, killHealPct, dashPreservesCombo, comboGraceMult,
+   * moveSpeedMult) tant que la scène n'était pas rechargée — les stats simples
+   * (ATK%/DEF%/CRIT%, via StatsSystem.computeAll → getStatContribs) restaient,
+   * elles, bien live, d'où la découverte tardive. Appelé par SkillScene juste
+   * après un unlock/respec réussi.
+   */
+  public refreshTalentModifiers() {
+    this.playerModifiers = TalentSystem.getModifiers(this.gameState.player);
   }
 
   public goToMainMenu() {
@@ -1397,17 +1837,38 @@ export class GameScene extends Phaser.Scene {
     this.inventoryKey = kb.addKey(b.inventory);
     this.skillMenuKey = kb.addKey(b.skills);
     this.pityKey      = kb.addKey(b.pity);
+    // Fermeture (re-toggle) : via close() — animation symétrique de l'ouverture.
+    // BASCULE d'un écran vers l'autre : stop BRUT conservé volontairement — le
+    // nouvel écran se lance dans la même frame par-dessus, et le setPaused(false)
+    // différé d'un close() animé tomberait APRÈS son setPaused(true) → jeu
+    // dé-pausé sous l'overlay. (Stopper la scène tue le tween de fermeture, donc
+    // aucun onClosed orphelin ne survit à une bascule pendant l'animation.)
+    // PityScene n'a PAS encore de close() animé (créée avant ce patron) — reste
+    // sur stop() brut pour l'instant, à aligner dans un futur passage UI dédié.
     this.inventoryKey.on('down', () => {
-      if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); return; }
-      this.openInventory();
+      if (this.scene.isActive('InventoryScene')) { (this.scene.get('InventoryScene') as InventoryScene).close(); return; }
+      if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); }
+      if (this.scene.isActive('PityScene'))      { this.setPaused(false); this.scene.stop('PityScene'); }
+      this.setPaused(true);
+      this.scene.launch('InventoryScene', { gameScene: this });
     });
     this.skillMenuKey.on('down', () => {
-      if (this.scene.isActive('SkillScene')) { this.setPaused(false); this.scene.stop('SkillScene'); return; }
-      this.openSkills();
+      if (this.scene.isActive('SkillScene'))     { (this.scene.get('SkillScene') as SkillScene).close(); return; }
+      if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
+      if (this.scene.isActive('PityScene'))      { this.setPaused(false); this.scene.stop('PityScene'); }
+      this.setPaused(true);
+      this.scene.launch('SkillScene', { gameScene: this });
     });
     this.pityKey.on('down', () => {
       if (this.scene.isActive('PityScene')) { this.setPaused(false); this.scene.stop('PityScene'); return; }
-      this.openPity();
+      // BASCULE (pas re-toggle) : stop() brut, PAS close() animé — même raison
+      // que ci-dessus (inventoryKey/skillMenuKey) : un close() différerait
+      // setPaused(false) après le setPaused(true) de PityScene qui suit tout de
+      // suite → jeu dé-pausé sous le panneau.
+      if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
+      if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); }
+      this.setPaused(true);
+      this.scene.launch('PityScene', { gameScene: this });
     });
   }
 
@@ -1517,7 +1978,27 @@ export class GameScene extends Phaser.Scene {
         if (slowEffect.duration <= 0) ae.statusEffects = ae.statusEffects.filter(e => e !== slowEffect);
       }
       const slowMult = slowEffect && slowEffect.duration > 0 ? Math.max(0, 1 - slowEffect.strength) : 1;
-      const moveSpeed = (def.moveSpeed ?? 90) * slowMult;
+
+      // CHILL_AURA (glacius_deep_stillness) — aura passive r130 : -10% vitesse de
+      // déplacement ET d'attaque pour les ennemis proches. Pas un statusEffect (pas
+      // de durée à décompter) : purement positionnel, recalculé chaque frame via
+      // `dist` déjà connu ici. chillMoveMult réduit la vitesse ; chillAtkMult
+      // ALLONGE les durées de télégraphe/cooldown (même -10%, sens inverse).
+      const inChillAura  = this.playerModifiers.chillAura && dist <= 130;
+      const chillMoveMult = inChillAura ? 0.90 : 1;
+      const chillAtkMult  = inChillAura ? 1.10 : 1;
+      const moveSpeed = (def.moveSpeed ?? 90) * slowMult * chillMoveMult;
+
+      // ── Shock tick (talents Partie 2 — fulguris_spark_touch/overload) ────
+      // Contrairement au SHOCK subi par le joueur (immobilise, cf. Phase 0),
+      // le SHOCK posé sur un ENNEMI est une vulnérabilité temporaire (+dégâts
+      // subis, `strength` = %), pas un CC — décompte simple, aucun effet sur
+      // le déplacement. Lu par getShockVulnMult() au calcul de dégâts.
+      const shockEffect = ae.statusEffects.find(e => e.type === 'SHOCK');
+      if (shockEffect) {
+        shockEffect.duration -= dt;
+        if (shockEffect.duration <= 0) ae.statusEffects = ae.statusEffects.filter(e => e !== shockEffect);
+      }
 
       // ── STUN / FREEZE check ─────────────────────────────────
       // FREEZE immobilise exactement comme STUN (CombatSystem.enemyAttack empêche
@@ -1540,8 +2021,14 @@ export class GameScene extends Phaser.Scene {
         bleedEffect.duration -= dt;
         const bleedKey = `bleed_${instanceId}`;
         if (!this.cooldowns[bleedKey] || this.cooldowns[bleedKey] <= 0) {
-          ae.currentHp = Math.max(0, ae.currentHp - bleedEffect.strength);
+          if (!this.isInvincibleDummy(ae.enemyId)) {
+            ae.currentHp = Math.max(0, ae.currentHp - bleedEffect.strength);
+          }
           this.cooldowns[bleedKey] = 1.0;
+          // ÉCHO — tick DOT : ne passe PAS par applyDamageToEnemy (mutation directe
+          // de currentHp ci-dessus), donc pas instrumenté par elle. Total seulement
+          // (direct=false) : pas de coup compté, jamais de déplacement d'ancre.
+          this.registerEchoDamage(instanceId, bleedEffect.strength, false);
           if (ae.currentHp <= 0) {
             this.onEnemyKilled(ae, sprite);
             return;
@@ -1549,6 +2036,41 @@ export class GameScene extends Phaser.Scene {
         }
         if (bleedEffect.duration <= 0) {
           ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'BLEED');
+        }
+      }
+
+      // ── Burn tick (talents Partie 2 — ignis_dragon_soul BURN_DMG_PCT) ────
+      // BUG préexistant corrigé au passage : BURN est posé sur les ennemis
+      // depuis toujours (CombatSystem.playerSkill, sorts FEU) mais n'était
+      // JAMAIS tické nulle part dans ce fichier (contrairement à SLOW/STUN/
+      // FREEZE/BLEED juste au-dessus) — la durée ne décroissait jamais, aucun
+      // dégât n'était appliqué. Même minuteur 1s que BLEED.
+      const burnEffect = ae.statusEffects.find(e => e.type === 'BURN');
+      if (burnEffect && burnEffect.duration > 0) {
+        burnEffect.duration -= dt;
+        const burnKey = `burn_${instanceId}`;
+        if (!this.cooldowns[burnKey] || this.cooldowns[burnKey] <= 0) {
+          this.cooldowns[burnKey] = 1.0;
+          // DARK_BURN (ten_forbidden_flame) — la brûlure devient un dégât sombre :
+          // change l'élément affiché ET bénéficie de darkDmgMult comme toute autre
+          // source de dégâts sombres (cohérent avec le hook posé dans playerSkill).
+          const isDarkBurn = this.playerModifiers.darkBurn;
+          const darkMult = isDarkBurn ? this.playerModifiers.darkDmgMult : 1;
+          const tickDmg = Math.max(1, Math.round(
+            burnEffect.strength * (1 + this.playerModifiers.burnDmgPct / 100) * darkMult,
+          ));
+          if (!this.isInvincibleDummy(ae.enemyId)) {
+            ae.currentHp = Math.max(0, ae.currentHp - tickDmg);
+          }
+          this.registerEchoDamage(instanceId, tickDmg, false);
+          this.showDamageNumber(sprite.x, sprite.y - 12, tickDmg, false, isDarkBurn ? ElementType.DARK : ElementType.FIRE);
+          if (ae.currentHp <= 0) {
+            this.onEnemyKilled(ae, sprite);
+            return;
+          }
+        }
+        if (burnEffect.duration <= 0) {
+          ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'BURN');
         }
       }
 
@@ -1561,11 +2083,16 @@ export class GameScene extends Phaser.Scene {
           const magmaKey = `magma_${instanceId}`;
           if (!this.cooldowns[magmaKey] || this.cooldowns[magmaKey] <= 0) {
             const tickDmg = CombatSystem.getMagmaBurnTickDamage(this.gameState.player, magmaStacks);
-            ae.currentHp = Math.max(0, ae.currentHp - tickDmg);
+            if (!this.isInvincibleDummy(ae.enemyId)) {
+              ae.currentHp = Math.max(0, ae.currentHp - tickDmg);
+            }
             this.cooldowns[magmaKey] = 1.0;
+            // ÉCHO — tick DOT : même raison que le BLEED ci-dessus (mutation directe
+            // de currentHp, pas de passage par applyDamageToEnemy).
+            this.registerEchoDamage(instanceId, tickDmg, false);
             const omnivampPct = PassiveSystem.getOmnivampPct(this.gameState.player.equipment);
             if (omnivampPct > 0) {
-              PassiveSystem.applyHeal(this.gameState.player, Math.floor(tickDmg * omnivampPct / 100));
+              PassiveSystem.applyHeal(this.gameState.player, Math.floor(tickDmg * omnivampPct / 100), this.playerModifiers);
             }
             this.showDamageNumber(sprite.x, sprite.y - 12, tickDmg, false, ElementType.FIRE);
             if (ae.currentHp <= 0) {
@@ -1655,12 +2182,12 @@ export class GameScene extends Phaser.Scene {
           // Pick the best pattern given context
           const chosenPatternId = this.pickEnemyPattern(ae, dist, assignment);
           sprite.setData('aiState', 'telegraph');
-          sprite.setData('aiStateUntil', now + resolvePattern(ae.enemyId, chosenPatternId).telegraphMs);
+          sprite.setData('aiStateUntil', now + resolvePattern(ae.enemyId, chosenPatternId).telegraphMs * chillAtkMult);
           sprite.setData('aiPattern', chosenPatternId);
           sprite.setData('chargeTargetX', px);
           sprite.setData('chargeTargetY', py);
           body.setVelocity(0, 0);
-          this.startEnemyTelegraph(sprite, ae, chosenPatternId);
+          this.startEnemyTelegraph(sprite, ae, chosenPatternId, chillAtkMult);
         }
 
       // ── STATE: telegraph ─────────────────────────────────────
@@ -1691,7 +2218,7 @@ export class GameScene extends Phaser.Scene {
         if (now >= aiStateUntil) {
           sprite.setData('aiState', 'cooldown');
           const cfg = resolvePattern(ae.enemyId, (sprite.getData('aiPattern') as AttackPatternId | null) ?? 'melee_basic');
-          sprite.setData('aiStateUntil', now + cfg.cooldownMs);
+          sprite.setData('aiStateUntil', now + cfg.cooldownMs * chillAtkMult);
         }
 
       // ── STATE: cooldown ───────────────────────────────────────
@@ -1797,9 +2324,13 @@ export class GameScene extends Phaser.Scene {
     sprite: Phaser.Physics.Arcade.Sprite,
     ae: ActiveEnemy,
     patternId: AttackPatternId,
+    durationMult = 1,
   ) {
     const cfg = resolvePattern(ae.enemyId, patternId);
-    const duration = cfg.telegraphMs;
+    // CHILL_AURA (durationMult > 1 dans le rayon) : le tell visuel doit durer aussi
+    // longtemps que le FSM attend réellement avant d'exécuter — sinon l'avertissement
+    // s'arrête avant le coup, ce qui va à l'encontre de l'effet défensif du talent.
+    const duration = cfg.telegraphMs * durationMult;
     const tint = cfg.telegraphTint;
     // Real sprites rest at a scale far from 1.0 (upscaled so their padded native frame
     // reads at a legible size — see fitSpriteToContent). These telegraph "juice" tweens
@@ -2023,13 +2554,13 @@ export class GameScene extends Phaser.Scene {
             const d = Phaser.Math.Distance.Between(sprite.x, sprite.y, this.player.x, this.player.y);
             if (d < 45) {
               chargeHit = true;
-              this.applyEnemyMeleeDamage(ae, cfg.damageMult ?? 1.5);
+              // Knockback renforcé (280 vs 140 standard) passé à applyEnemyMeleeDamage
+              // — un setVelocity() direct sur le joueur ici serait écrasé dès le
+              // prochain handleMovement() (cf. applyKnockbackToPlayer, l'overlay
+              // knockbackX/Y est le SEUL mécanisme qui survit à la frame suivante).
+              this.applyEnemyMeleeDamage(ae, cfg.damageMult ?? 1.5, 280);
               // Camera shake on charge hit
               this.cameras.main.shake(130, 0.008);
-              // Knockback
-              const kb = this.player.body as Phaser.Physics.Arcade.Body;
-              const kbAngle = Math.atan2(this.player.y - sprite.y, this.player.x - sprite.x);
-              kb.setVelocity(Math.cos(kbAngle) * 280, Math.sin(kbAngle) * 280);
               body.setVelocity(0, 0);
             }
           },
@@ -2221,8 +2752,11 @@ export class GameScene extends Phaser.Scene {
       const dist = Phaser.Math.Distance.Between(h.sprite.x, h.sprite.y, px, py);
       if (dist < 20) {
         h.hit = true;
+        // Position capturée AVANT destroy() — knockback (talents Partie 2) a besoin
+        // d'une source, plus fiable que de relire h.sprite.x/y après destruction.
+        const impactX = h.sprite.x, impactY = h.sprite.y;
         // Impact VFX
-        const imp = this.add.circle(h.sprite.x, h.sprite.y, 14, 0x9933cc, 0.9).setDepth(14);
+        const imp = this.add.circle(impactX, impactY, 14, 0x9933cc, 0.9).setDepth(14);
         this.tweens.add({
           targets: imp, scaleX: 3, scaleY: 3, alpha: 0, duration: 250,
           onComplete: () => imp.destroy(),
@@ -2231,7 +2765,7 @@ export class GameScene extends Phaser.Scene {
         h.halo.destroy();
         this._homingProjectiles.splice(i, 1);
         // Apply damage
-        this.applyDamageToPlayer(h.damage);
+        this.applyDamageToPlayer(h.damage, impactX, impactY, h.element);
       }
     }
   }
@@ -2278,6 +2812,7 @@ export class GameScene extends Phaser.Scene {
       destroyAt: this.time.now + lifetime,
       damage,
       hit: false,
+      element,
     });
   }
 
@@ -2381,6 +2916,26 @@ export class GameScene extends Phaser.Scene {
     const equipment = this.gameState.player.equipment;
     let dmg = rawDamage;
 
+    // MAGMA_GUARD (ignis_magma_armor) — absorbe ENTIÈREMENT 1 coup par combat,
+    // avant tout le reste (bouclier total, pas un pourcentage à empiler).
+    if (this.playerModifiers.magmaGuard && !this.magmaGuardUsedThisCombat && dmg > 0) {
+      this.magmaGuardUsedThisCombat = true;
+      this.cameras.main.flash(150, 255, 100, 0);
+      this.events.emit('show_notification', 'Garde de Magma — coup absorbé !');
+      dmg = 0;
+    }
+
+    // Bouclier temporisé (GUARD_FINISHER/LAST_BASTION, cf. grantTimedShield) —
+    // absorbe avant TOUT le reste (y compris LOW_HP_SHIELD) : c'est le plus frais
+    // des deux, et il expire de toute façon tout seul si non consommé — autant
+    // qu'il serve en premier.
+    if (this.time.now > this.timedShieldUntil) this.timedShieldHp = 0;
+    if (this.timedShieldHp > 0) {
+      const absorbed = Math.min(this.timedShieldHp, dmg);
+      this.timedShieldHp -= absorbed;
+      dmg -= absorbed;
+    }
+
     // LOW_HP_SHIELD_30_PCT — absorbe les dégâts en premier, avant tout le reste.
     if (this.playerShieldHp > 0) {
       const absorbed = Math.min(this.playerShieldHp, dmg);
@@ -2403,6 +2958,15 @@ export class GameScene extends Phaser.Scene {
     const reductionPct = PassiveSystem.getDamageReductionPct(equipment);
     dmg = reductionPct > 0 ? Math.round(dmg * (1 - reductionPct / 100)) : dmg;
 
+    // LOW_HP_DEF_PCT — même canal que DAMAGE_REDUCTION_PCT ci-dessus (réduction
+    // de dégâts, pas une vraie modification de la stat DEF), cf. getLowHpDefReductionPct.
+    const lowHpDefPct = this.getLowHpDefReductionPct();
+    dmg = lowHpDefPct > 0 ? Math.round(dmg * (1 - lowHpDefPct / 100)) : dmg;
+
+    // AQUATIC_DEF_PCT — même canal, conditionnel à la zone au lieu des HP courants.
+    const aquaticDefPct = this.getAquaticDefReductionPct();
+    dmg = aquaticDefPct > 0 ? Math.round(dmg * (1 - aquaticDefPct / 100)) : dmg;
+
     // DAMAGE_DEFERRAL_50_PCT (hidden_runebound_amulet) — n'encaisse immédiatement
     // que 50% ; les 50% restants sont étalés sur 5 ticks 1s (tickDeferredDamage).
     if (PassiveSystem.hasDamageDeferral(equipment) && dmg > 0) {
@@ -2421,12 +2985,45 @@ export class GameScene extends Phaser.Scene {
       const resistChance = PassiveSystem.getDeathResistChance(equipment);
       if (resistChance > 0 && Math.random() < resistChance) {
         dmg = Math.max(0, hpBefore - 1); // laisse le joueur à 1 HP pile
+      } else if (this.playerModifiers.preserved && !this.preservedUsedThisZone) {
+        // PRESERVED (glacius_deep_patience) — sauvetage GARANTI (pas une chance),
+        // 1 fois par ZONE, contrairement au death-resist d'objet ci-dessus (par coup,
+        // probabiliste). Fallback uniquement si l'objet n'a pas déjà sauvé le joueur.
+        this.preservedUsedThisZone = true;
+        dmg = Math.max(0, hpBefore - 1);
+        this.iframeUntil = this.time.now + 2000;
+        this.cameras.main.flash(220, 150, 220, 255);
+        this.events.emit('show_notification', 'Patience de la Montagne — vous survivez !');
       }
     }
 
     this.maybeTriggerLowHpShield(hpBefore - dmg);
     this.maybeTriggerFrozenSanctuary(hpBefore - dmg);
+    this.maybeTriggerLastBastion(hpBefore - dmg);
     return dmg;
+  }
+
+  /** Pool générique de bouclier temporisé (GUARD_FINISHER, LAST_BASTION) — le
+   *  plus généreux gagne, jamais cumulatif, sur les DEUX axes indépendamment
+   *  (HP ET expiration) : un Math.max sur un seul des deux aurait pu laisser une
+   *  source plus généreuse en HP raccourcir la durée d'une source antérieure
+   *  encore active (bug trouvé en review — GUARD_FINISHER écrasait Until sans
+   *  Math.max, pouvant couper court à un LAST_BASTION en cours). */
+  private grantTimedShield(hpAmount: number, durationMs: number): void {
+    this.timedShieldHp = Math.max(this.timedShieldHp, hpAmount);
+    this.timedShieldUntil = Math.max(this.timedShieldUntil, this.time.now + durationMs);
+  }
+
+  /** LAST_BASTION (glacius_last_bastion) — 1 fois par combat : passer sous 30%
+   *  HP accorde un bouclier temporisé de 25% des HP max pendant 5s. */
+  private maybeTriggerLastBastion(hpAfter: number): void {
+    if (!this.playerModifiers.lastBastion || this.lastBastionUsedThisCombat) return;
+    const maxHp = this.gameState.player.stats.maxHp;
+    if (maxHp <= 0 || hpAfter / maxHp >= 0.30) return;
+    this.lastBastionUsedThisCombat = true;
+    this.grantTimedShield(Math.round(maxHp * 0.25), 5000);
+    this.cameras.main.flash(200, 150, 220, 255);
+    this.events.emit('show_notification', 'Dernier Bastion — bouclier !');
   }
 
   /** FROZEN_SANCTUARY_30_PCT — déclenche la stase (invulnérabilité + soin 10%/s
@@ -2456,7 +3053,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** Apply melee damage from an enemy to the player, with guard/windup checks. */
-  private applyEnemyMeleeDamage(ae: ActiveEnemy, damageMult: number) {
+  /** `knockbackForce` optionnel : certains patterns (ex. charge) veulent un
+   *  recul plus fort que le standard PLAYER_KNOCKBACK_FORCE. */
+  private applyEnemyMeleeDamage(ae: ActiveEnemy, damageMult: number, knockbackForce = GameScene.PLAYER_KNOCKBACK_FORCE) {
     if (this.inWindup && this.playerModifiers.windupArmor) return;
     if (damageMult <= 0) return; // summon pattern has damageMult 0
 
@@ -2464,7 +3063,7 @@ export class GameScene extends Phaser.Scene {
     if (this.time.now < this.frozenSanctuaryUntil) return;
     // TRUE_DODGE_25_PCT (hidden_voidwalker_boots) — jet d'esquive INDÉPENDANT du
     // DODGE_PCT (loot rolls), avant tout calcul de dégâts (cf. spec : jet séparé).
-    if (PassiveSystem.rollTrueDodge(this.gameState.player.equipment)) {
+    if (PassiveSystem.rollTrueDodge(this.gameState.player.equipment) || this.rollAutoDodge()) {
       this.showDodgeText(this.player.x, this.player.y - 20);
       return;
     }
@@ -2497,6 +3096,28 @@ export class GameScene extends Phaser.Scene {
       this.applyDamageToEnemy(ae.instanceId, Math.round(finalDmg * reflectPct / 100));
     }
 
+    // RETALIATION_DEF_PCT (terra_shale_skin) — tout coup de mêlée qui ATTEINT le
+    // joueur (esquive/stun déjà filtrés plus haut, return anticipés) inflige X% de
+    // la DEF finale à l'attaquant en dégâts de terre — indépendant des dégâts
+    // réellement subis (contrairement à MAGIC_REFLECT_25_PCT ci-dessus, qui reflète
+    // un % du COUP ; ceci reflète un % de la DEF, même si le coup a été réduit à 0).
+    const retaliationPct = this.playerModifiers.retaliationDefPct;
+    // Garde activeEnemies.has() : MAGIC_REFLECT_25_PCT juste au-dessus peut avoir
+    // déjà tué ae (sprite disabled mais pas encore détruit, cf. onEnemyKilled) —
+    // sans ça, un nombre de dégâts/particules fantômes apparaît sur un cadavre.
+    if (retaliationPct > 0 && this.activeEnemies.has(ae.instanceId)) {
+      const def = StatsSystem.computeAll(this.gameState.player).def;
+      const retalDmg = Math.max(1, Math.round(def * retaliationPct / 100));
+      const attackerSprite = this.findEnemySpriteByInstanceId(ae.instanceId);
+      if (attackerSprite) {
+        this.showDamageNumber(attackerSprite.x, attackerSprite.y - 20, retalDmg, false, ElementType.EARTH);
+        this.spawnHitParticles(attackerSprite.x, attackerSprite.y, ElementType.EARTH);
+      }
+      this.applyDamageToEnemy(ae.instanceId, retalDmg, false);
+    }
+
+    this.rollStaticRetort();
+
     this.gameState.player.stats.hp = Math.max(0, Math.min(
       this.gameState.player.stats.maxHp, hpBeforeHit - finalDmg,
     ));
@@ -2509,6 +3130,12 @@ export class GameScene extends Phaser.Scene {
     if (finalDmg > 0) {
       this.showDamageNumber(this.player.x, this.player.y - 20, finalDmg, false, undefined, true);
       this.cameras.main.shake(100, 0.005);
+      // Knockback + statut subis (talents Partie 2) — pas sur le coup qui tue,
+      // le joueur n'a plus la main sur son mouvement pendant la séquence de mort.
+      if (!isKill) {
+        this.applyKnockbackToPlayer(ae.x, ae.y, knockbackForce);
+        this.rollPlayerStatusOnHit(ae.element, finalDmg);
+      }
     }
     this.events.emit('player_update', this.gameState.player);
     if (isKill) this.onPlayerDeath();
@@ -2532,15 +3159,135 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  /** Apply direct damage to the player (from homing projectile, AoE, etc.). */
-  private applyDamageToPlayer(damage: number) {
+  /**
+   * KNOCKBACK_RES_PCT/UNSHAKABLE (talents Partie 2 — terra_mountain_patience,
+   * terra_unshaking_foundation) — pousse le JOUEUR loin de (sourceX, sourceY)
+   * avec la force donnée (px/s), réduite/annulée par les talents de résistance.
+   * Overlay décroissant (knockbackX/Y, cf. handleMovement) — jamais un
+   * setVelocity direct comme applyKnockback() (la version ennemi) : rien
+   * d'autre ne pilote la vélocité ennemie au même tick, mais handleMovement()
+   * écraserait un setVelocity direct sur le joueur dès la frame suivante.
+   */
+  /**
+   * Statuts subis par le joueur (talents Partie 2) — même sémantique que côté
+   * ennemi (SLOW = fraction de vitesse retirée sur handleMovement, STUN/FREEZE/
+   * SHOCK = immobilise, BURN = tick 1×/s via this.cooldowns['player_burn'],
+   * même gate 1s que le motif BLEED existant côté ennemi). Appelé chaque frame
+   * depuis update().
+   */
+  private tickPlayerStatusEffects(dt: number): void {
+    const slow = this.playerStatusEffects.find(e => e.type === 'SLOW');
+    if (slow) {
+      slow.duration -= dt;
+      if (slow.duration <= 0) this.playerStatusEffects = this.playerStatusEffects.filter(e => e !== slow);
+    }
+    this.playerSlowMult = slow && slow.duration > 0 ? Math.max(0, 1 - slow.strength) : 1;
+
+    const immobilize = this.playerStatusEffects.find(e => e.type === 'STUN' || e.type === 'FREEZE' || e.type === 'SHOCK');
+    if (immobilize) {
+      immobilize.duration -= dt;
+      if (immobilize.duration <= 0) this.playerStatusEffects = this.playerStatusEffects.filter(e => e !== immobilize);
+    }
+    this.playerImmobilized = !!immobilize && immobilize.duration > 0;
+
+    const burn = this.playerStatusEffects.find(e => e.type === 'BURN');
+    if (burn && burn.duration > 0) {
+      burn.duration -= dt;
+      const burnKey = 'player_burn';
+      if ((!this.cooldowns[burnKey] || this.cooldowns[burnKey] <= 0) && this.gameState.player.stats.hp > 0) {
+        this.cooldowns[burnKey] = 1.0;
+        const dmg = Math.round(burn.strength);
+        if (dmg > 0) {
+          this.gameState.player.stats.hp = Math.max(0, this.gameState.player.stats.hp - dmg);
+          this.showDamageNumber(this.player.x, this.player.y - 20, dmg, false, ElementType.FIRE, true);
+          this.events.emit('player_update', this.gameState.player);
+          if (this.gameState.player.stats.hp <= 0) this.onPlayerDeath();
+        }
+      }
+      if (burn.duration <= 0) this.playerStatusEffects = this.playerStatusEffects.filter(e => e.type !== 'BURN');
+    }
+
+    this.updatePlayerStatusTint();
+  }
+
+  private static readonly PLAYER_STATUS_ON_HIT_CHANCE = 0.12; // 12%, milieu de la fourchette validée 10-15%
+  // Élément de l'ennemi ATTAQUANT → statut infligé au joueur. Seuls FIRE/ICE/
+  // LIGHTNING sont mappés (validé avec le créateur) — les autres éléments
+  // n'infligent aucun statut sur un coup de mêlée basique.
+  private static readonly PLAYER_STATUS_ON_HIT_MAP: Partial<Record<ElementType, StatusEffect['type']>> = {
+    [ElementType.FIRE]: 'BURN',
+    [ElementType.ICE]: 'SLOW',
+    [ElementType.LIGHTNING]: 'SHOCK',
+  };
+
+  /**
+   * Jet de statut sur un coup ennemi (talents Partie 2). Prend l'élément +
+   * les dégâts du coup plutôt qu'un `ActiveEnemy` directement : les 3 canaux
+   * de dégâts subis (mêlée directe, projectile droit, projectile homing)
+   * n'ont pas tous une référence `ae` vivante au moment de l'impact (un
+   * projectile qui touche APRÈS la mort de sa source, par ex.) — l'élément
+   * et les dégâts, eux, sont toujours connus. Jamais appelé depuis les
+   * DOT/passifs (un statut ne doit pas en déclencher un autre en boucle).
+   */
+  private rollPlayerStatusOnHit(element: ElementType, hitDamage: number): void {
+    const type = GameScene.PLAYER_STATUS_ON_HIT_MAP[element];
+    if (!type) return;
+    // BURN_BLEED_IMMUNITY (abyssal_soul_of_the_deep) — filtre BURN à la source,
+    // jamais posé du tout plutôt que posé-puis-ignoré au tick.
+    if (type === 'BURN' && this.playerModifiers.burnBleedImmunity) return;
+    // debugForceStatusProc (touche Y) : 100% au lieu de 12%, pour valider en
+    // quelques coups plutôt qu'en dizaines que le mécanisme se déclenche bien.
+    if (!this.debugForceStatusProc && Math.random() >= GameScene.PLAYER_STATUS_ON_HIT_CHANCE) return;
+    // STATUS_RES_DURATION_PCT (glacius_unmelting_memory, plafonné à 60 dans
+    // TalentSystem) réduit la durée — jamais la chance d'être touché.
+    const baseDurationS = type === 'BURN' ? 2 : type === 'SLOW' ? 1.75 : 1.5; // SHOCK, le plus dur, le plus court
+    const durationS = baseDurationS * (1 - this.playerModifiers.statusResDurationPct / 100);
+    if (durationS <= 0) return;
+    this.playerStatusEffects = this.playerStatusEffects.filter(e => e.type !== type);
+    this.playerStatusEffects.push({
+      type,
+      duration: durationS,
+      // BURN : fraction du coup qui l'a posé plutôt que de l'ATK brut de la
+      // source — évite un paramètre supplémentaire à faire voyager depuis les
+      // 3 canaux d'appel, et reste cohérent ("la brûlure est proportionnelle
+      // au coup qui l'a causée").
+      strength: type === 'BURN' ? Math.max(1, Math.round(hitDamage * 0.4))
+        : type === 'SLOW' ? 0.35
+        : 1, // SHOCK : immobilise, strength non lue
+    });
+    this.showPlayerStatusAppliedText(type);
+  }
+
+  /** Force par défaut (px/s) du knockback subi par le joueur sur un coup de
+   *  mêlée ennemi standard — modeste, un "recul" plutôt qu'une projection. */
+  private static readonly PLAYER_KNOCKBACK_FORCE = 140;
+
+  private applyKnockbackToPlayer(sourceX: number, sourceY: number, force: number): void {
+    if (this.playerModifiers.unshakable) return;
+    const reduced = force * (1 - this.playerModifiers.knockbackResPct / 100);
+    if (reduced <= 0) return;
+    const angle = Math.atan2(this.player.y - sourceY, this.player.x - sourceX);
+    this.knockbackX = Math.cos(angle) * reduced;
+    this.knockbackY = Math.sin(angle) * reduced;
+  }
+
+  /** Apply direct damage to the player (from homing projectile, AoE, etc.).
+   *  `sourceX/sourceY` optionnels : position d'origine du coup pour le
+   *  knockback (talents Partie 2) — absent pour les appelants qui n'ont pas
+   *  de source directionnelle claire, auquel cas aucun knockback n'est appliqué.
+   *  `sourceElement` optionnel : élément de la source pour le jet de statut
+   *  subi (talents Partie 2) — absent pour les dégâts sans élément (AoE
+   *  générique, dégâts scriptés, etc.). */
+  private applyDamageToPlayer(damage: number, sourceX?: number, sourceY?: number, sourceElement?: ElementType) {
     if (damage <= 0) return;
     if (this.isDashing) return;
     if (this.time.now < this.iframeUntil) return; // iframes post-hit
     // FROZEN_SANCTUARY_30_PCT — invulnérabilité totale pendant la stase.
     if (this.time.now < this.frozenSanctuaryUntil) return;
     // TRUE_DODGE_25_PCT (hidden_voidwalker_boots) — jet indépendant du DODGE_PCT.
-    if (PassiveSystem.rollTrueDodge(this.gameState.player.equipment)) {
+    // AUTO_DODGE partage le MÊME cooldown que le site mêlée (applyEnemyMeleeDamage) :
+    // "une attaque toutes les 5s", pas une par canal.
+    if (PassiveSystem.rollTrueDodge(this.gameState.player.equipment) || this.rollAutoDodge()) {
       this.showDodgeText(this.player.x, this.player.y - 20);
       return;
     }
@@ -2552,12 +3299,22 @@ export class GameScene extends Phaser.Scene {
     }
 
     damage = this.mitigatePlayerDamage(damage, this.gameState.player.stats.hp);
+    this.rollStaticRetort();
     this.gameState.player.stats.hp = Math.max(0, this.gameState.player.stats.hp - damage);
     this.iframeUntil = this.time.now + 800;
     this.showDamageNumber(this.player.x, this.player.y - 20, damage, false, undefined, true);
     this.applyPlayerHitFx();
+    const isKill = this.gameState.player.stats.hp <= 0;
+    // damage > 0 : un coup entièrement absorbé par un bouclier (LOW_HP_SHIELD_30_PCT/
+    // OVERHEAL_SHIELD_50_PCT ramènent damage à 0 via mitigatePlayerDamage ci-dessus)
+    // ne doit ni repousser ni poser de statut — même garde que applyEnemyMeleeDamage
+    // (if (finalDmg > 0)), qui lui l'avait déjà correctement.
+    if (!isKill && damage > 0 && sourceX !== undefined && sourceY !== undefined) {
+      this.applyKnockbackToPlayer(sourceX, sourceY, GameScene.PLAYER_KNOCKBACK_FORCE);
+    }
+    if (!isKill && damage > 0 && sourceElement !== undefined) this.rollPlayerStatusOnHit(sourceElement, damage);
     this.events.emit('player_update', this.gameState.player);
-    if (this.gameState.player.stats.hp <= 0) this.onPlayerDeath();
+    if (isKill) this.onPlayerDeath();
   }
 
   /** Update HP bar and crown positions for a given enemy. */
@@ -2593,10 +3350,243 @@ export class GameScene extends Phaser.Scene {
     body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
   }
 
-  private applyDamageToEnemy(instanceId: string, damage: number) {
+  /** Mannequin de Fer (dev tool, LOOT_STAT_ROLLS.md §10 bis) : seul ID invincible —
+   *  les 3 autres mannequins (straw/gilded/arsenal) DOIVENT mourir pour tester le
+   *  loot-roll / le re-tirage d'arme, donc PAS de `startsWith('training_dummy')`. */
+  private isInvincibleDummy(enemyId: string): boolean {
+    return enemyId === 'training_dummy_iron';
+  }
+
+  // ── Talents Partie 1 — statut-sur-coup + synergies (Phase 1) ────────────
+
+  /** Nombre d'ennemis actuellement en feu (BURN actif) — ATK_PER_BURNING_PCT
+   *  (ignis_volcanic_rage), BURNING_PACK_DMG_PCT (ignis_eruption). */
+  private countBurningEnemies(): number {
+    let count = 0;
+    for (const ae of this.activeEnemies.values()) {
+      if (ae.statusEffects.some(e => e.type === 'BURN' && e.duration > 0)) count++;
+    }
+    return count;
+  }
+
+  /** Multiplicateur combiné ATK_PER_BURNING_PCT (continu, par ennemi en feu)
+   *  + BURNING_PACK_DMG_PCT (palier binaire, 3+ ennemis en feu simultanément). */
+  private getBurningSynergyMult(): number {
+    const burning = this.countBurningEnemies();
+    let mult = 1 + (this.playerModifiers.atkPerBurningPct * burning) / 100;
+    if (burning >= 3) mult *= 1 + this.playerModifiers.burningPackDmgPct / 100;
+    return mult;
+  }
+
+  /** AUTO_DODGE (zephyr_eye_of_storm) — esquive automatique d'UNE attaque toutes
+   *  les 5s (cooldown propre, indépendant de TRUE_DODGE_25_PCT/DODGE_PCT). Pose
+   *  le cooldown ET retourne true en un seul appel — appelant doit `return` si
+   *  true (même contrat que rollTrueDodge, testé juste avant à chaque site). */
+  private rollAutoDodge(): boolean {
+    if (!this.playerModifiers.autoDodge) return false;
+    if (this.time.now < this.autoDodgeCooldownUntil) return false;
+    this.autoDodgeCooldownUntil = this.time.now + 5000;
+    return true;
+  }
+
+  /** STATIC_RETORT_PCT (fulguris_static_retort) — chance, en subissant un coup,
+   *  d'émettre une nova électrique (r80 autour du joueur, 50% Magic ATK, applique
+   *  SHOCK) — nœud resté mort après la Phase 1 (ARC_CHANCE_PCT câblé, celui-ci
+   *  oublié — trouvé au balayage final du chantier). Appelé depuis les DEUX points
+   *  de dégât subi (mêlée + tout le reste), même précédent qu'AUTO_DODGE ci-dessus. */
+  private rollStaticRetort(): void {
+    if (this.playerModifiers.staticRetortPct <= 0) return;
+    if (this.time.now < this.staticRetortCooldownUntil) return;
+    if (Math.random() >= this.playerModifiers.staticRetortPct / 100) return;
+    this.staticRetortCooldownUntil = this.time.now + 1000;
+    const matk = StatsSystem.computeAll(this.gameState.player).matk;
+    const dmg = Math.max(1, Math.round(matk * 0.50));
+    const px = this.player.x, py = this.player.y;
+    for (const go of this.enemies.getChildren()) {
+      const sprite = go as Phaser.Physics.Arcade.Sprite;
+      if (!sprite.active) continue;
+      if (Phaser.Math.Distance.Between(px, py, sprite.x, sprite.y) > 80) continue;
+      const ae = this.activeEnemies.get(sprite.name);
+      if (!ae || ae.currentHp <= 0) continue;
+      this.showDamageNumber(sprite.x, sprite.y - 20, dmg, false, ElementType.LIGHTNING);
+      this.spawnHitParticles(sprite.x, sprite.y, ElementType.LIGHTNING);
+      this.applyDamageToEnemy(sprite.name, dmg, false);
+      if (ae.currentHp <= 0) continue; // tué par la nova — pas de statut sur un cadavre
+      // Même convention que rollOnHitStatuses (SHOCK = vulnérabilité +10%/3s, pas un CC).
+      ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'SHOCK');
+      ae.statusEffects.push({ type: 'SHOCK', duration: 3, strength: 10 });
+    }
+  }
+
+  /** LOW_HP_ATK_PCT — état RUNTIME (HP courants), volontairement absent de
+   *  getStatContribs (cf. commentaire de TalentSystem.getStatContribs) : lu ici,
+   *  au moment du dégât, plutôt qu'agrégé en amont dans les stats équipement.
+   *  Seuil 35%, cf. le seul nœud source (docstring lowHpAtkMult dans TalentSystem). */
+  private getLowHpAtkMult(): number {
+    const p = this.gameState.player.stats;
+    if (p.maxHp <= 0 || p.hp / p.maxHp >= 0.35) return 1;
+    return this.playerModifiers.lowHpAtkMult;
+  }
+
+  /** AQUATIC_DEF_PCT (abyssal_coral_armor) — +X% DEF dans les zones aquatiques
+   *  (Abyssmar = WATER, Glaciem = ICE). Même modèle que LOW_HP_DEF_PCT (réduction
+   *  de dégâts, pas une vraie modification de DEF) — pas de nouveau champ requis,
+   *  la zone est déjà typée par élément (ZONE_MAP), cf. commentaire du plan d'origine. */
+  private getAquaticDefReductionPct(): number {
+    if (this.playerModifiers.aquaticDefPct <= 0) return 0;
+    const zoneElement = ZONE_MAP[this.gameState.player.currentZone]?.element;
+    const isAquatic = zoneElement === ElementType.WATER || zoneElement === ElementType.ICE;
+    return isAquatic ? this.playerModifiers.aquaticDefPct : 0;
+  }
+
+  /** LOW_HP_DEF_PCT — même famille que getLowHpAtkMult ci-dessus, mais un seuil
+   *  DIFFÉRENT (50%, cf. docstring lowHpDefPct — deux nœuds sources à 35%/50%
+   *  agrégés en un seul nombre additif ; 50% retenu car c'est le seuil du nœud
+   *  DEF-only, ignis_heat_shield — sous-délivrer légèrement pour le nœud à 35%
+   *  plutôt que sur-délivrer pour celui à 50%). Traité comme une réduction de
+   *  dégâts SUBIS (même modèle que DAMAGE_REDUCTION_PCT), pas une vraie
+   *  modification de la stat DEF — évite de raisonner sur 100/(100+def) pour un
+   *  bonus conditionnel/temporaire. Retourne 0 si inactif (pas un multiplicateur). */
+  private getLowHpDefReductionPct(): number {
+    const p = this.gameState.player.stats;
+    if (p.maxHp <= 0 || p.hp / p.maxHp >= 0.50) return 0;
+    return this.playerModifiers.lowHpDefPct;
+  }
+
+  /** STUN_DMG_PCT (terra_crushing_weight) — vrai sous STUN ou FREEZE actifs
+   *  ("contrôle dur" au sens de la description du talent — un SLOW, même
+   *  celui posé par un stagger de boss, n'est volontairement PAS visé ici). */
+  private getStunDmgMult(ae: ActiveEnemy): number {
+    const hardCC = ae.statusEffects.some(e => (e.type === 'STUN' || e.type === 'FREEZE') && e.duration > 0);
+    return hardCC ? 1 + this.playerModifiers.stunDmgPct / 100 : 1;
+  }
+
+  /** SHOCK_CHANCE_PCT (fulguris_spark_touch/overload) — vulnérabilité posée
+   *  sur un ennemi (tick de durée dans tickEnemyAI), lue ici au moment des
+   *  dégâts. */
+  private getShockVulnMult(ae: ActiveEnemy): number {
+    const shock = ae.statusEffects.find(e => e.type === 'SHOCK' && e.duration > 0);
+    return shock ? 1 + shock.strength / 100 : 1;
+  }
+
+  /**
+   * Statuts sur coup (talents Partie 1) — BURN_CHANCE_PCT, SHOCK_CHANCE_PCT,
+   * SLOW_ON_HIT, FREEZE_CHANCE_PCT (sorts uniquement, cf. abyssal_ice_veil :
+   * « +15% de chance de FREEZE sur les sorts »). Appelé une fois par coup
+   * DIRECT depuis les 3 points de contact (mêlée, flèche, sort).
+   */
+  private rollOnHitStatuses(ae: ActiveEnemy, hitDamage: number, isSpell: boolean): void {
+    const mods = this.playerModifiers;
+
+    // BURN — ignis_ember_touch/volcanic_rage. strength dérivée du coup qui l'a
+    // posé, même convention que le BURN subi par le joueur (Phase 0).
+    if (mods.burnChancePct > 0 && Math.random() < mods.burnChancePct / 100) {
+      ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'BURN');
+      ae.statusEffects.push({ type: 'BURN', duration: 3, strength: Math.max(1, Math.round(hitDamage * 0.3)) });
+    }
+
+    // SHOCK — fulguris_spark_touch/overload. Vulnérabilité +10%/3s (PAS un CC,
+    // contrairement au SHOCK subi par le joueur en Phase 0) — valeur fixe du
+    // talent, conforme à sa description ("+10% de dégâts subis pendant 3s").
+    if (mods.shockChancePct > 0 && Math.random() < mods.shockChancePct / 100) {
+      ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'SHOCK');
+      ae.statusEffects.push({ type: 'SHOCK', duration: 3, strength: 10 });
+    }
+
+    // SLOW_ON_HIT — abyssal_frostbite. Flag booléen : s'applique à CHAQUE
+    // coup, pas un jet de chance (la description n'a aucun %). Ne remplace un
+    // SLOW déjà présent QUE s'il est plus faible — sinon ce coup écraserait le
+    // SLOW de stagger d'un boss (triggerRealStagger, strength 0.6) par ce
+    // 0.20 bien plus faible, sur le coup même qui vient de déclencher le
+    // stagger (bug trouvé en review).
+    const existingSlow = ae.statusEffects.find(e => e.type === 'SLOW');
+    if (mods.slowOnHit && (!existingSlow || existingSlow.strength <= 0.20)) {
+      ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'SLOW');
+      ae.statusEffects.push({ type: 'SLOW', duration: 2, strength: 0.20 });
+    }
+
+    // FREEZE_CHANCE_PCT — abyssal_ice_veil. "Sur les sorts" uniquement.
+    if (isSpell && mods.freezeChancePct > 0 && Math.random() < mods.freezeChancePct / 100) {
+      ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'FREEZE');
+      ae.statusEffects.push({ type: 'FREEZE', duration: 2, strength: 1 });
+    }
+  }
+
+  /** ARC_CHANCE_PCT (fulguris_arc_conduit) — 8% de chance qu'un coup
+   *  propage 40% de ses dégâts à l'ennemi le plus proche de la CIBLE (hors
+   *  elle-même), en foudre. Pas un statut : dégâts directs (direct=false,
+   *  même convention que les autres procs passifs — ne compte pas comme un
+   *  coup pour l'Écho, ne déplace pas son ancre). */
+  private rollArcChain(ae: ActiveEnemy, hitDamage: number, isCrit = false): void {
+    // CRIT_ARC (fulguris_directed_spark) — "chaque coup critique déclenche un arc
+    // GARANTI (60% des dégâts)" : nœud resté mort après la Phase 1 (ARC_CHANCE_PCT
+    // câblé, CRIT_ARC oublié — trouvé en review lors du balayage final du chantier).
+    // Priorité sur le jet normal plutôt que cumul : un seul arc par coup, jamais
+    // les deux déclencheurs sur le même hit.
+    const guaranteed = isCrit && this.playerModifiers.critArc;
+    if (!guaranteed) {
+      if (this.playerModifiers.arcChancePct <= 0) return;
+      if (Math.random() >= this.playerModifiers.arcChancePct / 100) return;
+    }
+    let nearest: ActiveEnemy | null = null;
+    let nearestDist = Infinity;
+    for (const other of this.activeEnemies.values()) {
+      if (other.instanceId === ae.instanceId) continue;
+      const d = Phaser.Math.Distance.Between(ae.x, ae.y, other.x, other.y);
+      if (d < nearestDist) { nearestDist = d; nearest = other; }
+    }
+    if (!nearest || nearestDist > 200) return; // portée d'arc raisonnable
+    const arcDmg = Math.max(1, Math.round(hitDamage * (guaranteed ? 0.6 : 0.4)));
+    this.applyDamageToEnemy(nearest.instanceId, arcDmg, false);
+    const sprite = this.findEnemySpriteByInstanceId(nearest.instanceId);
+    if (sprite) {
+      this.showDamageNumber(sprite.x, sprite.y - 20, arcDmg, false, ElementType.LIGHTNING);
+      this.spawnHitParticles(sprite.x, sprite.y, ElementType.LIGHTNING);
+    }
+  }
+
+  /** PHANTOM_STRIKE_PCT (fulguris_directed_spark family) — chance qu'un coup
+   *  direct soit doublé d'un coup fantôme identique, instantané, sans consommer
+   *  de cooldown (juste une deuxième instance de dégâts sur la même cible). */
+  private rollPhantomStrike(ae: ActiveEnemy, hitDamage: number, element: ElementType): void {
+    if (this.playerModifiers.phantomStrikePct <= 0) return;
+    if (Math.random() >= this.playerModifiers.phantomStrikePct / 100) return;
+    if (ae.currentHp <= 0) return;
+    const sprite = this.findEnemySpriteByInstanceId(ae.instanceId);
+    if (sprite) {
+      this.showDamageNumber(sprite.x, sprite.y - 20, hitDamage, false, element);
+      this.spawnHitParticles(sprite.x, sprite.y, element);
+    }
+    this.applyDamageToEnemy(ae.instanceId, hitDamage, false);
+  }
+
+  /** Point d'entrée unique pour les 3 canaux directs (mêlée/flèche/sort) —
+   *  statuts sur coup + arc en chaîne + coup fantôme. */
+  private applyOnHitTalentEffects(
+    ae: ActiveEnemy, hitDamage: number, isSpell: boolean, element?: ElementType, isCrit = false,
+  ): void {
+    this.rollOnHitStatuses(ae, hitDamage, isSpell);
+    this.rollArcChain(ae, hitDamage, isCrit);
+    this.rollPhantomStrike(ae, hitDamage, element ?? ElementType.NEUTRAL);
+  }
+
+  /**
+   * `direct` (défaut false) : ÉCHO — true pour un coup direct (aucun appelant actuel
+   * n'en a besoin, les 3 canaux directs — mêlée/flèches/sorts — mutent currentHp en
+   * scène sans passer par cette fonction, cf. registerEchoDamage) ; faux pour tout le
+   * reste (aura, riposte, écho de passif) — la sémantique "tick" par défaut de ce
+   * funnel correspond exactement à la sémantique "tick" attendue par l'Écho.
+   */
+  private applyDamageToEnemy(instanceId: string, damage: number, direct: boolean = false) {
     const ae = this.activeEnemies.get(instanceId);
     if (!ae) return;
-    ae.currentHp -= damage;
+    // Le Mannequin de Fer compte NORMALEMENT pour l'Écho (banc de test de build
+    // valide, pas un bug) — enregistré AVANT le clamp isTrainingDummy ci-dessous.
+    this.registerEchoDamage(instanceId, damage, direct);
+    // PV figés à 100% pour tester hitbox/dégâts en boucle sans le tuer — les
+    // numéros de dégâts restent affichés (calculés en amont, indépendants de currentHp).
+    const isTrainingDummy = this.isInvincibleDummy(ae.enemyId);
+    if (!isTrainingDummy) ae.currentHp -= damage;
 
     // Flash visuel
     const sprite = this.enemies.getChildren().find(
@@ -2607,7 +3597,7 @@ export class GameScene extends Phaser.Scene {
       this.time.delayedCall(80, () => { if (sprite.active) this.resetEnemyTint(sprite); });
     }
 
-    if (ae.currentHp <= 0 && sprite?.active) {
+    if (!isTrainingDummy && ae.currentHp <= 0 && sprite?.active) {
       this.onEnemyKilled(ae, sprite);
     }
   }
@@ -2625,7 +3615,7 @@ export class GameScene extends Phaser.Scene {
     this.applyDamageToEnemy(instanceId, damage);
     const omnivampPct = PassiveSystem.getOmnivampPct(this.gameState.player.equipment);
     if (omnivampPct > 0) {
-      PassiveSystem.applyHeal(this.gameState.player, Math.floor(damage * omnivampPct / 100));
+      PassiveSystem.applyHeal(this.gameState.player, Math.floor(damage * omnivampPct / 100), this.playerModifiers);
     }
   }
 
@@ -2676,6 +3666,53 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /** STAFF_FINISHER_ZONE (arc_elemental_wake) — pose une zone élémentaire (r70, 2s,
+   *  tick 500ms, 20% ATK/tick) au point VISÉ par le dernier hit du finisher STAFF
+   *  (calculé via facingAngle/range, même formule que spawnWeaponSwingVfx — le
+   *  finisher STAFF est un cône instantané, pas un projectile : il n'y a pas de
+   *  position d'impact réelle à observer après coup, cf. executeFinisherAttack). */
+  private spawnFinisherZone(x: number, y: number, element: ElementType): void {
+    const radius = 70;
+    const color = ELEMENT_PROJECTILE_COLORS[element] ?? 0xffffff;
+    const gfx = this.add.circle(x, y, radius, color, 0.22).setDepth(2);
+    this.tweens.add({ targets: gfx, alpha: 0.08, duration: 600, yoyo: true, repeat: -1 });
+    this._finisherZones.push({
+      x, y, element, radius,
+      expiresAt: this.time.now + 2000,
+      nextTickAt: this.time.now,
+      gfx,
+    });
+  }
+
+  private tickFinisherZones(time: number): void {
+    if (this._finisherZones.length === 0) return;
+    const atk = StatsSystem.computeAll(this.gameState.player).atk;
+    for (let i = this._finisherZones.length - 1; i >= 0; i--) {
+      const zone = this._finisherZones[i];
+      if (time >= zone.expiresAt) {
+        if (zone.gfx.active) zone.gfx.destroy();
+        this._finisherZones.splice(i, 1);
+        continue;
+      }
+      if (time < zone.nextTickAt) continue;
+      zone.nextTickAt = time + 500;
+      const dmg = Math.max(1, Math.round(atk * 0.20));
+      // Snapshot des ids : applyDamageToEnemy peut tuer (mutation de la Map).
+      const ids = Array.from(this.activeEnemies.keys());
+      for (const id of ids) {
+        const ae = this.activeEnemies.get(id);
+        if (!ae || ae.currentHp <= 0) continue;
+        // Position RÉELLE du sprite, jamais ActiveEnemy.x/y (jamais resynchronisé
+        // après le spawn — cf. commentaire finisherNova/quakeFinisher).
+        const sprite = this.findEnemySpriteByInstanceId(id);
+        if (!sprite || Phaser.Math.Distance.Between(zone.x, zone.y, sprite.x, sprite.y) > zone.radius) continue;
+        this.showDamageNumber(sprite.x, sprite.y - 12, dmg, false, zone.element);
+        this.spawnHitParticles(sprite.x, sprite.y, zone.element);
+        this.applyDamageToEnemy(id, dmg, false);
+      }
+    }
+  }
+
   /** AUTO_BOLT_150_PCT_MATK (hidden_tempest_amulet) — toutes les 5s, foudroie
    *  l'ennemi le plus proche dans la portée pour 150% MATK. */
   private tickAutoBolt(time: number): void {
@@ -2723,7 +3760,7 @@ export class GameScene extends Phaser.Scene {
     const p = this.gameState.player;
     const heal = Math.round(p.stats.maxHp * PassiveSystem.FROZEN_SANCTUARY_HEAL_PCT_PER_SEC / 100);
     if (heal <= 0) return;
-    PassiveSystem.applyHeal(p, heal);
+    PassiveSystem.applyHeal(p, heal, this.playerModifiers);
     this.showHealNumber(this.player.x, this.player.y - 20, heal);
     this.events.emit('player_update', p);
   }
@@ -2754,19 +3791,20 @@ export class GameScene extends Phaser.Scene {
       (_playerGO, projGO) => {
         const proj = projGO as Phaser.Physics.Arcade.Sprite;
         if (proj.getData('isPlayer')) return;
-        // IFRAMES : le joueur est invincible — le projectile est absorbé sans dégâts
-        if (this.time.now < this.iframeUntil) { proj.destroy(); return; }
-        const damage = (proj.getData('damage') as number) ?? 8;
+        const damage  = (proj.getData('damage') as number) ?? 8;
+        const element = proj.getData('element') as ElementType | undefined;
+        // Position capturée AVANT destroy() — même précaution que le homing
+        // projectile (l'accès post-destroy à x/y est fragile, pas garanti).
+        const impactX = proj.x, impactY = proj.y;
         proj.destroy();
-        this.gameState.player.stats.hp = Math.max(
-          0,
-          this.gameState.player.stats.hp - damage,
-        );
-        this.iframeUntil = this.time.now + 800;
-        this.showDamageNumber(this.player.x, this.player.y - 20, damage, false, undefined, true);
-        this.applyPlayerHitFx();
-        this.events.emit('player_update', this.gameState.player);
-        if (this.gameState.player.stats.hp <= 0) this.onPlayerDeath();
+        // Route désormais par applyDamageToPlayer() — auparavant ce bloc
+        // mutait stats.hp en dur, en contournant iframes correctement gérées
+        // ailleurs mais SURTOUT mitigatePlayerDamage() (boucliers,
+        // DAMAGE_REDUCTION_PCT), FROZEN_SANCTUARY, le blocage de garde, le
+        // TRUE_DODGE, ET les hooks knockback/statut subis (talents Partie 2)
+        // — un projectile "burst_fan"/"circular_burst" (frost_wolf, spark_imp)
+        // ne posait donc jamais SLOW/SHOCK, contrairement au contact mêlée.
+        this.applyDamageToPlayer(damage, impactX, impactY, element);
       },
     );
 
@@ -2801,6 +3839,21 @@ export class GameScene extends Phaser.Scene {
     proj.setDepth(15);
     proj.setData('isPlayer', isPlayer);
     proj.setData('damage', damage);
+    // Élément source — statuts subis par le joueur (talents Partie 2), lu à
+    // l'impact dans createProjectileGroup(). undefined pour un projectile
+    // joueur (isPlayer=true) : jamais lu dans ce cas.
+    proj.setData('element', element);
+
+    // BUG (préexistant, confirmé via node_modules/phaser/src/physics/arcade/
+    // PhysicsGroup.js:217-229) : `this.projectiles.add(proj)` déclenche
+    // createCallbackHandler(), qui réapplique les vélocités PAR DÉFAUT du
+    // groupe (0,0, jamais configurées explicitement) sur TOUT enfant ajouté —
+    // même un enfant qui a DÉJÀ un corps physique. Poser la vélocité AVANT
+    // `add()` la faisait donc écraser à (0,0) immédiatement après : tous les
+    // projectiles ennemis en ligne droite (burst_fan/circular_burst) partaient
+    // figés sur leur point d'origine. Il faut `add()` D'ABORD, `setVelocity()`
+    // APRÈS.
+    this.projectiles.add(proj);
 
     const angle = Math.atan2(toY - fromY, toX - fromX);
     const speed = isPlayer ? 400 : 280;
@@ -2808,8 +3861,6 @@ export class GameScene extends Phaser.Scene {
       Math.cos(angle) * speed,
       Math.sin(angle) * speed,
     );
-
-    this.projectiles.add(proj);
 
     // Auto-destroy après 2s
     this.time.delayedCall(2000, () => { if (proj.active) proj.destroy(); });
@@ -2869,18 +3920,23 @@ export class GameScene extends Phaser.Scene {
     if (killHealPct > 0) {
       // PassiveSystem.applyHeal : convertit le surplus en bouclier si OVERHEAL_SHIELD
       // est équipé, au lieu d'un clamp manuel qui le perdrait.
-      PassiveSystem.applyHeal(this.gameState.player, Math.round(this.gameState.player.stats.maxHp * killHealPct / 100));
+      PassiveSystem.applyHeal(this.gameState.player, Math.round(this.gameState.player.stats.maxHp * killHealPct / 100), this.playerModifiers);
     }
     // HP_ON_KILL_FLAT / MANA_ON_KILL_FLAT (loot stat rolls) — additif avec
     // KILL_HEAL_15_PCT / MANA_ON_KILL_PCT (ABYSSAL), même point de branchement.
     const csOnKill = StatsSystem.computeAll(this.gameState.player);
     if (csOnKill.hpOnKill > 0) {
-      PassiveSystem.applyHeal(this.gameState.player, csOnKill.hpOnKill);
+      PassiveSystem.applyHeal(this.gameState.player, csOnKill.hpOnKill, this.playerModifiers);
     }
-    if (csOnKill.manaOnKill > 0) {
+    // MANA_ON_KILL_PCT (abyssal_void_drain) — % du mana MAX, additif avec le flat
+    // manaOnKill des stat rolls ci-dessus (même point de branchement, sources
+    // différentes : % vs plat).
+    const manaOnKillTotal = csOnKill.manaOnKill
+      + Math.round(this.gameState.player.stats.maxMana * this.playerModifiers.manaOnKillPct / 100);
+    if (manaOnKillTotal > 0) {
       this.gameState.player.stats.mana = Math.min(
         this.gameState.player.stats.maxMana,
-        this.gameState.player.stats.mana + csOnKill.manaOnKill,
+        this.gameState.player.stats.mana + manaOnKillTotal,
       );
     }
     // KILL_STACK_DAMAGE (hidden_soul_bow) — stack permanent, ne se réinitialise jamais.
@@ -2900,6 +3956,7 @@ export class GameScene extends Phaser.Scene {
     delete this.cooldowns[`melee_${iid}`];
     delete this.cooldowns[`bleed_${iid}`];
     delete this.cooldowns[`magma_${iid}`];
+    delete this.cooldowns[`burn_${iid}`];
     this.magmaBurnStacks.delete(iid);
 
     this.activeEnemies.delete(activeEnemy.instanceId);
@@ -3024,16 +4081,23 @@ export class GameScene extends Phaser.Scene {
       scaleY: baseScale * 0.2,
       duration: 350,
       ease: 'Power3',
-      onComplete: () => { if (sprite.active) sprite.destroy(); },
+      // sprite.active est déjà à false ici (onEnemyKilled appelle
+      // disableBody(true, false) avant playEnemyDeathSequence) — un garde
+      // `if (sprite.active)` serait toujours faux (bug d'origine). `sprite.scene`
+      // devient undefined UNIQUEMENT après un vrai destroy() (ex: transition de
+      // zone qui a détruit ce sprite entre-temps) — garde précise plutôt qu'un
+      // destroy() inconditionnel : destroy() est idempotent (no-op si déjà
+      // détruit) donc les deux sont sans risque, mais celle-ci évite en plus
+      // tout travail redondant sur un sprite déjà mort.
+      onComplete: () => { if (sprite.scene) sprite.destroy(); },
     });
   }
 
   private playBossDeathSequence(
     sprite: Phaser.Physics.Arcade.Sprite,
     _ae: ActiveEnemy,
-    enemyDef: Enemy,
+    _enemyDef: Enemy,
   ) {
-    const { width: W, height: H } = this.cameras.main;
     const baseScale = (sprite.getData('baseScale') as number | undefined) ?? sprite.scale;
 
     sprite.setTint(0xffffff);
@@ -3052,42 +4116,39 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.time.delayedCall(600, () => {
-      if (sprite.active) {
-        this.tweens.add({
-          targets: sprite,
-          alpha: 0,
-          scaleX: baseScale * 0.2,
-          scaleY: baseScale * 0.2,
-          duration: 800,
-          ease: 'Power2',
-          onComplete: () => { if (sprite.active) sprite.destroy(); },
-        });
-      }
+      // BUG (préexistant, indépendant du chantier talents) : onEnemyKilled()
+      // appelle sprite.disableBody(true, false) — qui met sprite.active À FALSE
+      // — AVANT d'appeler playBossDeathSequence(). Un `if (sprite.active)` ici
+      // était donc TOUJOURS faux : le tween de fondu ne se lançait jamais, le
+      // sprite du boss restait visible à l'écran indéfiniment après sa mort.
+      // sprite.visible reste true (disableBody(hideGameObject=false)) donc rien
+      // n'empêche le tween lui-même de tourner sur un objet "inactive". Garde
+      // sur `sprite.scene` (devient undefined seulement après un VRAI destroy(),
+      // ex: destroyCurrentZoneObjects() si le joueur change de zone pendant
+      // cette fenêtre de 600ms) plutôt qu'un lancement inconditionnel — évite
+      // de programmer un tween pour rien sur un sprite déjà mort ailleurs.
+      if (!sprite.scene) return;
+      this.tweens.add({
+        targets: sprite,
+        alpha: 0,
+        scaleX: baseScale * 0.2,
+        scaleY: baseScale * 0.2,
+        duration: 800,
+        ease: 'Power2',
+        onComplete: () => { if (sprite.scene) sprite.destroy(); },
+      });
     });
-
-    const bossName = enemyDef.name;
-    const nameLabel = this.add.text(W / 2, H / 2 - 30, bossName, {
-      fontSize: '20px',
-      color: '#ffff00',
-      fontFamily: FONT,
-      stroke: '#000000',
-      strokeThickness: 4,
-    }).setScrollFactor(0).setOrigin(0.5).setDepth(200).setAlpha(0);
-    this.bossDeathObjects.push(nameLabel);
-
-    this.tweens.add({
-      targets: nameLabel,
-      alpha: 1,
-      duration: 400,
-      hold: 1600,
-      yoyo: true,
-      onComplete: () => { if (nameLabel.active) nameLabel.destroy(); },
-    });
+    // Le nom du boss ne s'affiche QU'à son apparition (showBossAnnouncement) —
+    // le réafficher à sa mort n'a pas de sens (demande explicite du créateur,
+    // 15/07/2026) : un ancien nameLabel centré-écran vivait ici, retiré.
   }
 
   private onPlayerDeath() {
     if (this.isTraveling) return;
     this.isTraveling = true;
+    // Écho : mort du JOUEUR (pas de l'ancre) — destruction IMMÉDIATE, sans
+    // l'animation de libération (réservée à l'expiration naturelle de la fenêtre).
+    this.destroyEchoImmediate();
     this.gameState.player.deaths++;
     this.gameState.player.stats.hp = Math.floor(this.gameState.player.stats.maxHp * 0.5);
     // DAMAGE_DEFERRAL_50_PCT : purger la file différée à la mort — sinon les moitiés
@@ -3099,6 +4160,13 @@ export class GameScene extends Phaser.Scene {
     // le joueur — repartir « propre » évite qu'un reliquat traverse le respawn.
     this.frozenSanctuaryUntil = 0;
     this.gameState.player.passiveStacks['OVERHEAL_SHIELD_50_PCT'] = 0;
+    // Statuts/knockback subis (talents Partie 2) — même raison que ci-dessus,
+    // repartir "propre" au respawn.
+    this.playerStatusEffects = [];
+    this.playerSlowMult      = 1;
+    this.playerImmobilized   = false;
+    this.knockbackX          = 0;
+    this.knockbackY          = 0;
 
     this.physics.world.pause();
     this.cameras.main.once(
@@ -3434,7 +4502,27 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.shake(durationMs, intensity);
   }
 
+  // Jauge de stagger réelle (talents Partie 2 — STAGGER_BONUS_PCT, STUN_DMG_PCT,
+  // quakeFinisher "stagger ×2"). Seuil et fenêtre en % de maxHp / ms plutôt que
+  // des valeurs absolues — reste valide quel que soit le tankiness de l'ennemi.
+  private static readonly STAGGER_THRESHOLD_PCT = 0.60;
+  private static readonly STAGGER_RESET_WINDOW_MS = 2500;
+
   private checkStagger(sprite: Phaser.Physics.Arcade.Sprite, ae: ActiveEnemy, damage: number) {
+    // ── Jauge réelle : accumule TOUS les coups (pas seulement les gros isolés
+    // ci-dessous), avec une fenêtre glissante — pas de decay continu, un coup
+    // hors fenêtre repart juste de zéro plutôt que de s'additionner indéfiniment.
+    const now = this.time.now;
+    if (now > ae.staggerResetAt) ae.staggerMeter = 0;
+    ae.staggerResetAt = now + GameScene.STAGGER_RESET_WINDOW_MS;
+    ae.staggerMeter += damage * (1 + this.playerModifiers.staggerBonusPct / 100);
+    if (ae.staggerMeter >= ae.maxHp * GameScene.STAGGER_THRESHOLD_PCT) {
+      ae.staggerMeter = 0;
+      this.triggerRealStagger(sprite, ae);
+    }
+
+    // ── Flash/ralentissement cosmétique existant — inchangé, réservé aux gros
+    // coups isolés (≥20% maxHp EN UN SEUL coup, indépendant de la jauge ci-dessus).
     if (damage / ae.maxHp < 0.20) return;
 
     sprite.setTintFill(0xff3333);
@@ -3448,6 +4536,37 @@ export class GameScene extends Phaser.Scene {
       if (sprite.active && sprite.body && (sprite.body as Phaser.Physics.Arcade.Body).enable) {
         (sprite.body as Phaser.Physics.Arcade.Body).setMaxVelocity(origMaxVel);
       }
+    });
+  }
+
+  /** Jauge de stagger pleine : vrai CC dur (STUN), pas juste cosmétique — c'est
+   *  ce qui donne un sens à STUN_DMG_PCT (terra_crushing_weight, lit déjà les
+   *  statusEffects STUN/FREEZE existants). Feedback visuel plus marqué que le
+   *  flash normal : la jauge vient de se vider d'un coup.
+   *  Boss exemptés du vrai STUN — même raison que maybeFreezeRetaliation
+   *  (pas de stun-lock : rien n'empêche de continuer à taper une cible stun,
+   *  la jauge peut se reremplir avant l'expiration du STUN précédent). SLOW à
+   *  la place, même patron que le boss-case de maybeFreezeRetaliation. */
+  private triggerRealStagger(sprite: Phaser.Physics.Arcade.Sprite, ae: ActiveEnemy): void {
+    if (ae.isBoss) {
+      ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'SLOW');
+      ae.statusEffects.push({ type: 'SLOW', duration: 1.5, strength: 0.6 });
+    } else {
+      ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'STUN');
+      ae.statusEffects.push({ type: 'STUN', duration: 1.2, strength: 1 });
+    }
+    sprite.setTintFill(0xffee44);
+    this.time.delayedCall(280, () => { if (sprite.active) this.resetEnemyTint(sprite); });
+    // Le flash 280ms peut passer inaperçu au milieu du combat — texte explicite,
+    // même patron que showDodgeText.
+    const label = this.add.text(
+      sprite.x + Phaser.Math.Between(-6, 6), sprite.y - sprite.displayHeight / 2 - 6,
+      ae.isBoss ? 'Ralenti !' : 'Étourdi !',
+      { fontSize: '13px', color: '#ffee44', fontFamily: FONT, stroke: '#000000', strokeThickness: 2 },
+    ).setDepth(100).setOrigin(0.5, 1);
+    this.tweens.add({
+      targets: label, y: label.y - 40, alpha: 0, duration: 900, ease: 'Quad.easeOut',
+      onComplete: () => label.destroy(),
     });
   }
 
@@ -4316,7 +5435,512 @@ export class GameScene extends Phaser.Scene {
     return txt;
   }
 
+  // ── ÉCHO — COMPTEUR DE DÉGÂTS CUMULÉS ───────────────────────
+  /**
+   * Compteur in-world de dégâts infligés par le JOUEUR, ancré sur le dernier
+   * ennemi touché par un coup DIRECT. Coexiste avec showEnemyDamageNumber
+   * (chiffres par-cible, depth 100) sans le remplacer — l'Écho vit au-dessus
+   * (depth 101) et raconte le CUMUL de la salve en cours, pas chaque coup.
+   *
+   * État purement transitoire côté scène — jamais dans PlayerState/WorldState,
+   * aucun impact sur les saves. Le polish visuel (paliers couleur/taille par
+   * nombre de coups, punchs par coup, count-up roulant, pulsation idle du
+   * palier 4, motes de particules) vit dans les helpers echo* ci-dessous et ne
+   * touche à AUCUNE règle mécanique (fenêtre, ancrage, reset).
+   */
+  private static readonly ECHO_WINDOW_MS = 2000; // fenêtre FIXE depuis le dernier dégât — jamais indexée sur l'aspd, même principe que comboDeadline (cf. ~ligne 883)
+  private static readonly ECHO_WARN_MS = 600;    // pré-avertissement avant expiration
+  private static readonly ECHO_WARN_HZ = 4;      // fréquence du clignotement de pré-avertissement
+  private static readonly ECHO_ANCHOR_TWEEN_MS = 160;
+  private static readonly ECHO_ANCHOR_Y_OFFSET = 70;
+  private static readonly ECHO_RELEASE_MS = 350;
+
+  private echoTotal = 0;
+  private echoHits = 0;
+  private echoDeadline = 0;
+  private echoAnchorInstanceId: string | null = null;
+  /** true : l'ancre est morte (ou introuvable) — l'Écho gèle à sa dernière position monde. */
+  private echoFrozen = false;
+  /** true dès qu'une position monde valide a été posée — distingue le tout premier
+   *  ancrage (apparition directe, sans tween) d'un changement de cible (tween 160ms). */
+  private echoHasPosition = false;
+  private echoX = 0;
+  private echoY = 0;
+  private echoTweenStartX = 0;
+  private echoTweenStartY = 0;
+  /** 0→1 : progression du tween de transition d'ancrage. 1 = convergé — dans cet état,
+   *  Phaser.Math.Linear(start, target, 1) === target quel que soit `start`, donc le
+   *  MÊME calcul sert aussi bien pour "suit le sprite chaque frame" une fois convergé. */
+  private echoTweenT = 1;
+  private echoMoveTween: Phaser.Tweens.Tween | null = null;
+  private echoContainer: Phaser.GameObjects.Container | null = null;
+  private echoTotalText: Phaser.GameObjects.Text | null = null;
+  private echoHitsText: Phaser.GameObjects.Text | null = null;
+
+  // ── Polish visuel (spec design-agent) — purement cosmétique, aucune règle
+  //    mécanique ici : paliers de couleur/taille, punchs, count-up, particules. ──
+  /**
+   * Paliers par nombre de coups DIRECTS (echoHits). Index = numéro de palier ;
+   * l'index 0 est le palier invisible (< ECHO_VISIBILITY_HITS). Tailles 20/30 =
+   * multiples entiers de la grille 10px de Neatpixels Minimal (FONT_HUD, cf.
+   * FONT_GRIDS dans UITheme) — les seules tailles nettes de cette famille, d'où
+   * la création du texte en famille Minimal (uiStyle(10)) puis le passage par
+   * snapFontSize sur CETTE grille.
+   */
+  private static readonly ECHO_TIER_STYLES: ReadonlyArray<
+    { minHits: number; color: string; colorNum: number; size: number; stroke: string; strokeW: number } | null
+  > = [
+    null, // palier 0 (1-2 coups) : invisible — géré par ECHO_VISIBILITY_HITS
+    { minHits: 3,  color: '#ffffff', colorNum: 0xffffff, size: 20, stroke: '#000000', strokeW: 2 },
+    { minHits: 10, color: '#ffe28a', colorNum: 0xffe28a, size: 20, stroke: '#000000', strokeW: 3 },
+    { minHits: 20, color: '#ffd700', colorNum: 0xffd700, size: 30, stroke: '#000000', strokeW: 3 },
+    { minHits: 35, color: '#fff3c4', colorNum: 0xfff3c4, size: 30, stroke: '#ffd700', strokeW: 3 },
+  ];
+  // Dérivé de ECHO_TIER_STYLES[1] (jamais une valeur dupliquée en dur) : palier 0
+  // invisible tant que echoHits < ce seuil — sans ça, un seuil changé dans un seul
+  // des deux endroits désynchronise echoTierFor() et la porte de visibilité de
+  // updateEcho(). ECHO_TIER_STYLES doit rester déclaré AVANT (ordre d'init des
+  // champs statiques de classe).
+  private static readonly ECHO_VISIBILITY_HITS = GameScene.ECHO_TIER_STYLES[1]!.minHits;
+
+  /** Palier courant du cycle — ne monte que par onEchoTierUp, reset avec le cycle. */
+  private echoTier = 0;
+  /** Valeur AFFICHÉE du total : rattrape echoTotal via un tween ~100ms (rolling count-up). */
+  private echoDisplayTotal = 0;
+  private echoCountTween: Phaser.Tweens.Tween | null = null;
+  /** Punch/pulse d'échelle sur echoTotalText — un seul actif à la fois (même motif
+   *  de nettoyage que le re-punch de showEnemyDamageNumber). */
+  private echoPunchTween: Phaser.Tweens.Tween | null = null;
+  /** Pulsation idle continue du palier 4 (scale container 1.0↔1.04 à 1.5Hz). */
+  private echoIdleTween: Phaser.Tweens.Tween | null = null;
+  /** Retour du stroke à la couleur du palier après le flash blanc de crit (80ms). */
+  private echoStrokeFlashEvt: Phaser.Time.TimerEvent | null = null;
+  /**
+   * Batching d'ancrage AOE : plusieurs coups DIRECTS dans le MÊME appel synchrone
+   * (un cône de mêlée qui touche 3 ennemis dans `executeHitInCone`) doivent ancrer
+   * sur le PLUS GROS dégât de la salve, pas sur le dernier traité. Clé de lot =
+   * `this.time.now`, identique pour tous les coups d'un même appel synchrone
+   * puisque le temps ne change pas entre deux itérations d'une boucle JS. Le
+   * commit réel est différé d'un tick (`delayedCall(0)`) pour laisser la boucle
+   * se terminer avant de choisir le gagnant — même motif que les autres
+   * `time.delayedCall(0, ...)` de ce fichier (cf. performZoneTransition).
+   */
+  private echoPendingAnchor: { batchTime: number; instanceId: string; damage: number } | null = null;
+  private echoAnchorCommitScheduled = false;
+
+  /**
+   * Point d'entrée UNIQUE de tout dégât joueur pour l'Écho.
+   *
+   * `direct = true` : coup de mêlée/flèche/sort (voir executeHitInCone,
+   * updateArrowProjectiles, activateSkill) — incrémente le total ET le compteur
+   * de coups ET peut déplacer l'ancre.
+   * `direct = false` (défaut, ticks/passifs) : incrémente SEULEMENT le total —
+   * jamais de coup compté, jamais de déplacement d'ancre. Couvre applyDamageToEnemy
+   * (aura, riposte, écho de passif, auto-bolt) ainsi que les deux ticks DOT qui
+   * mutent currentHp directement sans passer par applyDamageToEnemy (bleed et
+   * Marque de Magma, instrumentés séparément dans tickEnemyAI).
+   */
+  /** SOUL_STACK_BONUS (ins_soul_harvest) — +N stacks de Soul Echo par zone
+   *  élémentaire nettoyée (boss vaincu) CETTE run, cf. clearedZones. Offset
+   *  permanent ajouté à echoHits pour le calcul de palier ET l'affichage —
+   *  jamais un multiplicateur de dégâts, echoTier est purement visuel
+   *  (cf. ECHO_TIER_STYLES, aucun consommateur de combat). */
+  private getSoulStackOffset(): number {
+    return this.playerModifiers.soulStackBonus * this.gameState.player.clearedZones.length;
+  }
+
+  private registerEchoDamage(instanceId: string, damage: number, direct: boolean, isCrit = false): void {
+    if (damage <= 0) return;
+    this.echoTotal += damage;
+    this.echoDeadline = this.time.now + GameScene.ECHO_WINDOW_MS;
+    this.tweenEchoDisplayTotal();
+    if (!direct) return; // ticks/passifs : total seulement — jamais de punch, de coup ni d'ancre
+    this.echoHits += 1;
+    // Un AOE massif peut faire passer echoHits de 0 à 10+ DANS LA MÊME frame,
+    // avant que updateEcho() n'ait tourné une seule fois pour créer le conteneur
+    // — sans cet appel, onEchoTierUp()/punchEchoText() ci-dessous seraient des
+    // no-op silencieux (garde `if (!txt) return`) et le pulse de transition/les
+    // motes de ce franchissement ne joueraient jamais.
+    if (this.echoHits + this.getSoulStackOffset() >= GameScene.ECHO_VISIBILITY_HITS) this.ensureEchoContainer();
+
+    const tier = this.echoTierFor(this.echoHits + this.getSoulStackOffset());
+    if (tier > this.echoTier && this.echoTier > 0) {
+      // Franchissement 1→2, 2→3 ou 3→4 : le pulse de transition (1.4) REMPLACE le
+      // punch du coup qui franchit le seuil (1.12/1.25 < 1.4 — il serait invisible).
+      this.onEchoTierUp(tier);
+    } else {
+      this.echoTier = Math.max(this.echoTier, tier); // 0→1 : style posé par ensureEchoContainer, sans pulse
+      // Punch par coup direct. « Gros coup » = damage >= 25% du total APRÈS incrément.
+      const big = damage >= this.echoTotal * 0.25;
+      this.punchEchoText(big ? 1.25 : 1.12, 60);
+    }
+    if (isCrit) this.flashEchoStroke();
+
+    this.stageEchoAnchor(instanceId, damage);
+  }
+
+  private echoTierFor(hits: number): number {
+    for (let i = GameScene.ECHO_TIER_STYLES.length - 1; i >= 1; i--) {
+      if (hits >= GameScene.ECHO_TIER_STYLES[i]!.minHits) return i;
+    }
+    return 0;
+  }
+
+  private applyEchoTierStyle(tier: number): void {
+    const st = GameScene.ECHO_TIER_STYLES[tier];
+    const txt = this.echoTotalText;
+    if (!st || !txt || !txt.active) return;
+    txt.setFontSize(snapFontSize(st.size, FONT_HUD));
+    txt.setColor(st.color);
+    txt.setStroke(st.stroke, st.strokeW);
+  }
+
+  /** Franchissement de palier : restyle + pulse 1.0→1.4→1.0 (~200ms), et aux
+   *  paliers 3-4 uniquement, motes de pixels qui dérivent vers le haut. */
+  private onEchoTierUp(tier: number): void {
+    this.echoTier = tier;
+    this.applyEchoTierStyle(tier);
+    this.punchEchoText(1.4, 100);
+    if (tier >= 3) this.spawnEchoTierParticles(tier);
+    if (tier === 4) this.startEchoIdlePulse();
+  }
+
+  /** Punch d'échelle sur le texte du total. `duration` = demi-durée (yoyo).
+   *  Un seul punch actif : on tue le précédent et on repart d'une échelle neutre
+   *  (même motif que le re-punch de showEnemyDamageNumber). */
+  private punchEchoText(scale: number, duration: number): void {
+    const txt = this.echoTotalText;
+    if (!txt || !txt.active) return;
+    if (this.echoPunchTween) { this.echoPunchTween.remove(); this.echoPunchTween = null; }
+    txt.setScale(1);
+    this.echoPunchTween = this.tweens.add({
+      targets: txt,
+      scale,
+      duration,
+      yoyo: true,
+      ease: 'Quad.easeOut',
+      onComplete: () => { this.echoPunchTween = null; if (txt.active) txt.setScale(1); },
+    });
+  }
+
+  /** Coup critique : stroke flashé en blanc 80ms, puis retour à celui du palier. */
+  private flashEchoStroke(): void {
+    const txt = this.echoTotalText;
+    const st = GameScene.ECHO_TIER_STYLES[this.echoTier];
+    if (!txt || !txt.active || !st) return;
+    txt.setStroke('#ffffff', st.strokeW);
+    if (this.echoStrokeFlashEvt) this.echoStrokeFlashEvt.remove();
+    this.echoStrokeFlashEvt = this.time.delayedCall(80, () => {
+      this.echoStrokeFlashEvt = null;
+      // Le palier a pu monter pendant les 80ms — on restaure celui du moment.
+      this.applyEchoTierStyle(this.echoTier);
+    });
+  }
+
+  /** Palier 4 : pulsation idle continue (container 1.0↔1.04, cycle ~667ms = 1.5Hz),
+   *  ADDITIVE avec les punchs par coup — le punch vit sur le texte, l'idle sur le
+   *  container, les deux échelles se multiplient sans se disputer la propriété. */
+  private startEchoIdlePulse(): void {
+    if (this.echoIdleTween || !this.echoContainer || !this.echoContainer.active) return;
+    this.echoIdleTween = this.tweens.add({
+      targets: this.echoContainer,
+      scale: 1.04,
+      duration: 333, // demi-période
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+  }
+
+  /** 4-6 motes de pixels couleur du palier, dérive douce vers le haut + fade —
+   *  adaptation directe du motif de spawnHitParticles (primitives + tween,
+   *  destruction en onComplete, aucun résidu), en version ascendante. */
+  private spawnEchoTierParticles(tier: number): void {
+    const st = GameScene.ECHO_TIER_STYLES[tier];
+    const container = this.echoContainer;
+    if (!st || !container || !container.active) return;
+    const count = Phaser.Math.Between(4, 6);
+    for (let i = 0; i < count; i++) {
+      const size = Phaser.Math.Between(2, 3);
+      const mote = this.add.rectangle(
+        container.x + Phaser.Math.Between(-16, 16),
+        container.y + Phaser.Math.Between(-8, 4),
+        size, size, st.colorNum, 1,
+      ).setDepth(101);
+      this.tweens.add({
+        targets: mote,
+        x: mote.x + Phaser.Math.Between(-6, 6),
+        y: mote.y - Phaser.Math.Between(18, 32),
+        alpha: 0,
+        duration: Phaser.Math.Between(500, 800),
+        ease: 'Quad.easeOut',
+        onComplete: () => mote.destroy(),
+      });
+    }
+  }
+
+  /** Rolling count-up : la valeur AFFICHÉE rattrape echoTotal en ~100ms ;
+   *  snap immédiat si l'écart est < 3 (pas de tween pour 1-2 points de DOT). */
+  private tweenEchoDisplayTotal(): void {
+    if (this.echoCountTween) { this.echoCountTween.remove(); this.echoCountTween = null; }
+    const target = this.echoTotal;
+    if (Math.abs(target - this.echoDisplayTotal) < 3) {
+      this.echoDisplayTotal = target;
+      return;
+    }
+    this.echoCountTween = this.tweens.addCounter({
+      from: this.echoDisplayTotal,
+      to: target,
+      duration: 100,
+      ease: 'Quad.easeOut',
+      onUpdate: (tw) => { this.echoDisplayTotal = tw.getValue() ?? target; },
+      onComplete: () => { this.echoCountTween = null; this.echoDisplayTotal = target; },
+    });
+  }
+
+  private stageEchoAnchor(instanceId: string, damage: number): void {
+    const now = this.time.now;
+    if (!this.echoPendingAnchor || this.echoPendingAnchor.batchTime !== now) {
+      this.echoPendingAnchor = { batchTime: now, instanceId, damage };
+    } else if (damage > this.echoPendingAnchor.damage) {
+      this.echoPendingAnchor.instanceId = instanceId;
+      this.echoPendingAnchor.damage = damage;
+    }
+    if (this.echoAnchorCommitScheduled) return;
+    this.echoAnchorCommitScheduled = true;
+    this.time.delayedCall(0, () => this.commitEchoAnchor());
+  }
+
+  private findEnemySpriteByInstanceId(instanceId: string): Phaser.Physics.Arcade.Sprite | undefined {
+    return this.enemies.getChildren().find(
+      (c) => (c as Phaser.Physics.Arcade.Sprite).name === instanceId,
+    ) as Phaser.Physics.Arcade.Sprite | undefined;
+  }
+
+  /**
+   * Résout le lot en attente (le plus gros dégât de la salve gagne) et pose la
+   * nouvelle ancre. Si la cible retenue est déjà morte au moment du commit (kill
+   * dans la même salve — `sprite.active` passe à false synchroniquement dans
+   * onEnemyKilled via disableBody), l'Écho saute DIRECTEMENT sur sa dernière
+   * position (pas de tween — il n'y a plus rien à suivre) puis gèle : décision
+   * prise faute de pouvoir consulter le design sur ce cas précis, cohérente avec
+   * la règle "l'ancre va à la cible ayant reçu le plus gros dégât de la salve".
+   */
+  private commitEchoAnchor(): void {
+    this.echoAnchorCommitScheduled = false;
+    const pending = this.echoPendingAnchor;
+    this.echoPendingAnchor = null;
+    if (!pending) return;
+
+    const sprite = this.findEnemySpriteByInstanceId(pending.instanceId);
+    if (!sprite) return; // introuvable (edge case) : l'Écho reste où il était
+
+    this.echoAnchorInstanceId = pending.instanceId;
+    const targetX = sprite.x;
+    const targetY = sprite.y - sprite.displayHeight / 2 - GameScene.ECHO_ANCHOR_Y_OFFSET;
+    this.echoFrozen = !sprite.active;
+
+    if (this.echoMoveTween) { this.echoMoveTween.remove(); this.echoMoveTween = null; }
+
+    if (!this.echoHasPosition || this.echoFrozen) {
+      this.echoX = targetX;
+      this.echoY = targetY;
+      this.echoTweenT = 1;
+      this.echoHasPosition = true;
+      return;
+    }
+
+    this.echoTweenStartX = this.echoX;
+    this.echoTweenStartY = this.echoY;
+    this.echoTweenT = 0;
+    this.echoMoveTween = this.tweens.addCounter({
+      from: 0, to: 1, duration: GameScene.ECHO_ANCHOR_TWEEN_MS, ease: 'Quad.easeOut',
+      onUpdate: (tw) => { this.echoTweenT = tw.getValue() ?? 1; },
+    });
+  }
+
+  private echoFormatTotal(n: number): string {
+    if (n >= 100000) return `${Math.floor(n / 1000)}k`;
+    return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  }
+
+  private echoFormatHits(n: number): string {
+    return n > 999 ? '999+' : String(n);
+  }
+
+  private ensureEchoContainer(): void {
+    if (this.echoContainer && this.echoContainer.active) return;
+    // uiStyle(10) route vers Neatpixels Minimal (grille 10px) : c'est la SEULE
+    // famille où les tailles de palier 20/30 sont nettes — applyEchoTierStyle
+    // pose ensuite la taille/couleur réelles du palier courant.
+    this.echoTotalText = this.add.text(0, 0, '', uiStyle(10, UI.TXT_GOLD, { bold: true, stroke: true }))
+      .setOrigin(0.5, 1);
+    this.echoHitsText = this.add.text(0, 2, '', uiStyle(10, UI.TXT_PARCHMENT, { stroke: true }))
+      .setOrigin(0.5, 0)
+      .setAlpha(0.7);
+    this.echoContainer = this.add.container(this.echoX, this.echoY, [this.echoTotalText, this.echoHitsText])
+      .setDepth(101);
+    this.applyEchoTierStyle(this.echoTierFor(this.echoHits + this.getSoulStackOffset()));
+  }
+
+  private renderEcho(time: number): void {
+    if (!this.echoContainer || !this.echoContainer.active) return;
+    const cam = this.cameras.main.worldView;
+    const clampedX = Phaser.Math.Clamp(this.echoX, cam.x + 10, cam.right - 10);
+    const clampedY = Phaser.Math.Clamp(this.echoY, cam.y + 10, cam.bottom - 10);
+    this.echoContainer.setPosition(clampedX, clampedY);
+
+    // Rolling count-up : on affiche la valeur qui ROULE vers echoTotal, pas echoTotal.
+    this.echoTotalText?.setText(this.echoFormatTotal(Math.round(this.echoDisplayTotal)));
+    this.echoHitsText?.setText(`${t('hud.echo_label')} ×${this.echoFormatHits(this.echoHits + this.getSoulStackOffset())}`);
+
+    // Pré-avertissement : 600 dernières ms avant expiration, alpha 1.0↔0.65 à 4Hz.
+    const warnStart = this.echoDeadline - GameScene.ECHO_WARN_MS;
+    if (time >= warnStart) {
+      const tSec = (time - warnStart) / 1000;
+      const alpha = 0.65 + 0.35 * (0.5 + 0.5 * Math.sin(tSec * GameScene.ECHO_WARN_HZ * 2 * Math.PI));
+      this.echoContainer.setAlpha(alpha);
+    } else {
+      this.echoContainer.setAlpha(1);
+    }
+  }
+
+  /** Expiration de la fenêtre : reset logique INSTANTANÉ + animation de libération
+   *  sur une COPIE détachée (le container n'est plus this.echoContainer dès cet
+   *  appel) — un nouveau cycle peut démarrer dès le prochain coup direct sans
+   *  attendre la fin des 350ms de fade. */
+  private releaseEcho(): void {
+    const container = this.echoContainer;
+    // Le texte figé dans l'animation de libération montre le TOTAL final réel —
+    // pas la valeur du count-up en cours (qui peut retarder de ~100ms).
+    this.echoTotalText?.setText(this.echoFormatTotal(this.echoTotal));
+    this.echoContainer  = null;
+    this.echoTotalText  = null;
+    this.echoHitsText   = null;
+    if (this.echoMoveTween)  { this.echoMoveTween.remove();  this.echoMoveTween = null; }
+    if (this.echoCountTween) { this.echoCountTween.remove(); this.echoCountTween = null; }
+    if (this.echoPunchTween) { this.echoPunchTween.remove(); this.echoPunchTween = null; }
+    if (this.echoIdleTween)  { this.echoIdleTween.remove();  this.echoIdleTween = null; }
+    if (this.echoStrokeFlashEvt) { this.echoStrokeFlashEvt.remove(); this.echoStrokeFlashEvt = null; }
+    this.echoPendingAnchor = null;
+
+    this.echoTotal            = 0;
+    this.echoHits             = 0;
+    this.echoAnchorInstanceId = null;
+    this.echoDeadline         = 0;
+    this.echoFrozen           = false;
+    this.echoHasPosition      = false;
+    this.echoTweenT           = 1;
+    this.echoTier             = 0;
+    this.echoDisplayTotal     = 0;
+
+    if (!container || !container.active) return;
+    this.tweens.add({
+      targets: container,
+      scale: 1.3,
+      y: container.y - 12,
+      alpha: 0,
+      duration: GameScene.ECHO_RELEASE_MS,
+      ease: 'Quad.easeOut',
+      onComplete: () => container.destroy(),
+    });
+  }
+
+  /** Destruction SANS animation — mort du joueur, changement de zone, shutdown
+   *  de la scène. Aucune de ces trois situations ne doit jouer la libération. */
+  private destroyEchoImmediate(): void {
+    if (this.echoMoveTween)  { this.echoMoveTween.remove();  this.echoMoveTween = null; }
+    if (this.echoCountTween) { this.echoCountTween.remove(); this.echoCountTween = null; }
+    if (this.echoPunchTween) { this.echoPunchTween.remove(); this.echoPunchTween = null; }
+    if (this.echoIdleTween)  { this.echoIdleTween.remove();  this.echoIdleTween = null; }
+    if (this.echoStrokeFlashEvt) { this.echoStrokeFlashEvt.remove(); this.echoStrokeFlashEvt = null; }
+    this.echoPendingAnchor        = null;
+    this.echoAnchorCommitScheduled = false;
+    if (this.echoContainer) {
+      this.tweens.killTweensOf(this.echoContainer);
+      this.echoContainer.destroy();
+      this.echoContainer = null;
+    }
+    this.echoTotalText  = null;
+    this.echoHitsText   = null;
+    this.echoTotal             = 0;
+    this.echoHits              = 0;
+    this.echoAnchorInstanceId  = null;
+    this.echoDeadline          = 0;
+    this.echoFrozen            = false;
+    this.echoHasPosition       = false;
+    this.echoTweenT            = 1;
+    this.echoTier              = 0;
+    this.echoDisplayTotal      = 0;
+  }
+
+  /** Appelé chaque frame depuis update() (déjà gardé par le early-return
+   *  isInDialogue/isTraveling/menuOpen — la fenêtre ne "coule" donc pas pendant
+   *  la pause, même principe que comboDeadline). */
+  private updateEcho(time: number): void {
+    if (!this.echoHasPosition && this.echoHits === 0 && this.echoTotal === 0) return;
+
+    if (this.echoDeadline > 0 && time >= this.echoDeadline) {
+      this.releaseEcho();
+      return;
+    }
+
+    if (!this.echoFrozen && this.echoAnchorInstanceId) {
+      const sprite = this.findEnemySpriteByInstanceId(this.echoAnchorInstanceId);
+      if (!sprite || !sprite.active) {
+        this.echoFrozen = true;
+      } else {
+        const targetX = sprite.x;
+        const targetY = sprite.y - sprite.displayHeight / 2 - GameScene.ECHO_ANCHOR_Y_OFFSET;
+        this.echoX = Phaser.Math.Linear(this.echoTweenStartX, targetX, this.echoTweenT);
+        this.echoY = Phaser.Math.Linear(this.echoTweenStartY, targetY, this.echoTweenT);
+      }
+    }
+
+    if (this.echoHits + this.getSoulStackOffset() >= GameScene.ECHO_VISIBILITY_HITS) {
+      this.ensureEchoContainer();
+      this.renderEcho(time);
+    }
+  }
+
   /** Feedback flottant DODGE_PCT (loot stat rolls) — même style que showDamageNumber. */
+  /** « No mechanic without feedback » (cf. DODGE_PCT) — au moment où un statut
+   *  est posé sur le JOUEUR (talents Partie 2), sans quoi rien à l'écran ne
+   *  distingue "j'ai résisté" de "le jet a raté" de "le mécanisme est cassé". */
+  private static readonly PLAYER_STATUS_LABEL: Record<StatusEffect['type'], string> = {
+    BURN: 'Brûlure !', SLOW: 'Ralenti !', SHOCK: 'Choc !',
+    FREEZE: 'Gelé !', STUN: 'Étourdi !', BLEED: 'Saignement !', POISON: 'Poison !', EXPOSE: 'Exposé !',
+  };
+  private static readonly PLAYER_STATUS_COLOR: Record<StatusEffect['type'], string> = {
+    BURN: '#ff6644', SLOW: '#66ccff', SHOCK: '#ffee44',
+    FREEZE: '#aaeeff', STUN: '#ffcc44', BLEED: '#ff4444', POISON: '#88cc44', EXPOSE: '#ffaa44',
+  };
+
+  private showPlayerStatusAppliedText(type: StatusEffect['type']) {
+    const txt = this.add.text(
+      this.player.x + Phaser.Math.Between(-6, 6), this.player.y - 26,
+      GameScene.PLAYER_STATUS_LABEL[type],
+      { fontSize: '13px', color: GameScene.PLAYER_STATUS_COLOR[type], fontFamily: FONT, stroke: '#000000', strokeThickness: 2 },
+    ).setDepth(100).setOrigin(0.5, 1);
+    this.tweens.add({
+      targets: txt, y: txt.y - 40, alpha: 0, duration: 900, ease: 'Quad.easeOut',
+      onComplete: () => txt.destroy(),
+    });
+  }
+
+  /** Teinte le sprite joueur pendant qu'un statut subi est actif (talents
+   *  Partie 2) — priorité SHOCK/FREEZE/STUN (immobilise, le plus visible)
+   *  > SLOW > BURN si plusieurs sont actifs en même temps. Appelé chaque
+   *  frame depuis tickPlayerStatusEffects ; ne touche pas à l'alpha (déjà
+   *  utilisé par le clignotement i-frames, cf. update()). */
+  private updatePlayerStatusTint() {
+    const active = this.playerStatusEffects.find(e => e.type === 'SHOCK' || e.type === 'FREEZE' || e.type === 'STUN')
+      ?? this.playerStatusEffects.find(e => e.type === 'SLOW')
+      ?? this.playerStatusEffects.find(e => e.type === 'BURN');
+    if (!active) { if (this.player.isTinted) this.player.clearTint(); return; }
+    this.player.setTint(Phaser.Display.Color.HexStringToColor(GameScene.PLAYER_STATUS_COLOR[active.type]).color);
+  }
+
   private showDodgeText(x: number, y: number) {
     const txt = this.add.text(x + Phaser.Math.Between(-6, 6), y, 'Esquive !', {
       fontSize: '13px', color: '#88ddff', fontFamily: FONT,
@@ -4921,10 +6545,17 @@ export class GameScene extends Phaser.Scene {
       if (this.scene.isActive('InventoryScene')) {
         const inv = this.scene.get('InventoryScene') as InventoryScene;
         if (inv.handleEscape()) return;
-        this.setPaused(false); this.scene.stop('InventoryScene'); return;
+        inv.close(); return;
       }
-      if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene');     return; }
-      if (this.scene.isActive('PityScene'))      { this.setPaused(false); this.scene.stop('PityScene');      return; }
+      if (this.scene.isActive('SkillScene')) {
+        const sk = this.scene.get('SkillScene') as SkillScene;
+        if (sk.handleEscape()) return;
+        sk.close(); return;
+      }
+      // PityScene n'a pas de handleEscape() (pas de champ de recherche/popup à
+      // consommer avant de fermer) — stop() brut direct, pas de close() animé
+      // (pas encore construit pour cette scène, cf. applyKeyBindings).
+      if (this.scene.isActive('PityScene')) { this.setPaused(false); this.scene.stop('PityScene'); return; }
       // Bestiaire/Arsenal sont toujours ouverts depuis PauseScene (mise en pause
       // dessous) — leur propre close() sait la reprendre correctement, contrairement
       // à un setPaused(false) qui la laisserait bloquée en pause indéfiniment.
@@ -4959,6 +6590,10 @@ export class GameScene extends Phaser.Scene {
     this.advancePityKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.M);
     // Debug: press N to equip one of every gear slot directly + empty the bag (loot-pickup test aid)
     this.fullLoadoutKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.N);
+    // Debug: press P to grant 20 talent points (talent unlock test aid)
+    this.givePointsKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.P);
+    // Debug: press Y to spawn FIRE/ICE/LIGHTNING enemies + a boss around the player
+    this.spawnTestEnemiesKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Y);
     // Remaining keys (attack, dash, inventory, skill menu, skill slots)
     // are all wired by applyKeyBindings() called right after setupInput().
   }
@@ -5185,6 +6820,19 @@ export class GameScene extends Phaser.Scene {
     // Reset iframes — pas de clignotement résiduel après une transition de zone
     this.iframeUntil = 0;
     if (this.player?.active) this.player.setAlpha(1);
+    // Écho : changement de zone = reset dur SILENCIEUX, jamais l'animation de
+    // libération (celle-ci n'a de sens que pour une expiration naturelle).
+    this.destroyEchoImmediate();
+    // Statuts/knockback subis (talents Partie 2) — un SLOW/BURN ne doit pas
+    // traverser une transition de zone.
+    this.playerStatusEffects = [];
+    this.playerSlowMult      = 1;
+    this.playerImmobilized   = false;
+    this.knockbackX          = 0;
+    this.knockbackY          = 0;
+    // PRESERVED (glacius_deep_patience) — réarmé dans buildZone() UNIQUEMENT sur
+    // un vrai changement de zone, PAS ici : cette fonction tourne aussi au respawn
+    // sur place (même zoneId), qui ne doit pas réarmer le talent (cf. buildZone).
 
     // Destroy all tracked physics colliders/overlaps individually
     for (const c of this.physicsColliders) c.destroy();
@@ -5207,6 +6855,10 @@ export class GameScene extends Phaser.Scene {
       if (h.halo.active)   h.halo.destroy();
     }
     this._homingProjectiles = [];
+    // STAFF_FINISHER_ZONE — une zone laissée au sol ne doit pas traverser une
+    // transition de zone (coordonnées locales à l'ancienne zone, cercle orphelin).
+    for (const z of this._finisherZones) { if (z.gfx.active) z.gfx.destroy(); }
+    this._finisherZones = [];
     this.weaponProjectiles?.clear(true, true);
 
     // Zone graphics (map background, paths, walls, teleport highlights)
@@ -5237,9 +6889,10 @@ export class GameScene extends Phaser.Scene {
     this.enemies.destroy(true);
 
     // BUG 4 fix: purge orphaned enemy cooldown keys to prevent unbounded dict growth
-    // (inclut magma_${id}, ajouté avec la Marque de Magma — même garde-fou).
+    // (inclut magma_${id}/burn_${id}, ajoutés respectivement avec la Marque de
+    // Magma et le tick BURN — même garde-fou).
     for (const key of Object.keys(this.cooldowns)) {
-      if (key.startsWith('atkcd_') || key.startsWith('melee_') || key.startsWith('bleed_') || key.startsWith('magma_')) {
+      if (key.startsWith('atkcd_') || key.startsWith('melee_') || key.startsWith('bleed_') || key.startsWith('magma_') || key.startsWith('burn_')) {
         delete this.cooldowns[key];
       }
     }
@@ -5302,6 +6955,12 @@ export class GameScene extends Phaser.Scene {
 
   private buildZone(zoneId: string, targetX: number, targetY: number) {
     try {
+    // PRESERVED (glacius_deep_patience) — « 1 fois par ZONE » : buildZone est
+    // aussi le chemin de RESPAWN sur place (onPlayerDeath → performZoneTransition
+    // avec le même zoneId) — sans cette garde, mourir réarmerait le talent à
+    // chaque mort au lieu d'une seule fois par vraie visite de zone (bug trouvé
+    // en review, le talent devenait "1 fois par vie" au lieu de "par zone").
+    if (zoneId !== this.gameState.player.currentZone) this.preservedUsedThisZone = false;
     this.gameState.player.currentZone = zoneId;
     this.gameState.player.position    = { x: targetX, y: targetY };
     this.layout = getZoneLayout(zoneId);
@@ -5381,6 +7040,11 @@ export class GameScene extends Phaser.Scene {
     const finisher = comboConfig.finisher;
     const delayOf  = (d: number) => effectiveHitDelayMs(d, aspd);
 
+    // Une transition de zone déjà en cours au moment du cast (mort par DOT, téléport)
+    // annulerait de toute façon tous les hits différés plus bas (chacun gardé par
+    // isTraveling) — autant ne pas prélever le coût de sacrificeFinisher pour rien.
+    if (this.isTraveling) return;
+
     // BLOCKER-E: heavyFinisherBonus multiplie le damageMultiplier pour GS/HAMMER/AXE
     const isHeavyWeapon = weaponType === WeaponType.GREATSWORD
       || weaponType === WeaponType.HAMMER
@@ -5389,19 +7053,40 @@ export class GameScene extends Phaser.Scene {
       ? (1 + this.playerModifiers.heavyFinisherBonus / 100)
       : 1.0;
 
+    // SACRIFICE_FINISHER (ten_malchar_blessing, NG+) — consume 20% HP max au CAST
+    // (pas au timing du dernier coup : le joueur paie même si la cible meurt avant),
+    // DOUBLE les dégâts de TOUS les coups du finisher. Plancher à 1 HP — un finisher
+    // ne doit jamais tuer son propre lanceur.
+    // Passage balance-agent (fin du chantier talents Partie 2) : ×3 mesurait +72%
+    // DPS solo pour 20% HP/finisher (BP/pt=4,00, 4× la référence "juste" du
+    // projet) et faisait tomber le boss final à 8-15s — sous le temps minimum
+    // pour qu'il délivre ne serait-ce que 2 cycles de pattern. Ramené à ×2.
+    const sacrificeFinisher = this.playerModifiers.sacrificeFinisher;
+    const sacrificeFactor = sacrificeFinisher ? 2 : 1;
+    if (sacrificeFinisher) {
+      const p = this.gameState.player;
+      const cost = Math.max(1, Math.round(p.stats.maxHp * 0.20));
+      p.stats.hp = Math.max(1, p.stats.hp - cost);
+      this.showDamageNumber(this.player.x, this.player.y - 20, cost, false, undefined, true);
+    }
+
     if (pattern.isProjectile) {
-      // BOW finisher : 3 flèches en éventail via le système de projectile existant.
+      // BOW finisher : projectiles en éventail via le système existant. Seul BOW
+      // passe par cette branche — le pattern de base de STAFF (ATTACK_PATTERNS,
+      // partagé avec son attaque normale) n'a PAS isProjectile:true, son finisher
+      // est un cône (cf. combos.ts, effect.pierceCount 99) : branche `else` ci-dessous.
       // BUG4 fix: passe le damageMultiplier de chaque hit à fireArrowProjectile.
       if (windupMs > 0) this.spawnWindupVfx(windupMs);
       finisher.hits.forEach(hit => {
         this.time.delayedCall(windupMs + delayOf(hit.delay), () => {
-          if (!this.isTraveling) this.fireArrowProjectile(hit.damageMultiplier);
+          if (this.isTraveling) return;
+          this.fireArrowProjectile(hit.damageMultiplier * sacrificeFactor);
         });
       });
     } else {
       if (windupMs > 0) this.spawnWindupVfx(windupMs);
       finisher.hits.forEach((hit, hitIndex) => {
-        const effectiveDmgMult = hit.damageMultiplier * heavyFinisherFactor;
+        const effectiveDmgMult = hit.damageMultiplier * heavyFinisherFactor * sacrificeFactor;
         const fireAt = windupMs + delayOf(hit.delay);
         const doHit = () => {
           if (this.isTraveling) return;
@@ -5484,6 +7169,150 @@ export class GameScene extends Phaser.Scene {
 
       if (effectAt === 0) applyEffect();
       else this.time.delayedCall(effectAt, applyEffect);
+    }
+
+    // Effets spéciaux des TALENTS (Partie 2, Phase 2) — universels : tout finisher,
+    // quelle que soit l'arme, les déclenche si le nœud est débloqué. Indépendants de
+    // comboConfig.finisher.effect (au-dessus), qui est spécifique à l'arme et peut
+    // être absent. SACRIFICE_FINISHER (coût payé au cast) est géré ailleurs dans
+    // cette fonction.
+    const mods = this.playerModifiers;
+    const hasTalentFx = mods.finisherNova || mods.burnOnFinisher || mods.freezeOnFinisher
+      || mods.cycloneFinisher || mods.quakeFinisher || mods.chainFinisher || mods.guardFinisher
+      || (weaponType === WeaponType.STAFF && mods.staffFinisherZone);
+    if (hasTalentFx) {
+      const lastHit = finisher.hits[finisher.hits.length - 1];
+      const talentEffectAt = windupMs + delayOf(lastHit?.delay ?? 0);
+
+      const applyTalentEffects = () => {
+        if (this.isTraveling) return;
+        const px = this.player.x, py = this.player.y;
+
+        // STAFF_FINISHER_ZONE (arc_elemental_wake) — le finisher STAFF est un cône
+        // (combos.ts, pas un projectile — cf. commentaire plus haut), donc le "point
+        // d'impact final" est le point visé par le dernier hit, comme le VFX de coup
+        // (spawnWeaponSwingVfx) le calcule déjà pour ce même weaponType.
+        if (weaponType === WeaponType.STAFF && mods.staffFinisherZone) {
+          const range = lastHit?.range ?? 260;
+          const tx = px + Math.cos(this.facingAngle) * range * 0.7;
+          const ty = py + Math.sin(this.facingAngle) * range * 0.7;
+          const zoneElement = this.gameState.player.equipment.weapon?.element ?? ElementType.NEUTRAL;
+          this.spawnFinisherZone(tx, ty, zoneElement);
+        }
+
+        // BURN_ON_FINISHER / FREEZE_ON_FINISHER — mêmes cibles que effect.stunMs/
+        // knockback ci-dessus : cône du dernier coup, proxy déjà établi pour "les
+        // ennemis touchés par le finisher".
+        if (mods.burnOnFinisher || mods.freezeOnFinisher) {
+          const range   = lastHit?.range   ?? 130;
+          const halfArc = lastHit?.halfArc ?? Math.PI;
+          const atk = this.gameState.player.stats.atk;
+          for (const sprite of this.findEnemiesInCone(range, halfArc)) {
+            const ae = this.activeEnemies.get(sprite.name);
+            if (!ae || ae.currentHp <= 0) continue;
+            if (mods.burnOnFinisher) {
+              ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'BURN');
+              ae.statusEffects.push({ type: 'BURN', duration: 3, strength: Math.max(1, Math.round(atk * 0.3)) });
+            }
+            if (mods.freezeOnFinisher) {
+              ae.statusEffects = ae.statusEffects.filter(e => e.type !== 'FREEZE');
+              ae.statusEffects.push({ type: 'FREEZE', duration: 2, strength: 1 });
+            }
+          }
+        }
+
+        // CYCLONE_FINISHER — zone de vent, repousse les ennemis proches (r150).
+        if (mods.cycloneFinisher) {
+          for (const sprite of this.enemies.getChildren()) {
+            const s = sprite as Phaser.Physics.Arcade.Sprite;
+            if (!s.active) continue;
+            if (Phaser.Math.Distance.Between(px, py, s.x, s.y) > 150) continue;
+            this.applyKnockback(s, 220);
+          }
+        }
+
+        // FINISHER_NOVA — r90 autour du joueur, 60% Magic ATK (STAFF) ou ATK
+        // (toute autre arme), élément de l'arme.
+        // NB : distance mesurée sur la position RÉELLE du sprite (ActiveEnemy.x/y
+        // n'est jamais resynchronisé après le spawn — bug préexistant, cf. rollArcChain/
+        // applyKnockbackToPlayer — donc jamais utilisé ici comme source de position).
+        // Passage balance-agent (fin du chantier) : scalait sur matk pour TOUTE
+        // arme — sur les 9 armes non-STAFF, matk est une stat jamais investie
+        // (~18 vs ~254 d'atk sur un build MYTHIC) : contenu mort en pratique.
+        // Même garde que CombatSystem.playerAttack (isMagicWeapon).
+        if (mods.finisherNova) {
+          const csFinisher = StatsSystem.computeAll(this.gameState.player);
+          const isMagicWeapon = weaponType === WeaponType.STAFF;
+          const dmg = Math.max(1, Math.round((isMagicWeapon ? csFinisher.matk : csFinisher.atk) * 0.60));
+          const novaElement = this.gameState.player.equipment.weapon?.element ?? ElementType.NEUTRAL;
+          for (const id of Array.from(this.activeEnemies.keys())) {
+            const ae = this.activeEnemies.get(id);
+            if (!ae || ae.currentHp <= 0) continue;
+            const sprite = this.findEnemySpriteByInstanceId(id);
+            if (!sprite || Phaser.Math.Distance.Between(px, py, sprite.x, sprite.y) > 90) continue;
+            this.showDamageNumber(sprite.x, sprite.y - 20, dmg, false, novaElement);
+            this.spawnHitParticles(sprite.x, sprite.y, novaElement);
+            this.applyDamageToEnemy(id, dmg, false);
+          }
+          this.requestShake(150, 0.010, GameScene.SHAKE_PRIO.FINISHER);
+        }
+
+        // QUAKE_FINISHER — onde de choc au sol (r100), 40% ATK terre, stagger ×2.
+        if (mods.quakeFinisher) {
+          const atk = StatsSystem.computeAll(this.gameState.player).atk;
+          const dmg = Math.max(1, Math.round(atk * 0.40));
+          for (const id of Array.from(this.activeEnemies.keys())) {
+            const ae = this.activeEnemies.get(id);
+            if (!ae || ae.currentHp <= 0) continue;
+            const sprite = this.findEnemySpriteByInstanceId(id);
+            if (!sprite || Phaser.Math.Distance.Between(px, py, sprite.x, sprite.y) > 100) continue;
+            this.showDamageNumber(sprite.x, sprite.y - 20, dmg, false, ElementType.EARTH);
+            this.spawnHitParticles(sprite.x, sprite.y, ElementType.EARTH);
+            this.applyDamageToEnemy(id, dmg, false);
+            if (ae.currentHp <= 0) continue; // tué par la secousse — pas de stagger sur un cadavre
+            this.checkStagger(sprite, ae, dmg * 2);
+          }
+          this.requestShake(180, 0.012, GameScene.SHAKE_PRIO.FINISHER);
+        }
+
+        // CHAIN_FINISHER — éclair en chaîne depuis le joueur, jusqu'à 3 ennemis,
+        // 60% Magic ATK (STAFF) ou ATK (toute autre arme) — même correctif que
+        // FINISHER_NOVA ci-dessus (matk mort sur les armes non-STAFF).
+        if (mods.chainFinisher) {
+          const csChain = StatsSystem.computeAll(this.gameState.player);
+          const isMagicWeaponChain = weaponType === WeaponType.STAFF;
+          const dmg = Math.max(1, Math.round((isMagicWeaponChain ? csChain.matk : csChain.atk) * 0.60));
+          const hitIds = new Set<string>();
+          let originX = px, originY = py;
+          for (let hop = 0; hop < 3; hop++) {
+            let nearest: ActiveEnemy | null = null;
+            let nearestSprite: Phaser.Physics.Arcade.Sprite | null = null;
+            let nearestDist = Infinity;
+            for (const other of this.activeEnemies.values()) {
+              if (hitIds.has(other.instanceId) || other.currentHp <= 0) continue;
+              const s = this.findEnemySpriteByInstanceId(other.instanceId);
+              if (!s) continue;
+              const d = Phaser.Math.Distance.Between(originX, originY, s.x, s.y);
+              if (d < nearestDist) { nearestDist = d; nearest = other; nearestSprite = s; }
+            }
+            if (!nearest || !nearestSprite || nearestDist > 250) break;
+            hitIds.add(nearest.instanceId);
+            this.showDamageNumber(nearestSprite.x, nearestSprite.y - 20, dmg, false, ElementType.LIGHTNING);
+            this.spawnHitParticles(nearestSprite.x, nearestSprite.y, ElementType.LIGHTNING);
+            this.applyDamageToEnemy(nearest.instanceId, dmg, false);
+            originX = nearestSprite.x; originY = nearestSprite.y;
+          }
+        }
+
+        // GUARD_FINISHER — bouclier temporisé 8% HP max, 3s. Partage grantTimedShield
+        // (donc le pool) avec LAST_BASTION — le plus généreux gagne sur les deux axes.
+        if (mods.guardFinisher) {
+          this.grantTimedShield(Math.round(this.gameState.player.stats.maxHp * 0.08), 3000);
+        }
+      };
+
+      if (talentEffectAt === 0) applyTalentEffects();
+      else this.time.delayedCall(talentEffectAt, applyTalentEffects);
     }
 
     this.spawnFinisherVfx(weaponType, this.facingAngle);
@@ -5891,14 +7720,31 @@ export class GameScene extends Phaser.Scene {
       case 'skill1': this.triggerSkillBySlot(1); break;
       case 'skill2': this.triggerSkillBySlot(2); break;
       case 'skill3': this.triggerSkillBySlot(3); break;
+      // Fermeture via close() (animation symétrique) ; bascule d'un écran vers
+      // l'autre en stop BRUT — même raison que les handlers clavier I/K de
+      // applyKeyBindings() (setPaused(false) différé sous le nouvel overlay).
       case 'inventory':
-        if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
-        else this.openInventory();
+        if (this.scene.isActive('InventoryScene')) {
+          (this.scene.get('InventoryScene') as InventoryScene).close();
+        } else {
+          if (this.scene.isActive('SkillScene')) { this.setPaused(false); this.scene.stop('SkillScene'); }
+          if (this.scene.isActive('PityScene'))  { this.setPaused(false); this.scene.stop('PityScene'); }
+          this.setPaused(true);
+          this.scene.launch('InventoryScene', { gameScene: this });
+        }
         break;
       case 'skills':
-        if (this.scene.isActive('SkillScene')) { this.setPaused(false); this.scene.stop('SkillScene'); }
-        else this.openSkills();
+        if (this.scene.isActive('SkillScene')) {
+          (this.scene.get('SkillScene') as SkillScene).close();
+        } else {
+          if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
+          if (this.scene.isActive('PityScene'))      { this.setPaused(false); this.scene.stop('PityScene'); }
+          this.setPaused(true);
+          this.scene.launch('SkillScene', { gameScene: this });
+        }
         break;
+      // PityScene n'a pas encore de close() animé — stop() brut des deux côtés
+      // (toggle ET bascule), cf. applyKeyBindings.
       case 'pity':
         if (this.scene.isActive('PityScene')) { this.setPaused(false); this.scene.stop('PityScene'); }
         else this.openPity();
@@ -5908,6 +7754,8 @@ export class GameScene extends Phaser.Scene {
 
   shutdown() {
     this.time.removeAllEvents();
+    // Écho : reset dur silencieux — même règle que destroyCurrentZoneObjects().
+    this.destroyEchoImmediate();
     this.input.keyboard?.removeAllKeys(true);
     // Clean up native window listeners — no memory leak on scene stop/restart.
     if (this._attackHandler) {

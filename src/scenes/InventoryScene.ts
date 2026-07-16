@@ -11,6 +11,7 @@ import { getPassiveEffectLabel } from '../data/passiveEffects';
 import {
   UI, TYPE, LAYOUT, drawGlowPanel, drawCard, drawSlot, addUiFrame,
   drawDivider, addCloseButton, uiStyle, titleStyle, fitText, openScreenTransition,
+  closeScreenTransition,
   resonanceColor, formatRangedStatBounds, lineQuality, formatResonanceLine,
 } from '../utils/UITheme';
 import { SearchField, matchesSearch } from '../utils/SearchField';
@@ -171,6 +172,12 @@ export class InventoryScene extends Phaser.Scene {
   // Which paperdoll slot to flash after a successful tap-equip
   private lastFlashSlotKey: EquipSlotKey | null = null;
 
+  // True dès que l'animation de FERMETURE (closeScreenTransition, ~170ms) est en
+  // cours — ignore tout nouvel appel à close() tant qu'elle tourne (évite un
+  // scene.stop() dupliqué si × est cliqué puis ESC pressé pendant le fondu).
+  // Même patron que BestiaryScene/ArsenalScene.
+  private closing = false;
+
   // Consume-confirm popup state
   private consumePopupObjects: Phaser.GameObjects.GameObject[] = [];
   private consumePopupTimer: Phaser.Time.TimerEvent | null = null;
@@ -188,6 +195,7 @@ export class InventoryScene extends Phaser.Scene {
     this.bagFilter    = 'ALL';
     this.search       = null;
     this.searchQuery  = '';
+    this.closing      = false;
   }
 
   create() {
@@ -788,7 +796,9 @@ export class InventoryScene extends Phaser.Scene {
           bgGfx.strokeRoundedRect(BTN_X, y, BTN_W, BTN_H, 4);
           txt.setColor(color);
         })
-        .on('pointerdown', onClick);
+        // this.closing : l'écran est en train de se dissoudre (closeScreenTransition,
+        // ~170ms) — un tap résiduel ne doit plus équiper/déséquiper/consommer/jeter.
+        .on('pointerdown', () => { if (!this.closing) onClick(); });
       this.dynamicObjs.push(bgGfx, txt, hit);
       btnY += BTN_H + BTN_GAP;
     };
@@ -1829,6 +1839,7 @@ export class InventoryScene extends Phaser.Scene {
         confirmTxt.setColor(UI.TXT_GREEN);
       })
       .on('pointerdown', () => {
+        if (this.closing) return;
         this.closeConsumePopup();
         if (isConsumable) {
           InventorySystem.useConsumable(this.player, item);
@@ -1953,8 +1964,18 @@ export class InventoryScene extends Phaser.Scene {
     this.refresh();
   }
 
-  private close(): void {
-    this.gameScene.closeOverlay('InventoryScene');
+  // Public : GameScene (touche I, ESC après handleEscape, action mobile) l'appelle
+  // directement pour fermer avec l'animation symétrique de l'ouverture
+  // (closeScreenTransition) au lieu d'un scene.stop() brut — même patron que
+  // BestiaryScene.close(). Le setPaused(false) qui vivait chez les appelants est
+  // reporté dans onClosed : le jeu ne reprend qu'une fois l'écran dissous.
+  public close(): void {
+    if (this.closing) return;
+    this.closing = true;
+    closeScreenTransition(this, () => {
+      this.scene.stop();
+      this.gameScene.setPaused(false);
+    });
   }
 
   private refresh(): void {

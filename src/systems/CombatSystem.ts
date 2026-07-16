@@ -2,7 +2,7 @@ import {
   PlayerState, Enemy, ActiveEnemy, DamageResult,
   StatusEffect, ElementType, ELEMENT_WEAKNESS, DARK_MULTIPLIER, WEAKNESS_MULTIPLIER, Skill, WeaponType
 } from '../types';
-import { TalentModifiers } from './TalentSystem';
+import { TalentModifiers, TalentSystem } from './TalentSystem';
 import { StatsSystem, ComputedStats } from './StatsSystem';
 import { PassiveSystem } from './PassiveSystem';
 import { SKILL_MAP } from '../data/skills';
@@ -44,6 +44,8 @@ export class CombatSystem {
       x: 0,
       y: 0,
       sprite: undefined,
+      staggerMeter: 0,
+      staggerResetAt: 0,
     };
   }
 
@@ -132,8 +134,14 @@ export class CombatSystem {
   ): DamageResult | null {
     const zeroManaCost = PassiveSystem.hasZeroManaCost(player.equipment);
     if (!zeroManaCost) {
-      if (player.stats.mana < skill.manaCost) return null;
-      player.stats.mana -= skill.manaCost;
+      // MANA_COST_PCT (arc_deep_reservoir) — réduction du coût, plancher à 1 pour
+      // qu'un sort reste toujours castable (jamais gratuit via ce seul canal,
+      // contrairement à hasZeroManaCost qui est un passif d'objet dédié).
+      const cost = mods && mods.manaCostPct > 0
+        ? Math.max(1, Math.round(skill.manaCost * (1 - mods.manaCostPct / 100)))
+        : skill.manaCost;
+      if (player.stats.mana < cost) return null;
+      player.stats.mana -= cost;
     }
 
     if (skill.effect?.heal || skill.effect?.healPercent) {
@@ -143,8 +151,21 @@ export class CombatSystem {
         : Math.round(player.stats.maxHp * (skill.effect.healPercent ?? 0) * healSkillMult);
       // PassiveSystem.applyHeal (au lieu d'un clamp manuel) — convertit le surplus
       // au-delà de maxHp en bouclier si OVERHEAL_SHIELD_50_PCT est équipé.
-      PassiveSystem.applyHeal(player, amt);
+      PassiveSystem.applyHeal(player, amt, mods);
       return { damage: 0, isCrit: false, isKill: false };
+    }
+
+    // SHIELD_SKILL_PCT (arc_steel_ward/glacius_layered_ice) — stone_shield/
+    // ice_barrier n'avaient AUCUN consommateur pour leur effect.shield avant ce
+    // chantier (skill entièrement muette au cast, en plus d'être une cible morte
+    // pour ce talent) : return anticipé ici, comme pour heal/healPercent
+    // au-dessus, sinon `!target` plus bas ferait tomber un sort sans cible
+    // dans le calcul de dégâts (bug similaire à celui trouvé en Phase 6 sur les
+    // sorts utilitaires). mods.shieldSkillMult (base 1.0) s'applique même sans
+    // talent débloqué — c'est la VALEUR de base du sort, pas un bonus séparé.
+    if (skill.effect?.shield) {
+      const amount = Math.round(skill.effect.shield * (mods?.shieldSkillMult ?? 1));
+      return { damage: 0, isCrit: false, isKill: false, shieldAmount: amount };
     }
 
     if (!target) return null;
@@ -161,8 +182,14 @@ export class CombatSystem {
     const mult = critRoll ? cs.critDmg : 1.0;
 
     const elemMult = CombatSystem.elementalMultiplier(skill.element, target);
+    // Phase 9 — ELEM_BONUS_PCT des nœuds `elementScoped` (ignis_pyroclast,
+    // abyssal_leviathan_call, terra_gorvuns_wrath, fulguris_storm_engine) : même
+    // canal % que cs.elemBonus (générique), s'additionne dedans plutôt qu'un
+    // multiplicateur séparé (cohérent avec le reste du fichier — jamais empiler
+    // deux canaux % qui portent le même nom en produit).
+    const scopedElemBonusPct = TalentSystem.getScopedElemBonusPct(player, skill.element);
     const elemBonusMult = skill.element && skill.element !== ElementType.NEUTRAL
-      ? 1 + cs.elemBonus / 100
+      ? 1 + (cs.elemBonus + scopedElemBonusPct) / 100
       : 1;
 
     const soulBonus = CombatSystem.getSoulEchoBonus(player);
@@ -188,16 +215,51 @@ export class CombatSystem {
 
     // BLOCKER-C: apply talent multipliers (skillDmgMult, projectileSkillMult, magicDmgMult)
     let finalTotal = total;
+    // Base du vol de vie — snapshot AVANT le doublement VOID_CHANNEL (voir plus
+    // bas). Par défaut égale à finalTotal (cas normal, pas de voidChannel).
+    let lifestealBase = total;
     if (mods) {
       finalTotal = Math.round(total * mods.skillDmgMult);
       if (skill.isProjectile) finalTotal = Math.round(finalTotal * mods.projectileSkillMult);
       if (skill.element)      finalTotal = Math.round(finalTotal * mods.magicDmgMult);
+      // DARK_DMG_MULT / VOID_CHANNEL — réservés aux sorts qui déclarent RÉELLEMENT
+      // des dégâts (skill.damage/magicDamage). Sans cette garde, un sort utilitaire
+      // sans dégâts (bouclier, dash, etc.) qui a quand même une cible proche (cf.
+      // GameScene.activateSkill, qui résout une cible pour TOUT sort équipé) tombe
+      // dans `total = Math.max(1, magicDmg+physDmg)` — un plancher de 1 dégât
+      // "fantôme" calculé depuis l'ATK/MATK brut du joueur (bug préexistant, hors
+      // périmètre). VOID_CHANNEL en particulier ne doit JAMAIS prélever 15% des HP
+      // max pour ce dégât fantôme sur un sort qui n'est pas censé infliger quoi que
+      // ce soit (trouvé en review : stone_shield/ice_barrier/gale_step/void_step).
+      const dealsRealDamage = (skill.damage ?? 0) > 0 || (skill.magicDamage ?? 0) > 0;
+      if (dealsRealDamage && skill.element === ElementType.DARK) {
+        // DARK_DMG_MULT (ten_shadow_veil/abyss_pact/world_ender) — multiplicatif,
+        // s'accumule déjà en amont dans TalentSystem (mods.darkDmgMult *= 1+pct/100
+        // par nœud), donc une seule application ici suffit pour les 3 tiers.
+        finalTotal = Math.round(finalTotal * mods.darkDmgMult);
+      }
+      // Snapshot AVANT le doublement — sinon le vol de vie soigne sur les dégâts
+      // DÉJÀ doublés (trouvé au passage balance-agent final : dès ~12% de vol de
+      // vie, un sacrifice "coûte" 15% HP max mais EN REND davantage — le
+      // "sacrifice" se rembourse tout seul). Même principe que SACRIFICE_FINISHER
+      // (GameScene.executeFinisherAttack), dont le ×2 s'applique EN DEHORS de cet
+      // appel : le vol de vie n'y voit jamais que le coup non multiplié.
+      lifestealBase = finalTotal;
+      if (dealsRealDamage && mods.voidChannel) {
+        // Sacrifice systématique (pas de garde "1 fois par...", contrairement aux
+        // talents défensifs de ce chantier) : chaque sort à dégâts payé en HP double
+        // ses dégâts. Plancher à 1 HP — même garde-fou que sacrificeFinisher, un
+        // sort ne doit jamais tuer son propre lanceur.
+        const cost = Math.max(1, Math.round(player.stats.maxHp * 0.15));
+        player.stats.hp = Math.max(1, player.stats.hp - cost);
+        finalTotal = Math.round(finalTotal * 2);
+      }
       finalTotal = Math.max(1, finalTotal);
     }
 
     target.currentHp = Math.max(0, target.currentHp - finalTotal);
     if (cs.lifesteal > 0) {
-      player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + Math.floor(finalTotal * cs.lifesteal / 100));
+      player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + Math.floor(lifestealBase * cs.lifesteal / 100));
     }
 
     let statusApplied: StatusEffect | undefined;
@@ -332,11 +394,18 @@ export class CombatSystem {
     const hpRegen = player.unlockedSkills.includes('elaras_gift')
       ? Math.floor(player.stats.maxHp * 0.01)
       : 0;
-    const manaRegen = Math.floor(player.stats.maxMana * 0.02);
+    // Base 2% du mana max par tick de 2 s (= 1%/s). MANA_REGEN_PCT des talents
+    // (abyssal_deep_current : 5%/s) s'y AJOUTE — exprimé /s, donc ×2 par tick.
+    const talentRegenPct = TalentSystem.getStatContribs(player).manaRegenPct;
+    const manaRegen = Math.floor(player.stats.maxMana * (0.02 + talentRegenPct / 100 * 2));
 
     // PassiveSystem.applyHeal (au lieu d'un clamp manuel) — convertit le surplus HP
     // au-delà de maxHp en bouclier si OVERHEAL_SHIELD_50_PCT est équipé (cohérent
-    // avec playerSkill et les soins de GameScene).
+    // avec playerSkill et les soins de GameScene). Pas de `mods` ici : cette
+    // fonction statique n'a accès qu'à `player` (pas de TalentModifiers dans sa
+    // signature publique) — HEALING_RECEIVED_PCT ne s'applique donc pas à la
+    // régén hors-combat d'elaras_gift, scope volontairement restreint aux soins
+    // actifs (sorts, kill-heal, omnivamp, régén permanente en combat).
     PassiveSystem.applyHeal(player, hpRegen);
     player.stats.mana = Math.min(player.stats.maxMana, player.stats.mana + manaRegen);
   }

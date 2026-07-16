@@ -75,7 +75,14 @@ export class PityScene extends Phaser.Scene {
 
     this.add.text(W / 2, panelY + PAD + 6, t('pity.title'), titleStyle(UI.TXT_GOLD, { stroke: true }))
       .setOrigin(0.5, 0);
-    addCloseButton(this, panelX + PANEL_W - 24, panelY + PAD + 10, () => this.gameScene.closeOverlay('PityScene'));
+    // closeOverlay() a été retiré de GameScene (chantier talents — remplacé par
+    // le patron close()-animé sur Inventaire/Compétences) ; PityScene n'a pas
+    // encore ce patron (cf. commentaires dans GameScene.applyKeyBindings), donc
+    // stop() brut direct plutôt qu'un helper disparu.
+    addCloseButton(this, panelX + PANEL_W - 24, panelY + PAD + 10, () => {
+      this.gameScene.setPaused(false);
+      this.gameScene.scene.stop('PityScene');
+    });
 
     const sepGfx = this.add.graphics();
     drawDivider(sepGfx, panelX + PAD, panelY + PAD + HEADER_H - 6, PANEL_W - PAD * 2, UI.ACCENT_ARCANE, 0.35);

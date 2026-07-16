@@ -1,7 +1,7 @@
 import { NPC, PlayerState, DialogueLine, WorldState } from '../types';
 import { DialogueSystem, DialogueSession } from '../systems/DialogueSystem';
 import { SHOP_INVENTORY } from '../data/shops';
-import { UI, TYPE, drawGlowPanel, uiStyle, openScreenTransition } from '../utils/UITheme';
+import { UI, TYPE, drawGlowPanel, uiStyle, openScreenTransition, closeScreenTransition } from '../utils/UITheme';
 import { t, localizeDialogueLine } from '../i18n';
 
 // ─────────────────────────────────────────────────────────────────
@@ -511,10 +511,17 @@ export class DialogueScene extends Phaser.Scene {
     this.renderCurrentLine();
   }
 
+  // Fermeture avec l'animation symétrique de l'ouverture (closeScreenTransition)
+  // — le stop() + onClose() d'origine sont reportés dans onClosed, une fois le
+  // panneau dissous. onClose() reste APRÈS le stop, comme avant : GameScene y lit
+  // le flag 'open_shop' et peut lancer ShopScene — qui enchaîne alors sur sa
+  // propre animation d'ouverture, sans chevaucher celle-ci.
   private closeDialogue() {
     if (this.closing) return;
     this.closing = true;
-    this.scene.stop();
-    this.onClose();
+    closeScreenTransition(this, () => {
+      this.scene.stop();
+      this.onClose();
+    });
   }
 }

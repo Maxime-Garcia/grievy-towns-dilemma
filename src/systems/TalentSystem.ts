@@ -1,8 +1,19 @@
 // Pure system — zero Phaser imports.
 // Consomme PlayerState (types) et TALENT_MAP (data) uniquement.
 
-import { PlayerState, TalentBranch } from '../types';
+import { PlayerState, TalentBranch, ElementType } from '../types';
 import { TALENT_MAP } from '../data/talents';
+
+// Nœuds `elementScoped` (Phase 9) — ELEM_BONUS_PCT restreint aux sorts d'un ou
+// plusieurs éléments précis. Mappage explicite par ID (pas par branche) : ABYSSAL
+// couvre DEUX éléments (eau ET glace) quand les 3 autres n'en couvrent qu'un —
+// une table Record<TalentBranch, ElementType> ne suffirait pas.
+const ELEMENT_SCOPED_NODES: Record<string, ElementType[]> = {
+  ignis_pyroclast: [ElementType.FIRE],
+  abyssal_leviathan_call: [ElementType.WATER, ElementType.ICE],
+  terra_gorvuns_wrath: [ElementType.EARTH],
+  fulguris_storm_engine: [ElementType.LIGHTNING],
+};
 
 // Snapshot immutable des modificateurs actifs, calculé une seule fois après chaque
 // unlock/respec/changement d'équipement. NE PAS appeler à chaque frame.
@@ -70,7 +81,7 @@ export interface TalentModifiers {
   voidChannel: boolean;         // sacrifie 15% HP au cast → sort +100%
   darkBurn: boolean;            // les BURN infligés deviennent des dégâts sombres
   phantomStrikePct: number;     // % de chance de coup fantôme sans cooldown
-  sacrificeFinisher: boolean;   // finisher : consume 20% HP max → dégâts ×3
+  sacrificeFinisher: boolean;   // finisher : consume 20% HP max → dégâts ×2
 
   // ── TERRA ──────────────────────────────────────────────────────────────────
   knockbackResPct: number;      // % de réduction du knockback subi (cap 100)
@@ -97,6 +108,10 @@ export interface TalentModifiers {
   lastBastion: boolean;         // 1x/combat sous 30% HP → bouclier 25% HP max, 5s
   guardFinisher: boolean;       // finisher : bouclier 8% HP max, 3s
   preserved: boolean;           // 1x/zone, un coup fatal laisse à 1 HP + 2s d'invulnérabilité
+
+  // ── Phase 8 (divers) ─────────────────────────────────────────────────────
+  manaCostPct: number;          // % de réduction des coûts de mana des sorts
+  postFinisherBuff: boolean;    // après un finisher : prochaine attaque <2.5s +50% dmg, avance la chaîne (jusqu'à 2 coups selon l'arme)
 }
 
 export class TalentSystem {
@@ -235,6 +250,80 @@ export class TalentSystem {
     return (mult - 1) * 100;
   }
 
+  /**
+   * Contributions de talents à des STATS que StatsSystem calcule déjà, en POINTS
+   * DE POURCENTAGE ADDITIFS. Même logique que `getAspdPct` (précédent exact,
+   * étape 3) : ces points s'ADDITIONNENT aux substats d'équipement DANS
+   * `computeAll`, AVANT toute application — jamais en produit.
+   *
+   * Pourquoi additif et non le canal multiplicatif de `getModifiers()` :
+   * `dragon_soul` (+30% ATK) × `blood_pact` (+20%) × `world_ender` (+30%) en
+   * produit donnerait ×2,03 (+103%) au lieu de +80% ; c'est ainsi que naissent
+   * les builds runaway. En additif, trois nœuds à +30% valent +90%, toujours.
+   *
+   * NE contient QUE les effets INCONDITIONNELS mappant sur une stat existante.
+   * Sont volontairement EXCLUS (conditionnels / multiplicatifs — chantiers
+   * séparés, cf. rapport d'étape 4) :
+   *   - ELEM_BONUS_PCT des nœuds `elementScoped` (bonus restreint à UN élément :
+   *     il faut une vérification d'élément côté combat qui n'existe pas encore) ;
+   *   - LOW_HP_ATK_PCT / LOW_HP_DEF_PCT / ATK_PER_BURNING_PCT … (état runtime) ;
+   *   - MELEE_DMG_PCT / MAGIC_DMG_PCT / SKILL_DMG_PCT (canaux multiplicatifs
+   *     déjà consommés par GameScene/CombatSystem via `getModifiers`).
+   *
+   * NB — ATK_PCT s'applique à atk ET matk (« ATK globale physique + magique »,
+   * cf. TalentEffectKey). Un build physique n'utilise que atk, un mage que matk.
+   */
+  static getStatContribs(player: PlayerState): {
+    atkPct: number; hpPct: number; defPct: number; critPct: number;
+    elemBonusPct: number; lifestealPct: number; manaMaxPct: number; manaRegenPct: number;
+    defToAtkPct: number;
+  } {
+    const c = {
+      atkPct: 0, hpPct: 0, defPct: 0, critPct: 0,
+      elemBonusPct: 0, lifestealPct: 0, manaMaxPct: 0, manaRegenPct: 0,
+      defToAtkPct: 0,
+    };
+    for (const id of player.unlockedTalents) {
+      const node = TALENT_MAP[id];
+      if (!node) continue;
+      const e = node.effects;
+      if (e.ATK_PCT        !== undefined) c.atkPct       += e.ATK_PCT;
+      if (e.MAX_HP_PCT     !== undefined) c.hpPct        += e.MAX_HP_PCT;
+      if (e.DEF_PCT        !== undefined) c.defPct       += e.DEF_PCT;
+      if (e.CRIT_PCT       !== undefined) c.critPct      += e.CRIT_PCT;
+      if (e.LIFESTEAL_PCT  !== undefined) c.lifestealPct += e.LIFESTEAL_PCT;
+      if (e.MANA_MAX_PCT   !== undefined) c.manaMaxPct   += e.MANA_MAX_PCT;
+      if (e.MANA_REGEN_PCT !== undefined) c.manaRegenPct += e.MANA_REGEN_PCT;
+      // DEF_TO_ATK_PCT (terra_unshaking_foundation) — % de la DEF FINALE (calculée
+      // après tous les autres canaux) ajouté à l'ATK ; lu par StatsSystem.computeAll
+      // APRÈS le calcul de `def`, cf. commentaire là-bas sur l'ordre atk avant def.
+      if (e.DEF_TO_ATK_PCT !== undefined) c.defToAtkPct  += e.DEF_TO_ATK_PCT;
+      // ELEM_BONUS_PCT : seulement les nœuds NON restreints à un élément.
+      // Les nœuds `elementScoped` (pyroclast fire, leviathan water/ice, …) sont
+      // conditionnels — hors scope tant que le combat ne teste pas l'élément.
+      if (e.ELEM_BONUS_PCT !== undefined && !node.elementScoped) c.elemBonusPct += e.ELEM_BONUS_PCT;
+    }
+    return c;
+  }
+
+  /** Phase 9 — ELEM_BONUS_PCT des 4 nœuds `elementScoped` (ignis_pyroclast,
+   *  abyssal_leviathan_call, terra_gorvuns_wrath, fulguris_storm_engine),
+   *  applicable UNIQUEMENT si `skillElement` correspond. Canal séparé de
+   *  `getStatContribs().elemBonusPct` (générique, non scopé) — les deux
+   *  s'additionnent côté consommateur (CombatSystem.playerSkill), jamais l'un
+   *  sans l'autre : même monnaie (%), sources différentes. */
+  static getScopedElemBonusPct(player: PlayerState, skillElement?: ElementType): number {
+    if (!skillElement) return 0;
+    let total = 0;
+    for (const id of player.unlockedTalents) {
+      const scopedElements = ELEMENT_SCOPED_NODES[id];
+      if (!scopedElements || !scopedElements.includes(skillElement)) continue;
+      const pct = TALENT_MAP[id]?.effects.ELEM_BONUS_PCT;
+      if (pct !== undefined) total += pct;
+    }
+    return total;
+  }
+
   static getModifiers(player: PlayerState): TalentModifiers {
     const mods: TalentModifiers = {
       meleeDmgMult: 1.0,
@@ -319,6 +408,8 @@ export class TalentSystem {
       lastBastion: false,
       guardFinisher: false,
       preserved: false,
+      manaCostPct: 0,
+      postFinisherBuff: false,
     };
 
     for (const id of player.unlockedTalents) {
@@ -347,7 +438,18 @@ export class TalentSystem {
       if (e.HEAVY_FINISHER_BONUS !== undefined)   mods.heavyFinisherBonus  += e.HEAVY_FINISHER_BONUS;
       if (e.HEAVY_CD_REDUCTION_PCT !== undefined) mods.heavyCdReductionPct += e.HEAVY_CD_REDUCTION_PCT;
       if (e.LIGHT_FINISHER_BLEED !== undefined)   mods.lightFinisherBleed   = true;
-      // TODO(talent-ui): DEF_PCT → ProgressionSystem.computeBaseStats(), MANA_COST_PCT → playerSkill(), POST_FINISHER_BUFF → executeFinisherAttack()
+      // ATK_PCT / MAX_HP_PCT / CRIT_PCT / ELEM_BONUS_PCT / LIFESTEAL_PCT /
+      // MANA_MAX_PCT / MANA_REGEN_PCT / DEF_PCT sont désormais LUS via
+      // getStatContribs() → StatsSystem.computeAll (additif), et outOfCombatRegen
+      // pour la régén. Les champs atkMult/critBonus/… de getModifiers ci-dessous
+      // restent calculés mais sont VESTIGIAUX (aucun consommateur) — exactement
+      // comme attackSpeedMult coexiste avec getAspdPct (étape 3). NE PAS les
+      // recâbler : le canal vivant est getStatContribs, et lui seul.
+      if (e.MANA_COST_PCT !== undefined)          mods.manaCostPct         += e.MANA_COST_PCT;
+      if (e.POST_FINISHER_BUFF !== undefined)     mods.postFinisherBuff     = true;
+      // LOW_HP_ATK_PCT/LOW_HP_DEF_PCT restent conditionnels runtime (HP courants),
+      // volontairement absents d'ici ET de getStatContribs — lus directement dans
+      // GameScene (isLowHp()) au moment du dégât, pas agrégés en amont.
 
       // ── Génériques (branches élémentaires) ──────────────────────────────
       if (e.ATK_PCT !== undefined)                mods.atkMult             *= 1 + e.ATK_PCT / 100;

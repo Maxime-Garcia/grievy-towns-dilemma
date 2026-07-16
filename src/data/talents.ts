@@ -71,7 +71,7 @@ export const TALENTS: TalentNode[] = [
   {
     id: 'vig_shattering_echo',
     name: 'Fracas',
-    description: 'Finishers GREATSWORD/HAMMER/AXE : durée de stun +0.5s, zone/portée +30%.',
+    description: 'Finishers GREATSWORD/HAMMER/AXE : +30% de dégâts.',
     branch: TalentBranch.VIGOR,
     tier: 3,
     cost: 1,
@@ -88,7 +88,11 @@ export const TALENTS: TalentNode[] = [
     tier: 3,
     cost: 1,
     icon: 'talent_vig_dull_rage',
-    effects: { LOW_HP_ATK_PCT: 20, DEF_PCT: 10 },
+    // Les DEUX effets sont GATÉS sous 35% HP (cf. description). Le +10% DEF était
+    // écrit DEF_PCT (clé INCONDITIONNELLE) : il aurait donc été routé en DEF
+    // permanente par getStatContribs. Re-clé en LOW_HP_DEF_PCT (conditionnel,
+    // même famille que LOW_HP_ATK_PCT) — reste dead jusqu'au système bas-HP.
+    effects: { LOW_HP_ATK_PCT: 20, LOW_HP_DEF_PCT: 10 },
     lore: 'Ce que le corps retient.',
   },
 
@@ -107,7 +111,7 @@ export const TALENTS: TalentNode[] = [
   {
     id: 'vig_titans_echo',
     name: 'Écho du Titan',
-    description: 'Après un finisher : la prochaine attaque dans les 2.5s inflige +50% et démarre la chaîne à 2.',
+    description: 'Après un finisher : la prochaine attaque dans les 2.5s inflige +50% et avance la chaîne de combo (jusqu\'à 2 coups selon l\'arme).',
     branch: TalentBranch.VIGOR,
     tier: 4,
     cost: 2,
@@ -122,12 +126,12 @@ export const TALENTS: TalentNode[] = [
   {
     id: 'ins_honed_reflexes',
     name: 'Réflexes Affûtés',
-    description: '+6% chance de critique.',
+    description: '+5% chance de critique.',
     branch: TalentBranch.INSTINCT,
     tier: 1,
     cost: 1,
     icon: 'talent_ins_honed_reflexes',
-    effects: { CRIT_PCT: 6 },
+    effects: { CRIT_PCT: 5 },
     lore: 'Ce que le corps devine avant la pensée. Sylvael comprenait : le mouvement est une forme de mémoire.',
   },
 
@@ -380,6 +384,7 @@ export const TALENTS: TalentNode[] = [
     icon: 'talent_ignis_pyroclast',
     requires: ['ignis_volcanic_rage'],
     // ELEM_BONUS_PCT restreint aux sorts de feu — vérification d'élément côté combat.
+    elementScoped: true,
     effects: { ELEM_BONUS_PCT: 35 },
     lore: 'Ce que la flamme prend, elle ne le rend pas.',
   },
@@ -621,6 +626,7 @@ export const TALENTS: TalentNode[] = [
     icon: 'talent_abyssal_leviathan_call',
     requires: ['abyssal_deep_current'],
     // ELEM_BONUS_PCT restreint aux sorts WATER/ICE — vérification d'élément côté combat.
+    elementScoped: true,
     effects: { ELEM_BONUS_PCT: 30 },
     lore: 'Ce que la profondeur garde, elle le garde en silence.',
   },
@@ -769,7 +775,7 @@ export const TALENTS: TalentNode[] = [
   {
     id: 'ten_malchar_blessing',
     name: 'Bénédiction de Malachar',
-    description: 'Les finishers consument 20% des HP max pour tripler leurs dégâts.',
+    description: 'Les finishers consument 20% des HP max pour doubler leurs dégâts.',
     branch: TalentBranch.TENEBRES,
     tier: 4,
     cost: 3,
@@ -874,6 +880,7 @@ export const TALENTS: TalentNode[] = [
     icon: 'talent_terra_gorvuns_wrath',
     requires: ['terra_crushing_weight'],
     // ELEM_BONUS_PCT restreint aux sorts de terre — vérification d'élément côté combat.
+    elementScoped: true,
     effects: { ELEM_BONUS_PCT: 30 },
     lore: 'Ce que la terre soutient ne tombe pas.',
   },
@@ -976,13 +983,13 @@ export const TALENTS: TalentNode[] = [
   {
     id: 'fulguris_arc_conduit',
     name: 'Conduit d\'Arc',
-    description: '10% de chance qu\'un coup produise un arc vers l\'ennemi le plus proche (40% des dégâts, foudre).',
+    description: '8% de chance qu\'un coup produise un arc vers l\'ennemi le plus proche (40% des dégâts, foudre).',
     branch: TalentBranch.FULGURIS,
     tier: 2,
     cost: 1,
     icon: 'talent_fulguris_arc_conduit',
     requires: ['fulguris_spark_touch'],
-    effects: { ARC_CHANCE_PCT: 10 },
+    effects: { ARC_CHANCE_PCT: 8 },
     lore: 'Ce que la foudre choisit, elle l\'atteint.',
   },
 
@@ -1009,6 +1016,7 @@ export const TALENTS: TalentNode[] = [
     icon: 'talent_fulguris_storm_engine',
     requires: ['fulguris_arc_conduit'],
     // ELEM_BONUS_PCT restreint aux sorts de foudre — vérification d'élément côté combat.
+    elementScoped: true,
     effects: { ELEM_BONUS_PCT: 30 },
     lore: 'Ce que la foudre choisit, elle l\'atteint.',
   },

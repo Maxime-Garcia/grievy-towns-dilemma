@@ -1799,6 +1799,36 @@ export const ENEMIES: Enemy[] = [
     behavior: 'patrol',
     patrolRadius: 0,
     lore: 'Deux épées sorties de la même forge ne se valent jamais tout à fait. Kelvar le sait depuis qu\'il a survécu grâce à la meilleure des deux, un matin, sans savoir pourquoi.'
+  },
+
+  // Creature concept: a fourth dummy, cast in iron, that Kelvar never lets anyone
+  // finish off — GameScene.applyDamageToEnemy/executeHitInCone/updateArrowProjectiles/
+  // activateSkill special-case this id and clamp currentHp back to maxHp after every
+  // hit, DOT tick and spell. Distinct from straw/gilded/arsenal on purpose : ceux-là
+  // DOIVENT mourir (loot-roll §10 / re-tirage d'arme) — celui-ci ne doit JAMAIS mourir,
+  // pour tester dégâts/hitbox en boucle sans interrompre le combo.
+  {
+    id: 'training_dummy_iron',
+    name: 'Mannequin de Fer',
+    description: 'Kelvar ne laisse jamais personne l\'achever.',
+    sprite: 'enemy_training_dummy_iron',
+    zone: 'NEUTRAL',
+    baseLevel: 1,
+    stats: { baseHp: 999999, baseMana: 0, baseAtk: 1, baseDef: 0, baseSpd: 0, baseMagicAtk: 0, baseMagicDef: 0 },
+    element: ElementType.NEUTRAL,
+    skills: [],
+    loot: [], // ne meurt jamais — jamais tué, jamais loot
+    baseXp: 0,
+    baseGold: { min: 0, max: 0 },
+    isBoss: false,
+    isElite: false,
+    spawnWeight: 0,
+    aggroRange: 0,
+    attackRange: 0,
+    moveSpeed: 0,
+    behavior: 'patrol',
+    patrolRadius: 0,
+    lore: 'Les autres tombent pour qu\'on apprenne quelque chose de leur chute. Celui-ci reste debout pour qu\'on apprenne le reste.'
   }
 ];
 

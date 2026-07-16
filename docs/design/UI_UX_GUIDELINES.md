@@ -448,9 +448,10 @@ doit aussi s'ouvrir au long-press (cf. §5.2, dette D3).
 1. **Toujours** dériver les positions de `this.cameras.main.width/height`. Les constantes de layout
    (largeurs de panneaux, tailles de slots) peuvent être fixes ; les **positions** sont relatives.
 2. Panneau bas ancré : `PANEL_TOP = H - PANEL_H - 4` ; éléments à droite : `W - marge - largeur`.
-3. **Zone de pouce** = moitié basse de l'écran. Y vivent : barres HP/MP (bas-gauche), skill slots
-   (bas-centre), boutons nav INV/SKL (bas-droite), boutons d'action des panneaux détail (bas du panneau),
-   panneau de dialogue (bande basse de 180 px).
+3. **Zone de pouce** = moitié basse de l'écran. Y vivent : skill slots (bas-centre), boutons nav
+   INV/SKL (bas-droite), boutons d'action des panneaux détail (bas du panneau), panneau de dialogue
+   (bande basse de 180 px). Les barres HP/MP (lecture pure, pas d'interaction) vivent en HAUT-gauche
+   sous le badge de build.
 4. **Safe zone basse** : la bande XP occupe les 4 derniers px ; garder les hit zones interactives à
    ≥ 7 px du bord bas (les skill slots sont à `H - SLOT_SZ - 7`).
 5. Grilles : nombre de colonnes **calculé** depuis la largeur disponible quand c'est possible.
@@ -534,8 +535,10 @@ Toute scène UI définit `shutdown()` : `events.off(...)` pour chaque `events.on
 
 ### 6.1 UIScene (HUD)
 Hérite de tout §1–5. Spécifique :
-- **Panneau stats bas-gauche** (66 px de haut, ancré `H - 66 - 4`) : nom joueur doré 11 px bold,
-  niveau 11 px à droite, barre HP 178×16 + barre MP 178×11, labels `HP`/`MP` vert/bleu 10 px bold,
+- **Panneau stats HAUT-gauche** (69 px de haut, ancré juste SOUS le badge de build DEV :
+  `PANEL_TOP = badgePad + bh + 4`, dérivé de la hauteur réelle du badge — jamais en dur, pour que
+  le panneau remonte seul quand le badge disparaîtra en prod) : nom joueur doré bold,
+  niveau à droite, barre HP 210×16 + barre MP 210×11, labels `HP`/`MP` vert/bleu 10 px bold,
   valeurs 9–10 px bold + stroke centrées sur les barres.
 - **Barres lerpées** (vitesse 8/s) — jamais de saut instantané, redraw seulement si delta > 0.001.
   Traîne de drain orange retardée sur la barre HP (lerp 1.5/s, snap sur soin).
@@ -601,21 +604,44 @@ Layout 3 panneaux fixes : **paperdoll 180 px | stats/détail 220 px | grille** (
 - Bouton `×` 20 px bold rouge haut-droite avec hit zone 44×44 ; bouton Commerce/Forge 128×36
   (hit 44) label 11 px bold.
 
-### 6.4 SkillScene
+### 6.4 SkillScene *(passe « ergonomie mobile » 2026-07-15)*
 - Overlay 0.88, frame plein écran moins 12 px.
-- **Tabs 2 rangées** (36 px, hit ≥ 44) : label 11 px bold — blanc si actif (fond couleur de branche +
-  bande d'accent basse 3 px), muted sinon. Swipe horizontal change de branche.
-- Header de branche : nom 13 px bold doré + stroke, description 9 px muted, compteur `✶ N pts`
-  11 px bold à droite.
-- Nodes 60 px (+7 hit) : débloqué = plein couleur branche + bord blanc ; disponible = fond 28 % +
-  bord branche + anneau interne ; verrouillé = sombre ; NG+ = croix. Label sous le node **9 px +
-  stroke** (tronqué à 13 caractères).
-- Bottom sheet 148 px : nom 13 px bold doré, description 10 px muted, effets 10 px parchemin
-  (lineSpacing 3), coût 11 px bold doré, statut 10 px, lore 9 px italique hint, bouton **Débloquer
-  136×40 arrondi** (hit ≥ 44) label 13 px bold + stroke.
-- Réspec : 160×26 arrondi, label 10 px bold, hit 44 px de haut.
+- **Tabs 2 rangées de 44 px (hit = la rangée)** : rangée 1 = les 3 voies primaires (largeurs égales,
+  moins le slot du ×), rangée 2 = les **7 voies élémentaires sur UNE seule rangée**, largeurs
+  **proportionnelles à la largeur mesurée du label** (aucun label d'onglet ne peut être tronqué),
+  fond légèrement plus sombre (hiérarchie primaire/secondaire). Actif = fond couleur de branche +
+  bande basse 3 px + label blanc ; inactif = **liseré bas 2 px couleur de branche alpha 0.28**
+  (identité colorée permanente) ; branche gatée (tier 3 non rempli, Ténèbres hors NG+) = label
+  `TXT_HINT`. Swipe horizontal (zone de l'ARBRE uniquement — ni header ni bottom sheet) change de branche.
+- Header de branche 44 px : nom HEADING doré + stroke, description BODY muted inline **fitText**
+  (s'arrête avant les contrôles de droite), **bouton Respec** (visuel 150×30, hit 44, violet) +
+  compteur `✶ N pts` BODY bold (doré si > 0, muted sinon) à droite. Le respec ouvre une **modale de
+  confirmation** (voile 0.6 tap-hors-panneau = annuler, `drawConfirmCancelButtons` 44 px) — action
+  destructrice, jamais en 1 tap. Plus AUCUN bouton flottant par-dessus l'arbre.
+- Nodes 52 px (+10 hit = 72 px) : débloqué = plein couleur branche + bord blanc ; disponible =
+  fond 28 % + bord branche + anneau interne ; verrouillé = sombre ; NG+ = croix. Label sous le node
+  **SMALL + stroke, wrap centré 2 lignes dans l'entraxe (130 px)** — le nom complet est toujours
+  visible, plus aucune troncature. Locked = `TXT_MUTED` (lisible), `TXT_HINT` réservé aux nœuds NG+.
+- **Tap de nœud = feedback alpha au pointerdown, action au pointerup + garde `getDistance() > 12`**
+  (un swipe commencé sur un nœud ne le sélectionne plus). Micro-feedback : pop de l'icône (scale
+  ×1.35 → 1, 130 ms Back.easeOut) à la sélection, **flash blanc 400 ms** sur le nœud débloqué.
+- **Déblocage en 2 taps sur place** (passe « audit redondances » 2026-07-15) : re-taper le nœud
+  sélectionné s'il est DISPONIBLE le débloque directement — chemin d'unlock UNIQUE `unlockNode()`,
+  partagé avec le bouton Débloquer. Le 1er tap montre le détail (jamais de dépense à l'aveugle),
+  le 2e confirme : dépenser 3-5 points d'affilée ne demande plus l'aller-retour grille ↔ bouton
+  bas d'écran à chaque nœud. Re-taper un nœud NON disponible le désélectionne (toggle historique).
+  L'affordance est écrite dans la ligne de statut de la sheet
+  (« Disponible — retouche le nœud pour débloquer »).
+- Bottom sheet 150 px : icône du talent (32 px) + nom HEADING doré, **description BODY parchemin =
+  formulation UNIQUE de l'effet** — l'ancien couple « description manuscrite muted + liste
+  `formatEffects()` parchemin » affichait DEUX fois la même information ; `formatEffects()` a été
+  supprimé (vérifié sur les 87 nœuds : la description couvre 100 % des `effects` et porte en plus
+  le contexte — armes ciblées, conditions, cumuls). Statut BODY, lore SMALL italique hint (tronqué
+  par hauteur mesurée), bouton **Débloquer — N pt(s) 170×40 arrondi** (hit ≥ 44) en bas-droite
+  (zone de pouce). Le **coût n'apparaît qu'une fois** : sur le bouton quand débloquable, en ligne
+  dorée quand verrouillé/NG+ (info de planification de build), nulle part une fois débloqué.
+  État vide = « Touche un talent… » + rappel de l'affordance swipe.
 - Bouton `×` 20 px bold + hit zone ≥ 44 haut-droite ; ESC ferme.
-- Sélection = re-render de branche (dette D4 : pas de micro-feedback).
 
 ### 6.5 PauseScene *(migrée « arcane fresh » 07/2026 — drawGlowPanel + uiStyle)*
 - Overlay 0.72 (plus léger : le jeu reste visible), panneau central `drawGlowPanel` 400 px de large,
@@ -670,8 +696,8 @@ Identiques sur **tous** les écrans, actuels et futurs :
 |---|-------|-----|--------|
 | ~~D1~~ | ~~Pas de bouton × haut-droite~~ | InventoryScene | **Résorbée** — `addCloseButton` (refonte 07/2026) |
 | ~~D2~~ | ~~Scroll grille = wheel uniquement~~ | InventoryScene | **Résorbée** — drag vertical + anti scroll-tap |
-| D3 | Tooltip skill hover-only, inaccessible au tap | SkillScene (ancien tooltip) | ouverte |
-| D4 | Sélection de node = re-render complet, pas de micro-feedback | SkillScene | ouverte |
+| ~~D3~~ | ~~Tooltip skill hover-only, inaccessible au tap~~ | SkillScene | **Résorbée** — le tooltip hover n'existe plus, le détail vit dans la bottom sheet ouverte au tap |
+| ~~D4~~ | ~~Sélection de node = re-render complet, pas de micro-feedback~~ | SkillScene | **Résorbée** — pop d'icône à la sélection + flash blanc au déblocage (passe ergonomie 2026-07-15) |
 | ~~D5~~ | ~~Textes 5 px sous le minimum~~ | InventoryScene | **Résorbée** — plus aucun texte < 9 px dans les scènes migrées |
 | ~~D6~~ | ~~Boutons < 44 px de haut (20–34 px)~~ | PauseScene | **Résorbée** — hit zones ≥ 44 px sur menu/tabs/toggles (visuels 24–34 px conservés) |
 | ~~D7~~ | ~~Choix de dialogue = hit zone du texte seul~~ | DialogueScene | **Résorbée** — hit ≥ 44 px |

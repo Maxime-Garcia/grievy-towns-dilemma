@@ -1,5 +1,6 @@
 import { Equipment, PlayerState } from '../types';
 import { StatsSystem } from './StatsSystem';
+import { TalentModifiers } from './TalentSystem';
 
 // ── État éphémère "wave 2" (non persisté — possédé par GameScene, cf. dashCooldown/
 // playerShieldHp) ─────────────────────────────────────────────────────────
@@ -314,8 +315,14 @@ export class PassiveSystem {
    * modification de src/types/index.ts sans instruction explicite). Consommé
    * dans GameScene.mitigatePlayerDamage, juste après LOW_HP_SHIELD_30_PCT.
    */
-  static applyHeal(player: PlayerState, amount: number): void {
+  /** `mods` optionnel : HEALING_RECEIVED_PCT (glacius_keepers_warmth/eternal_vigil,
+   *  additif) — "+X% sur TOUS les soins reçus", appliqué ici (point de passage
+   *  unique de tous les soins du jeu) plutôt que dupliqué à chaque appelant. */
+  static applyHeal(player: PlayerState, amount: number, mods?: TalentModifiers): void {
     if (amount <= 0) return;
+    if (mods && mods.healingReceivedPct > 0) {
+      amount = Math.round(amount * (1 + mods.healingReceivedPct / 100));
+    }
     const before = player.stats.hp;
     const uncappedTarget = before + amount;
     player.stats.hp = Math.min(player.stats.maxHp, uncappedTarget);

@@ -1,7 +1,7 @@
 import { SaveSystem }  from '../systems/SaveSystem';
 import { GameScene }   from './GameScene';
 import { KeyBindings, DEFAULT_BINDINGS, loadBindings, saveBindings } from '../data/keybindings';
-import { UI, TYPE, drawGlowPanel, drawDivider, uiStyle, titleStyle, addCloseButton, openScreenTransition } from '../utils/UITheme';
+import { UI, TYPE, drawGlowPanel, drawDivider, uiStyle, titleStyle, addCloseButton, openScreenTransition, closeScreenTransition } from '../utils/UITheme';
 import { t, getLang, setLang, type Lang } from '../i18n';
 
 export type { KeyBindings };
@@ -14,6 +14,11 @@ export class PauseScene extends Phaser.Scene {
   private bindings!:       KeyBindings;
   private rebindTarget:    keyof KeyBindings | null = null;
   private rebindListener:  ((e: KeyboardEvent) => void) | null = null;
+  // True dès que l'animation de FERMETURE (closeScreenTransition, ~170ms) est en
+  // cours — ignore tout nouvel appel à resume() et tout lancement de sous-écran
+  // tant qu'elle tourne (évite un scene.stop() dupliqué ou un Bestiaire lancé
+  // par-dessus un menu en train de se dissoudre). Même patron que BestiaryScene.
+  private closing = false;
 
   constructor() { super({ key: 'PauseScene' }); }
 
@@ -22,6 +27,7 @@ export class PauseScene extends Phaser.Scene {
     this.tab          = 'main';
     this.bindings     = loadBindings();
     this.rebindTarget = null;
+    this.closing      = false;
   }
 
   create() {
@@ -83,9 +89,14 @@ export class PauseScene extends Phaser.Scene {
   private renderMainTab(W: number, _H: number) {
     const items: { label: string; action: () => void; color?: string }[] = [
       { label: t('pause.resume'),    action: () => this.resume()                                      },
-      { label: t('pause.inventory'), action: () => { this.resume(); this.gameScene.openInventory(); } },
-      { label: t('pause.skills'),    action: () => { this.resume(); this.gameScene.openSkills();    } },
-      { label: t('pause.pity'),      action: () => { this.resume(); this.gameScene.openPity();      } },
+      // Inventaire/Talents/Pity : l'ouverture est passée en callback `after` de
+      // resume() — elle ne part qu'une fois l'animation de fermeture du menu
+      // terminée. L'ancien enchaînement synchrone (resume puis open) ferait
+      // désormais tomber le setPaused(false) différé de resume() APRÈS le
+      // setPaused(true) d'openX() → jeu dé-pausé sous l'overlay.
+      { label: t('pause.inventory'), action: () => this.resume(() => this.gameScene.openInventory()) },
+      { label: t('pause.skills'),    action: () => this.resume(() => this.gameScene.openSkills())    },
+      { label: t('pause.pity'),      action: () => this.resume(() => this.gameScene.openPity())      },
       { label: t('pause.bestiary'),  action: () => this.openBestiary()                               },
       { label: t('pause.arsenal'),   action: () => this.openArsenal()                                },
       { label: t('pause.save'),      action: () => this.saveGame()                                    },
@@ -298,7 +309,7 @@ export class PauseScene extends Phaser.Scene {
       const hit = this.add.rectangle(x, y, 124, 44, 0, 0).setInteractive({ useHandCursor: true });
       hit.on('pointerover', () => txt.setStyle({ color: UI.TXT_PARCHMENT }));
       hit.on('pointerout',  () => txt.setStyle({ color: UI.TXT_MUTED }));
-      hit.on('pointerdown', cb);
+      hit.on('pointerdown', () => { if (!this.closing) cb(); });
     }
   }
 
@@ -332,6 +343,7 @@ export class PauseScene extends Phaser.Scene {
       this.tweens.add({ targets: txt, scaleX: 1, scaleY: 1, duration: 100, ease: 'Quad.easeOut' });
     });
     hit.on('pointerdown',  () => {
+      if (this.closing) return;
       // Feedback tap < 100 ms avant l'action
       this.tweens.add({ targets: txt, scaleX: 0.96, scaleY: 0.96, duration: 50, yoyo: true });
       action();
@@ -339,7 +351,7 @@ export class PauseScene extends Phaser.Scene {
   }
 
   private openBestiary() {
-    if (this.scene.isActive('BestiaryScene')) return;
+    if (this.closing || this.scene.isActive('BestiaryScene')) return;
     this.scene.launch('BestiaryScene', {
       gameScene: this.gameScene,
       world: this.gameScene.gameState.world,
@@ -348,7 +360,7 @@ export class PauseScene extends Phaser.Scene {
   }
 
   private openArsenal() {
-    if (this.scene.isActive('ArsenalScene')) return;
+    if (this.closing || this.scene.isActive('ArsenalScene')) return;
     this.scene.launch('ArsenalScene', {
       gameScene: this.gameScene,
       world: this.gameScene.gameState.world,
@@ -411,6 +423,9 @@ export class PauseScene extends Phaser.Scene {
   }
 
   private goMainMenu() {
+    // Pendant l'animation de fermeture, le menu est déjà en train de rendre la
+    // main — goToMainMenu() stopperait la scène en plein tween (callback perdu).
+    if (this.closing) return;
     if (this.rebindListener) {
       window.removeEventListener('keydown', this.rebindListener);
       this.rebindListener = null;
@@ -418,13 +433,25 @@ export class PauseScene extends Phaser.Scene {
     this.gameScene.goToMainMenu();
   }
 
-  private resume() {
+  /**
+   * Ferme le menu pause avec l'animation symétrique de l'ouverture
+   * (closeScreenTransition) — le setPaused(false)/stop() d'origine est reporté
+   * dans onClosed, une fois le panneau dissous. `after` (optionnel) s'exécute
+   * juste après le stop : utilisé par les boutons Inventaire/Talents pour
+   * enchaîner l'ouverture de l'écran suivant sans dé-pauser le jeu entre-temps.
+   */
+  private resume(after?: () => void) {
+    if (this.closing) return;
+    this.closing = true;
     if (this.rebindListener) {
       window.removeEventListener('keydown', this.rebindListener);
       this.rebindListener = null;
     }
-    this.gameScene.setPaused(false);
-    this.scene.stop();
+    closeScreenTransition(this, () => {
+      this.gameScene.setPaused(false);
+      this.scene.stop();
+      after?.();
+    });
   }
 
   shutdown() {

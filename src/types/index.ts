@@ -167,7 +167,7 @@ export type TalentEffectKey =
   | 'VOID_CHANNEL'         // flag : sacrifie 15% HP au cast → sort +100%
   | 'DARK_BURN'            // flag : les BURN infligés deviennent des dégâts sombres
   | 'PHANTOM_STRIKE_PCT'   // % de chance de coup fantôme sans cooldown
-  | 'SACRIFICE_FINISHER';  // flag : finisher consume 20% HP max → dégâts ×3
+  | 'SACRIFICE_FINISHER';  // flag : finisher consume 20% HP max → dégâts ×2
 
 export interface TalentNode {
   id: string;
@@ -181,6 +181,11 @@ export interface TalentNode {
   lore?: string;
   requires?: string[];      // prérequis directs (AND) — IDs de nodes du tier précédent
   ngPlusOnly?: boolean;     // node visible mais verrouillé tant que player.isNewGamePlus === false
+  // ELEM_BONUS_PCT restreint à UN élément (« sorts de feu », …). Marque le nœud
+  // comme CONDITIONNEL : getStatContribs l'EXCLUT du bonus élémentaire global
+  // tant que le combat ne teste pas l'élément de la source (chantier signature).
+  // Sans ce flag, un +35% « feu uniquement » boosterait tous les éléments.
+  elementScoped?: boolean;
 }
 
 // ============================================================
@@ -739,6 +744,17 @@ export interface ActiveEnemy {
    *  l'exécution (grâce au spread) mais serait invisible au typage. */
   damageType?: 'PHYSICAL' | 'MAGIC';
   sprite?: Phaser.GameObjects.Sprite;
+  /**
+   * Jauge de stagger réelle (talents Partie 2 — STAGGER_BONUS_PCT, quakeFinisher).
+   * Avant ce chantier, `GameScene.checkStagger` était un flash cosmétique sans
+   * accumulation persistante ; ces deux champs remplacent ça par une vraie jauge :
+   * `staggerMeter` cumule les dégâts encaissés (jamais sérialisé — reset à chaque
+   * combat/mort/changement de zone comme le reste de l'état runtime d'ActiveEnemy),
+   * `staggerResetAt` est le timestamp après lequel un nouveau coup repart de zéro
+   * plutôt que de s'additionner (pas de decay continu, juste une fenêtre glissante).
+   */
+  staggerMeter: number;
+  staggerResetAt: number;
 }
 
 export interface DamageResult {
@@ -749,6 +765,8 @@ export interface DamageResult {
   statusApplied?: StatusEffect;
   /** true si l'attaque a été totalement esquivée (DODGE_PCT) — dégâts = 0, cf. CombatSystem.enemyAttack. */
   wasDodged?: boolean;
+  /** Montant de bouclier accordé par un sort à effect.shield (stone_shield/ice_barrier), cf. CombatSystem.playerSkill. */
+  shieldAmount?: number;
 }
 
 export interface CombatLog {

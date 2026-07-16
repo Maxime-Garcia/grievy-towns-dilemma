@@ -2,6 +2,7 @@ import { PlayerState, Skill, ElementType, EquippedSkills } from '../types';
 import { SKILL_MAP } from '../data/skills';
 import { PassiveSystem } from './PassiveSystem';
 import { StatsSystem } from './StatsSystem';
+import { TalentModifiers } from './TalentSystem';
 
 const SKILL_SLOTS: (keyof EquippedSkills)[] = ['slot1', 'slot2', 'slot3', 'slot4'];
 
@@ -72,10 +73,21 @@ export class SkillSystem {
     });
   }
 
-  static canUseSkill(player: PlayerState, skillId: string, cooldowns: Record<string, number>): boolean {
+  static canUseSkill(
+    player: PlayerState, skillId: string, cooldowns: Record<string, number>, mods?: TalentModifiers,
+  ): boolean {
     const skill = SKILL_MAP[skillId];
     if (!skill) return false;
-    if (!PassiveSystem.hasZeroManaCost(player.equipment) && player.stats.mana < skill.manaCost) return false;
+    if (!PassiveSystem.hasZeroManaCost(player.equipment)) {
+      // MANA_COST_PCT (arc_deep_reservoir) — même réduction que CombatSystem.playerSkill,
+      // sinon le talent réduit bien le coût PAYÉ mais jamais le seuil D'ÉLIGIBILITÉ
+      // au cast : un joueur à mana quasi vide (exactement le cas où ce talent
+      // compte) resterait bloqué par le coût NON réduit (bug trouvé en review).
+      const cost = mods && mods.manaCostPct > 0
+        ? Math.max(1, Math.round(skill.manaCost * (1 - mods.manaCostPct / 100)))
+        : skill.manaCost;
+      if (player.stats.mana < cost) return false;
+    }
     if ((cooldowns[skillId] ?? 0) > 0) return false;
     return true;
   }
