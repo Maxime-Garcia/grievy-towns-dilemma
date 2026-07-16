@@ -3,6 +3,7 @@ import { GameScene } from './GameScene';
 import { SKILL_MAP } from '../data/skills';
 import { UI, drawGlowPanel, drawSlot, drawBar, addUiFrame, uiStyle, resonanceColor, TYPE, fitText, formatResonanceLine } from '../utils/UITheme';
 import { StatRollSystem } from '../systems/StatRollSystem';
+import { PITY_THRESHOLDS } from '../systems/LootSystem';
 import { t, localizeItem, localizeSkill } from '../i18n';
 
 const BAR_W = 210;
@@ -65,6 +66,13 @@ export class UIScene extends Phaser.Scene {
   private zoneText!: Phaser.GameObjects.Text;
   private zoneBg!: Phaser.GameObjects.Graphics;
 
+  // ── Chip HUD Pity (PITY/PITY.md) — losange + nombre, discret à côté du
+  // panneau stats. Détail complet dans PityScene (touche pity / tap).
+  private pityChipDiamond!: Phaser.GameObjects.Graphics;
+  private pityChipText!: Phaser.GameObjects.Text;
+  /** Dernière valeur affichée — évite un setText() par frame quand rien n'a changé. */
+  private lastPityRemaining = -1;
+
   // ── Combo HUD (pips sous le joueur — COMBO_TALENT_SPEC.md §2.3 / §6.2) ──
   private comboPips!: Phaser.GameObjects.Container;
   private comboMaxPips = 0;
@@ -111,7 +119,7 @@ export class UIScene extends Phaser.Scene {
     // Vite (__BUILD_HASH__, cf. vite.config.ts) : l'écrire à la main était voué
     // à mentir, puisqu'un hash n'existe qu'une fois le commit fait — et l'écrire
     // dans le code refait le commit.
-    const BUILD_LABEL = `ASPD: cadence + combos permissifs + parite armes (${__BUILD_HASH__})`;
+    const BUILD_LABEL = `PITY: garanties EPIC/LEGENDARY/MYTHIC + panneau + chip HUD (${__BUILD_HASH__})`;
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',
@@ -173,6 +181,32 @@ export class UIScene extends Phaser.Scene {
     this.manaText = this.add.text(BAR_X + BAR_W / 2, this.MP_Y + MP_H / 2, '',
       uiStyle(9, UI.TXT_WHITE, { bold: true, stroke: true }),
     ).setOrigin(0.5).setDepth(1);
+
+    // ── Chip Pity (à droite du panneau stats) ────
+    // Pilule discrète en permanence à l'écran (demande explicite du créateur :
+    // « affiche le restant », pas seulement sur demande) — le détail complet vit
+    // dans PityScene, ouverte par tap ou par la touche 'pity' (rebindable).
+    const CHIP_W = 84;
+    const CHIP_H = 24;
+    const CHIP_X = PANEL_W + 12;
+    const CHIP_Y = PANEL_TOP + PANEL_H / 2 - CHIP_H / 2;
+    const chipBg = this.add.graphics();
+    drawGlowPanel(chipBg, CHIP_X, CHIP_Y, CHIP_W, CHIP_H, UI.ACCENT_ARCANE, UI.BTN_BG, 12, 0.92);
+    this.pityChipDiamond = this.add.graphics();
+    this.pityChipDiamond.fillStyle(0x888888, 1);
+    this.pityChipDiamond.fillRect(-4, -4, 8, 8);
+    this.pityChipDiamond.setRotation(Math.PI / 4).setPosition(CHIP_X + 16, CHIP_Y + CHIP_H / 2);
+    this.pityChipText = this.add.text(CHIP_X + 30, CHIP_Y + CHIP_H / 2, '—',
+      uiStyle(TYPE.SMALL, UI.TXT_PARCHMENT, { bold: true }),
+    ).setOrigin(0, 0.5);
+    const chipHit = this.add.rectangle(
+      CHIP_X + CHIP_W / 2, CHIP_Y + CHIP_H / 2, CHIP_W + 4, CHIP_H + 20, 0, 0,
+    ).setInteractive({ useHandCursor: true }).setDepth(6);
+    chipHit.on('pointerdown', () => {
+      chipBg.setAlpha(0.6);
+      this.tweens.add({ targets: chipBg, alpha: 1, duration: 150 });
+      this.game.events.emit('mobile_action', 'pity');
+    });
 
     // ── XP bar (bottom strip) ────────────────────
     this.xpBar = this.add.graphics();
@@ -322,6 +356,7 @@ export class UIScene extends Phaser.Scene {
     this.gameScene.events.on('combo-broken',            this.onComboBroken,           this);
     this.gameScene.events.on('finisher-executed',       this.onFinisherExecuted,      this);
     this.gameScene.events.on('new_creature_discovered', this.onNewCreatureDiscovered, this);
+    this.gameScene.events.on('pity_paid',               this.onPityPaid,              this);
   }
 
   shutdown() {
@@ -338,6 +373,7 @@ export class UIScene extends Phaser.Scene {
     this.gameScene.events.off('combo-broken',            this.onComboBroken,           this);
     this.gameScene.events.off('finisher-executed',       this.onFinisherExecuted,      this);
     this.gameScene.events.off('new_creature_discovered', this.onNewCreatureDiscovered, this);
+    this.gameScene.events.off('pity_paid',               this.onPityPaid,              this);
     this.pipTween = null;
     this.notifShimmerTweens = [];
   }
@@ -584,6 +620,28 @@ export class UIScene extends Phaser.Scene {
     }
     this.levelText.setText(`${t('ui.level')}${player.level}`);
 
+    // Chip Pity — garantie la plus proche (le plus petit "restant" parmi les
+    // raretés protégées). Comparaison sur le nombre affiché, pas sur un objet :
+    // évite un setText()/redraw à chaque frame quand rien n'a changé.
+    {
+      const candidates: [ItemRarity, number][] = [
+        [ItemRarity.EPIC,      Math.max(0, (PITY_THRESHOLDS[ItemRarity.EPIC]      ?? 0) - player.killsWithoutEpic)],
+        [ItemRarity.LEGENDARY, Math.max(0, (PITY_THRESHOLDS[ItemRarity.LEGENDARY] ?? 0) - player.killsWithoutLegendary)],
+        [ItemRarity.MYTHIC,    Math.max(0, (PITY_THRESHOLDS[ItemRarity.MYTHIC]    ?? 0) - player.killsWithoutMythic)],
+      ];
+      const [closestRarity, remaining] = candidates.reduce((a, b) => b[1] < a[1] ? b : a);
+      if (remaining !== this.lastPityRemaining) {
+        this.lastPityRemaining = remaining;
+        const ready = remaining <= 0;
+        const color = RARITY_COLORS[closestRarity] ?? '#888888';
+        this.pityChipDiamond.clear();
+        this.pityChipDiamond.fillStyle(parseInt(color.slice(1), 16), 1);
+        this.pityChipDiamond.fillRect(-4, -4, 8, 8);
+        this.pityChipText.setText(ready ? `◆ ${t('pity.guaranteed')}` : `◆ ${remaining}`);
+        this.pityChipText.setColor(ready ? color : UI.TXT_PARCHMENT);
+      }
+    }
+
     this.targetHp    = Math.max(0, player.stats.hp / player.stats.maxHp);
     this.targetMp    = Math.max(0, player.stats.mana / player.stats.maxMana);
     this.cachedMaxHp = player.stats.maxHp;
@@ -722,6 +780,19 @@ export class UIScene extends Phaser.Scene {
 
   private onQuestCompleted() {
     this.pushNotif(t('notif.quest_done'), UI.TXT_ORANGE);
+  }
+
+  /** Système Pity (PITY/PITY.md) — distingue un paiement de dette d'un drop
+   *  chanceux (LootSystem ne pousse ici que les raretés PAYÉES par la pitié). */
+  private onPityPaid(rarity: ItemRarity) {
+    const color = RARITY_COLORS[rarity] ?? '#ffffff';
+    this.pushNotifEntry({
+      msg: t('pity.paid').replace('{rarity}', t(`rarity.${rarity}`)),
+      color,
+      glow: parseInt(color.slice(1), 16),
+      duration: 3200,
+      shimmer: true,
+    });
   }
 
   private onSkillUnlocked(skillId: string) {

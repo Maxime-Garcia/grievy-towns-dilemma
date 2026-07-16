@@ -6,15 +6,11 @@ Phaser.js 3.70 · TypeScript 5 · Vite 5
 
 ## Règle absolue : Code Reviewer automatique
 
-**⚠️ Environnement : ordinateur professionnel avec security policies — aucune commande shell (npm, node, tsc) ne peut être exécutée automatiquement.**
-
 **Après TOUTE modification de code**, avant de reporter la tâche comme terminée :
 
-1. Vérifier les types manuellement par lecture du code (pas d'exécution de `npm run typecheck`).
+1. Vérifier les types avec `npm run typecheck`.
 2. Invoquer l'agent `code-reviewer` (`.claude/agents/code-reviewer.md`) via l'outil Agent si plus de 3 fichiers ont été modifiés, ou si un fichier système/données a changé.
 3. Appliquer tous les BLOCKER et BUG avant de clore la tâche.
-
-Pour jouer au jeu (`npm run dev`) ou builder (`npm run build`), lancer les commandes manuellement depuis un terminal sur cette machine ou sur une machine sans restrictions.
 
 ## Conventions de données
 

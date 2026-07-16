@@ -647,6 +647,7 @@ export interface PlayerState {
   totalKills: number;
   killsWithoutEpic: number;
   killsWithoutLegendary: number;
+  killsWithoutMythic: number;
   isNewGamePlus: boolean;
   ngPlusCount: number;
   questProgress: Record<string, QuestObjective[]>;

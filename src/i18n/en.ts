@@ -59,6 +59,7 @@ const EN_MANUAL: Record<string, string> = {
   'pause.resume': 'Resume',
   'pause.inventory': 'Inventory',
   'pause.skills': 'Skills',
+  'pause.pity': 'Loot guarantees',
   'pause.bestiary': 'Bestiary',
   'bestiary.title': 'BESTIARY',
   'bestiary.progress': '{seen} discovered · {slain} slain / {total}',
@@ -331,6 +332,14 @@ const EN_MANUAL: Record<string, string> = {
   'notif.skill_unlocked': 'Skill: {name}',
   'notif.zone_cleared': '{name} — Zone cleared',
 
+  // ── PITY SYSTEM (PITY/PITY.md) ───────────────────────────────
+  'pity.title': 'Loot guarantees',
+  'pity.paid': 'Guarantee honored: {rarity}!',
+  'pity.remaining_label': 'remaining',
+  'pity.since': '{n} / {max} since last {rarity} or better',
+  'pity.guaranteed': 'GUARANTEED',
+  'pity.footer': 'Every kill brings the guarantee closer. Getting that rarity (or better) resets the counter.',
+
   // ── KEY ACTIONS ─────────────────────────────────────────────
   'action.up': 'Up',
   'action.down': 'Down',
@@ -344,6 +353,7 @@ const EN_MANUAL: Record<string, string> = {
   'action.skill4': 'Skill 4',
   'action.inventory': 'Inventory',
   'action.skills': 'Skills',
+  'action.pity': 'Loot guarantees',
 
   // ── ZONES ────────────────────────────────────────────────────
   'zone.grievy_town': 'Grievy Town',

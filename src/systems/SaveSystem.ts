@@ -3,7 +3,7 @@ import { ProgressionSystem } from './ProgressionSystem';
 import { StatRollSystem, isEquipableItem } from './StatRollSystem';
 import { ALL_ITEMS } from '../data/items';
 
-const SAVE_VERSION = '1.7.0';
+const SAVE_VERSION = '1.8.0';
 const SAVE_KEY_PREFIX = 'gtd_save_';
 const MAX_SLOTS = 3;
 
@@ -142,6 +142,15 @@ const MIGRATION_MAP: Record<string, (state: GameState) => GameState> = {
       },
     };
   },
+  // Ajout du compteur pity MYTHIC (Système Pity, PITY/PITY.md)
+  '1.7.0': (state) => ({
+    ...state,
+    version: '1.8.0',
+    player: {
+      ...state.player,
+      killsWithoutMythic: (state.player as any).killsWithoutMythic ?? 0,
+    },
+  }),
 };
 
 function migrate(state: GameState): GameState {

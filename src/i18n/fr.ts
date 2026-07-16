@@ -39,6 +39,7 @@ export const FR: Record<string, string> = {
   'pause.resume': 'Reprendre',
   'pause.inventory': 'Inventaire',
   'pause.skills': 'Compétences',
+  'pause.pity': 'Garanties de butin',
   'pause.bestiary': 'Bestiaire',
   'bestiary.title': 'BESTIAIRE',
   'bestiary.progress': '{seen} découverts · {slain} vaincus / {total}',
@@ -313,6 +314,14 @@ export const FR: Record<string, string> = {
   'notif.skill_unlocked': 'Compétence : {name}',
   'notif.zone_cleared': '{name} — Zone libérée',
 
+  // ── SYSTÈME PITY (PITY/PITY.md) ──────────────────────────────
+  'pity.title': 'Garanties de butin',
+  'pity.paid': 'Garantie honorée : {rarity} !',
+  'pity.remaining_label': 'restants',
+  'pity.since': '{n} / {max} depuis le dernier {rarity} ou mieux',
+  'pity.guaranteed': 'GARANTI',
+  'pity.footer': 'Chaque monstre tué rapproche la garantie. Obtenir la rareté (ou mieux) remet le compteur à zéro.',
+
   // ── ACTIONS CLAVIER (keyBindings) ────────────────────────────
   'action.up': 'Haut',
   'action.down': 'Bas',
@@ -326,6 +335,7 @@ export const FR: Record<string, string> = {
   'action.skill4': 'Compétence 4',
   'action.inventory': 'Inventaire',
   'action.skills': 'Compétences',
+  'action.pity': 'Garanties de butin',
 
   // ── ZONES ────────────────────────────────────────────────────
   'zone.grievy_town': 'Grievy Town',

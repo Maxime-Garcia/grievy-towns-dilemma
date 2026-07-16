@@ -15,6 +15,7 @@ export interface KeyBindings {
   skill4:    number;
   inventory: number;
   skills:    number;
+  pity:      number;
 }
 
 export const DEFAULT_BINDINGS: KeyBindings = {
@@ -32,6 +33,10 @@ export const DEFAULT_BINDINGS: KeyBindings = {
   skill4:    Phaser.Input.Keyboard.KeyCodes.FOUR,
   inventory: Phaser.Input.Keyboard.KeyCodes.I,
   skills:    Phaser.Input.Keyboard.KeyCodes.K,
+  // L : pas de collision avec les bindings existants (I/K juste à côté sur le
+  // clavier), et pas de collision avec les touches de debug/cheat (P/Y/T/G,
+  // câblées sur feat/roguelite-spells) qu'une future fusion de branches ramènera.
+  pity:      Phaser.Input.Keyboard.KeyCodes.L,
 };
 
 const STORAGE_KEY = 'grievy_keybindings_v2';
@@ -63,4 +68,5 @@ export const ACTION_LABELS: Record<keyof KeyBindings, string> = {
   skill4:    'Compétence 4',
   inventory: 'Inventaire',
   skills:    'Compétences',
+  pity:      'Garanties de butin',
 };

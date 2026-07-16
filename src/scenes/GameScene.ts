@@ -182,6 +182,7 @@ export class GameScene extends Phaser.Scene {
   private interactKeyCode = 0;
   private inventoryKey!: Phaser.Input.Keyboard.Key;
   private skillMenuKey!: Phaser.Input.Keyboard.Key;
+  private pityKey!: Phaser.Input.Keyboard.Key;
   private escKey!: Phaser.Input.Keyboard.Key;
   private speedBoostKey!: Phaser.Input.Keyboard.Key;
   private debugSpeedMult = 1;
@@ -1243,14 +1244,26 @@ export class GameScene extends Phaser.Scene {
 
   public openInventory() {
     if (this.scene.isActive('InventoryScene')) return;
+    if (this.scene.isActive('SkillScene')) { this.setPaused(false); this.scene.stop('SkillScene'); }
+    if (this.scene.isActive('PityScene'))  { this.setPaused(false); this.scene.stop('PityScene'); }
     this.setPaused(true);
     this.scene.launch('InventoryScene', { gameScene: this });
   }
 
   public openSkills() {
     if (this.scene.isActive('SkillScene')) return;
+    if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
+    if (this.scene.isActive('PityScene'))      { this.setPaused(false); this.scene.stop('PityScene'); }
     this.setPaused(true);
     this.scene.launch('SkillScene', { gameScene: this });
+  }
+
+  public openPity() {
+    if (this.scene.isActive('PityScene')) return;
+    if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
+    if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); }
+    this.setPaused(true);
+    this.scene.launch('PityScene', { gameScene: this });
   }
 
   public goToMainMenu() {
@@ -1259,7 +1272,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.pause();
 
     // Stop overlay scenes immediately
-    for (const key of ['PauseScene', 'InventoryScene', 'SkillScene', 'DialogueScene', 'ShopScene', 'BestiaryScene', 'ArsenalScene']) {
+    for (const key of ['PauseScene', 'InventoryScene', 'SkillScene', 'PityScene', 'DialogueScene', 'ShopScene', 'BestiaryScene', 'ArsenalScene']) {
       if (this.scene.isActive(key) || this.scene.isPaused(key)) this.scene.stop(key);
     }
 
@@ -1322,22 +1335,24 @@ export class GameScene extends Phaser.Scene {
       r: kb.addKey(b.skill3),
       f: kb.addKey(b.skill4),
     };
-    // Rewire inventory / skill menu keys with their handlers
+    // Rewire inventory / skill / pity menu keys with their handlers
     this.inventoryKey?.removeAllListeners();
     this.skillMenuKey?.removeAllListeners();
+    this.pityKey?.removeAllListeners();
     this.inventoryKey = kb.addKey(b.inventory);
     this.skillMenuKey = kb.addKey(b.skills);
+    this.pityKey      = kb.addKey(b.pity);
     this.inventoryKey.on('down', () => {
       if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); return; }
-      if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); }
-      this.setPaused(true);
-      this.scene.launch('InventoryScene', { gameScene: this });
+      this.openInventory();
     });
     this.skillMenuKey.on('down', () => {
-      if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); return; }
-      if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
-      this.setPaused(true);
-      this.scene.launch('SkillScene', { gameScene: this });
+      if (this.scene.isActive('SkillScene')) { this.setPaused(false); this.scene.stop('SkillScene'); return; }
+      this.openSkills();
+    });
+    this.pityKey.on('down', () => {
+      if (this.scene.isActive('PityScene')) { this.setPaused(false); this.scene.stop('PityScene'); return; }
+      this.openPity();
     });
   }
 
@@ -2872,6 +2887,11 @@ export class GameScene extends Phaser.Scene {
     );
 
     this.gameState.player.gold += loot.gold;
+    // Raretés dont un item a RÉELLEMENT rejoint l'inventaire ce kill-ci — sert à
+    // filtrer loot.pityPaid plus bas (même piège que item_looted : sac plein →
+    // l'item est jeté au sol, la notif « Garantie honorée ! » ne doit pas mentir
+    // en s'affichant quand même).
+    const addedRarities = new Set<ItemRarity>();
     for (const { item, quantity } of loot.items) {
       // Le retour d'addToInventory était ignoré : sac plein → l'item était jeté,
       // MAIS la notification de loot s'affichait quand même. Le joueur voyait un
@@ -2881,9 +2901,15 @@ export class GameScene extends Phaser.Scene {
         this.events.emit('show_notification', `Sac plein — ${item.name} laissé au sol !`);
         continue;
       }
+      addedRarities.add(item.rarity);
       this.events.emit('item_looted', { item, quantity });
       // Bestiaire — révéler les drops hidden au premier loot
       BestiarySystem.revealDrop(this.gameState.world, activeEnemy.enemyId, item.id);
+    }
+    // Notif « Garantie honorée ! » APRÈS la boucle d'inventaire (pas avant) —
+    // seulement pour les raretés dont l'item a survécu au test du sac plein.
+    for (const rarity of loot.pityPaid) {
+      if (addedRarities.has(rarity)) this.events.emit('pity_paid', rarity);
     }
 
     // ⚠ DEV TOOL — Mannequin d'Essai (training_dummy_arsenal) : au lieu d'une table
@@ -4843,6 +4869,7 @@ export class GameScene extends Phaser.Scene {
         this.setPaused(false); this.scene.stop('InventoryScene'); return;
       }
       if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene');     return; }
+      if (this.scene.isActive('PityScene'))      { this.setPaused(false); this.scene.stop('PityScene');      return; }
       // Bestiaire/Arsenal sont toujours ouverts depuis PauseScene (mise en pause
       // dessous) — leur propre close() sait la reprendre correctement, contrairement
       // à un setPaused(false) qui la laisserait bloquée en pause indéfiniment.
@@ -5806,22 +5833,16 @@ export class GameScene extends Phaser.Scene {
       case 'skill2': this.triggerSkillBySlot(2); break;
       case 'skill3': this.triggerSkillBySlot(3); break;
       case 'inventory':
-        if (this.scene.isActive('InventoryScene')) {
-          this.setPaused(false); this.scene.stop('InventoryScene');
-        } else {
-          if (this.scene.isActive('SkillScene')) { this.setPaused(false); this.scene.stop('SkillScene'); }
-          this.setPaused(true);
-          this.scene.launch('InventoryScene', { gameScene: this });
-        }
+        if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
+        else this.openInventory();
         break;
       case 'skills':
-        if (this.scene.isActive('SkillScene')) {
-          this.setPaused(false); this.scene.stop('SkillScene');
-        } else {
-          if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
-          this.setPaused(true);
-          this.scene.launch('SkillScene', { gameScene: this });
-        }
+        if (this.scene.isActive('SkillScene')) { this.setPaused(false); this.scene.stop('SkillScene'); }
+        else this.openSkills();
+        break;
+      case 'pity':
+        if (this.scene.isActive('PityScene')) { this.setPaused(false); this.scene.stop('PityScene'); }
+        else this.openPity();
         break;
     }
   }
