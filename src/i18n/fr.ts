@@ -185,6 +185,7 @@ export const FR: Record<string, string> = {
   'inventory.close': '[I] Fermer',
   'inventory.equip_hint': '[Z] Équiper',
   'inventory.unequip_hint': 'Déséquiper',
+  'inventory.unequip_bag_full': 'Sac plein — impossible de déséquiper cette pièce.',
   'inventory.use_hint': '[Z] Utiliser',
   'inventory.sell_hint': '[X] Vendre ({value} G)',
   'inventory.close_hint': '[C] Fermer',

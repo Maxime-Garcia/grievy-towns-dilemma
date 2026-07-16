@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType, ItemRarity } from '../types';
+import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType, ItemRarity, ItemType, Equipment, Item } from '../types';
 import { CombatSystem } from '../systems/CombatSystem';
 import { StatsSystem } from '../systems/StatsSystem';
 import { PassiveSystem, SameTargetStackState, CritCdResetState } from '../systems/PassiveSystem';
@@ -14,6 +14,7 @@ import { StatRollSystem } from '../systems/StatRollSystem';
 import { QuestSystem } from '../systems/QuestSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { SkillSystem } from '../systems/SkillSystem';
+import { InventorySystem } from '../systems/InventorySystem';
 import { SaveSystem } from '../systems/SaveSystem';
 import { ENEMY_MAP } from '../data/enemies';
 import { elitePromotionAt, depthOfZone } from '../data/enemyScaling';
@@ -189,6 +190,7 @@ export class GameScene extends Phaser.Scene {
   private giveAllWeaponsKey!: Phaser.Input.Keyboard.Key;
   private toggleDummiesKey!: Phaser.Input.Keyboard.Key;
   private advancePityKey!: Phaser.Input.Keyboard.Key;
+  private fullLoadoutKey!: Phaser.Input.Keyboard.Key;
 
   private xpOrbs!: Phaser.Physics.Arcade.Group;
   private readonly XP_ATTRACT_RANGE = 96;
@@ -526,6 +528,7 @@ export class GameScene extends Phaser.Scene {
     // Debug: press T to toggle the training dummies flag (loot stat rolls test aid, cf. LOOT_STAT_ROLLS.md §10)
     if (Phaser.Input.Keyboard.JustDown(this.toggleDummiesKey)) this.debugToggleTrainingDummies();
     if (Phaser.Input.Keyboard.JustDown(this.advancePityKey)) this.debugAdvancePity();
+    if (Phaser.Input.Keyboard.JustDown(this.fullLoadoutKey)) this.debugFullLoadoutEmptyBag();
 
     // ── IFRAMES : clignotement du joueur pendant l'invincibilité post-hit ──
     // Alterne alpha 0.25 / 1 toutes les 80ms ; alpha restauré à la fin de la fenêtre.
@@ -652,6 +655,43 @@ export class GameScene extends Phaser.Scene {
     }
     this.events.emit('player_update', this.gameState.player);
     this.events.emit('show_notification', `[DEBUG] Sac vidé — ${gear.length} équipements ajoutés (armes+armures+accessoires)`);
+  }
+
+  /** Debug aid (press N) : équipe une pièce de chaque slot (arme, 6 pièces
+   *  d'armure, 2 anneaux, amulette) DIRECTEMENT — sac vide derrière. Contrairement
+   *  à la touche G (tout dans le sac, non équipé), sert à tester le ramassage
+   *  de loot sans se heurter tout de suite au plafond de 400 emplacements. */
+  private debugFullLoadoutEmptyBag(): void {
+    const player = this.gameState.player;
+    const pick = (type: ItemType) => Object.values(ALL_ITEMS).find(item => item.type === type);
+    const rings = Object.values(ALL_ITEMS).filter(item => item.type === ItemType.RING);
+
+    const slots: [keyof Equipment, Item | undefined][] = [
+      ['weapon', pick(ItemType.WEAPON)],
+      ['helm',   pick(ItemType.HELM)],
+      ['chest',  pick(ItemType.CHEST)],
+      ['legs',   pick(ItemType.LEGS)],
+      ['boots',  pick(ItemType.BOOTS)],
+      ['gloves', pick(ItemType.GLOVES)],
+      ['cape',   pick(ItemType.CAPE)],
+      ['ring1',  rings[0]],
+      // Clone si un seul RING existe dans ALL_ITEMS : ring1/ring2 ne doivent JAMAIS
+      // partager la même référence d'objet — equippedSlotOf() (InventoryScene) résout
+      // par identité (===) et ne retournerait jamais que ring1 pour cet objet,
+      // laissant ring2 invisible/indéséquipable dans l'inventaire.
+      ['ring2',  rings[1] ?? (rings[0] ? { ...rings[0] } : undefined)],
+      ['amulet', pick(ItemType.AMULET)],
+    ];
+
+    player.inventory = [];
+    for (const [slot, item] of slots) {
+      if (!item) continue;
+      (player.equipment as any)[slot] = item;
+      ArsenalSystem.discover(this.gameState.world, item.id);
+    }
+    InventorySystem.recalcStats(player);
+    this.events.emit('player_update', player);
+    this.events.emit('show_notification', '[DEBUG] Équipement complet, sac vidé — prêt à tester le ramassage de loot');
   }
 
   /** Debug aid (press T) : bascule player.flags['dev_training_dummies'] pour tester
@@ -4917,6 +4957,8 @@ export class GameScene extends Phaser.Scene {
     this.toggleDummiesKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.T);
     // Debug: press M to fast-forward the 3 pity counters near their guarantee (playtest aid)
     this.advancePityKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.M);
+    // Debug: press N to equip one of every gear slot directly + empty the bag (loot-pickup test aid)
+    this.fullLoadoutKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.N);
     // Remaining keys (attack, dash, inventory, skill menu, skill slots)
     // are all wired by applyKeyBindings() called right after setupInput().
   }

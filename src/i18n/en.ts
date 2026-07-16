@@ -204,6 +204,7 @@ const EN_MANUAL: Record<string, string> = {
   'inventory.close': '[I] Close',
   'inventory.equip_hint': '[Z] Equip',
   'inventory.unequip_hint': 'Unequip',
+  'inventory.unequip_bag_full': 'Bag full — can\'t unequip this piece.',
   'inventory.use_hint': '[Z] Use',
   'inventory.sell_hint': '[X] Sell ({value} G)',
   'inventory.close_hint': '[C] Close',
