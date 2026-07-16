@@ -22,11 +22,10 @@ import { t } from '../i18n';
 const ROW_H   = 64;   // 84 → 64 : plus de ligne "depuis le dernier..." à loger
 const ROW_GAP = 10;
 const PANEL_W = 460;
-// 74 (pas 60) : le sous-titre FR/EN mesure ~600px non-wrappé contre 432px
-// disponibles (PANEL_W - PAD*2) — il wrap sur 2 lignes (~30px), 60 n'aurait
-// laissé que 24px avant le divider et l'aurait chevauché (trouvé en review,
-// mesure des glyphes réels de la police Minimal 10px).
-const HEADER_H = 74;
+// Retour créateur 16/07, 2e passe : "GARANTIES DE BUTIN" se comprend seul,
+// pas besoin d'un sous-titre pour l'expliquer — retiré, HEADER_H revient à 48
+// (titre + divider seulement, comme avant l'éphémère version à sous-titre).
+const HEADER_H = 48;
 const PAD = 14;
 
 // Ordre d'affichage : croissant en rareté (la lecture descend vers le plus précieux).
@@ -76,12 +75,6 @@ export class PityScene extends Phaser.Scene {
 
     this.add.text(W / 2, panelY + PAD + 6, t('pity.title'), titleStyle(UI.TXT_GOLD, { stroke: true }))
       .setOrigin(0.5, 0);
-    // Sous-titre : explique la règle du jeu UNE fois, avant les données —
-    // remplace le footer répété après 3 cartes identiques.
-    this.add.text(
-      W / 2, panelY + PAD + 30, t('pity.subtitle'),
-      uiStyle(TYPE.SMALL, UI.TXT_MUTED, { align: 'center', wordWrapWidth: PANEL_W - PAD * 2 }),
-    ).setOrigin(0.5, 0);
     addCloseButton(this, panelX + PANEL_W - 24, panelY + PAD + 10, () => this.gameScene.closeOverlay('PityScene'));
 
     const sepGfx = this.add.graphics();
@@ -138,8 +131,13 @@ export class PityScene extends Phaser.Scene {
       uiStyle(TYPE.HEADING, ready ? UI.TXT_GOLD : UI.TXT_PARCHMENT, { bold: true, stroke: ready }),
     ).setOrigin(1, 0);
     if (!ready) {
+      // TXT_MUTED illisible ici (retour créateur 16/07, 2e passe) — sur le fond
+      // BG_MID de drawCard, le contraste tombe sous le seuil malgré le tuning
+      // documenté dans UITheme (calé sur PANEL_BG, plus sombre). TXT_PARCHMENT
+      // reste visuellement secondaire par la taille (10px) et l'absence de gras,
+      // pas par une couleur trop proche du fond.
       this.add.text(x + w - 14, y + 34, t('pity.remaining_of').replace('{max}', String(threshold)),
-        uiStyle(TYPE.SMALL, UI.TXT_MUTED),
+        uiStyle(TYPE.SMALL, UI.TXT_PARCHMENT),
       ).setOrigin(1, 0);
     }
 

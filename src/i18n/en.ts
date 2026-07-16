@@ -335,10 +335,8 @@ const EN_MANUAL: Record<string, string> = {
 
   // ── PITY SYSTEM (PITY/PITY.md) ───────────────────────────────
   'pity.title': 'Loot guarantees',
-  'pity.chip_label': 'GUARANTEE',
   'pity.paid': 'Guarantee honored: {rarity}!',
   'pity.remaining_of': 'left of {max}',
-  'pity.subtitle': 'Every kill counts. Looting that rarity resets its counter.',
   'pity.guaranteed': 'GUARANTEED',
 
   // ── KEY ACTIONS ─────────────────────────────────────────────
