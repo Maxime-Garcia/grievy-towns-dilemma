@@ -4,7 +4,7 @@ import { ItemRarity, RARITY_COLORS } from '../types';
 import { PITY_THRESHOLDS } from '../systems/LootSystem';
 import {
   UI, TYPE, drawGlowPanel, drawCard, drawBar, drawBadge, drawDivider,
-  uiStyle, titleStyle, addCloseButton, openScreenTransition,
+  uiStyle, titleStyle, addCloseButton, openScreenTransition, closeScreenTransition,
 } from '../utils/UITheme';
 import { t } from '../i18n';
 
@@ -45,12 +45,14 @@ function badgeTextColor(rarity: ItemRarity): string {
 export class PityScene extends Phaser.Scene {
   private gameScene!: GameScene;
   private glowTweens: Phaser.Tweens.Tween[] = [];
+  private closing = false;
 
   constructor() { super({ key: 'PityScene' }); }
 
   init(data: { gameScene: GameScene }) {
     this.gameScene = data.gameScene;
     this.glowTweens = [];
+    this.closing = false;
   }
 
   create() {
@@ -75,14 +77,7 @@ export class PityScene extends Phaser.Scene {
 
     this.add.text(W / 2, panelY + PAD + 6, t('pity.title'), titleStyle(UI.TXT_GOLD, { stroke: true }))
       .setOrigin(0.5, 0);
-    // closeOverlay() a été retiré de GameScene (chantier talents — remplacé par
-    // le patron close()-animé sur Inventaire/Compétences) ; PityScene n'a pas
-    // encore ce patron (cf. commentaires dans GameScene.applyKeyBindings), donc
-    // stop() brut direct plutôt qu'un helper disparu.
-    addCloseButton(this, panelX + PANEL_W - 24, panelY + PAD + 10, () => {
-      this.gameScene.setPaused(false);
-      this.gameScene.scene.stop('PityScene');
-    });
+    addCloseButton(this, panelX + PANEL_W - 24, panelY + PAD + 10, () => this.close());
 
     const sepGfx = this.add.graphics();
     drawDivider(sepGfx, panelX + PAD, panelY + PAD + HEADER_H - 6, PANEL_W - PAD * 2, UI.ACCENT_ARCANE, 0.35);
@@ -176,8 +171,30 @@ export class PityScene extends Phaser.Scene {
     }
   }
 
+  // Public : GameScene (touche pity en re-toggle, ESC après ouverture, bouton ×
+  // ci-dessus, action mobile) l'appelle pour fermer avec l'animation symétrique
+  // de l'ouverture (closeScreenTransition) au lieu d'un scene.stop() brut — même
+  // patron que SkillScene.close()/InventoryScene.close(). setPaused(false) vit
+  // dans shutdown() (rejoué au stop), pas ici : il n'a donc lieu qu'une fois
+  // l'écran réellement dissous.
+  //
+  // Réservé aux fermetures où PityScene est SEULE concernée (re-toggle de sa
+  // propre touche, bouton ×). Une BASCULE vers un autre overlay (Inventaire/
+  // Compétences pressé pendant que Pity est ouvert) reste sur un stop() brut
+  // côté GameScene : un close() animé y différerait setPaused(false) jusqu'après
+  // le setPaused(true) du nouvel overlay qui se lance juste derrière → jeu
+  // dé-pausé sous l'overlay (cf. commentaires dans GameScene.applyKeyBindings).
+  public close(): void {
+    if (this.closing) return;
+    this.closing = true;
+    closeScreenTransition(this, () => {
+      this.scene.stop();
+    });
+  }
+
   shutdown() {
     for (const tw of this.glowTweens) tw.stop();
     this.glowTweens = [];
+    this.gameScene?.setPaused(false);
   }
 }

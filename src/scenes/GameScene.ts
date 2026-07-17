@@ -41,6 +41,7 @@ import type { BestiaryScene } from './BestiaryScene';
 import type { ArsenalScene } from './ArsenalScene';
 import type { InventoryScene } from './InventoryScene';
 import type { SkillScene } from './SkillScene';
+import type { PityScene } from './PityScene';
 import { ENEMY_SPRITE_BBOX, NPC_SPRITE_BBOX, PLAYER_SPRITE_BBOX } from '../data/spriteGeometry';
 import { fitSpriteToContent } from '../utils/SpriteFit';
 import {
@@ -1843,8 +1844,6 @@ export class GameScene extends Phaser.Scene {
     // différé d'un close() animé tomberait APRÈS son setPaused(true) → jeu
     // dé-pausé sous l'overlay. (Stopper la scène tue le tween de fermeture, donc
     // aucun onClosed orphelin ne survit à une bascule pendant l'animation.)
-    // PityScene n'a PAS encore de close() animé (créée avant ce patron) — reste
-    // sur stop() brut pour l'instant, à aligner dans un futur passage UI dédié.
     this.inventoryKey.on('down', () => {
       if (this.scene.isActive('InventoryScene')) { (this.scene.get('InventoryScene') as InventoryScene).close(); return; }
       if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); }
@@ -1860,7 +1859,7 @@ export class GameScene extends Phaser.Scene {
       this.scene.launch('SkillScene', { gameScene: this });
     });
     this.pityKey.on('down', () => {
-      if (this.scene.isActive('PityScene')) { this.setPaused(false); this.scene.stop('PityScene'); return; }
+      if (this.scene.isActive('PityScene')) { (this.scene.get('PityScene') as PityScene).close(); return; }
       // BASCULE (pas re-toggle) : stop() brut, PAS close() animé — même raison
       // que ci-dessus (inventoryKey/skillMenuKey) : un close() différerait
       // setPaused(false) après le setPaused(true) de PityScene qui suit tout de
@@ -6553,9 +6552,8 @@ export class GameScene extends Phaser.Scene {
         sk.close(); return;
       }
       // PityScene n'a pas de handleEscape() (pas de champ de recherche/popup à
-      // consommer avant de fermer) — stop() brut direct, pas de close() animé
-      // (pas encore construit pour cette scène, cf. applyKeyBindings).
-      if (this.scene.isActive('PityScene')) { this.setPaused(false); this.scene.stop('PityScene'); return; }
+      // consommer avant de fermer) — close() direct.
+      if (this.scene.isActive('PityScene')) { (this.scene.get('PityScene') as PityScene).close(); return; }
       // Bestiaire/Arsenal sont toujours ouverts depuis PauseScene (mise en pause
       // dessous) — leur propre close() sait la reprendre correctement, contrairement
       // à un setPaused(false) qui la laisserait bloquée en pause indéfiniment.
@@ -7743,10 +7741,8 @@ export class GameScene extends Phaser.Scene {
           this.scene.launch('SkillScene', { gameScene: this });
         }
         break;
-      // PityScene n'a pas encore de close() animé — stop() brut des deux côtés
-      // (toggle ET bascule), cf. applyKeyBindings.
       case 'pity':
-        if (this.scene.isActive('PityScene')) { this.setPaused(false); this.scene.stop('PityScene'); }
+        if (this.scene.isActive('PityScene')) { (this.scene.get('PityScene') as PityScene).close(); }
         else this.openPity();
         break;
     }
