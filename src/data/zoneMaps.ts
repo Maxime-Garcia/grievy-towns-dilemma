@@ -14,6 +14,13 @@ export interface LootableObject { id: string; type: 'chest' | 'plant' | 'mineral
  */
 export interface FixedEnemyPlacement { id: string; x: number; y: number; requiresFlag?: string; }
 export interface WaterArea      { x: number; y: number; w: number; h: number; }
+/**
+ * Trou/fosse (RunSystem, ROGUELITE_POC.md §5) : overlap-only, jamais ajouté au
+ * wallGroup de collision (contrairement à WallRect/WaterArea) — sinon il bloquerait
+ * le passage au lieu de faire tomber. `damage` passe par GameScene.applyDamageToPlayer
+ * (seule fonction qui teste isDashing/i-frames), jamais un décompte direct des HP.
+ */
+export interface PitArea        { x: number; y: number; w: number; h: number; damage: number; }
 
 export interface ZoneLayout {
   mapWidth:    number;
@@ -29,6 +36,7 @@ export interface ZoneLayout {
   teleports:   TeleportZone[];
   lootables:   LootableObject[];
   fixedEnemies?: FixedEnemyPlacement[];
+  pits?:       PitArea[];
   spawnX:      number;
   spawnY:      number;
 }

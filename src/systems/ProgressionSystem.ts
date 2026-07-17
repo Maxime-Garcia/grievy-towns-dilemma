@@ -151,6 +151,8 @@ export class ProgressionSystem {
       respecCount: 0,
       passiveStacks: {},
       firstStrikeReady: true,
+      runBagCapacity: 20,
+      runSafeSlotCapacity: 4,
     };
   }
 }

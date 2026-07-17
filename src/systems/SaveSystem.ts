@@ -3,7 +3,7 @@ import { ProgressionSystem } from './ProgressionSystem';
 import { StatRollSystem, isEquipableItem } from './StatRollSystem';
 import { ALL_ITEMS } from '../data/items';
 
-const SAVE_VERSION = '1.8.0';
+const SAVE_VERSION = '1.9.0';
 const SAVE_KEY_PREFIX = 'gtd_save_';
 const MAX_SLOTS = 3;
 
@@ -151,6 +151,19 @@ const MIGRATION_MAP: Record<string, (state: GameState) => GameState> = {
       killsWithoutMythic: (state.player as any).killsWithoutMythic ?? 0,
     },
   }),
+  // RunSystem (docs/design/ROGUELITE_POC.md) : état de run persistant + capacités
+  // du sac de run. `run` reste null pour toute save d'avant ce chantier — une run
+  // en cours n'existait tout simplement pas.
+  '1.8.0': (state) => ({
+    ...state,
+    version: '1.9.0',
+    run: (state as any).run ?? null,
+    player: {
+      ...state.player,
+      runBagCapacity: (state.player as any).runBagCapacity ?? 20,
+      runSafeSlotCapacity: (state.player as any).runSafeSlotCapacity ?? 4,
+    },
+  }),
 };
 
 function migrate(state: GameState): GameState {
@@ -224,6 +237,7 @@ export class SaveSystem {
     return {
       player,
       world,
+      run: null,
       saveSlot: slot,
       saveTimestamp: Date.now(),
       version: SAVE_VERSION,

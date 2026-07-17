@@ -665,6 +665,47 @@ export interface PlayerState {
   /** true tant que le bonus FIRST_STRIKE_500_PCT n'a pas été consommé ce combat —
    *  remis à true à chaque transition hors-combat → en-combat (cf. GameScene). */
   firstStrikeReady: boolean;
+  /** Capacité totale du sac de run (RunSystem) — 20 par défaut. Futur upgrade
+   *  marchand (hors scope tranche 1) incrémentera ce nombre, jamais une constante. */
+  runBagCapacity: number;
+  /** Sous-ensemble de runBagCapacity qui survit à l'exfiltration — 4 par défaut. */
+  runSafeSlotCapacity: number;
+}
+
+// ============================================================
+// RUN SYSTEM (roguelite d'extraction, ROGUELITE_POC.md)
+// ============================================================
+
+export interface RunBagSlot {
+  item: Item;
+  quantity: number;
+}
+
+/**
+ * 'exploring'       : le joueur parcourt la carte générée, tue des ennemis vers le quota.
+ * 'boss_fight'       : quota atteint, le boss est apparu et vivant.
+ * 'awaiting_choice'  : boss vaincu, RunBagScene(mode 'extract') attend une décision.
+ */
+export type RunPhase = 'exploring' | 'boss_fight' | 'awaiting_choice';
+
+export interface RunState {
+  active: boolean;
+  biome: ElementType;
+  /** Racine du générateur — combinée à legIndex pour dériver la seed de chaque carte
+   *  (MapGenSystem.generateZoneLayout). Jamais Math.random() en jeu. */
+  seed: number;
+  /** 0 = première zone de la run, +1 à chaque "Continuer" après un boss. */
+  legIndex: number;
+  quotaTarget: number;
+  quotaKilled: number;
+  phase: RunPhase;
+  /** Longueur fixe = player.runSafeSlotCapacity ; null = emplacement vide. */
+  safeBag: (RunBagSlot | null)[];
+  /** Longueur fixe = player.runBagCapacity - player.runSafeSlotCapacity. */
+  ordinaryBag: (RunBagSlot | null)[];
+  /** 3-4 slots consommables choisis dans la banque avant de descendre. */
+  consumableLoadout: (RunBagSlot | null)[];
+  startedAt: number;
 }
 
 // ============================================================
@@ -704,6 +745,11 @@ export interface WorldState {
 export interface GameState {
   player: PlayerState;
   world: WorldState;
+  /** Run roguelite en cours, ou null hors run. Top-level (pas dans PlayerState) —
+   *  état éphémère de run séparé de la progression persistante du joueur. Ne
+   *  contient jamais la ZoneLayout générée elle-même (voir MapGenSystem : régénérée
+   *  depuis seed+legIndex au chargement, jamais sérialisée). */
+  run: RunState | null;
   saveSlot: number;
   saveTimestamp: number;
   version: string;
