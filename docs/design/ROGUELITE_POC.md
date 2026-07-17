@@ -231,6 +231,8 @@ Contraintes :
 **Pilote : UNE seule zone, un seul élément.** On généralise seulement après validation.
 
 - Combat contre les créatures de cette zone (identité élémentaire forte).
+- Notion d'exploration de zone exactement comme dans Wizard of Legend
+- Génération procédurale de la map selon des formes différentes, créer un agent spécifique à cette tâche pour obtenir des maps qualitatives et logiques, avec des obstacles à franchir, des trous où le joueur peut tomber, perdre des points de vie et réapparaître à côté du trou (suffisamment loin pour ne pas déclencher la chute à nouveau)
 - **Quota** d'ennemis à abattre. Nombre fini, réparti sur la carte — pas de respawn infini.
 - Quota atteint → **les créatures restantes disparaissent**, le **boss apparaît**.
 - **Mise en scène du boss** : fondu, nom en grand, « badass et stylé ». C'est un moment.
@@ -242,7 +244,6 @@ Contraintes :
 ## 6. Ce qui disparaît du code
 
 À supprimer ou neutraliser (pas à conserver « au cas où » — le code mort ment) :
-- Système de niveaux, XP, points d'attributs. La puissance = équipement + sorts.
 - Zones et `zoneMaps` existants, régions de spawn.
 - Villes autres que Grievy Town.
 - Localisation approximative du Bestiaire.
