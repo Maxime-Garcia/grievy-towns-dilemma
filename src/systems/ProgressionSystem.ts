@@ -1,5 +1,4 @@
-import { PlayerState, Attributes, Stats, Weapon } from '../types';
-import { ALL_ITEMS } from '../data/items';
+import { PlayerState, Attributes, Stats } from '../types';
 import { StatsSystem } from './StatsSystem';
 
 export const XP_PER_LEVEL = (level: number): number =>
@@ -117,17 +116,12 @@ export class ProgressionSystem {
       attributes: attrs,
       attributePoints: 0,
       equipment: {},
-      // DEV: uniquement des armes — celles ÉCRITES À LA MAIN (armes de zone, boss,
-      // Hidden…), pas le catalogue généré (`gen_*`, ~336 armes) : les inclure
-      // remplissait le sac à 395 entrées pour un cap de 60, et TOUT le loot suivant
-      // était alors silencieusement jeté (addToInventory refuse au-delà du cap) —
-      // le Mannequin d'Essai lui-même ne rendait plus rien. Les `gen_*` restent
-      // accessibles via la touche debug G.
-      // Plus d'armure/anneaux/potions ici, à la demande du joueur.
-      inventory: Object.values(ALL_ITEMS)
-        .filter((item): item is Weapon =>
-          'weaponType' in item && !!(item as Weapon).weaponType && !item.id.startsWith('gen_'))
-        .map(item => ({ item, quantity: 1 })),
+      // Sac vide à la création (à la demande du créateur, 17/07) — l'ancien dump
+      // de toutes les armes écrites à la main était une commodité DEV, pas un
+      // vrai départ de partie. Ces armes restent accessibles via la touche debug
+      // G (giveAllWeaponsKey/debugGiveAllWeapons) quand DEBUG_CHEAT_KEYS_ENABLED
+      // est réactivé.
+      inventory: [],
       gold: 50,
       unlockedSkills: ['dash', 'echo_strike'],
       equippedSkills: { slot1: 'echo_strike', slot2: null, slot3: null, slot4: null },
