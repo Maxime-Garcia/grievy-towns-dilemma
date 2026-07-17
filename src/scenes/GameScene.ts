@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType, ItemRarity, ItemType, Equipment, Item, StatusEffect } from '../types';
+import { GameState, ActiveEnemy, ElementType, Enemy, WeaponType, ItemRarity, ItemType, Equipment, Item, StatusEffect, RunState } from '../types';
 import { CombatSystem } from '../systems/CombatSystem';
 import { StatsSystem } from '../systems/StatsSystem';
 import { PassiveSystem, SameTargetStackState, CritCdResetState } from '../systems/PassiveSystem';
@@ -28,7 +28,9 @@ import {
   type AttackPatternId,
 } from '../data/enemyPatterns';
 import { NPC_MAP } from '../data/npcs';
-import { getZoneLayout, ZoneLayout, LootableObject, WaterArea } from '../data/zoneMaps';
+import { getZoneLayout, ZoneLayout, LootableObject, WaterArea, PitArea } from '../data/zoneMaps';
+import { generateZoneLayout, GeneratedMap, DEFAULT_IGNIS_PARAMS } from '../systems/MapGenSystem';
+import { RunSystem } from '../systems/RunSystem';
 import { ALL_ITEMS } from '../data/items';
 import { loadBindings, KeyBindings } from '../data/keybindings';
 import { keyIconFrame, keyCodeLabel } from '../utils/KeyIcons';
@@ -247,6 +249,20 @@ export class GameScene extends Phaser.Scene {
   private xpOrbOverlap: Phaser.Physics.Arcade.Collider | null = null;
   private physicsColliders: Phaser.Physics.Arcade.Collider[] = [];
   private teleportOverlaps: Phaser.Physics.Arcade.Collider[] = [];
+  // RunSystem (Phase 4) — trous : overlap-only, jamais dans wallGroup (cf. PitArea).
+  private pitZoneImages: Phaser.Physics.Arcade.Image[] = [];
+  private pitOverlaps: Phaser.Physics.Arcade.Collider[] = [];
+  /** Timestamp (ms) jusqu'auquel les overlaps de trou sont ignorés — évite un
+   *  retrigger immédiat sur le point de réapparition (même famille que iframeUntil). */
+  private pitFallCooldownUntil = 0;
+  /** Historique glissant (~500ms) des positions du joueur HORS trou — alimenté en
+   *  update(), sert de point de réapparition (toujours hors trou par construction,
+   *  sans avoir à calculer une sortie à la volée). */
+  private safePositionBuffer: { x: number; y: number; t: number }[] = [];
+  /** Carte générée de la run en cours (null hors run) — reconstruite depuis
+   *  run.seed/run.legIndex si absente (ex: juste après un chargement de save),
+   *  jamais sérialisée elle-même (cf. MapGenSystem). */
+  private currentGeneratedMap: GeneratedMap | null = null;
 
   private activeEnemies: Map<string, ActiveEnemy> = new Map();
   private enemyHpBars: Map<string, { bg: Phaser.GameObjects.Rectangle; bar: Phaser.GameObjects.Rectangle; baseW: number }> = new Map();
@@ -503,6 +519,11 @@ export class GameScene extends Phaser.Scene {
     this.teleportZoneImages = [];
     this.physicsColliders   = [];
     this.teleportOverlaps   = [];
+    this.pitZoneImages      = [];
+    this.pitOverlaps        = [];
+    this.pitFallCooldownUntil = 0;
+    this.safePositionBuffer = [];
+    this.currentGeneratedMap = null;
     this.xpOrbOverlap       = null;
     this.projectileCollider = null;
   }
@@ -632,6 +653,7 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.handleMovement(dt);
+    this.recordSafePosition(time);
     this.tickDashDamage();
     this.handleAttackInput();
     this.handleSkillInput();
@@ -4049,6 +4071,15 @@ export class GameScene extends Phaser.Scene {
     }
     if (questCompleted.length > 0) this.handleQuestCompletions(questCompleted);
 
+    // RunSystem (Phase 4) — +1 kill vers le quota ; quota atteint fait disparaître
+    // les mobs restants et spawn le boss à bossRoomCenter (jamais le centre-carte).
+    if (!isBoss && this.gameState.run?.active) {
+      const quotaReached = RunSystem.registerKill(this.gameState.run);
+      if (quotaReached && this.currentGeneratedMap) {
+        this.spawnRunBoss(this.gameState.player.currentZone, this.currentGeneratedMap.bossRoomCenter);
+      }
+    }
+
     if (isBoss) {
       const zone = Object.values(ZONE_MAP).find(z => z.bossId === enemyDef.id);
       if (zone) {
@@ -4064,6 +4095,13 @@ export class GameScene extends Phaser.Scene {
         if (zoneCompleted.length > 0) this.handleQuestCompletions(zoneCompleted);
         this.events.emit('zone_cleared', zone);
       }
+    }
+
+    // RunSystem (Phase 4) — boss de run vaincu : bascule en awaiting_choice, l'écran
+    // d'exfiltration/continuer (Phase 7) écoute cet event pour se lancer.
+    if (isBoss && this.gameState.run?.active && this.gameState.run.phase === 'boss_fight') {
+      RunSystem.onBossDefeated(this.gameState.run);
+      this.events.emit('run_boss_defeated');
     }
 
     const hidden = SkillSystem.checkHiddenUnlocks(this.gameState.player);
@@ -4167,13 +4205,25 @@ export class GameScene extends Phaser.Scene {
     this.knockbackX          = 0;
     this.knockbackY          = 0;
 
+    // RunSystem (Phase 4) — mort EN RUN : le sac est entièrement perdu, jamais un
+    // respawn sur la même carte (elle vient d'être invalidée) — retour direct à
+    // Grievy Town, pas performZoneTransition(currentZone) comme le chemin legacy.
+    const run = this.gameState.run;
+    const wasInRun = !!run?.active;
+    if (run?.active) {
+      RunSystem.onPlayerDeath(run);
+      this.gameState.run = null;
+      this.currentGeneratedMap = null;
+    }
+
     this.physics.world.pause();
     this.cameras.main.once(
       Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
       () => {
         this.time.delayedCall(0, () => {
           this.gameState.player.position = { x: 0, y: 0 };
-          this.performZoneTransition(this.gameState.player.currentZone, 0, 0);
+          const targetZone = wasInRun ? 'grievy_town' : this.gameState.player.currentZone;
+          this.performZoneTransition(targetZone, 0, 0);
         });
       },
     );
@@ -6082,6 +6132,17 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // Trous (RunSystem, ZoneLayout.pits) — rendu sombre + liseré, PAS de physique
+    // bloquante ici (overlap-only, cf. createPitOverlaps — jamais dans wallGroup).
+    if (this.layout.pits && this.layout.pits.length > 0) {
+      for (const pit of this.layout.pits) {
+        gfx.fillStyle(0x000000, 0.85);
+        gfx.fillRect(pit.x, pit.y, pit.w, pit.h);
+        gfx.lineStyle(2, 0xff6600, 0.5);
+        gfx.strokeRect(pit.x, pit.y, pit.w, pit.h);
+      }
+    }
+
     // Physics / camera bounds
     this.physics.world.setBounds(0, 0, mapWidth, mapHeight);
     this.cameras.main.setBounds(0, 0, mapWidth, mapHeight);
@@ -6163,6 +6224,65 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Trous (RunSystem, ZoneLayout.pits) — même construction que createTeleportOverlaps
+   * (staticImage invisible + overlap), mais JAMAIS ajoutés à wallGroup : un trou doit
+   * laisser le joueur y entrer (bloquer = contradiction avec "tomber"). Dégâts via
+   * applyDamageToPlayer (seule fonction qui teste isDashing/i-frames — un dash au-dessus
+   * d'un trou doit donc le traverser sans dégât, lecture "obstacle à franchir" de la spec).
+   */
+  private createPitOverlaps() {
+    this.pitZoneImages = [];
+    this.pitOverlaps = [];
+    for (const pit of this.layout.pits ?? []) {
+      const cx = pit.x + pit.w / 2;
+      const cy = pit.y + pit.h / 2;
+      const zone = this.physics.add.staticImage(cx, cy, '_px');
+      zone.setVisible(false);
+      (zone.body as Phaser.Physics.Arcade.StaticBody).setSize(pit.w, pit.h);
+      zone.refreshBody();
+      this.pitZoneImages.push(zone);
+
+      const overlap = this.physics.add.overlap(this.player, zone, () => {
+        if (this.time.now < this.pitFallCooldownUntil) return;
+        const hpBefore = this.gameState.player.stats.hp;
+        this.applyDamageToPlayer(pit.damage);
+        // hp inchangé = absorbé (dash/iframe/dodge/bouclier) : pas une "vraie" chute,
+        // ni cooldown ni réapparition — le joueur a simplement traversé le trou.
+        if (this.gameState.player.stats.hp >= hpBefore) return;
+        // Coup fatal : applyDamageToPlayer a déjà déclenché onPlayerDeath() (fade +
+        // transition en cours) — repositionner ici serait inutile, voire visible
+        // pendant le fondu. onPlayerDeath gère déjà tout, y compris le sac de run.
+        if (this.gameState.player.stats.hp <= 0) return;
+        this.pitFallCooldownUntil = this.time.now + 1200;
+        const safe = this.safePositionBuffer[0] ?? { x: this.layout.spawnX, y: this.layout.spawnY };
+        this.player.setPosition(safe.x, safe.y);
+        (this.player.body as Phaser.Physics.Arcade.Body).reset(safe.x, safe.y);
+      });
+      this.pitOverlaps.push(overlap);
+    }
+  }
+
+  private isInsideAnyPit(x: number, y: number): boolean {
+    for (const pit of this.layout.pits ?? []) {
+      if (x >= pit.x && x <= pit.x + pit.w && y >= pit.y && y <= pit.y + pit.h) return true;
+    }
+    return false;
+  }
+
+  /** Alimente le buffer de "dernière position hors trou" (~500ms glissants) —
+   *  jamais enregistré tant que le joueur est DANS un trou (safePositionBuffer[0]
+   *  doit toujours être un point sûr, jamais recalculé à la volée). */
+  private recordSafePosition(time: number) {
+    if (!this.layout.pits || this.layout.pits.length === 0) return;
+    if (this.isInsideAnyPit(this.player.x, this.player.y)) return;
+    this.safePositionBuffer.push({ x: this.player.x, y: this.player.y, t: time });
+    const cutoff = time - 500;
+    while (this.safePositionBuffer.length > 1 && this.safePositionBuffer[0].t < cutoff) {
+      this.safePositionBuffer.shift();
+    }
+  }
+
   // ── SETUP ────────────────────────────────────────────────────
 
   private createPlayer() {
@@ -6216,14 +6336,6 @@ export class GameScene extends Phaser.Scene {
       const def = ENEMY_MAP[enemyId];
       if (!def || def.isBoss) continue;
 
-      const texKey      = `enemy_${enemyId}`;
-      const texKeyElite = `enemy_${enemyId}_elite`;
-      const hasRealSprite = this.textures.exists(`enemy_${enemyId}_idle`);
-      if (!hasRealSprite) {
-        this.ensureTexture(texKey, enemyColor);
-        this.ensureTexture(texKeyElite, eliteColor, 44, 44);
-      }
-
       const count = Math.floor(def.spawnWeight * 4);
       const spawnRegions = ENEMY_SPAWN_REGIONS[enemyId];
       // Les régions nw/ne/.../center sont arbitrées pour la géométrie ~carrée des zones
@@ -6234,16 +6346,11 @@ export class GameScene extends Phaser.Scene {
       const aspectRatio = Math.max(mapWidth, mapHeight) / Math.min(mapWidth, mapHeight);
       const regionsUsable = aspectRatio <= 1.5;
       for (let i = 0; i < count; i++) {
-        // Une créature peut être élite de DEUX façons : parce que sa data le dit
-        // (def.isElite — les 44 créatures montées en élites, dont les stats sont déjà
-        // ×2.4 dans la data), ou par promotion aléatoire d'un mob banal. Avant, seul
-        // le tirage comptait : une élite de data n'avait que 20% de chances d'être
-        // traitée comme telle (couronne, XP ×2.5, bonus de world drop…).
-        const rolledElite = Math.random() < ELITE_PROMOTION_CHANCE;
-        const isElite = def.isElite || rolledElite;
         // Provisoire/approximatif : biaise le spawn vers un quadrant plausible de la zone
         // (ENEMY_SPAWN_REGIONS, cf. heatmap Bestiaire) au lieu d'un tirage uniforme sur
-        // toute la map — à remplacer une fois les maps de zone finalisées.
+        // toute la map — à remplacer une fois les maps de zone finalisées. N'est PAS
+        // utilisé pour les zones de run générées (spawnRunEnemies utilise les points
+        // validés par MapGenSystem, hors murs par construction).
         const region = regionsUsable ? pickSpawnRegion(spawnRegions) : undefined;
         const rect = region ? getSpawnRegionRect(region, mapWidth, mapHeight) : null;
         const ex = rect
@@ -6252,88 +6359,7 @@ export class GameScene extends Phaser.Scene {
         const ey = rect
           ? Phaser.Math.Between(Math.floor(rect.y0), Math.ceil(rect.y1))
           : Phaser.Math.Between(150, mapHeight - 150);
-
-        // Sprites bitmap réels ont un cadre natif très rembourré de transparence (10-40%
-        // de remplissage) — dimensionner l'affichage ET la hitbox sur le contenu opaque
-        // réel (mesuré dans spriteGeometry.ts), pas sur le cadre entier, sinon le monstre
-        // paraît minuscule et sa boîte de collision déborde largement de sa silhouette.
-        const enemyBbox = ENEMY_SPRITE_BBOX[enemyId];
-        const enemyFit = hasRealSprite && enemyBbox ? fitSpriteToContent(enemyBbox, isElite ? 46 : 36) : null;
-        const dispSize = enemyFit ? enemyFit.dispSize : (isElite ? 44 : 28);
-        const sprite = hasRealSprite
-          ? this.physics.add.sprite(ex, ey, `enemy_${enemyId}_idle`)
-          : this.physics.add.sprite(ex, ey, isElite ? texKeyElite : texKey);
-        sprite.setDisplaySize(dispSize, dispSize);
-        const body = sprite.body as Phaser.Physics.Arcade.Body;
-        if (enemyFit && enemyBbox) {
-          // DYNAMIC body: setSize()/setOffset() take SOURCE (pre-scale) pixels, re-scaled
-          // by Phaser every tick — use the raw bbox, not the already-scaled fit values.
-          body.setSize(enemyBbox.w, enemyBbox.h);
-          body.setOffset(enemyBbox.x, enemyBbox.y);
-        } else {
-          body.setSize(dispSize - 8, dispSize - 8);
-        }
-        sprite.setDepth(4);
-        // Resting scale, read back by attack-telegraph tweens (charge/burst_fan/dash_melee)
-        // so their "scale pop" juice is relative to this sprite's actual size instead of
-        // assuming a resting scale of 1.0 (true for the old procedural squares, not for
-        // real sprites which are scaled up to make their padded frame content readable).
-        sprite.setData('baseScale', sprite.scale);
-        if (hasRealSprite) {
-          sprite.setData('hasRealSprite', true);
-          if (isElite) {
-            sprite.setTint(eliteColor);
-            sprite.setData('persistentTint', eliteColor);
-          }
-          sprite.play(`enemy_${enemyId}_idle`);
-        }
-
-        const active = CombatSystem.spawnEnemy(def, zoneId);
-        active.x       = ex;
-        active.y       = ey;
-        active.isElite = isElite;
-        // Le boost ne s'applique QU'À la promotion aléatoire : les élites de data
-        // sont déjà mises à l'échelle sur l'ancre ELITE par scaledEnemyStats().
-        // ELITE_PROMOTION est DÉRIVÉ de l'écart d'ancres TRASH→ELITE (cf.
-        // enemyScaling.ts) : un élite promu vaut désormais autant qu'une élite de
-        // data. Avant (×1.5 PV / ×1.4 ATK) il en valait moins du tiers, pour la même
-        // couronne, la même XP ×2,5 et le même butin.
-        if (rolledElite && !def.isElite) {
-          const promo = elitePromotionAt(depthOfZone(zoneId));
-          const hp = Math.max(1, Math.floor(active.maxHp * promo.hp));
-          active.currentHp = hp;
-          active.maxHp     = hp;
-          active.stats     = {
-            ...active.stats,
-            baseHp:       hp,
-            baseAtk:      Math.max(1, Math.floor(active.stats.baseAtk      * promo.atk)),
-            baseMagicAtk: Math.max(1, Math.floor(active.stats.baseMagicAtk * promo.matk)),
-          };
-        }
-        sprite.name = active.instanceId;
-        this.activeEnemies.set(active.instanceId, active);
-        this.enemies.add(sprite);
-
-        // HP bar (bg + foreground) — ancrée sur le sommet du contenu VISIBLE, pas sur le
-        // cadre padded entier (pour les sprites très clairsemés, dispSize/2 seul ferait
-        // flotter la barre bien au-dessus de la silhouette réelle).
-        const contentTopGap = enemyFit ? dispSize / 2 - enemyFit.offsetY : dispSize / 2;
-        const barY = ey - contentTopGap - 8;
-        const barW = (enemyFit ? enemyFit.bodyW : dispSize) + 4;
-        const barBg  = this.add.rectangle(ex, barY, barW, 6, 0x220000).setDepth(8);
-        const barFg  = this.add.rectangle(
-          ex - barW / 2, barY, barW, 4, isElite ? 0xff8800 : 0xff2222,
-        ).setDepth(9).setOrigin(0, 0.5);
-        this.enemyHpBars.set(active.instanceId, { bg: barBg, bar: barFg, baseW: barW });
-
-        // Crown for elites
-        if (isElite) {
-          const crown = this.add.text(ex, ey - contentTopGap - 18, '♛', {
-            fontSize: '12px', color: '#ffdd00',
-            stroke: '#000000', strokeThickness: 2,
-          }).setOrigin(0.5, 1).setDepth(10);
-          this.enemyCrowns.set(active.instanceId, crown);
-        }
+        this.spawnEnemyInstance(enemyId, ex, ey, zoneId);
       }
     }
 
@@ -6451,6 +6477,229 @@ export class GameScene extends Phaser.Scene {
         });
       }
     }
+  }
+
+  /**
+   * Crée UNE instance ennemie à une position déjà décidée par l'appelant (uniforme
+   * dans une région pour les zones classiques, cf. createEnemiesForZone ; point
+   * validé par MapGenSystem pour une zone de run, cf. spawnRunEnemies). Extrait de
+   * l'ancienne boucle unique de createEnemiesForZone (RunSystem Phase 4) pour être
+   * réutilisable sans dupliquer ~120 lignes de fitting sprite/hp-bar/couronne.
+   */
+  private spawnEnemyInstance(enemyId: string, ex: number, ey: number, zoneId: string): ActiveEnemy | null {
+    const def = ENEMY_MAP[enemyId];
+    if (!def || def.isBoss) return null;
+
+    const enemyColor = ZONE_ENEMY_COLORS[zoneId] ?? 0xaa4444;
+    const eliteColor = Phaser.Display.Color.IntegerToColor(enemyColor).brighten(30).color;
+    const texKey      = `enemy_${enemyId}`;
+    const texKeyElite = `enemy_${enemyId}_elite`;
+    const hasRealSprite = this.textures.exists(`enemy_${enemyId}_idle`);
+    if (!hasRealSprite) {
+      this.ensureTexture(texKey, enemyColor);
+      this.ensureTexture(texKeyElite, eliteColor, 44, 44);
+    }
+
+    // Une créature peut être élite de DEUX façons : parce que sa data le dit
+    // (def.isElite), ou par promotion aléatoire d'un mob banal.
+    const rolledElite = Math.random() < ELITE_PROMOTION_CHANCE;
+    const isElite = def.isElite || rolledElite;
+
+    // Sprites bitmap réels ont un cadre natif très rembourré de transparence —
+    // dimensionner l'affichage ET la hitbox sur le contenu opaque réel.
+    const enemyBbox = ENEMY_SPRITE_BBOX[enemyId];
+    const enemyFit = hasRealSprite && enemyBbox ? fitSpriteToContent(enemyBbox, isElite ? 46 : 36) : null;
+    const dispSize = enemyFit ? enemyFit.dispSize : (isElite ? 44 : 28);
+    const sprite = hasRealSprite
+      ? this.physics.add.sprite(ex, ey, `enemy_${enemyId}_idle`)
+      : this.physics.add.sprite(ex, ey, isElite ? texKeyElite : texKey);
+    sprite.setDisplaySize(dispSize, dispSize);
+    const body = sprite.body as Phaser.Physics.Arcade.Body;
+    if (enemyFit && enemyBbox) {
+      body.setSize(enemyBbox.w, enemyBbox.h);
+      body.setOffset(enemyBbox.x, enemyBbox.y);
+    } else {
+      body.setSize(dispSize - 8, dispSize - 8);
+    }
+    sprite.setDepth(4);
+    sprite.setData('baseScale', sprite.scale);
+    if (hasRealSprite) {
+      sprite.setData('hasRealSprite', true);
+      if (isElite) {
+        sprite.setTint(eliteColor);
+        sprite.setData('persistentTint', eliteColor);
+      }
+      sprite.play(`enemy_${enemyId}_idle`);
+    }
+
+    const active = CombatSystem.spawnEnemy(def, zoneId);
+    active.x       = ex;
+    active.y       = ey;
+    active.isElite = isElite;
+    // ELITE_PROMOTION dérivé de l'écart d'ancres TRASH→ELITE (enemyScaling.ts) —
+    // un élite promu vaut désormais autant qu'une élite de data.
+    if (rolledElite && !def.isElite) {
+      const promo = elitePromotionAt(depthOfZone(zoneId));
+      const hp = Math.max(1, Math.floor(active.maxHp * promo.hp));
+      active.currentHp = hp;
+      active.maxHp     = hp;
+      active.stats     = {
+        ...active.stats,
+        baseHp:       hp,
+        baseAtk:      Math.max(1, Math.floor(active.stats.baseAtk      * promo.atk)),
+        baseMagicAtk: Math.max(1, Math.floor(active.stats.baseMagicAtk * promo.matk)),
+      };
+    }
+    sprite.name = active.instanceId;
+    this.activeEnemies.set(active.instanceId, active);
+    this.enemies.add(sprite);
+
+    // HP bar ancrée sur le sommet du contenu VISIBLE, pas le cadre padded entier.
+    const contentTopGap = enemyFit ? dispSize / 2 - enemyFit.offsetY : dispSize / 2;
+    const barY = ey - contentTopGap - 8;
+    const barW = (enemyFit ? enemyFit.bodyW : dispSize) + 4;
+    const barBg = this.add.rectangle(ex, barY, barW, 6, 0x220000).setDepth(8);
+    const barFg = this.add.rectangle(
+      ex - barW / 2, barY, barW, 4, isElite ? 0xff8800 : 0xff2222,
+    ).setDepth(9).setOrigin(0, 0.5);
+    this.enemyHpBars.set(active.instanceId, { bg: barBg, bar: barFg, baseW: barW });
+
+    if (isElite) {
+      const crown = this.add.text(ex, ey - contentTopGap - 18, '♛', {
+        fontSize: '12px', color: '#ffdd00',
+        stroke: '#000000', strokeThickness: 2,
+      }).setOrigin(0.5, 1).setDepth(10);
+      this.enemyCrowns.set(active.instanceId, crown);
+    }
+
+    return active;
+  }
+
+  /**
+   * Spawn fini pour une zone de run (RunSystem, Phase 4) — jusqu'à run.quotaTarget
+   * ennemis, sur les points de spawn validés par MapGenSystem (hors murs/trous par
+   * construction, cf. MapGenSystem.generateZoneLayout). AUCUN respawn : contrairement
+   * à createEnemiesForZone (zones classiques), une fois ces ennemis morts le quota
+   * progresse vers le boss — pas de flux continu.
+   */
+  private spawnRunEnemies(zoneId: string, run: RunState, generated: GeneratedMap) {
+    this.enemies = this.physics.add.group();
+    const zone = ZONE_MAP[zoneId];
+    if (!zone || generated.spawnPoints.length === 0) return;
+
+    const weighted: { id: string; weight: number }[] = zone.enemies
+      .map(id => ({ id, weight: ENEMY_MAP[id]?.spawnWeight ?? 0 }))
+      .filter(e => e.weight > 0 && !ENEMY_MAP[e.id]?.isBoss);
+    if (weighted.length === 0) return;
+    const totalWeight = weighted.reduce((sum, e) => sum + e.weight, 0);
+    const pickEnemyId = (): string => {
+      let roll = Math.random() * totalWeight;
+      for (const e of weighted) {
+        roll -= e.weight;
+        if (roll <= 0) return e.id;
+      }
+      return weighted[weighted.length - 1].id;
+    };
+
+    for (let i = 0; i < run.quotaTarget; i++) {
+      const point = generated.spawnPoints[i % generated.spawnPoints.length];
+      // Léger jitter (purement cosmétique, non-seedé comme le reste du spawn ennemi
+      // classique) pour éviter un empilement parfait quand quotaTarget dépasse le
+      // nombre de points disponibles (escalade "Continuer").
+      const ex = point.x + Phaser.Math.Between(-20, 20);
+      const ey = point.y + Phaser.Math.Between(-20, 20);
+      this.spawnEnemyInstance(pickEnemyId(), ex, ey, zoneId);
+    }
+  }
+
+  /**
+   * Fait disparaître les mobs de run restants (quota atteint) et spawn le boss à
+   * bossRoomCenter (position générée, remplace le centre-carte codé en dur des
+   * zones classiques). Ne touche jamais aux ennemis d'une zone non-run.
+   */
+  private spawnRunBoss(zoneId: string, bossRoomCenter: { x: number; y: number }) {
+    const zone = ZONE_MAP[zoneId];
+    if (!zone?.bossId) return;
+    const bossDef = ENEMY_MAP[zone.bossId];
+    if (!bossDef) return;
+
+    // Les mobs restants disparaissent (spec §5) — pas de mise à mort différée.
+    for (const [instanceId, sprite] of Array.from(this.enemies.children.getArray()).map(
+      go => [(go as Phaser.Physics.Arcade.Sprite).name, go as Phaser.Physics.Arcade.Sprite] as const,
+    )) {
+      const barData = this.enemyHpBars.get(instanceId);
+      if (barData) { barData.bg.destroy(); barData.bar.destroy(); this.enemyHpBars.delete(instanceId); }
+      const crown = this.enemyCrowns.get(instanceId);
+      if (crown) { crown.destroy(); this.enemyCrowns.delete(instanceId); }
+      this.activeEnemies.delete(instanceId);
+      sprite.destroy();
+    }
+
+    const bx = Math.floor(bossRoomCenter.x);
+    const by = Math.floor(bossRoomCenter.y);
+    const bossTexKey = `enemy_${zone.bossId}`;
+    const bossHasRealSprite = this.textures.exists(`${bossTexKey}_idle`);
+    if (!bossHasRealSprite) this.ensureTexture(bossTexKey, 0xffd700, 64, 64);
+
+    const bossBbox = ENEMY_SPRITE_BBOX[zone.bossId];
+    const bossFit = bossHasRealSprite && bossBbox ? fitSpriteToContent(bossBbox, 68) : null;
+    const bossDispSize = bossFit ? bossFit.dispSize : 64;
+    const bossSprite = bossHasRealSprite
+      ? this.physics.add.sprite(bx, by, `${bossTexKey}_idle`)
+      : this.physics.add.sprite(bx, by, bossTexKey);
+    bossSprite.setDisplaySize(bossDispSize, bossDispSize);
+    const bossBody = bossSprite.body as Phaser.Physics.Arcade.Body;
+    if (bossFit && bossBbox) {
+      bossBody.setSize(bossBbox.w, bossBbox.h);
+      bossBody.setOffset(bossBbox.x, bossBbox.y);
+    } else {
+      bossBody.setSize(bossDispSize - 4, bossDispSize - 4);
+    }
+    bossSprite.setDepth(5);
+    bossSprite.setData('baseScale', bossSprite.scale);
+    if (bossHasRealSprite) {
+      bossSprite.setData('hasRealSprite', true);
+      bossSprite.play(`${bossTexKey}_idle`);
+    }
+
+    const activeBoss = CombatSystem.spawnEnemy(bossDef, zoneId);
+    activeBoss.x = bx;
+    activeBoss.y = by;
+    // Escalade "Continuer" (RunSystem) — multiplicateur simple appliqué APRÈS spawn,
+    // même motif que la promotion élite (jamais via enemyScaling.ts/ZONE_DEPTH).
+    const run = this.gameState.run;
+    if (run && run.legIndex > 0) {
+      const mult = RunSystem.enemyStatMultiplier(run.legIndex);
+      const hp = Math.max(1, Math.floor(activeBoss.maxHp * mult));
+      activeBoss.currentHp = hp;
+      activeBoss.maxHp     = hp;
+      activeBoss.stats     = {
+        ...activeBoss.stats,
+        baseHp:       hp,
+        baseAtk:      Math.max(1, Math.floor(activeBoss.stats.baseAtk      * mult)),
+        baseMagicAtk: Math.max(1, Math.floor(activeBoss.stats.baseMagicAtk * mult)),
+      };
+    }
+    bossSprite.name = activeBoss.instanceId;
+    this.activeEnemies.set(activeBoss.instanceId, activeBoss);
+    this.enemies.add(bossSprite);
+
+    const bossContentTopGap = bossFit ? bossDispSize / 2 - bossFit.offsetY : bossDispSize / 2;
+    const bossBarW = 72;
+    const bossBarY = by - bossContentTopGap - 12;
+    const bossBg = this.add.rectangle(bx, bossBarY, bossBarW, 8, 0x220000).setDepth(8);
+    const bossFg = this.add.rectangle(bx - bossBarW / 2, bossBarY, bossBarW, 6, 0xffd700)
+      .setDepth(9).setOrigin(0, 0.5);
+    this.enemyHpBars.set(activeBoss.instanceId, { bg: bossBg, bar: bossFg, baseW: bossBarW });
+
+    const crown = this.add.text(bx, by - bossContentTopGap - 20, '* BOSS *', {
+      fontSize: '10px', color: '#ffd700', stroke: '#000000', strokeThickness: 2,
+    }).setOrigin(0.5, 1).setDepth(10);
+    this.enemyCrowns.set(activeBoss.instanceId, crown);
+
+    this.time.delayedCall(1500, () => {
+      this.showBossAnnouncement(bossDef.name, zone.element as ElementType);
+    });
   }
 
   private createNPCsForZone(zoneId: string) {
@@ -6837,6 +7086,9 @@ export class GameScene extends Phaser.Scene {
     this.physicsColliders = [];
     for (const o of this.teleportOverlaps) o.destroy();
     this.teleportOverlaps = [];
+    for (const o of this.pitOverlaps) o.destroy();
+    this.pitOverlaps = [];
+    this.safePositionBuffer = [];
     if (this.xpOrbOverlap) { this.xpOrbOverlap.destroy(); this.xpOrbOverlap = null; }
     if (this.projectileCollider) { this.projectileCollider.destroy(); this.projectileCollider = null; }
 
@@ -6874,6 +7126,10 @@ export class GameScene extends Phaser.Scene {
     // Teleport static images
     for (const img of this.teleportZoneImages) img.destroy();
     this.teleportZoneImages = [];
+
+    // Pit static images (RunSystem)
+    for (const img of this.pitZoneImages) img.destroy();
+    this.pitZoneImages = [];
 
     // Enemies — destroy HP bars and crowns first, then sprites
     this.enemyHpBars.forEach(({ bg, bar }) => { bg.destroy(); bar.destroy(); });
@@ -6961,7 +7217,22 @@ export class GameScene extends Phaser.Scene {
     if (zoneId !== this.gameState.player.currentZone) this.preservedUsedThisZone = false;
     this.gameState.player.currentZone = zoneId;
     this.gameState.player.position    = { x: targetX, y: targetY };
-    this.layout = getZoneLayout(zoneId);
+
+    // RunSystem (Phase 4) — une run active sur CE zoneId bascule vers la carte
+    // générée (jamais getZoneLayout) : seed+legIndex reconstruisent la même carte,
+    // déterministe, y compris après un rechargement de save (cf. MapGenSystem).
+    // Coexiste avec l'ancien réseau de téléports statiques vers ignis_reach tant
+    // que le teardown n'est pas fait — d'où le test explicite sur run.active plutôt
+    // que sur zoneId seul.
+    const run = this.gameState.run;
+    const isRunZone = !!run?.active && zoneId === 'ignis_reach';
+    if (isRunZone) {
+      this.currentGeneratedMap = generateZoneLayout(run!.seed, run!.legIndex, DEFAULT_IGNIS_PARAMS);
+      this.layout = this.currentGeneratedMap.layout;
+    } else {
+      this.currentGeneratedMap = null;
+      this.layout = getZoneLayout(zoneId);
+    }
 
     this.destroyCurrentZoneObjects();
 
@@ -6974,9 +7245,14 @@ export class GameScene extends Phaser.Scene {
     this.nearbyLootable = null;
 
     this.drawZoneMap();
-    this.createEnemiesForZone(zoneId);
+    if (isRunZone && this.currentGeneratedMap) {
+      this.spawnRunEnemies(zoneId, run!, this.currentGeneratedMap);
+    } else {
+      this.createEnemiesForZone(zoneId);
+    }
     this.createNPCsForZone(zoneId);
     this.createTeleportOverlaps();
+    this.createPitOverlaps();
     this.createLootables();
     this.createXpOrbsGroup();
     this.setupCamera();
