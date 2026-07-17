@@ -197,6 +197,7 @@ export class GameScene extends Phaser.Scene {
   private fullLoadoutKey!: Phaser.Input.Keyboard.Key;
   private givePointsKey!: Phaser.Input.Keyboard.Key;
   private spawnTestEnemiesKey!: Phaser.Input.Keyboard.Key;
+  private startRunDebugKey!: Phaser.Input.Keyboard.Key;
 
   private xpOrbs!: Phaser.Physics.Arcade.Group;
   private readonly XP_ATTRACT_RANGE = 96;
@@ -669,6 +670,10 @@ export class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.givePointsKey)) this.debugGiveTalentPoints();
     // Debug: press Y to spawn one enemy per element tested by Phase 0 (talents Partie 2) + a boss
     if (Phaser.Input.Keyboard.JustDown(this.spawnTestEnemiesKey)) this.debugSpawnTestEnemies();
+    // Debug: press U to open the run-start packing screen directly (RunSystem test
+    // aid) — le vrai PNJ déclencheur (flag start_run) est du contenu, hors scope de
+    // ce chantier technique ; retirer cette touche une fois le PNJ livré par content-agent.
+    if (Phaser.Input.Keyboard.JustDown(this.startRunDebugKey)) this.openRunBagScene('pack');
 
     // ── IFRAMES : clignotement du joueur pendant l'invincibilité post-hit ──
     // Alterne alpha 0.25 / 1 toutes les 80ms ; alpha restauré à la fin de la fenêtre.
@@ -1767,6 +1772,16 @@ export class GameScene extends Phaser.Scene {
     this.scene.launch('PityScene', { gameScene: this });
   }
 
+  /** RunSystem (Phase 6/7) — packing pré-run ou arbitrage post-boss, cf. RunBagScene. */
+  public openRunBagScene(mode: 'pack' | 'extract') {
+    if (this.scene.isActive('RunBagScene')) return;
+    if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
+    if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); }
+    if (this.scene.isActive('PityScene'))      { this.setPaused(false); this.scene.stop('PityScene'); }
+    this.setPaused(true);
+    this.scene.launch('RunBagScene', { gameScene: this, mode });
+  }
+
   /**
    * BUG préexistant (trouvé pendant le chantier « Partie 2 des talents ») :
    * `this.playerModifiers` n'était calculé QU'UNE FOIS, dans le bloc de reset de
@@ -1944,6 +1959,15 @@ export class GameScene extends Phaser.Scene {
           delete flags[craftFlagKey];
           this.isInDialogue = true;
           this.scene.launch('ShopScene', { gameScene: this, npcId: craftNpcId });
+        }
+
+        // start_run : PNJ déclencheur de run (RunSystem, Phase 6) — même patron
+        // que open_shop/open_craft. Lance le packing pré-run (mode 'pack'),
+        // startRun()/travelToZone() sont déclenchés par RunBagScene lui-même
+        // à la confirmation "Descendre".
+        if (flags['start_run']) {
+          delete flags['start_run'];
+          this.openRunBagScene('pack');
         }
       },
     });
@@ -4097,11 +4121,11 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // RunSystem (Phase 4) — boss de run vaincu : bascule en awaiting_choice, l'écran
-    // d'exfiltration/continuer (Phase 7) écoute cet event pour se lancer.
+    // RunSystem (Phase 4/7) — boss de run vaincu : bascule en awaiting_choice et
+    // lance directement l'écran d'exfiltration/continuer (RunBagScene mode 'extract').
     if (isBoss && this.gameState.run?.active && this.gameState.run.phase === 'boss_fight') {
       RunSystem.onBossDefeated(this.gameState.run);
-      this.events.emit('run_boss_defeated');
+      this.time.delayedCall(1200, () => this.openRunBagScene('extract'));
     }
 
     const hidden = SkillSystem.checkHiddenUnlocks(this.gameState.player);
@@ -6841,6 +6865,8 @@ export class GameScene extends Phaser.Scene {
     this.givePointsKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.P);
     // Debug: press Y to spawn FIRE/ICE/LIGHTNING enemies + a boss around the player
     this.spawnTestEnemiesKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Y);
+    // Debug: press U to open the run-start packing screen directly (RunSystem test aid)
+    this.startRunDebugKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.U);
     // Remaining keys (attack, dash, inventory, skill menu, skill slots)
     // are all wired by applyKeyBindings() called right after setupInput().
   }
