@@ -554,7 +554,15 @@ export class GameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
 
     const zoneId = this.gameState.player.currentZone;
-    this.layout = getZoneLayout(zoneId);
+    // RunSystem — même résolution que buildZone() (cf. resolveZoneLayout). Sans ça,
+    // un rechargement de save (F5, crash, "Continuer" depuis le menu) pendant une
+    // run active en ignis_reach chargeait TOUJOURS la carte statique legacy et
+    // n'appelait jamais createPitOverlaps()/spawnRunEnemies() — currentGeneratedMap
+    // restait null, le hook boss (this.currentGeneratedMap requis) ne se déclenchait
+    // jamais, et la run finissait softlock dès le quota atteint (BLOCKER trouvé en
+    // revue de code — l'autosave 180s rend ce chemin trivialement atteignable en
+    // jeu normal, pas un cas limite exotique).
+    const isRunZone = this.resolveZoneLayout(zoneId);
 
     // Les animations ne peuvent être déclarées qu'une fois les textures présentes —
     // c'est-à-dire maintenant, preload() étant terminé.
@@ -563,9 +571,14 @@ export class GameScene extends Phaser.Scene {
     this.generatePixelTexture();
     this.drawZoneMap();
     this.createPlayer();
-    this.createEnemiesForZone(zoneId);
+    if (isRunZone && this.currentGeneratedMap) {
+      this.spawnRunEnemies(zoneId, this.gameState.run!, this.currentGeneratedMap);
+    } else {
+      this.createEnemiesForZone(zoneId);
+    }
     this.createNPCsForZone(zoneId);
     this.createTeleportOverlaps();
+    this.createPitOverlaps();
     this.createLootables();
     this.createXpOrbsGroup();
     this.setupInput();
@@ -673,7 +686,12 @@ export class GameScene extends Phaser.Scene {
     // Debug: press U to open the run-start packing screen directly (RunSystem test
     // aid) — le vrai PNJ déclencheur (flag start_run) est du contenu, hors scope de
     // ce chantier technique ; retirer cette touche une fois le PNJ livré par content-agent.
-    if (Phaser.Input.Keyboard.JustDown(this.startRunDebugKey)) this.openRunBagScene('pack');
+    // Garde run?.active : sans ça, ré-ouvrir le packing PENDANT une run en cours
+    // écrase gameState.run à la confirmation "Descendre" — le sac de run déjà
+    // rempli (butin non exfiltré) serait perdu sans confirmation (trouvé en revue).
+    if (Phaser.Input.Keyboard.JustDown(this.startRunDebugKey) && !this.gameState.run?.active) {
+      this.openRunBagScene('pack');
+    }
 
     // ── IFRAMES : clignotement du joueur pendant l'invincibilité post-hit ──
     // Alterne alpha 0.25 / 1 toutes les 80ms ; alpha restauré à la fin de la fenêtre.
@@ -1964,8 +1982,9 @@ export class GameScene extends Phaser.Scene {
         // start_run : PNJ déclencheur de run (RunSystem, Phase 6) — même patron
         // que open_shop/open_craft. Lance le packing pré-run (mode 'pack'),
         // startRun()/travelToZone() sont déclenchés par RunBagScene lui-même
-        // à la confirmation "Descendre".
-        if (flags['start_run']) {
+        // à la confirmation "Descendre". Garde run?.active (même raison que la
+        // touche debug U) : ne jamais écraser une run déjà en cours.
+        if (flags['start_run'] && !this.gameState.run?.active) {
           delete flags['start_run'];
           this.openRunBagScene('pack');
         }
@@ -4104,7 +4123,12 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    if (isBoss) {
+    // Gaté par !run?.active : tuer le boss d'une run (Pyrath, potentiellement
+    // plusieurs fois via "Continuer") n'est PAS un clear de zone legacy — sans
+    // cette garde, "Zone libérée" (skills débloqués, dégradation du monde...)
+    // se redéclenchait à chaque leg (trouvé en revue de code). Le boss de run a
+    // son propre hook juste en dessous, indépendant de ce bloc.
+    if (isBoss && !this.gameState.run?.active) {
       const zone = Object.values(ZONE_MAP).find(z => z.bossId === enemyDef.id);
       if (zone) {
         const zoneCompleted = QuestSystem.onBossKilled(this.gameState.player, enemyDef.id, zone.element as ElementType, this.gameState.world);
@@ -7233,6 +7257,30 @@ export class GameScene extends Phaser.Scene {
       .setDepth(1000);
   }
 
+  /**
+   * Résout la source de ZoneLayout pour `zoneId` et met à jour this.layout/
+   * this.currentGeneratedMap en conséquence — toujours réassignés ENSEMBLE, jamais
+   * désynchronisés. Renvoie true si une carte de run a été générée.
+   *
+   * Point de passage UNIQUE, appelé à la fois par create() (bootstrap initial —
+   * y compris après un rechargement de save en pleine run, cf. autosave 180s) et
+   * buildZone() (transitions). Coexiste avec l'ancien réseau de téléports
+   * statiques vers ignis_reach tant que le teardown n'est pas fait — d'où le test
+   * explicite sur run.active plutôt que sur zoneId seul.
+   */
+  private resolveZoneLayout(zoneId: string): boolean {
+    const run = this.gameState.run;
+    const isRunZone = !!run?.active && zoneId === 'ignis_reach';
+    if (isRunZone) {
+      this.currentGeneratedMap = generateZoneLayout(run!.seed, run!.legIndex, DEFAULT_IGNIS_PARAMS);
+      this.layout = this.currentGeneratedMap.layout;
+    } else {
+      this.currentGeneratedMap = null;
+      this.layout = getZoneLayout(zoneId);
+    }
+    return isRunZone;
+  }
+
   private buildZone(zoneId: string, targetX: number, targetY: number) {
     try {
     // PRESERVED (glacius_deep_patience) — « 1 fois par ZONE » : buildZone est
@@ -7244,21 +7292,7 @@ export class GameScene extends Phaser.Scene {
     this.gameState.player.currentZone = zoneId;
     this.gameState.player.position    = { x: targetX, y: targetY };
 
-    // RunSystem (Phase 4) — une run active sur CE zoneId bascule vers la carte
-    // générée (jamais getZoneLayout) : seed+legIndex reconstruisent la même carte,
-    // déterministe, y compris après un rechargement de save (cf. MapGenSystem).
-    // Coexiste avec l'ancien réseau de téléports statiques vers ignis_reach tant
-    // que le teardown n'est pas fait — d'où le test explicite sur run.active plutôt
-    // que sur zoneId seul.
-    const run = this.gameState.run;
-    const isRunZone = !!run?.active && zoneId === 'ignis_reach';
-    if (isRunZone) {
-      this.currentGeneratedMap = generateZoneLayout(run!.seed, run!.legIndex, DEFAULT_IGNIS_PARAMS);
-      this.layout = this.currentGeneratedMap.layout;
-    } else {
-      this.currentGeneratedMap = null;
-      this.layout = getZoneLayout(zoneId);
-    }
+    const isRunZone = this.resolveZoneLayout(zoneId);
 
     this.destroyCurrentZoneObjects();
 
@@ -7272,7 +7306,7 @@ export class GameScene extends Phaser.Scene {
 
     this.drawZoneMap();
     if (isRunZone && this.currentGeneratedMap) {
-      this.spawnRunEnemies(zoneId, run!, this.currentGeneratedMap);
+      this.spawnRunEnemies(zoneId, this.gameState.run!, this.currentGeneratedMap);
     } else {
       this.createEnemiesForZone(zoneId);
     }

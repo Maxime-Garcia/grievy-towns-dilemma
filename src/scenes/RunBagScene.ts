@@ -162,6 +162,10 @@ export class RunBagScene extends Phaser.Scene {
   }
 
   private confirmDescend() {
+    // closeScreenTransition() ne désactive pas l'input pendant son animation (~170ms) —
+    // sans cette garde, un double-clic rapide re-déduit les consommables choisis de
+    // la banque une seconde fois (trouvé en revue de code).
+    if (this.closing) return;
     const player = this.gameScene.gameState.player;
     const chosen = this.loadout.filter((i): i is Item => i !== null);
     // Retire réellement les consommables choisis de la banque — jusqu'ici ils n'ont
@@ -275,6 +279,7 @@ export class RunBagScene extends Phaser.Scene {
   }
 
   private confirmExfiltrate() {
+    if (this.closing) return;
     const player = this.gameScene.gameState.player;
     const run = this.gameScene.gameState.run;
     if (!run) return;
@@ -290,6 +295,7 @@ export class RunBagScene extends Phaser.Scene {
   }
 
   private confirmContinue() {
+    if (this.closing) return;
     const run = this.gameScene.gameState.run;
     if (!run) return;
     RunSystem.continueRun(run);
