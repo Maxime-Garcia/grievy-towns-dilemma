@@ -1799,6 +1799,12 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /** RunBagScene (consumeItem) a besoin des mêmes modificateurs que tout autre
+   *  soin du jeu (HEALING_RECEIVED_PCT) — champ privé, exposé en lecture seule. */
+  public getPlayerModifiers(): TalentModifiers {
+    return this.playerModifiers;
+  }
+
   public openInventory() {
     if (this.scene.isActive('InventoryScene')) return;
     if (this.scene.isActive('SkillScene')) { this.setPaused(false); this.scene.stop('SkillScene'); }
@@ -1939,10 +1945,23 @@ export class GameScene extends Phaser.Scene {
       // l'inventaire "intra-run" distinct demandé dès le début du chantier
       // (confirmé dans ROGUELITE_POC.md — deux interfaces séparées).
       if (this.gameState.run?.active) {
-        if (this.scene.isActive('RunBagScene')) { (this.scene.get('RunBagScene') as RunBagScene).close(); return; }
+        if (this.scene.isActive('RunBagScene')) {
+          const bag = this.scene.get('RunBagScene') as RunBagScene;
+          // 'pack'/'extract' sont des écrans BLOQUANTS (packing avant descente,
+          // choix post-boss) — les fermer via cette touche annexe perdrait la
+          // décision en cours (BLOCKER trouvé en revue : fermer l'écran
+          // d'extraction ainsi softlockait la run à vie, aucun autre point du
+          // code ne le rouvre). Seul 'view' (simple consultation) peut re-toggle.
+          if (bag.currentMode === 'view') bag.close();
+          return;
+        }
         this.openRunBagScene('view');
         return;
       }
+      // RunBagScene peut être ouverte en mode 'pack' même si run n'est pas
+      // encore active (avant la confirmation "Descendre") — ne jamais empiler
+      // InventoryScene par-dessus.
+      if (this.scene.isActive('RunBagScene')) return;
       if (this.scene.isActive('InventoryScene')) { (this.scene.get('InventoryScene') as InventoryScene).close(); return; }
       if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); }
       if (this.scene.isActive('PityScene'))      { this.setPaused(false); this.scene.stop('PityScene'); }
@@ -1950,6 +1969,9 @@ export class GameScene extends Phaser.Scene {
       this.scene.launch('InventoryScene', { gameScene: this });
     });
     this.skillMenuKey.on('down', () => {
+      // RunBagScene ('pack'/'extract' bloquants, ou 'view' consultatif) ne doit
+      // jamais être empilée/masquée par un autre overlay — même raison que ci-dessus.
+      if (this.scene.isActive('RunBagScene')) return;
       if (this.scene.isActive('SkillScene'))     { (this.scene.get('SkillScene') as SkillScene).close(); return; }
       if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
       if (this.scene.isActive('PityScene'))      { this.setPaused(false); this.scene.stop('PityScene'); }
@@ -1957,6 +1979,7 @@ export class GameScene extends Phaser.Scene {
       this.scene.launch('SkillScene', { gameScene: this });
     });
     this.pityKey.on('down', () => {
+      if (this.scene.isActive('RunBagScene')) return;
       if (this.scene.isActive('PityScene')) { (this.scene.get('PityScene') as PityScene).close(); return; }
       // BASCULE (pas re-toggle) : stop() brut, PAS close() animé — même raison
       // que ci-dessus (inventoryKey/skillMenuKey) : un close() différerait
@@ -4154,7 +4177,12 @@ export class GameScene extends Phaser.Scene {
         this.events.emit('show_notification', '[DEBUG] Équipez une arme : le Mannequin d\'Essai en rejoue le tirage.');
       } else {
         const rolled = StatRollSystem.rollItem(template, 0);
-        const added = LootSystem.addToInventory(this.gameState.player, rolled, 1, this.gameState.world);
+        // Défense en profondeur : ce mannequin n'existe aujourd'hui que dans
+        // grievy_town (fixedEnemies), jamais atteignable en run — mais si un jour
+        // il l'était, son loot doit suivre la même règle que le reste (sac de run).
+        const added = activeRun
+          ? RunBagSystem.addToRunBag(activeRun, rolled, 1).ok
+          : LootSystem.addToInventory(this.gameState.player, rolled, 1, this.gameState.world);
         if (added) this.events.emit('item_looted', { item: rolled, quantity: 1 });
         else this.events.emit('show_notification', '[DEBUG] Sac plein — tirage perdu.');
       }
@@ -6917,6 +6945,15 @@ export class GameScene extends Phaser.Scene {
     this.escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     this.escKey.on('down', () => {
       if (this.isInDialogue) return;
+      // RunBagScene : 'view' (consultatif) se ferme normalement via ESC ; 'pack'/
+      // 'extract' sont des écrans BLOQUANTS (packing avant descente, choix
+      // post-boss) — ESC n'y fait rien plutôt que d'ouvrir Pause par-dessus
+      // (même raison que la touche Inventaire, cf. BLOCKER trouvé en revue).
+      if (this.scene.isActive('RunBagScene')) {
+        const bag = this.scene.get('RunBagScene') as RunBagScene;
+        if (bag.currentMode === 'view') bag.close();
+        return;
+      }
       // handleEscape() : l'écran a une chance de CONSOMMER l'appui avant qu'on ne
       // le ferme (popup ouvert, champ de recherche non vide → Échap vide d'abord).
       // GameScene est le propriétaire UNIQUE de l'ESC des overlays : un second

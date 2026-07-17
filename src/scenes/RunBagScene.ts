@@ -4,7 +4,7 @@ import { Consumable, ElementType, Item, ItemType, RARITY_COLORS, RunBagSlot } fr
 import { LootSystem } from '../systems/LootSystem';
 import { RunSystem } from '../systems/RunSystem';
 import { RunBagSystem } from '../systems/RunBagSystem';
-import { PassiveSystem } from '../systems/PassiveSystem';
+import { InventorySystem } from '../systems/InventorySystem';
 import {
   UI, TYPE, drawGlowPanel, drawCard, drawSlot, uiStyle, titleStyle,
   addCloseButton, openScreenTransition, closeScreenTransition,
@@ -47,6 +47,15 @@ export class RunBagScene extends Phaser.Scene {
   private selected: { kind: 'safe' | 'ordinary'; index: number } | null = null;
 
   constructor() { super({ key: 'RunBagScene' }); }
+
+  /** Lu par GameScene (touche Inventaire) pour décider si un re-toggle peut
+   *  fermer cette scène : 'view' est un simple consultatif (peut se fermer),
+   *  'pack'/'extract' sont des choix BLOQUANTS (packing avant descente, boss
+   *  vaincu) — les fermer via une touche annexe perdrait la décision en cours
+   *  (trouvé en revue de code : la touche Inventaire fermait l'écran
+   *  d'extraction post-boss sans que le joueur ait choisi Exfiltrer/Continuer,
+   *  softlock permanent — aucun autre point du code ne rouvre cet écran). */
+  public get currentMode(): RunBagMode { return this.mode; }
 
   init(data: { gameScene: GameScene; mode: RunBagMode }) {
     this.gameScene = data.gameScene;
@@ -312,17 +321,9 @@ export class RunBagScene extends Phaser.Scene {
 
     const player = this.gameScene.gameState.player;
     const effect = (slot.item as Consumable).effect;
-    let applied = false;
-    if (effect.hpRestore) { PassiveSystem.applyHeal(player, effect.hpRestore); applied = true; }
-    if (effect.hpPercent)  { PassiveSystem.applyHeal(player, Math.round(player.stats.maxHp * effect.hpPercent)); applied = true; }
-    if (effect.manaRestore) {
-      player.stats.mana = Math.min(player.stats.maxMana, player.stats.mana + effect.manaRestore);
-      applied = true;
-    }
-    if (effect.manaPercent) {
-      player.stats.mana = Math.min(player.stats.maxMana, player.stats.mana + Math.round(player.stats.maxMana * effect.manaPercent));
-      applied = true;
-    }
+    // Même logique que la banque (InventorySystem.useConsumable) — seul le
+    // retrait diffère (slot du sac de run ici, LootSystem côté banque).
+    const applied = InventorySystem.applyConsumableEffect(player, effect, this.gameScene.getPlayerModifiers());
     if (!applied) {
       this.events.emit('show_notification', 'Effet de cet objet pas encore pris en charge en run.');
       return;

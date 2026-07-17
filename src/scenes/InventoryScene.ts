@@ -1859,7 +1859,7 @@ export class InventoryScene extends Phaser.Scene {
         if (this.closing) return;
         this.closeConsumePopup();
         if (isConsumable) {
-          InventorySystem.useConsumable(this.player, item);
+          InventorySystem.useConsumable(this.player, item, this.gameScene.getPlayerModifiers());
         } else {
           this.lastFlashSlotKey = this.getSlotKeyForItem(item);
           InventorySystem.equip(this.player, item);

@@ -1,6 +1,8 @@
-import { PlayerState, Item, ItemType, ItemRarity, Weapon, Armor, Accessory, Consumable, Equipment, InventorySlot } from '../types';
+import { PlayerState, Item, ItemType, ItemRarity, Weapon, Armor, Accessory, Consumable, ConsumableEffect, Equipment, InventorySlot } from '../types';
 import { LootSystem } from './LootSystem';
 import { StatsSystem } from './StatsSystem';
+import { PassiveSystem } from './PassiveSystem';
+import { TalentModifiers } from './TalentSystem';
 import { ALL_ITEMS } from '../data/items';
 
 // ── Inventory display grouping (bag UI only — never touches equip/sell logic) ──
@@ -141,7 +143,36 @@ export class InventorySystem {
     return true;
   }
 
-  static useConsumable(player: PlayerState, item: Item): boolean {
+  /**
+   * Applique hpRestore/manaRestore/hpPercent/manaPercent d'un consommable — PAS
+   * buffStat/revive/statusCure (non câblés nulle part dans le jeu, cf. mémoire
+   * projet `project_consumable_use_gap`). Ne touche jamais l'inventaire : réutilisé
+   * par useConsumable (banque, retire via LootSystem) et RunBagScene.consumeItem
+   * (sac de run, retire son propre slot) — chacun gère son propre conteneur.
+   *
+   * hpPercent/manaPercent sont ADDITIFS comme hpRestore/manaRestore — un bug fixé
+   * ici les traitait comme un SET absolu (`hp = maxHp * pct`), donc un élixir
+   * "+20%" bu à 90% HP faisait TOMBER le joueur à 20% au lieu de le monter à
+   * 100%. Passe par PassiveSystem.applyHeal (comme tout autre soin du jeu) pour
+   * la conversion overheal→bouclier et le bonus HEALING_RECEIVED_PCT.
+   */
+  static applyConsumableEffect(player: PlayerState, effect: ConsumableEffect, mods?: TalentModifiers): boolean {
+    let applied = false;
+    if (effect.hpRestore) { PassiveSystem.applyHeal(player, effect.hpRestore, mods); applied = true; }
+    if (effect.hpPercent) { PassiveSystem.applyHeal(player, Math.round(player.stats.maxHp * effect.hpPercent), mods); applied = true; }
+    if (effect.manaRestore) {
+      player.stats.mana = Math.min(player.stats.maxMana, player.stats.mana + effect.manaRestore);
+      applied = true;
+    }
+    if (effect.manaPercent) {
+      player.stats.mana = Math.min(player.stats.maxMana, player.stats.mana + Math.round(player.stats.maxMana * effect.manaPercent));
+      applied = true;
+    }
+    if (effect.statusCure) { /* clear status effects — handled by CombatSystem */ }
+    return applied;
+  }
+
+  static useConsumable(player: PlayerState, item: Item, mods?: TalentModifiers): boolean {
     if (item.type !== ItemType.CONSUMABLE) return false;
 
     const consumable = item as Consumable;
@@ -152,13 +183,7 @@ export class InventorySystem {
     const removed = LootSystem.removeFromInventory(player, item.id, 1, item);
     if (!removed) return false;
 
-    const e = consumable.effect;
-    if (e.hpRestore)    player.stats.hp   = Math.min(player.stats.maxHp,   player.stats.hp   + e.hpRestore);
-    if (e.manaRestore)  player.stats.mana = Math.min(player.stats.maxMana, player.stats.mana + e.manaRestore);
-    if (e.hpPercent)    player.stats.hp   = Math.min(player.stats.maxHp,   Math.floor(player.stats.maxHp   * e.hpPercent));
-    if (e.manaPercent)  player.stats.mana = Math.min(player.stats.maxMana, Math.floor(player.stats.maxMana * e.manaPercent));
-    if (e.statusCure)   { /* clear status effects — handled by CombatSystem */ }
-
+    this.applyConsumableEffect(player, consumable.effect, mods);
     return true;
   }
 
