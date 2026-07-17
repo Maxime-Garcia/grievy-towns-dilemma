@@ -31,6 +31,7 @@ import { NPC_MAP } from '../data/npcs';
 import { getZoneLayout, ZoneLayout, LootableObject, WaterArea, PitArea } from '../data/zoneMaps';
 import { generateZoneLayout, GeneratedMap, DEFAULT_IGNIS_PARAMS } from '../systems/MapGenSystem';
 import { RunSystem } from '../systems/RunSystem';
+import { RunBagSystem } from '../systems/RunBagSystem';
 import { ALL_ITEMS } from '../data/items';
 import { loadBindings, KeyBindings } from '../data/keybindings';
 import { keyIconFrame, keyCodeLabel } from '../utils/KeyIcons';
@@ -44,6 +45,7 @@ import type { ArsenalScene } from './ArsenalScene';
 import type { InventoryScene } from './InventoryScene';
 import type { SkillScene } from './SkillScene';
 import type { PityScene } from './PityScene';
+import type { RunBagScene } from './RunBagScene';
 import { ENEMY_SPRITE_BBOX, NPC_SPRITE_BBOX, PLAYER_SPRITE_BBOX } from '../data/spriteGeometry';
 import { fitSpriteToContent } from '../utils/SpriteFit';
 import {
@@ -52,6 +54,17 @@ import {
   registerEnemyAnimations,
   ensureEnemyAssets,
 } from '../utils/EnemyAssets';
+
+/**
+ * Bascule maître des touches de triche/debug (G/T/M/N/P/Y — équipement complet,
+ * dummies, avance pity, points de talent, ennemis de test). `false` = désactivées
+ * pour un playtest "propre" (retour créateur : elles polluaient l'état testé) —
+ * gardées ICI, pas supprimées, pour réactivation en une ligne quand le besoin
+ * revient. La touche U (packing de run direct) n'est PAS soumise à ce flag : ce
+ * n'est pas une triche au même sens, c'est le seul point d'entrée du RunSystem
+ * tant que le PNJ déclencheur n'est pas livré par content-agent.
+ */
+const DEBUG_CHEAT_KEYS_ENABLED = false;
 
 const ELEMENT_PROJECTILE_COLORS: Partial<Record<ElementType, number>> = {
   [ElementType.FIRE]:      0xff4400,
@@ -673,16 +686,22 @@ export class GameScene extends Phaser.Scene {
     this.handleSkillInput();
     this.updateArrowProjectiles(dt);
 
-    // Debug: press G to add one of every gear item (weapon/armor/accessory) to the inventory (asset-review aid)
-    if (Phaser.Input.Keyboard.JustDown(this.giveAllWeaponsKey)) this.debugGiveAllWeapons();
-    // Debug: press T to toggle the training dummies flag (loot stat rolls test aid, cf. LOOT_STAT_ROLLS.md §10)
-    if (Phaser.Input.Keyboard.JustDown(this.toggleDummiesKey)) this.debugToggleTrainingDummies();
-    if (Phaser.Input.Keyboard.JustDown(this.advancePityKey)) this.debugAdvancePity();
+    // Touches de triche — désactivées par défaut (DEBUG_CHEAT_KEYS_ENABLED),
+    // cf. commentaire en tête de fichier. Code gardé intact, pas supprimé.
+    if (DEBUG_CHEAT_KEYS_ENABLED) {
+      // Debug: press G to add one of every gear item (weapon/armor/accessory) to the inventory (asset-review aid)
+      if (Phaser.Input.Keyboard.JustDown(this.giveAllWeaponsKey)) this.debugGiveAllWeapons();
+      // Debug: press T to toggle the training dummies flag (loot stat rolls test aid, cf. LOOT_STAT_ROLLS.md §10)
+      if (Phaser.Input.Keyboard.JustDown(this.toggleDummiesKey)) this.debugToggleTrainingDummies();
+      if (Phaser.Input.Keyboard.JustDown(this.advancePityKey)) this.debugAdvancePity();
+      // Debug: press P to grant 20 talent points (talent unlock test aid, étape 4 roguelite)
+      if (Phaser.Input.Keyboard.JustDown(this.givePointsKey)) this.debugGiveTalentPoints();
+      // Debug: press Y to spawn one enemy per element tested by Phase 0 (talents Partie 2) + a boss
+      if (Phaser.Input.Keyboard.JustDown(this.spawnTestEnemiesKey)) this.debugSpawnTestEnemies();
+    }
+    // N reste HORS du flag — fixture de test propre pour le RunSystem (équipement
+    // modeste + 2 potions + sac vidé), pas une triche au même sens que les autres.
     if (Phaser.Input.Keyboard.JustDown(this.fullLoadoutKey)) this.debugFullLoadoutEmptyBag();
-    // Debug: press P to grant 20 talent points (talent unlock test aid, étape 4 roguelite)
-    if (Phaser.Input.Keyboard.JustDown(this.givePointsKey)) this.debugGiveTalentPoints();
-    // Debug: press Y to spawn one enemy per element tested by Phase 0 (talents Partie 2) + a boss
-    if (Phaser.Input.Keyboard.JustDown(this.spawnTestEnemiesKey)) this.debugSpawnTestEnemies();
     // Debug: press U to open the run-start packing screen directly (RunSystem test
     // aid) — le vrai PNJ déclencheur (flag start_run) est du contenu, hors scope de
     // ce chantier technique ; retirer cette touche une fois le PNJ livré par content-agent.
@@ -853,6 +872,11 @@ export class GameScene extends Phaser.Scene {
     ];
 
     player.inventory = [];
+    // Fixture de test RunSystem (retour créateur) : "un petit équipement commun
+    // et rien dans l'inventaire sauf 2 potions de soin banales" — pour tester
+    // ramassage/inventaire intra-run/consommation sans bruit d'un sac déjà plein.
+    const potion = ALL_ITEMS['minor_health_potion'];
+    if (potion) player.inventory.push({ item: potion, quantity: 2 });
     for (const [slot, item] of slots) {
       if (!item) continue;
       (player.equipment as any)[slot] = item;
@@ -1762,8 +1786,17 @@ export class GameScene extends Phaser.Scene {
 
   public setPaused(paused: boolean) {
     this.menuOpen = paused;
-    if (paused) this.physics.world.pause();
-    else        this.physics.world.resume();
+    if (paused) {
+      this.physics.world.pause();
+      // physics.world.pause() arrête les DÉPLACEMENTS (corps physiques) mais pas
+      // les animations sprite (idle des monstres, du joueur...) : celles-ci
+      // tournent sur l'AnimationManager global de Phaser, indépendant de la
+      // physique — retrouvé en playtest ("les idles continuent en pause").
+      this.anims.pauseAll();
+    } else {
+      this.physics.world.resume();
+      this.anims.resumeAll();
+    }
   }
 
   public openInventory() {
@@ -1790,8 +1823,9 @@ export class GameScene extends Phaser.Scene {
     this.scene.launch('PityScene', { gameScene: this });
   }
 
-  /** RunSystem (Phase 6/7) — packing pré-run ou arbitrage post-boss, cf. RunBagScene. */
-  public openRunBagScene(mode: 'pack' | 'extract') {
+  /** RunSystem (Phase 6/7) — packing pré-run, inventaire intra-run ou arbitrage
+   *  post-boss, cf. RunBagScene. */
+  public openRunBagScene(mode: 'pack' | 'view' | 'extract') {
     if (this.scene.isActive('RunBagScene')) return;
     if (this.scene.isActive('InventoryScene')) { this.setPaused(false); this.scene.stop('InventoryScene'); }
     if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); }
@@ -1900,6 +1934,15 @@ export class GameScene extends Phaser.Scene {
     // dé-pausé sous l'overlay. (Stopper la scène tue le tween de fermeture, donc
     // aucun onClosed orphelin ne survit à une bascule pendant l'animation.)
     this.inventoryKey.on('down', () => {
+      // RunSystem : pendant une run active, la touche Inventaire ouvre le sac de
+      // run (RunBagScene mode 'view') — JAMAIS la banque de Grievy Town. C'est
+      // l'inventaire "intra-run" distinct demandé dès le début du chantier
+      // (confirmé dans ROGUELITE_POC.md — deux interfaces séparées).
+      if (this.gameState.run?.active) {
+        if (this.scene.isActive('RunBagScene')) { (this.scene.get('RunBagScene') as RunBagScene).close(); return; }
+        this.openRunBagScene('view');
+        return;
+      }
       if (this.scene.isActive('InventoryScene')) { (this.scene.get('InventoryScene') as InventoryScene).close(); return; }
       if (this.scene.isActive('SkillScene'))     { this.setPaused(false); this.scene.stop('SkillScene'); }
       if (this.scene.isActive('PityScene'))      { this.setPaused(false); this.scene.stop('PityScene'); }
@@ -4068,18 +4111,29 @@ export class GameScene extends Phaser.Scene {
     // l'item est jeté au sol, la notif « Garantie honorée ! » ne doit pas mentir
     // en s'affichant quand même).
     const addedRarities = new Set<ItemRarity>();
+    // RunSystem : pendant une run, le butin va dans le sac de run (20/4, perdu à
+    // l'exfiltration sauf slots sûrs) — JAMAIS dans la banque de Grievy Town tant
+    // que la run n'est pas terminée. Gap critique trouvé au premier playtest : le
+    // loot continuait d'atterrir dans player.inventory sans jamais passer par
+    // RunBagSystem, laissant le sac de run vide à l'extraction.
+    const activeRun = this.gameState.run?.active ? this.gameState.run : null;
     for (const { item, quantity } of loot.items) {
-      // Le retour d'addToInventory était ignoré : sac plein → l'item était jeté,
-      // MAIS la notification de loot s'affichait quand même. Le joueur voyait un
-      // drop qu'il ne recevait jamais. On ne notifie que ce qui est réellement pris.
-      const added = LootSystem.addToInventory(this.gameState.player, item, quantity, this.gameState.world);
+      // Le retour d'addToInventory/addToRunBag était ignoré : sac plein → l'item
+      // était jeté, MAIS la notification de loot s'affichait quand même. Le joueur
+      // voyait un drop qu'il ne recevait jamais. On ne notifie que ce qui est
+      // réellement pris.
+      const added = activeRun
+        ? RunBagSystem.addToRunBag(activeRun, item, quantity).ok
+        : LootSystem.addToInventory(this.gameState.player, item, quantity, this.gameState.world);
       if (!added) {
-        this.events.emit('show_notification', `Sac plein — ${item.name} laissé au sol !`);
+        const reason = activeRun ? 'Sac de run plein' : 'Sac plein';
+        this.events.emit('show_notification', `${reason} — ${item.name} laissé au sol !`);
         continue;
       }
       addedRarities.add(item.rarity);
       this.events.emit('item_looted', { item, quantity });
-      // Bestiaire — révéler les drops hidden au premier loot
+      // Bestiaire — révéler les drops hidden au premier loot (progression globale
+      // du joueur, non concernée par la distinction run/banque — reste actif).
       BestiarySystem.revealDrop(this.gameState.world, activeEnemy.enemyId, item.id);
     }
     // Notif « Garantie honorée ! » APRÈS la boucle d'inventaire (pas avant) —
@@ -6088,6 +6142,15 @@ export class GameScene extends Phaser.Scene {
   private drawZoneMap() {
     const { mapWidth, mapHeight, bgColor, pathColor, wallColor, accentColor, walls, paths, teleports } = this.layout;
     const zoneId = this.gameState.player.currentZone;
+    // Une carte GÉNÉRÉE (RunSystem) ne doit jamais utiliser les textures bitmap
+    // réelles d'ignis_reach : elles sont peintes pour l'ANCIEN tracé statique
+    // (une rivière de lave à des coordonnées fixes, etc.) et, posées sur une
+    // grille procédurale, donnaient un sol et des couloirs visuellement
+    // identiques — aucune distinction perceptible entre salle/couloir/fond
+    // (retour playtest : "carte vide, sans relief"). Le fallback couleur plate
+    // + le contour par cellule ci-dessous restent la seule source de relief
+    // tant qu'un art procédural dédié n'existe pas.
+    const isGenerated = !!this.currentGeneratedMap;
 
     const gfx = this.add.graphics().setDepth(0);
     this.zoneGraphics = gfx;
@@ -6096,7 +6159,7 @@ export class GameScene extends Phaser.Scene {
     // sinon fillRect procédural. Les TileSprites sont sous gfx (depth 0) donc les murs/
     // accents/highlights de téléport (dessinés dans gfx plus bas) restent bien par-dessus.
     const groundKey = `tileset_${zoneId}_ground`;
-    if (this.textures.exists(groundKey)) {
+    if (!isGenerated && this.textures.exists(groundKey)) {
       const ground = this.add.tileSprite(0, 0, mapWidth, mapHeight, groundKey).setOrigin(0, 0).setDepth(-1);
       this.zoneTileSprites.push(ground);
     } else {
@@ -6112,7 +6175,7 @@ export class GameScene extends Phaser.Scene {
     // Paths (drawn over background, below walls)
     if (paths.length > 0) {
       const pathKey = `tileset_${zoneId}_path`;
-      if (this.textures.exists(pathKey)) {
+      if (!isGenerated && this.textures.exists(pathKey)) {
         for (const p of paths) {
           const pathTile = this.add.tileSprite(p.x, p.y, p.w, p.h, pathKey).setOrigin(0, 0).setDepth(-0.5);
           this.zoneTileSprites.push(pathTile);
@@ -6120,11 +6183,20 @@ export class GameScene extends Phaser.Scene {
       } else {
         gfx.fillStyle(pathColor);
         for (const p of paths) gfx.fillRect(p.x, p.y, p.w, p.h);
+        if (isGenerated) {
+          // Chaque PathRect correspond à UNE cellule de MapGenSystem — un fin
+          // contour par cellule donne la seule lisibilité de structure (salles/
+          // couloirs) disponible tant qu'aucun art procédural dédié n'existe.
+          gfx.lineStyle(1, 0x000000, 0.25);
+          for (const p of paths) gfx.strokeRect(p.x, p.y, p.w, p.h);
+        }
       }
     }
 
-    // Accent details (lava, water, crystals, etc.)
-    if (accentColor) {
+    // Accent details (lava, water, crystals, etc.) — coordonnées codées en dur
+    // pour le tracé STATIQUE de chaque zone (cf. drawZoneAccents) : n'a aucun
+    // sens sur une carte générée, sauterait potentiellement dans un mur.
+    if (accentColor && !isGenerated) {
       gfx.fillStyle(accentColor, 0.45);
       this.drawZoneAccents(gfx, zoneId);
     }
@@ -6311,19 +6383,30 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private isInsideAnyPit(x: number, y: number): boolean {
+  /** `margin` élargit le rectangle testé — la détection Arcade réelle (overlap
+   *  entre corps physiques, pas des points) peut déclencher la chute alors que
+   *  le CENTRE du joueur n'est qu'à quelques pixels du bord du trou. Un point
+   *  jugé "hors trou" sans marge peut donc être à peine à l'extérieur — repérer
+   *  ce point comme "sûr" (recordSafePosition) puis y téléporter le joueur après
+   *  une chute le laissait visuellement quasi au même endroit (retrouvé en
+   *  playtest : plusieurs chutes rapprochées, aucune vraie sortie du trou). */
+  private isInsideAnyPit(x: number, y: number, margin = 0): boolean {
     for (const pit of this.layout.pits ?? []) {
-      if (x >= pit.x && x <= pit.x + pit.w && y >= pit.y && y <= pit.y + pit.h) return true;
+      if (x >= pit.x - margin && x <= pit.x + pit.w + margin
+        && y >= pit.y - margin && y <= pit.y + pit.h + margin) return true;
     }
     return false;
   }
 
   /** Alimente le buffer de "dernière position hors trou" (~500ms glissants) —
    *  jamais enregistré tant que le joueur est DANS un trou (safePositionBuffer[0]
-   *  doit toujours être un point sûr, jamais recalculé à la volée). */
+   *  doit toujours être un point sûr, jamais recalculé à la volée). Marge de 48px
+   *  (~2× le rayon du joueur) : un point tout juste à l'extérieur du rectangle du
+   *  trou n'est PAS considéré sûr — sinon la réapparition post-chute peut retomber
+   *  à quelques pixels du bord, visuellement indiscernable du trou lui-même. */
   private recordSafePosition(time: number) {
     if (!this.layout.pits || this.layout.pits.length === 0) return;
-    if (this.isInsideAnyPit(this.player.x, this.player.y)) return;
+    if (this.isInsideAnyPit(this.player.x, this.player.y, 48)) return;
     this.safePositionBuffer.push({ x: this.player.x, y: this.player.y, t: time });
     const cutoff = time - 500;
     while (this.safePositionBuffer.length > 1 && this.safePositionBuffer[0].t < cutoff) {
