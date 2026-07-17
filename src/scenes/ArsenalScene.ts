@@ -6,7 +6,8 @@
 //
 // Construit APRÈS la refonte "arcane fresh" de l'inventaire : utilise les
 // primitives modernes (drawGlowPanel/drawCard, uiStyle) plutôt que le style
-// pixel historique du Bestiaire (drawPanel/pxStyle).
+// pixel historique du Bestiaire (pxStyle). drawPanel(), l'ancien style de
+// panneau anguleux, a depuis été retiré du projet (plus aucun appelant).
 // ============================================================
 
 import { WorldState, ElementType, ItemType, ItemRarity, RARITY_COLORS, Item, Weapon, Armor } from '../types';

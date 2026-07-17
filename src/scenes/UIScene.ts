@@ -127,7 +127,7 @@ export class UIScene extends Phaser.Scene {
     // Vite (__BUILD_HASH__, cf. vite.config.ts) : l'écrire à la main était voué
     // à mentir, puisqu'un hash n'existe qu'une fois le commit fait — et l'écrire
     // dans le code refait le commit.
-    const BUILD_LABEL = `MERGE: Talents Partie 2 + Systeme Pity dans feat/roguelite (${__BUILD_HASH__})`;
+    const BUILD_LABEL = `UI: popup loot + sac aere + fermeture Pity + style unifie (${__BUILD_HASH__})`;
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',
@@ -349,10 +349,19 @@ export class UIScene extends Phaser.Scene {
     buildNavBtn(invX, 'nav_inventory', 'inventory');
     buildNavBtn(sklX, 'nav_skills',    'skills');
 
-    // ── Notification (above skill slots) ─────────
+    // ── Notification (sous le panneau stats + chip Pity) ─────────
+    // Positionnée sous la bande de HUD haut-gauche (panneau + chip), PAS "au-dessus
+    // des slots de compétences" comme avant : cet ancrage vivait H-SLOT_SZ-20, une
+    // position basse calée sur une barre de sorts DÉSACTIVÉE (SHOW_SKILL_BAR=false)
+    // — la notif atterrissait donc tout en bas de l'écran sans aucune vraie raison,
+    // et chevauchait le HUD juste au-dessus d'elle (retour créateur 16/07 : "trop
+    // basse, chevauche le reste"). Dérivée de PANEL_TOP/PANEL_H (le vrai bloc
+    // au-dessus, pas un magic number) : suit automatiquement le panneau si sa
+    // hauteur change un jour — c'est ça, être "responsive entre les éléments".
+    const NOTIF_Y = PANEL_TOP + PANEL_H + 30;
     // Fond semi-opaque derrière la notif : lisible même sur zone claire.
     this.notifBg = this.add.graphics().setAlpha(0).setDepth(9);
-    this.notifText = this.add.text(W / 2, H - SLOT_SZ - 20, '',
+    this.notifText = this.add.text(W / 2, NOTIF_Y, '',
       uiStyle(12, UI.TXT_PARCHMENT, { bold: true, stroke: true }),
     ).setOrigin(0.5).setAlpha(0).setDepth(10);
     // Reset explicite (scene.restart() réutilise l'instance) : les tweens de la

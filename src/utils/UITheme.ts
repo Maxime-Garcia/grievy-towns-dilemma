@@ -9,7 +9,6 @@ import { t } from '../i18n';
 export const UI = {
   // Panel backgrounds
   PANEL_BG:    0x0c0c18,
-  BORDER:      0x2c1e10,
   BORDER_LIT:  0x6a4a22,
   CORNER:      0xc8a030,
 
@@ -362,43 +361,15 @@ export function fitText(
 }
 
 /**
- * Draw a pixel-art panel: dark fill + dark border + gold inner line + gold corner rivets.
- *
- * @param fillAlpha Opacité du fond uniquement (bordures et rivets restent opaques).
- *                  0.85 = panneau principal translucide (le jeu reste visible derrière),
- *                  0.92 = panneau secondaire / tooltip, 1 = opaque (défaut, rétro-compatible).
- */
-export function drawPanel(
-  g: Phaser.GameObjects.Graphics,
-  x: number, y: number, w: number, h: number,
-  fill = UI.PANEL_BG,
-  fillAlpha = 1,
-): void {
-  g.fillStyle(fill, fillAlpha);
-  g.fillRect(x, y, w, h);
-
-  g.lineStyle(1, UI.BORDER, 1);
-  g.strokeRect(x, y, w, h);
-
-  g.lineStyle(1, UI.BORDER_LIT, 0.7);
-  g.strokeRect(x + 1, y + 1, w - 2, h - 2);
-
-  const C = 3;
-  g.fillStyle(UI.CORNER, 1);
-  g.fillRect(x,         y,         C, C);
-  g.fillRect(x + w - C, y,         C, C);
-  g.fillRect(x,         y + h - C, C, C);
-  g.fillRect(x + w - C, y + h - C, C, C);
-}
-
-/**
  * Draw a modern glow panel: dark rounded fill + fine outer separator line +
  * fine inner accent line at 30% alpha. The "pixel art + modern UI" look
  * (Hyper Light Drifter / Dead Cells / Hades) — subtle glow instead of
  * thick flat borders.
  *
- * Coexists with drawPanel(): existing scenes keep drawPanel, new/refreshed
- * surfaces use drawGlowPanel. Both are separate named exports.
+ * Seul langage de panneau du jeu depuis la généralisation de la passe "arcane
+ * fresh" (07/2026) — l'ancien `drawPanel()` (angulaire, rivets dorés) n'avait
+ * plus aucun appelant et a été retiré : le code mort ment (cf. principe déjà
+ * établi dans ce projet, ROGUELITE_POC.md §6).
  */
 export function drawGlowPanel(
   g: Phaser.GameObjects.Graphics,
@@ -443,8 +414,8 @@ export function drawGlow(
 /**
  * Modern card: soft drop shadow + rounded dark fill + fine border +
  * optional coloured accent bar on the left edge (Dofus-like item rows,
- * quest cards, save slots). Complements drawPanel (medieval frame) and
- * drawGlowPanel (glow frame) for content that must read as "a card".
+ * quest cards, save slots). Complements drawGlowPanel for content that
+ * must read as "a card".
  */
 export function drawCard(
   g: Phaser.GameObjects.Graphics,

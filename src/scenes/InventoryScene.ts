@@ -41,9 +41,21 @@ const MARGIN     = 8;
 const HEADER_H   = 40;    // titre d'écran en police Boss (18 px) + respiration
 const FOOTER_H   = 20;
 const GAP        = 6;
-const EQ_SLOT    = 48;    // slot d'équipement — aligné sur la grille du sac (48 px)
-const INV_SLOT   = 48;    // inventory slot size
+const EQ_SLOT    = 48;    // slot d'équipement — grille séparée du sac, pas concernée par l'aération ci-dessous
+// 48 → 40 (retour créateur 17/07 : grille du sac "trop dense", capsules à réduire
+// pour mieux distinguer les bordures de rareté) + INV_GAP introduit pour de
+// l'espace RÉEL entre chaque capsule (avant : 0px, les slots se touchaient).
+// INV_STRIDE = la distance ENTRE deux origines de colonne/ligne (taille + espace) ;
+// INV_SLOT reste la taille RÉELLEMENT dessinée d'une capsule. Ne jamais utiliser
+// INV_SLOT pour du positionnement (col*INV_SLOT) : c'est exactement l'erreur qui
+// faisait toucher les capsules avant cette passe.
+const INV_SLOT   = 40;    // inventory slot size (dessin)
+const INV_GAP    = 8;     // espace entre deux capsules
+const INV_STRIDE = INV_SLOT + INV_GAP; // pas de positionnement col/row
 const INV_COLS   = 7;     // inventory grid columns
+// Largeur RÉELLE occupée par INV_COLS colonnes : N strides moins le dernier gap
+// de fin de ligne (inutile après la dernière colonne).
+const INV_GRID_W = INV_COLS * INV_STRIDE - INV_GAP;
 const GROUP_HEADER_H = 20; // bag category header band height
 const GROUP_GAP      = 6;  // breathing room after a category's last row
 
@@ -212,7 +224,7 @@ export class InventoryScene extends Phaser.Scene {
     // marge de chaque côté, cf. GRID_PAD dans renderGrid) : c'est la seule
     // contrainte rigide. Équipement et stats se partagent le reste — le panneau
     // de LECTURE (stats/détail) reçoit la plus grande part.
-    const bagW  = INV_COLS * INV_SLOT + 16;
+    const bagW  = INV_GRID_W + 16;
     const sideW = W - (MARGIN + 2) * 2 - bagW - GAP * 2;
     const eqW   = Math.round(sideW * 0.42);
     const stW   = sideW - eqW;
@@ -303,7 +315,7 @@ export class InventoryScene extends Phaser.Scene {
     this.search = new SearchField(this, {
       x: this.bagBounds.x + 8,   // = GRID_X (GRID_PAD de renderGrid)
       y: searchY,
-      w: INV_COLS * INV_SLOT,
+      w: INV_GRID_W,
       h: BAG_SEARCH_H,
       placeholder: t('search.placeholder_bag'),
       // Le sac s'OUVRE ET SE FERME avec `I`. Un champ auto-focalisé consomme
@@ -896,7 +908,7 @@ export class InventoryScene extends Phaser.Scene {
     const GRID_X    = PX + GRID_PAD;
 
     // ── Onglets de filtrage (D13) — rangée fixe entre le titre SAC et la grille
-    this.renderBagTabs(GRID_X, PY + TITLE_H, INV_COLS * INV_SLOT);
+    this.renderBagTabs(GRID_X, PY + TITLE_H, INV_GRID_W);
 
     // Le champ de recherche (créé dans create(), pas ici) occupe la bande entre
     // les onglets et la grille : la grille démarre sous lui.
@@ -923,7 +935,7 @@ export class InventoryScene extends Phaser.Scene {
       const headerY = cursorY;
       const itemsY  = headerY + GROUP_HEADER_H;
       const rows    = Math.ceil(g.slots.length / INV_COLS);
-      cursorY = itemsY + rows * INV_SLOT + GROUP_GAP;
+      cursorY = itemsY + rows * INV_STRIDE + GROUP_GAP;
       return { category: g.category, slots: g.slots, headerY, itemsY };
     });
     const contentH = Math.max(0, cursorY - GROUP_GAP);
@@ -934,7 +946,7 @@ export class InventoryScene extends Phaser.Scene {
     // Geometry mask clips the scrollable grid area
     const maskGfx = this.make.graphics({ x: 0, y: 0 });
     maskGfx.fillStyle(0xffffff);
-    maskGfx.fillRect(GRID_X - 2, GRID_Y, INV_COLS * INV_SLOT + 4, VISIBLE_H);
+    maskGfx.fillRect(GRID_X - 2, GRID_Y, INV_GRID_W + 4, VISIBLE_H);
     const geomMask = maskGfx.createGeometryMask();
     this.scrollMaskGfx = maskGfx;
 
@@ -954,7 +966,7 @@ export class InventoryScene extends Phaser.Scene {
     // fonction de la HAUTEUR DU PANNEAU, plus de la taille du sac : un sac de 40
     // items et un sac de 1 000 rendent exactement le même nombre d'objets.
     // ══════════════════════════════════════════════════════════════════
-    const RENDER_BUFFER = INV_SLOT * 2; // 2 rangées de marge de part et d'autre
+    const RENDER_BUFFER = INV_STRIDE * 2; // 2 rangées de marge de part et d'autre
 
     let scrollables: { obj: ScrollableGO; baseY: number }[] = [];
     /** Objets de la fenêtre courante — détruits/reconstruits à chaque re-fenêtrage,
@@ -990,7 +1002,7 @@ export class InventoryScene extends Phaser.Scene {
       }
     };
 
-    const gridW = INV_COLS * INV_SLOT;
+    const gridW = INV_GRID_W;
 
     /** (Re)construit les seuls objets qui tombent dans la fenêtre visible. */
     const renderWindow = (sy: number) => {
@@ -1012,8 +1024,8 @@ export class InventoryScene extends Phaser.Scene {
         }
         // Slots : on saute directement aux rangées concernées, sans balayer le reste
         const rows      = Math.ceil(layout.slots.length / INV_COLS);
-        const firstRow  = Math.max(0, Math.floor((top - layout.itemsY) / INV_SLOT));
-        const lastRow   = Math.min(rows - 1, Math.floor((bottom - layout.itemsY) / INV_SLOT));
+        const firstRow  = Math.max(0, Math.floor((top - layout.itemsY) / INV_STRIDE));
+        const lastRow   = Math.min(rows - 1, Math.floor((bottom - layout.itemsY) / INV_STRIDE));
         for (let row = firstRow; row <= lastRow; row++) {
           for (let col = 0; col < INV_COLS; col++) {
             const idx = row * INV_COLS + col;
@@ -1021,8 +1033,8 @@ export class InventoryScene extends Phaser.Scene {
             if (!slot) break;
             this.renderInventorySlot(
               slot,
-              GRID_X + col * INV_SLOT,
-              GRID_Y + layout.itemsY + row * INV_SLOT,
+              GRID_X + col * INV_STRIDE,
+              GRID_Y + layout.itemsY + row * INV_STRIDE,
               reg,
             );
           }
@@ -1095,7 +1107,7 @@ export class InventoryScene extends Phaser.Scene {
         applyScroll(scrollY + dy * 0.8);
       });
 
-      const gridRight = GRID_X + INV_COLS * INV_SLOT + 4;
+      const gridRight = GRID_X + INV_GRID_W + 4;
       this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
         if (!p.isDown) return;
         // Seuls les drags démarrés dans la zone de la grille scrollent
@@ -1297,11 +1309,15 @@ export class InventoryScene extends Phaser.Scene {
     ring.setY(topY);
     reg(ring, topY);
 
-    // Icon (try texture, fallback to colored square)
+    // Icon (try texture, fallback to colored square) — taille proportionnelle à
+    // INV_SLOT (même ratio ~0,67 qu'avant : 32/48), pas figée à 32px : sinon une
+    // capsule réduite laisserait une icône proportionnellement trop grande, sans
+    // la marge qui aide justement à distinguer l'anneau de rareté autour d'elle.
+    const ICON_DISPLAY_SIZE = Math.round(INV_SLOT * 0.65);
     const iconKey = this.resolveIcon(slot.item);
     if (iconKey) {
       try {
-        const img = this.add.image(sx + INV_SLOT / 2 - 1, midY, iconKey).setDisplaySize(32, 32);
+        const img = this.add.image(sx + INV_SLOT / 2 - 1, midY, iconKey).setDisplaySize(ICON_DISPLAY_SIZE, ICON_DISPLAY_SIZE);
         reg(img, midY);
       } catch { /* fallback below */ }
     } else {
@@ -1562,12 +1578,13 @@ export class InventoryScene extends Phaser.Scene {
     const LINE_H    = 14;
     const BLOCK_GAP = 12;   // respiration entre blocs (stats | lore | passif)
     // La case de la popup a EXACTEMENT le gabarit d'une case du sac (INV_SLOT - 2),
-    // et l'art dedans la même taille (32) : c'est ce qui la rend indiscernable
-    // d'une case de la grille — le but même de la correction. Deux constantes et
-    // non une : le cadre pixel occupe la couronne entre les deux, il lui faut
-    // cette marge pour exister (un art à 46 dans une case de 46 le recouvrirait).
+    // et l'art dedans le MÊME ratio que renderInventorySlot (~0,65 — plus le fixe
+    // 32 d'avant la réduction des capsules, cf. commit "aere la grille du sac") :
+    // c'est ce qui la rend indiscernable d'une case de la grille — le but même de
+    // la correction. Deux constantes et non une : le cadre pixel occupe la
+    // couronne entre les deux, il lui faut cette marge pour exister.
     const ICON_SIZE = INV_SLOT - 2;  // case
-    const ICON_ART  = 32;            // icône
+    const ICON_ART  = Math.round(INV_SLOT * 0.65); // icône
     const BTN_H     = 44;   // ≥44px touch target (Apple HIG)
 
     // Hauteur du panneau calculée depuis le contenu réel (plus de troncature à 90
