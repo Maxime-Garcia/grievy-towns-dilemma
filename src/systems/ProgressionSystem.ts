@@ -1,5 +1,7 @@
-import { PlayerState, Attributes, Stats } from '../types';
+import { PlayerState, Attributes, Stats, Equipment } from '../types';
 import { StatsSystem } from './StatsSystem';
+import { StatRollSystem } from './StatRollSystem';
+import { ALL_ITEMS } from '../data/items';
 
 export const XP_PER_LEVEL = (level: number): number =>
   Math.floor(100 * Math.pow(level, 1.6));
@@ -107,7 +109,7 @@ export class ProgressionSystem {
     const attrs: Attributes = { str: 2, int: 2, agi: 2, vit: 2, end: 2 };
     const stats = ProgressionSystem.computeBaseStats(1, attrs);
 
-    return {
+    const player: PlayerState = {
       name,
       level: 1,
       xp: 0,
@@ -115,11 +117,14 @@ export class ProgressionSystem {
       stats,
       attributes: attrs,
       attributePoints: 0,
-      equipment: {},
-      // Sac vide à la création (à la demande du créateur, 17/07) — l'ancien dump
-      // de toutes les armes écrites à la main était une commodité DEV, pas un
-      // vrai départ de partie. Ces armes restent accessibles via la touche debug
-      // G (giveAllWeaponsKey/debugGiveAllWeapons) quand DEBUG_CHEAT_KEYS_ENABLED
+      // Épée de Fer équipée d'office — un sac totalement vide ET les mains nues
+      // rendait la partie injouable dès le premier ennemi (retour créateur,
+      // 18/07). Rollée comme un drop normal (qFloor=0), pas une valeur spéciale.
+      equipment: { weapon: StatRollSystem.rollItem(ALL_ITEMS['iron_sword'], 0) } as Equipment,
+      // Sac vide sinon (à la demande du créateur, 17/07) — l'ancien dump de
+      // toutes les armes écrites à la main était une commodité DEV, pas un vrai
+      // départ de partie. Ces armes restent accessibles via la touche debug G
+      // (giveAllWeaponsKey/debugGiveAllWeapons) quand DEBUG_CHEAT_KEYS_ENABLED
       // est réactivé.
       inventory: [],
       gold: 50,
@@ -148,5 +153,20 @@ export class ProgressionSystem {
       runBagCapacity: 20,
       runSafeSlotCapacity: 4,
     };
+    // L'arme de départ doit contribuer aux stats affichées dès l'écran de
+    // personnage, pas seulement une fois le premier combat/level-up recalculé.
+    // Même calcul qu'InventorySystem.recalcStats — pas importé ici pour éviter
+    // un cycle de modules (InventorySystem → StatsSystem → ProgressionSystem).
+    const cs = StatsSystem.computeAll(player);
+    player.stats.maxHp    = cs.hp;
+    player.stats.maxMana  = cs.mana;
+    player.stats.atk      = cs.atk;
+    player.stats.def      = cs.def;
+    player.stats.spd      = cs.spd;
+    player.stats.magicAtk = cs.matk;
+    player.stats.magicDef = cs.magicDef;
+    player.stats.hp   = Math.min(player.stats.hp,   player.stats.maxHp);
+    player.stats.mana = Math.min(player.stats.mana, player.stats.maxMana);
+    return player;
   }
 }

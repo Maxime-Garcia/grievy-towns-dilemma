@@ -263,11 +263,14 @@ export class GameScene extends Phaser.Scene {
   private xpOrbOverlap: Phaser.Physics.Arcade.Collider | null = null;
   private physicsColliders: Phaser.Physics.Arcade.Collider[] = [];
   private teleportOverlaps: Phaser.Physics.Arcade.Collider[] = [];
-  // RunSystem (Phase 4) — trous : overlap-only, jamais dans wallGroup (cf. PitArea).
-  private pitZoneImages: Phaser.Physics.Arcade.Image[] = [];
-  private pitOverlaps: Phaser.Physics.Arcade.Collider[] = [];
-  /** Timestamp (ms) jusqu'auquel les overlaps de trou sont ignorés — évite un
-   *  retrigger immédiat sur le point de réapparition (même famille que iframeUntil). */
+  // RunSystem — trous (ZoneLayout.pits) : vérifiés par un test géométrique DIRECT
+  // sur la position du joueur à chaque frame (checkPitFall(), appelé depuis
+  // update()), PAS via physics.add.overlap()/un corps statique — retrouvé en
+  // playtest à deux reprises que la chute ne se déclenchait pas de façon fiable
+  // avec l'overlap ; un test point-dans-rectangle est trivial à vérifier par
+  // lecture et ne dépend d'aucun comportement interne de Phaser.
+  /** Timestamp (ms) jusqu'auquel les chutes sont ignorées — évite un retrigger
+   *  immédiat sur le point de réapparition (même famille que iframeUntil). */
   private pitFallCooldownUntil = 0;
   /** Historique glissant (~500ms) des positions du joueur HORS trou — alimenté en
    *  update(), sert de point de réapparition (toujours hors trou par construction,
@@ -533,8 +536,6 @@ export class GameScene extends Phaser.Scene {
     this.teleportZoneImages = [];
     this.physicsColliders   = [];
     this.teleportOverlaps   = [];
-    this.pitZoneImages      = [];
-    this.pitOverlaps        = [];
     this.pitFallCooldownUntil = 0;
     this.safePositionBuffer = [];
     this.currentGeneratedMap = null;
@@ -570,7 +571,7 @@ export class GameScene extends Phaser.Scene {
     // RunSystem — même résolution que buildZone() (cf. resolveZoneLayout). Sans ça,
     // un rechargement de save (F5, crash, "Continuer" depuis le menu) pendant une
     // run active en ignis_reach chargeait TOUJOURS la carte statique legacy et
-    // n'appelait jamais createPitOverlaps()/spawnRunEnemies() — currentGeneratedMap
+    // n'appelait jamais spawnRunEnemies() — currentGeneratedMap
     // restait null, le hook boss (this.currentGeneratedMap requis) ne se déclenchait
     // jamais, et la run finissait softlock dès le quota atteint (BLOCKER trouvé en
     // revue de code — l'autosave 180s rend ce chemin trivialement atteignable en
@@ -591,7 +592,6 @@ export class GameScene extends Phaser.Scene {
     }
     this.createNPCsForZone(zoneId);
     this.createTeleportOverlaps();
-    this.createPitOverlaps();
     this.createLootables();
     this.createXpOrbsGroup();
     this.setupInput();
@@ -681,6 +681,7 @@ export class GameScene extends Phaser.Scene {
 
     this.handleMovement(dt);
     this.recordSafePosition(time);
+    this.checkPitFall(time);
     this.tickDashDamage();
     this.handleAttackInput();
     this.handleSkillInput();
@@ -4317,9 +4318,27 @@ export class GameScene extends Phaser.Scene {
     // l'animation de libération (réservée à l'expiration naturelle de la fenêtre).
     this.destroyEchoImmediate();
     this.gameState.player.deaths++;
-    this.gameState.player.stats.hp = Math.floor(this.gameState.player.stats.maxHp * 0.5);
+
+    // RunSystem — mort EN RUN : le sac est entièrement perdu, jamais un respawn
+    // sur la même carte (elle vient d'être invalidée) — retour direct à Grievy
+    // Town, pas performZoneTransition(currentZone) comme le chemin legacy.
+    const run = this.gameState.run;
+    const wasInRun = !!run?.active;
+    if (run?.active) {
+      RunSystem.onPlayerDeath(run);
+      this.gameState.run = null;
+      this.currentGeneratedMap = null;
+    }
+
+    // Retour en run → Grievy Town est une zone sûre (aucun combat) ET le sac
+    // vient déjà d'être perdu : laisser le joueur à moitié vie dans le hub
+    // n'ajoute rien, juste une gêne (retour créateur). Le chemin legacy (respawn
+    // SUR PLACE, toujours en danger) garde la pénalité de 50% comme avant.
+    this.gameState.player.stats.hp = wasInRun
+      ? this.gameState.player.stats.maxHp
+      : Math.floor(this.gameState.player.stats.maxHp * 0.5);
     // DAMAGE_DEFERRAL_50_PCT : purger la file différée à la mort — sinon les moitiés
-    // restantes continueraient de frapper stats.hp après le respawn à 50% (dégât
+    // restantes continueraient de frapper stats.hp après le respawn (dégât
     // fantôme post-mortem, voire re-kill en chaîne). init() n'est pas rappelé au respawn.
     this.deferredDamageQueue = [];
     this.lastDeferredTickTime = 0;
@@ -4334,17 +4353,6 @@ export class GameScene extends Phaser.Scene {
     this.playerImmobilized   = false;
     this.knockbackX          = 0;
     this.knockbackY          = 0;
-
-    // RunSystem (Phase 4) — mort EN RUN : le sac est entièrement perdu, jamais un
-    // respawn sur la même carte (elle vient d'être invalidée) — retour direct à
-    // Grievy Town, pas performZoneTransition(currentZone) comme le chemin legacy.
-    const run = this.gameState.run;
-    const wasInRun = !!run?.active;
-    if (run?.active) {
-      RunSystem.onPlayerDeath(run);
-      this.gameState.run = null;
-      this.currentGeneratedMap = null;
-    }
 
     this.physics.world.pause();
     this.cameras.main.once(
@@ -6281,7 +6289,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Trous (RunSystem, ZoneLayout.pits) — rendu sombre + liseré, PAS de physique
-    // bloquante ici (overlap-only, cf. createPitOverlaps — jamais dans wallGroup).
+    // bloquante ici (jamais dans wallGroup — la détection est un test direct sur
+    // la position du joueur, cf. checkPitFall(), pas un corps physique).
     if (this.layout.pits && this.layout.pits.length > 0) {
       for (const pit of this.layout.pits) {
         gfx.fillStyle(0x000000, 0.85);
@@ -6373,42 +6382,39 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Trous (RunSystem, ZoneLayout.pits) — même construction que createTeleportOverlaps
-   * (staticImage invisible + overlap), mais JAMAIS ajoutés à wallGroup : un trou doit
-   * laisser le joueur y entrer (bloquer = contradiction avec "tomber"). Dégâts via
-   * applyDamageToPlayer (seule fonction qui teste isDashing/i-frames — un dash au-dessus
-   * d'un trou doit donc le traverser sans dégât, lecture "obstacle à franchir" de la spec).
+   * Trous (RunSystem, ZoneLayout.pits) — test géométrique DIRECT sur la position
+   * du joueur (PAS physics.add.overlap()/un corps statique, cf. commentaire sur
+   * pitFallCooldownUntil) : retrouvé à deux reprises en playtest que la chute ne
+   * se déclenchait pas de façon fiable avec l'overlap Arcade. Un point-dans-
+   * rectangle appelé depuis update() est trivial à vérifier par lecture et ne
+   * dépend d'aucun comportement interne de Phaser (corps statique, refreshBody,
+   * timing de la détection de collision).
+   *
+   * Jamais de collision bloquante pour un trou (contradiction avec "tomber") —
+   * dégâts via applyDamageToPlayer (seule fonction qui teste isDashing/i-frames :
+   * un dash au-dessus d'un trou le traverse sans dégât, lecture "obstacle à
+   * franchir" de la spec).
    */
-  private createPitOverlaps() {
-    this.pitZoneImages = [];
-    this.pitOverlaps = [];
-    for (const pit of this.layout.pits ?? []) {
-      const cx = pit.x + pit.w / 2;
-      const cy = pit.y + pit.h / 2;
-      const zone = this.physics.add.staticImage(cx, cy, '_px');
-      zone.setVisible(false);
-      (zone.body as Phaser.Physics.Arcade.StaticBody).setSize(pit.w, pit.h);
-      zone.refreshBody();
-      this.pitZoneImages.push(zone);
+  private checkPitFall(time: number) {
+    if (time < this.pitFallCooldownUntil) return;
+    const pit = (this.layout.pits ?? []).find(p =>
+      this.player.x >= p.x && this.player.x <= p.x + p.w
+      && this.player.y >= p.y && this.player.y <= p.y + p.h);
+    if (!pit) return;
 
-      const overlap = this.physics.add.overlap(this.player, zone, () => {
-        if (this.time.now < this.pitFallCooldownUntil) return;
-        const hpBefore = this.gameState.player.stats.hp;
-        this.applyDamageToPlayer(pit.damage);
-        // hp inchangé = absorbé (dash/iframe/dodge/bouclier) : pas une "vraie" chute,
-        // ni cooldown ni réapparition — le joueur a simplement traversé le trou.
-        if (this.gameState.player.stats.hp >= hpBefore) return;
-        // Coup fatal : applyDamageToPlayer a déjà déclenché onPlayerDeath() (fade +
-        // transition en cours) — repositionner ici serait inutile, voire visible
-        // pendant le fondu. onPlayerDeath gère déjà tout, y compris le sac de run.
-        if (this.gameState.player.stats.hp <= 0) return;
-        this.pitFallCooldownUntil = this.time.now + 1200;
-        const safe = this.safePositionBuffer[0] ?? { x: this.layout.spawnX, y: this.layout.spawnY };
-        this.player.setPosition(safe.x, safe.y);
-        (this.player.body as Phaser.Physics.Arcade.Body).reset(safe.x, safe.y);
-      });
-      this.pitOverlaps.push(overlap);
-    }
+    const hpBefore = this.gameState.player.stats.hp;
+    this.applyDamageToPlayer(pit.damage);
+    // hp inchangé = absorbé (dash/iframe/dodge/bouclier) : pas une "vraie" chute,
+    // ni cooldown ni réapparition — le joueur a simplement traversé le trou.
+    if (this.gameState.player.stats.hp >= hpBefore) return;
+    // Coup fatal : applyDamageToPlayer a déjà déclenché onPlayerDeath() (fade +
+    // transition en cours) — repositionner ici serait inutile, voire visible
+    // pendant le fondu. onPlayerDeath gère déjà tout, y compris le sac de run.
+    if (this.gameState.player.stats.hp <= 0) return;
+    this.pitFallCooldownUntil = time + 1200;
+    const safe = this.safePositionBuffer[0] ?? { x: this.layout.spawnX, y: this.layout.spawnY };
+    this.player.setPosition(safe.x, safe.y);
+    (this.player.body as Phaser.Physics.Arcade.Body).reset(safe.x, safe.y);
   }
 
   /** `margin` élargit le rectangle testé — la détection Arcade réelle (overlap
@@ -7256,8 +7262,6 @@ export class GameScene extends Phaser.Scene {
     this.physicsColliders = [];
     for (const o of this.teleportOverlaps) o.destroy();
     this.teleportOverlaps = [];
-    for (const o of this.pitOverlaps) o.destroy();
-    this.pitOverlaps = [];
     this.safePositionBuffer = [];
     if (this.xpOrbOverlap) { this.xpOrbOverlap.destroy(); this.xpOrbOverlap = null; }
     if (this.projectileCollider) { this.projectileCollider.destroy(); this.projectileCollider = null; }
@@ -7297,9 +7301,6 @@ export class GameScene extends Phaser.Scene {
     for (const img of this.teleportZoneImages) img.destroy();
     this.teleportZoneImages = [];
 
-    // Pit static images (RunSystem)
-    for (const img of this.pitZoneImages) img.destroy();
-    this.pitZoneImages = [];
 
     // Enemies — destroy HP bars and crowns first, then sprites
     this.enemyHpBars.forEach(({ bg, bar }) => { bg.destroy(); bar.destroy(); });
@@ -7432,7 +7433,6 @@ export class GameScene extends Phaser.Scene {
     }
     this.createNPCsForZone(zoneId);
     this.createTeleportOverlaps();
-    this.createPitOverlaps();
     this.createLootables();
     this.createXpOrbsGroup();
     this.setupCamera();
