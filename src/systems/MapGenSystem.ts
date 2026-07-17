@@ -134,8 +134,17 @@ export function generateZoneLayout(seed: number, legIndex: number, params: MapGe
     }
     return { dist, parent };
   };
+  // Cache mémoïsé sur bfs(i) — un même point de départ (une salle) revient souvent
+  // à la fois pour le calcul des poids d'arêtes (étape 4) et la réalisation des
+  // couloirs (étape 5, shortestPath) : éviter de refaire le même BFS deux fois.
+  const distCache = new Map<number, { dist: number[]; parent: number[] }>();
+  const bfsFrom = (i: number) => {
+    let c = distCache.get(i);
+    if (!c) { c = bfs(i); distCache.set(i, c); }
+    return c;
+  };
   const shortestPath = (a: number, b: number): number[] => {
-    const { dist, parent } = bfs(a);
+    const { dist, parent } = bfsFrom(a);
     if (dist[b] === -1) return [];
     const path: number[] = [];
     let cur = b;
@@ -188,12 +197,6 @@ export function generateZoneLayout(seed: number, legIndex: number, params: MapGe
   //    compris la salle de boss, sont atteignables. + quelques arêtes hors-MST
   //    (les moins chères restantes) pour casser le couloir unique.
   interface Edge { a: number; b: number; w: number; tie: number; }
-  const distCache = new Map<number, { dist: number[]; parent: number[] }>();
-  const bfsFrom = (i: number) => {
-    let c = distCache.get(i);
-    if (!c) { c = bfs(i); distCache.set(i, c); }
-    return c;
-  };
   const edges: Edge[] = [];
   for (let a = 0; a < rooms.length; a++) {
     const bfsA = bfsFrom(rooms[a]);

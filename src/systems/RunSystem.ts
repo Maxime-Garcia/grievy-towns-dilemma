@@ -41,6 +41,9 @@ export class RunSystem {
     return {
       active: true,
       biome,
+      // Point de non-déterminisme UNIQUE et VOLONTAIRE de tout le RunSystem : chaque
+      // nouvelle run doit différer. Une fois choisie, cette valeur est stockée et
+      // TOUJOURS relue via mixSeed/generateZoneLayout (MapGenSystem) — jamais re-tirée.
       seed: Math.floor(Math.random() * 0xffffffff),
       legIndex: 0,
       quotaTarget: this.quotaForLeg(0),
@@ -71,20 +74,30 @@ export class RunSystem {
   }
 
   /**
-   * Les slots sûrs migrent vers la banque (player.inventory), les ordinaires sont
-   * perdus. `run.active` passe à false — GameScene met gameState.run à null après
-   * cet appel. Renvoie les items qui n'ont PAS pu être transférés (banque pleine,
-   * cas limite) pour feedback UI — normalement toujours vide.
+   * Les slots sûrs ET les consommables non-utilisés migrent vers la banque
+   * (player.inventory) — "leur contenu remonte quoi qu'il arrive" (ROGUELITE_POC.md
+   * §3), donc un item qui échoue à migrer (banque pleine, cas limite à MAX_SLOTS=400)
+   * n'est PAS détruit : il reste dans son slot, `run` reste `active` tant qu'il en
+   * reste un, et `failed` le signale pour un blocage UI explicite plutôt qu'une perte
+   * silencieuse. Les ordinaires sont TOUJOURS perdus (c'est la règle du jeu, pas un
+   * cas d'erreur). `run.active` ne passe à false QUE si tout a bien été transféré —
+   * GameScene met alors gameState.run à null.
    */
   static exfiltrate(player: PlayerState, run: RunState, world?: WorldState): Item[] {
     const failed: Item[] = [];
-    for (const slot of run.safeBag) {
-      if (!slot) continue;
-      const ok = LootSystem.addToInventory(player, slot.item, slot.quantity, world);
-      if (!ok) failed.push(slot.item);
-    }
-    RunBagSystem.wipe(run);
-    run.active = false;
+    let allTransferred = true;
+    const tryReturnAll = (bag: (RunState['safeBag'][number])[]) => {
+      for (let i = 0; i < bag.length; i++) {
+        const slot = bag[i];
+        if (!slot) continue;
+        const ok = LootSystem.addToInventory(player, slot.item, slot.quantity, world);
+        if (ok) { bag[i] = null; } else { failed.push(slot.item); allTransferred = false; }
+      }
+    };
+    tryReturnAll(run.safeBag);
+    tryReturnAll(run.consumableLoadout);
+    run.ordinaryBag = run.ordinaryBag.map(() => null);
+    if (allTransferred) run.active = false;
     return failed;
   }
 
@@ -97,11 +110,14 @@ export class RunSystem {
     run.phase = 'exploring';
   }
 
-  /** Mort en run : sac entièrement perdu (rien ne revient à la banque), run.active
-   *  passe à false — GameScene met gameState.run à null et renvoie vers Grievy Town
-   *  (jamais performZoneTransition sur la même zone : la carte vient d'être invalidée). */
+  /** Mort en run : sac ET consommables non-utilisés entièrement perdus (rien ne
+   *  revient à la banque — contrairement à exfiltrate, la mort n'a pas de garantie
+   *  "quoi qu'il arrive"), run.active passe à false — GameScene met gameState.run à
+   *  null et renvoie vers Grievy Town (jamais performZoneTransition sur la même
+   *  zone : la carte vient d'être invalidée). */
   static onPlayerDeath(run: RunState): void {
     RunBagSystem.wipe(run);
+    run.consumableLoadout = run.consumableLoadout.map(() => null);
     run.active = false;
   }
 }

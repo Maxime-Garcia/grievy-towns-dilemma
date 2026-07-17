@@ -80,9 +80,14 @@ export class RunBagSystem {
     safeBag: (RunBagSlot | null)[];
     ordinaryBag: (RunBagSlot | null)[];
   } {
+    // Garde défensive : ROGUELITE_POC.md §3 interdit explicitement que le ratio
+    // sûrs/totaux tende vers 1 — un futur bug d'upgrade marchand qui ferait
+    // dépasser runSafeSlotCapacity sur runBagCapacity ne doit jamais planter en
+    // Array(-N), juste produire un sac ordinaire vide (contrat visiblement dégradé
+    // plutôt qu'un crash de scène).
     return {
-      safeBag: new Array(safeCapacity).fill(null),
-      ordinaryBag: new Array(ordinaryCapacity).fill(null),
+      safeBag: new Array(Math.max(0, safeCapacity)).fill(null),
+      ordinaryBag: new Array(Math.max(0, ordinaryCapacity)).fill(null),
     };
   }
 }
