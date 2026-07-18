@@ -1,4 +1,4 @@
-# HANDOFF — 18 juillet 2026 (RunSystem — refonte inventaire SAC/ÉQUIPEMENT/STATS)
+# HANDOFF — 19 juillet 2026 (RunSystem — refonte inventaire SAC/ÉQUIPEMENT/STATS)
 
 > **Point d'entrée pour reprendre.** Fichier stable, réécrit à neuf à chaque passation. **En cas
 > de doute, le code fait foi, pas ce fichier.**
@@ -113,10 +113,28 @@ sur le mauvais event emitter (jamais affichés à l'écran) ; une course entre l
 fondu de zone (nouveau `GameScene.isTravelingNow` pour lever la garde). Worktree/branche de
 l'agent supprimés après extraction complète.
 
-**Non vérifié en jeu** — code complet, typecheck clean, 7e revue clean après corrections, mais
-**jamais lancé par un humain**. À tester en priorité à la prochaine session : les deux inventaires
-à l'écran (hors run ET intra-run), équiper depuis le sac de run (badge "E"), le swap sûr↔ordinaire,
-les onglets/recherche du sac de run, la lisibilité de la grille sur un vrai écran.
+**Testé en jeu le 19/07 (960×720 réel)** — plusieurs défauts trouvés vs la capture de référence,
+tous corrigés depuis (commits jusqu'à `bf5eb95`) :
+- Chevauchement de texte dans le bandeau "SLOTS SÛRS"/"GARDÉS À L'EXTRACTION" → dégradation
+  progressive mesurée (vrai `Text.width`, jamais une estimation).
+- Onglets `RunBagScene` tronqués ("TO...", "AR...") → passés en icônes bakées `bagtab_*` + tooltip,
+  même pattern déjà validé sur `InventoryScene` (jamais repris jusqu'ici).
+- Labels de slots d'équipement vides tronqués ("COLLIER"→"CO...") → nouveau `UITheme.wrapLabel()`
+  (coupe en plusieurs lignes par mesure réelle, ne produit JAMAIS d'ellipse), appliqué aux DEUX
+  scènes qui partageaient le bug.
+- Placeholder de recherche tronqué → raccourci en fr/en.
+- "+" des slots sûrs vides jugé inutile → retiré ; pointillé dorée remonté en alpha/glow pour rester
+  visible sans lui.
+
+**Reste ouvert** : le créateur a signalé une impression de hauteur différente entre slots sûrs et
+ordinaires — vérifié dans le code, dimensions strictement identiques (`RB_SLOT=48` des deux côtés),
+probablement un effet de poids visuel déjà atténué (alpha du "+" réduit puis "+" supprimé). Pas de
+retour de confirmation finale du créateur sur ce point précis au moment de cette écriture.
+
+**Refactor évoqué, pas commencé** : extraire un `EquipmentPanel` partagé (`InventoryScene`/
+`RunBagScene` dupliquent encore le rendu du paperdoll, alors que `StatsPanel.ts` a déjà prouvé que
+le partage marche pour les stats) — proposé par le créateur le 19/07, je recommande de le faire
+APRÈS validation finale de cette refonte inventaire, pas en même temps.
 
 ## 5. AUTRES POINTS OUVERTS (non bloquants, notés)
 
@@ -129,6 +147,23 @@ les onglets/recherche du sac de run, la lisibilité de la grille sur un vrai éc
 - **Consommables — gap partiel** : `buffStat`/`buffDuration`/`revive`/`statusCure` d'un
   consommable ne sont toujours appliqués nulle part (seuls hpRestore/manaRestore/hpPercent/
   manaPercent le sont, cf. mémoire `project_consumable_use_gap`).
+
+## 5bis. BACKLOG — refonte VFX armes (pas commencé, spec prête)
+
+Le créateur a produit `VFX_Phaser_Prompt.md` (racine du repo, fichier maintenu par lui comme
+`GAMEPLAY.md`/`PITY/`/`BULLE.md` — non commité) : spec complète d'un `VfxSystem` Phaser réutilisable
+remplaçant les ~15-20 fonctions VFX ad-hoc actuelles de `GameScene.ts` (`spawnWeaponSwingVfx`,
+`spawnXFinisherVfx`, `performAltX`) par ~25 primitives composables (arc, crescent, streak, ring,
+polyWave, impactStar, bloom, debris, bolt, scorch, crossCut, ghostDash, vortex, etc.) + une couche
+polish (`groundGlow`, `elementFlair` par élément). Composition EXACTE donnée pour 33 effets (11
+armes × 3 couches base/finisher/alt) — voir le fichier, ne pas retranscrire de mémoire.
+
+**Volontairement pas lancé maintenant** (demande explicite du créateur, cf. mémoire
+`project_weapon_vfx_overhaul_backlog`) : c'est le plus gros chantier VFX à ce jour, touche
+`GameScene.ts` de façon extensive — à ne pas lancer en parallèle du chantier RunSystem qui bouge
+déjà ce fichier. Proposer une fois §4/§5bis-refactor validés et mergés. Prévoir plusieurs passes
+(dev-agent pour l'architecture/primitives, gamefeel-agent pour le polish des 33 compositions) et
+plusieurs allers-retours de playtest — pas un one-shot comme `FloatingItemDrop`.
 
 ## 6. PIÈGES CONNUS — ne pas y retomber
 
@@ -145,10 +180,12 @@ les onglets/recherche du sac de run, la lisibilité de la grille sur un vrai éc
 
 ## 7. PROCHAINE ACTION CONCRÈTE
 
-1. **Faire tester au créateur** la refonte inventaire SAC/ÉQUIPEMENT/STATS (§4) dans les DEUX
-   écrans (hors run et intra-run) — code complet, 7 revues clean, mais **jamais vérifié en jeu par
-   un humain** pour l'instant. C'est le vrai prochain jalon, pas de code à écrire avant ce retour.
-2. Une fois §4 validé en jeu : reprendre le badge équiper/icônes/grille 5-15 du sac de run (§3-4
-   précédent, déjà testés une fois avant cette refonte visuelle — revérifier que rien n'a régressé
-   avec le nouveau layout), puis envisager `balance-agent` sur le quota/l'escalade, puis les lots
-   suivants du pivot (Boss mise en scène, Gamefeel, Nettoyage, Consommables étape 5).
+1. **Confirmation finale du créateur** sur la refonte inventaire (§4) — les défauts trouvés au
+   premier test sont corrigés, en attente d'un dernier passage en jeu pour clore ce chantier.
+2. Décider avec le créateur : refactor `EquipmentPanel` partagé (§4bis) avant ou après le merge de
+   `feat/roguelite-run-system` — puis reprendre le badge équiper/icônes/grille 5-15 du sac de run
+   (déjà testés une fois avant cette refonte visuelle, à revérifier que rien n'a régressé).
+3. Une fois ce qui précède mergé : proposer le chantier VFX armes (§5bis) — pas avant, pour éviter
+   de faire bouger `GameScene.ts` sur deux fronts en parallèle.
+4. Plus loin : `balance-agent` sur le quota/l'escalade du RunSystem, puis les lots suivants du pivot
+   (Boss mise en scène, Gamefeel, Nettoyage, Consommables étape 5).
