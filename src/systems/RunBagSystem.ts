@@ -1,7 +1,7 @@
 import { RunState, RunBagSlot, Item } from '../types';
 
 // Sac de run (RunSystem, docs/design/ROGUELITE_POC.md §3) : 20 emplacements FIXES
-// dont 4 sûrs — "sûr" est une propriété de POSITION (l'index dans safeBag), pas de
+// dont 5 sûrs — "sûr" est une propriété de POSITION (l'index dans safeBag), pas de
 // l'objet. Chemin délibérément séparé de LootSystem.addToInventory (sac de 400
 // emplacements croissant de la banque de Grievy Town) : sémantique incompatible,
 // cf. exploration du chantier RunSystem. rollLoot() reste réutilisé pour le tirage
