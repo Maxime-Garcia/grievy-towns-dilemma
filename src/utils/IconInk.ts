@@ -1,9 +1,18 @@
-// Normalisation de taille d'icône par SURFACE DE PIXELS OPAQUES ("encre"),
-// pas par dimensions de canvas — deux icônes 32×32 peuvent avoir des tailles
-// perçues très différentes si l'une remplit tout le cadre (épée) et l'autre
-// dessine un petit motif fin et centré (clé). Comparer les bounding-box ou les
-// setDisplaySize ne corrige rien : il faut mesurer combien de pixels non
-// transparents chaque icône couvre réellement, puis rescaler pour égaliser.
+// Normalisation de taille d'icône par EMPREINTE VISIBLE (bounding-box du
+// contenu opaque), pas par dimensions de canvas — deux icônes 32×32 peuvent
+// avoir des tailles perçues très différentes si l'une remplit tout le cadre
+// et l'autre dessine un petit motif fin et centré.
+//
+// PREMIÈRE VERSION (abandonnée) : normaliser par SURFACE de pixels opaques
+// ("encre"). Testée en jeu par le créateur — résultat disproportionné dans
+// l'autre sens : une épée fine tracée en diagonale a PEU de pixels opaques
+// malgré une grande portée visuelle (bounding-box en coin-à-coin), donc la
+// surface la sous-évaluait et le facteur 1/aire la faisait grossir énormément
+// à côté d'un anneau compact qui remplit mieux son propre cadre. L'œil compare
+// la PORTÉE d'une forme (jusqu'où elle s'étend), pas sa densité de pixels —
+// d'où le passage à un footprint linéaire (plus grande dimension de la
+// bounding-box), qui traite un trait fin coin-à-coin et un disque de même
+// portée comme "aussi grands", conformément à la perception.
 //
 // Lecture pixel via un canvas offscreen dédié (un seul getImageData sur toute
 // la frame, pas un appel par pixel comme TextureManager.getPixel — ce dernier
@@ -14,11 +23,13 @@
 import Phaser from 'phaser';
 
 export interface IconInkMetrics {
-  /** Nombre de pixels dont l'alpha dépasse le seuil — la "surface d'encre". */
+  /** Nombre de pixels dont l'alpha dépasse le seuil — gardé pour diagnostic. */
   inkArea: number;
-  /** Bounding box du contenu opaque (utile pour du débogage/diagnostic). */
+  /** Bounding box du contenu opaque. */
   boundsW: number;
   boundsH: number;
+  /** max(boundsW, boundsH) — la métrique utilisée pour le rescale (cf. en-tête du fichier). */
+  footprint: number;
 }
 
 // Sous ce seuil (0-255), un pixel est considéré comme un résidu d'anti-aliasing
@@ -26,7 +37,7 @@ export interface IconInkMetrics {
 // artificiellement leur surface mesurée.
 const ALPHA_THRESHOLD = 16;
 
-const FALLBACK_METRICS: IconInkMetrics = { inkArea: 1, boundsW: 1, boundsH: 1 };
+const FALLBACK_METRICS: IconInkMetrics = { inkArea: 1, boundsW: 1, boundsH: 1, footprint: 1 };
 
 const metricsCache = new Map<string, IconInkMetrics>();
 
@@ -116,8 +127,10 @@ function computeMetrics(scene: Phaser.Scene, key: string, frame?: string | numbe
     }
   }
 
+  const boundsW = maxX - minX + 1;
+  const boundsH = maxY - minY + 1;
   const metrics: IconInkMetrics = inkArea > 0
-    ? { inkArea, boundsW: maxX - minX + 1, boundsH: maxY - minY + 1 }
+    ? { inkArea, boundsW, boundsH, footprint: Math.max(boundsW, boundsH) }
     : FALLBACK_METRICS;
   metricsCache.set(cacheKey, metrics);
   return metrics;
@@ -132,21 +145,25 @@ export function getIconInkMetrics(scene: Phaser.Scene, key: string, frame?: stri
 // repli 1×1) ne doit jamais produire un facteur délirant qui ferait disparaître
 // ou exploser visuellement un item.
 const MIN_SCALE = 0.5;
-const MAX_SCALE = 2.2;
+// Remonté de 2.2 (hérité de l'ancienne métrique en racine carrée) à 3.0 : en
+// footprint linéaire, une icône très filiforme peut légitimement avoir besoin
+// d'un facteur plus élevé pour rattraper la référence sans rester trop petite.
+const MAX_SCALE = 3.0;
 
 /**
  * Facteur multiplicatif à appliquer à l'échelle "native" d'une icône pour que
- * sa surface d'encre soit comparable à `targetInkArea` (mesuré sur une icône
- * de référence jugée bien proportionnée par l'appelant). La surface scale au
- * CARRÉ de l'échelle linéaire — d'où la racine carrée.
+ * son EMPREINTE (plus grande dimension de sa bounding-box opaque) soit
+ * comparable à `targetFootprint` (mesuré sur une icône de référence jugée
+ * bien proportionnée par l'appelant). Facteur linéaire — le footprint est
+ * déjà une dimension, pas une aire, donc pas de racine carrée ici.
  */
 export function getIconInkScale(
   scene: Phaser.Scene,
   key: string,
   frame: string | number | undefined,
-  targetInkArea: number,
+  targetFootprint: number,
 ): number {
-  const { inkArea } = computeMetrics(scene, key, frame);
-  const scale = Math.sqrt(targetInkArea / inkArea);
+  const { footprint } = computeMetrics(scene, key, frame);
+  const scale = targetFootprint / footprint;
   return Phaser.Math.Clamp(scale, MIN_SCALE, MAX_SCALE);
 }

@@ -214,15 +214,16 @@ export class FloatingItemDrop extends Phaser.GameObjects.Container {
   private buildSword(scene: Phaser.Scene, textureKey: string, frame?: string | number): Phaser.GameObjects.Sprite {
     const sprite = scene.add.sprite(0, 0, textureKey, frame);
     sprite.setOrigin(0.5);
-    // Normalise par SURFACE D'ENCRE (pixels opaques), pas par dimensions de
-    // canvas : une icône fine/centrée (ex: une clé) paraissait minuscule à côté
-    // d'une épée qui remplit tout son cadre 32×32, à scale nominale identique.
+    // Normalise par EMPREINTE (bounding-box du contenu opaque), pas par
+    // dimensions de canvas : une icône fine/centrée (ex: une clé) paraissait
+    // minuscule à côté d'une épée qui remplit tout son cadre 32×32, à scale
+    // nominale identique (cf. IconInk.ts en-tête pour l'itération surface→footprint).
     // wpn_sword sert de référence — c'est l'icône déjà validée visuellement à
     // baseSwordScale=0.9 (cf. retours du créateur en jeu). Ce facteur est
     // ENSUITE multiplié dans baseSwordScale : la boucle de flip (update()) qui
     // relit ce champ chaque frame reste donc correcte sans changement.
-    const targetInk = getIconInkMetrics(scene, REFERENCE_ICON_KEY).inkArea;
-    const inkScale = getIconInkScale(scene, textureKey, frame, targetInk);
+    const targetFootprint = getIconInkMetrics(scene, REFERENCE_ICON_KEY).footprint;
+    const inkScale = getIconInkScale(scene, textureKey, frame, targetFootprint);
     this.baseSwordScale *= inkScale;
     sprite.setScale(this.baseSwordScale);
     this.addGlowSafe(sprite, this.cfg.glow * 0.5);
