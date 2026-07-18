@@ -1,4 +1,4 @@
-# HANDOFF — 18 juillet 2026 (RunSystem — polish UI en cours)
+# HANDOFF — 18 juillet 2026 (RunSystem — refonte inventaire SAC/ÉQUIPEMENT/STATS)
 
 > **Point d'entrée pour reprendre.** Fichier stable, réécrit à neuf à chaque passation. **En cas
 > de doute, le code fait foi, pas ce fichier.**
@@ -11,11 +11,13 @@ Chantier en cours : **RunSystem** (tranche 1 du pivot roguelite, spec =
 `docs/design/ROGUELITE_POC.md`). Branche `feat/roguelite-run-system` (greffée sur
 `feat/roguelite`), **poussée sur origin, pas encore mergée**.
 
-Code de base complet (9 phases), **5 passages code-reviewer** (2 BLOCKER + 11 BUG trouvés et
-corrigés au total), **3 sessions de playtest manuel** par le créateur. La liste de retours UI/UX
-du 18/07 sur `RunBagScene` (§4) **est maintenant traitée** (équipement depuis le sac de run,
-icônes, overflow, textes, répartition 5/15) — **6e revue de code en cours en arrière-plan sur ce
-dernier commit, pas encore reçue au moment de cette écriture.**
+Code de base complet (9 phases), **7 passages code-reviewer** (2 BLOCKER + 13 BUG trouvés et
+corrigés au total), **3 sessions de playtest manuel** par le créateur. Dernier chantier : refonte
+complète de l'inventaire hors run (`InventoryScene`) ET intra-run (`RunBagScene` modes
+`view`/`extract`) pour reproduire EXACTEMENT la capture de référence du créateur (18/07) — layout
+plein écran 3 colonnes **SAC | ÉQUIPEMENT | STATISTIQUES**, paperdoll 2×5 + sprite joueur central,
+rareté généralisée (bordure dorée fine + fond teinté par rareté), onglets + recherche sur le sac de
+run. **7e revue de code reçue et appliquée (2 BUG), pas encore testé en jeu par le créateur.**
 
 `master` intact, `feat/roguelite` intact — rien de ce chantier n'y est encore mergé.
 
@@ -70,39 +72,51 @@ fonctionnels — liste pour mémoire, ne pas re-découvrir :
 9. 50% HP au retour à Grievy Town après une mort en run — n'avait aucun sens (sac déjà perdu, GT
    est une zone sûre). PV pleins pour ce chemin ; le respawn legacy (même zone) garde 50%.
 
-**6 passages code-reviewer reçus, tous BLOCKER/BUG appliqués.** Le 6e (commit `ddb9a6b` —
-équipement sac de run + icônes + polish UI, §4 ci-dessous) est revenu **clean** (0 BLOCKER, 0 BUG) —
-vérifié en profondeur (source Phaser 3.90 relue pour confirmer `stopPropagation`, cas limite
-ring1/ring2 tracé, dimensionnement dynamique du panneau recalculé à la main). Un commentaire
-obsolète corrigé au passage (`RunBagSystem.ts`, "4 sûrs" → "5 sûrs").
+**6 passages code-reviewer reçus sur la boucle de run**, tous BLOCKER/BUG appliqués. Le 6e (commit
+`ddb9a6b` — équipement sac de run + icônes + polish UI) est revenu **clean** (0 BLOCKER, 0 BUG).
 
-## 4. RETOURS UI/UX DU 18/07 (RunBagScene) — TRAITÉS
+## 4. REFONTE INVENTAIRE SAC/ÉQUIPEMENT/STATS (commit `6c36b5e`) — CODÉE, PAS ENCORE TESTÉE EN JEU
 
-Tous les points fonctionnels/visuels demandés par le créateur après son 3e playtest sont
-implémentés (commit `ddb9a6b`) :
+Sur demande explicite du créateur (capture de référence + correction d'ordre des colonnes),
+déléguée à `ux-agent` pour reproduire EXACTEMENT le mockup, "et rien d'autre", dans les deux
+inventaires (hors run et intra-run) :
 
-1. ✅ **Équiper depuis le sac de run** — badge "E" sur chaque objet équipable, bande d'équipement
-   actuel affichée en haut de l'écran.
-2. ✅ **Icônes partout** — `resolveIcon()`, plus aucune capsule 100% texte.
-3. ✅ **Overflow de texte** — résolu par les icônes (le nom en texte n'apparaît quasiment plus) +
-   `fitText()` en repli pour le peu de texte restant (mode `pack`).
-4. ✅ **Titre raccourci** — "SAC" (mode `view`).
-5. ✅ **Sous-titre instructionnel retiré.**
-6. ✅ **Labels "SÛRS"/"ORDINAIRES" retirés** — bordure dorée/grise + regroupement spatial suffisent.
-7. ✅ **Répartition 5 sûrs / 15 ordinaires** (était 4/16) — `ProgressionSystem`, `SaveSystem`,
-   `ROGUELITE_POC.md` §3 synchronisés.
+1. ✅ **Layout 3 colonnes** dans cet ordre : **SAC | ÉQUIPEMENT | STATISTIQUES** — même ordre dans
+   `InventoryScene` (hors run) et `RunBagScene` modes `view`/`extract` (intra-run).
+2. ✅ **Paperdoll 2 colonnes × 5 rangées** + sprite du joueur au centre (remplace l'ancienne
+   silhouette procédurale style Dofus 3 colonnes) — disposition identique dans les deux écrans.
+3. ✅ **Rareté généralisée** : bordure dorée fine + fond teinté par la rareté de l'item, sur TOUS
+   les slots (équipement, sac de run, sac hors run, popup de confirmation) —
+   `UITheme.drawSlotRarityTint()` (nouveau) posé par-dessus les cadres d'asset opaques.
+4. ✅ **Slots vides en bordure pointillée** (`UITheme.strokeDashedRect()`, nouveau — Phaser Graphics
+   n'a pas de pointillé natif) + libellé fantôme court.
+5. ✅ **Onglets TOUT/ARMES/CONSO/MATER/DIVERS + recherche** sur la grille ordinaire du sac de run
+   (`RunBagScene`) — jusqu'ici réservés à `InventoryScene`.
+6. ✅ **Slots sûrs** : bordure dorée épaisse + badge numéroté (1..N) + affordance "+" sur les vides.
+7. ✅ **Panneau de stats unifié** — extrait dans `utils/StatsPanel.ts` (nouveau), consommé par les
+   deux écrans : garantit qu'ils ne peuvent plus diverger à la prochaine passe d'équilibrage.
 
-**Restent délégués, pas traités ici** (décision explicite du créateur — VFX/gamefeel, pas du
-ressort d'un correctif de passage) :
-8. **Orbes XP** — dérive sans fin au lieu de se poser, veut une pulsation/brillance satisfaisante à
-   collecter. → `gamefeel-agent`/`design-agent`.
-9. **Bulles de loot au sol** — toujours pas implémentées (spec déjà écrite dans
-   `ROGUELITE_POC.md`), même délégation.
+**Différé, explicitement pas prioritaire** (demande du créateur) : un vrai visuel de personnage
+(portrait/rendu réel) à la place du sprite `player_idle` générique actuel dans le panneau
+Équipement — mémoire `project_character_visual_inventory`. Non traités non plus (visibles sur la
+2e capture mais jamais demandés) : le contrôle de rotation "PIVOTER" et la rangée "TENUES".
 
-**Non vérifié en jeu** : ce commit n'a pas encore été retesté manuellement par le créateur (écrit
-juste après implémentation, avant la fin de session). À tester en priorité à la prochaine session :
-badge équiper (swap correct, rien perdu/dupliqué en cas limite ring1/ring2 occupés par deux objets
-différents), rendu des icônes (vraies textures vs carré de repli), lisibilité de la grille 5/15.
+**Production notable** : `ux-agent` a été dispatché avec `isolation: "worktree"`, qui s'est avéré
+basé sur un commit `master` PÉRIMÉ (`96bc790`, sans RunSystem/RunBagSystem/PityScene, sans accès
+shell). L'agent a lu le vrai code de la branche feat pour écrire du code ciblant ses APIs réelles,
+sans jamais pouvoir le compiler lui-même. Intégration manuelle ensuite (diffs `UITheme.ts`/
+`InventoryScene.ts`/`UI_UX_GUIDELINES.md` appliqués proprement via `git apply`, `RunBagScene.ts`
+réécrit intégralement) — `npm run typecheck` clean du premier coup. **7e revue code-reviewer** a
+trouvé et corrigé 2 BUG (non détectables par `tsc`) : trois toasts d'erreur de `RunBagScene` émis
+sur le mauvais event emitter (jamais affichés à l'écran) ; une course entre le fondu de fermeture de
+`RunBagScene` et `GameScene.travelToZone()` qui pouvait réactiver la physique en plein milieu d'un
+fondu de zone (nouveau `GameScene.isTravelingNow` pour lever la garde). Worktree/branche de
+l'agent supprimés après extraction complète.
+
+**Non vérifié en jeu** — code complet, typecheck clean, 7e revue clean après corrections, mais
+**jamais lancé par un humain**. À tester en priorité à la prochaine session : les deux inventaires
+à l'écran (hors run ET intra-run), équiper depuis le sac de run (badge "E"), le swap sûr↔ordinaire,
+les onglets/recherche du sac de run, la lisibilité de la grille sur un vrai écran.
 
 ## 5. AUTRES POINTS OUVERTS (non bloquants, notés)
 
@@ -131,9 +145,10 @@ différents), rendu des icônes (vraies textures vs carré de repli), lisibilit�
 
 ## 7. PROCHAINE ACTION CONCRÈTE
 
-1. **Faire tester au créateur** le badge équiper + les icônes + la grille 5/15 (§4) — code complet
-   et revu (6 passages, clean), mais **jamais vérifié en jeu par un humain** pour l'instant. C'est
-   le vrai prochain jalon, pas de code à écrire avant ce retour.
-2. Une fois §4 validé en jeu : envisager le passage `balance-agent` sur le quota/l'escalade (encore
-   des valeurs volontairement provisoires), puis les lots suivants du pivot (Boss mise en scène,
-   Gamefeel, Nettoyage, Consommables étape 5) une fois cette tranche jugée aboutie par le créateur.
+1. **Faire tester au créateur** la refonte inventaire SAC/ÉQUIPEMENT/STATS (§4) dans les DEUX
+   écrans (hors run et intra-run) — code complet, 7 revues clean, mais **jamais vérifié en jeu par
+   un humain** pour l'instant. C'est le vrai prochain jalon, pas de code à écrire avant ce retour.
+2. Une fois §4 validé en jeu : reprendre le badge équiper/icônes/grille 5-15 du sac de run (§3-4
+   précédent, déjà testés une fois avant cette refonte visuelle — revérifier que rien n'a régressé
+   avec le nouveau layout), puis envisager `balance-agent` sur le quota/l'escalade, puis les lots
+   suivants du pivot (Boss mise en scène, Gamefeel, Nettoyage, Consommables étape 5).
