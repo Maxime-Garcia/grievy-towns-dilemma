@@ -158,6 +158,12 @@ polyWave, impactStar, bloom, debris, bolt, scorch, crossCut, ghostDash, vortex, 
 polish (`groundGlow`, `elementFlair` par élément). Composition EXACTE donnée pour 33 effets (11
 armes × 3 couches base/finisher/alt) — voir le fichier, ne pas retranscrire de mémoire.
 
+**Précision du créateur (19/07)** : ce n'est pas qu'un remplacement visuel — il faudra aussi
+re-câbler le système de combo (`src/data/combos.ts`, `comboCount`/`chainLength`, les points de
+déclenchement finisher/alt déjà existants dans `GameScene.ts`) pour qu'il appelle `VfxSystem.play()`
+avec le bon `layer` et les bons `opts` au bon moment — une vraie passe d'intégration, pas juste
+substituer les fonctions de dessin.
+
 **Volontairement pas lancé maintenant** (demande explicite du créateur, cf. mémoire
 `project_weapon_vfx_overhaul_backlog`) : c'est le plus gros chantier VFX à ce jour, touche
 `GameScene.ts` de façon extensive — à ne pas lancer en parallèle du chantier RunSystem qui bouge
