@@ -688,18 +688,9 @@ export class RunBagScene extends Phaser.Scene {
         g.lineStyle(3, isSelected ? 0xffffff : goldHex, 1);
         g.strokeRoundedRect(x, y, RB_SLOT, RB_SLOT, 5);
       } else {
-        // alpha/taille du "+" réduits (0.75→0.5, HEADING 21px→BODY 14px) : à poids
-        // visuel égal avec le contour fin des slots ordinaires vides (drawSlot,
-        // alpha 0.45, rien à l'intérieur), le slot sûr ne doit pas paraître plus
-        // "haut"/imposant alors qu'il fait exactement la même taille (RB_SLOT=48
-        // des deux côtés — vérifié, pas un bug de dimension).
+        // Le pointillé doré seul suffit à signaler "slot sûr vide" — le "+" ne
+        // servait à rien de plus (retiré à la demande du créateur).
         strokeDashedRect(g, x, y, RB_SLOT, RB_SLOT, goldHex, { alpha: 0.5, lineWidth: 1 });
-        // +2px : la boîte de mesure de la police réserve de l'espace sous la ligne
-        // de base pour les descendantes (g/j/p/q/y), que "+" n'utilise jamais —
-        // setOrigin(0.5) centre donc cette boîte, pas l'encre du glyphe, qui remonte
-        // visuellement au-dessus du centre réel du slot sans ce nudge.
-        this.track(this.add.text(x + RB_SLOT / 2, y + RB_SLOT / 2 + 2, '+',
-          uiStyle(TYPE.BODY, UI.TXT_GOLD)).setOrigin(0.5).setAlpha(0.45));
       }
     } else {
       const rarHex = slot ? parseInt((RARITY_COLORS[slot.item.rarity] ?? '#888888').slice(1), 16) : UI.SLOT_BORDER;
