@@ -108,6 +108,20 @@ export function rarityKeyToItemRarity(key: RarityKey): ItemRarity {
   return KEY_TO_ITEM_RARITY[key];
 }
 
+const ITEM_RARITY_TO_KEY: Record<ItemRarity, RarityKey> = {
+  [ItemRarity.COMMON]: 'common',
+  [ItemRarity.UNCOMMON]: 'uncommon',
+  [ItemRarity.RARE]: 'rare',
+  [ItemRarity.EPIC]: 'epic',
+  [ItemRarity.LEGENDARY]: 'legendary',
+  [ItemRarity.MYTHIC]: 'mythic',
+  [ItemRarity.HIDDEN]: 'hidden',
+};
+
+export function itemRarityToRarityKey(rarity: ItemRarity): RarityKey {
+  return ITEM_RARITY_TO_KEY[rarity];
+}
+
 export function getRarityConfig(key: RarityKey): RarityVFXConfig {
   return RARITY_VFX[key];
 }

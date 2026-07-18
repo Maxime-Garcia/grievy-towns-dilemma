@@ -26,6 +26,9 @@ import { ALL_ITEMS } from '../data/items';
 import { loadBindings, KeyBindings } from '../data/keybindings';
 import { keyIconFrame, keyCodeLabel } from '../utils/KeyIcons';
 import { uiStyle, FONT } from '../utils/UITheme';
+import { itemTextureKey } from '../utils/ItemAssets';
+import { FloatingItemDrop } from '../objects/FloatingItemDrop';
+import { RARITY_ORDER, itemRarityToRarityKey, rarityKeyToItemRarity } from '../config/rarities';
 import { t, localizeItem } from '../i18n';
 import { BestiarySystem } from '../systems/BestiarySystem';
 import { ArsenalSystem, ARSENAL_ITEM_TYPES } from '../systems/ArsenalSystem';
@@ -243,6 +246,11 @@ export class GameScene extends Phaser.Scene {
   private debugSpeedMult = 1;
   private giveAllWeaponsKey!: Phaser.Input.Keyboard.Key;
   private toggleDummiesKey!: Phaser.Input.Keyboard.Key;
+  private spawnRarityDropsKey!: Phaser.Input.Keyboard.Key;
+  // GameScene reste la MÊME instance à travers les transitions de zone (pas de
+  // scene.restart()) — sans ce suivi, les drops de debug survivent à la zone où
+  // ils ont été créés (cf. destroyCurrentZoneObjects, code-reviewer).
+  private debugRarityDrops: FloatingItemDrop[] = [];
 
   private xpOrbs!: Phaser.Physics.Arcade.Group;
   private readonly XP_ATTRACT_RANGE = 96;
@@ -554,6 +562,8 @@ export class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.giveAllWeaponsKey)) this.debugGiveAllWeapons();
     // Debug: press T to toggle the training dummies flag (loot stat rolls test aid, cf. LOOT_STAT_ROLLS.md §10)
     if (Phaser.Input.Keyboard.JustDown(this.toggleDummiesKey)) this.debugToggleTrainingDummies();
+    // Debug: press L to spawn one FloatingItemDrop per rarity in front of the player (VFX review aid)
+    if (Phaser.Input.Keyboard.JustDown(this.spawnRarityDropsKey)) this.debugSpawnRarityDrops();
 
     // ── IFRAMES : clignotement du joueur pendant l'invincibilité post-hit ──
     // Alterne alpha 0.25 / 1 toutes les 80ms ; alpha restauré à la fin de la fenêtre.
@@ -685,6 +695,58 @@ export class GameScene extends Phaser.Scene {
     // on rejoue la transition sur place (même zone, position courante) pour que la
     // bascule soit visible immédiatement, sans avoir à sortir puis revenir.
     this.performZoneTransition(this.gameState.player.currentZone, this.player.x, this.player.y);
+  }
+
+  /** Debug aid (press L) : fait apparaître un FloatingItemDrop par rareté (7),
+   *  un équipement aléatoire tiré parmi ARSENAL_ITEM_TYPES pour chaque rareté,
+   *  en rangée devant le joueur (perpendiculaire à facingAngle) — revue VFX. */
+  private debugSpawnRarityDrops(): void {
+    const SPACING = 110;
+    const FORWARD_DIST = 100;
+    const cx = this.player.x + Math.cos(this.facingAngle) * FORWARD_DIST;
+    const cy = this.player.y + Math.sin(this.facingAngle) * FORWARD_DIST;
+    const perpAngle = this.facingAngle + Math.PI / 2;
+
+    let spawned = 0;
+    RARITY_ORDER.forEach((rarityKey, i) => {
+      const itemRarity = rarityKeyToItemRarity(rarityKey);
+      const candidates = Object.values(ALL_ITEMS).filter(
+        it => ARSENAL_ITEM_TYPES.has(it.type) && it.rarity === itemRarity,
+      );
+      if (candidates.length === 0) return;
+      const item = Phaser.Utils.Array.GetRandom(candidates);
+
+      const offset = (i - (RARITY_ORDER.length - 1) / 2) * SPACING;
+      const x = cx + Math.cos(perpAngle) * offset;
+      const y = cy + Math.sin(perpAngle) * offset;
+
+      const drop = new FloatingItemDrop(this, x, y, {
+        texture: this.debugResolveDropTexture(item),
+        rarity: itemRarityToRarityKey(item.rarity),
+      });
+      this.debugRarityDrops.push(drop);
+      spawned++;
+    });
+    this.events.emit('show_notification', `[DEBUG] ${spawned}/${RARITY_ORDER.length} drops de rareté générés`);
+  }
+
+  /** Même chaîne de repli que InventoryScene.resolveIcon/RunBagScene.resolveIcon —
+   *  copiée ici plutôt que partagée : ce n'est pas une scène UI, pas de dépendance
+   *  à ces scènes souhaitable pour un simple aide de debug. */
+  private debugResolveDropTexture(item: import('../types').Item): string {
+    if (this.textures.exists(item.icon)) return item.icon;
+    if ('weaponType' in item && item.weaponType) {
+      const key = `wpn_${String(item.weaponType).toLowerCase()}`;
+      if (this.textures.exists(key)) return key;
+    }
+    const typeKey = itemTextureKey(item.id, item.type, k => this.textures.exists(k));
+    if (typeKey !== 'item_type_generic' && this.textures.exists(typeKey)) return typeKey;
+    // Dernier repli : vérifié comme les autres, jamais passé sans garantie à
+    // scene.add.sprite (cf. InventoryScene.resolveIcon) — item_type_generic est
+    // généré inconditionnellement par PreloaderScene aujourd'hui, mais si ça change
+    // un jour, ce filet évite une texture manquante silencieuse (__MISSING).
+    if (this.textures.exists('item_type_generic')) return 'item_type_generic';
+    return typeKey;
   }
 
   // ── MOVEMENT ─────────────────────────────────────────────────
@@ -4507,6 +4569,8 @@ export class GameScene extends Phaser.Scene {
     this.giveAllWeaponsKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.G);
     // Debug: press T to toggle the training dummies flag (loot stat rolls test aid)
     this.toggleDummiesKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.T);
+    // Debug: press L to spawn one FloatingItemDrop per rarity in front of the player (VFX review aid)
+    this.spawnRarityDropsKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.L);
     // Remaining keys (attack, dash, inventory, skill menu, skill slots)
     // are all wired by applyKeyBindings() called right after setupInput().
   }
@@ -4756,6 +4820,12 @@ export class GameScene extends Phaser.Scene {
     }
     this._homingProjectiles = [];
     this.weaponProjectiles?.clear(true, true);
+
+    // Drops de debug (touche L) — FloatingItemDrop ne se détruit que via collect()
+    // ou la destruction native de la scène ; comme GameScene reste la MÊME instance
+    // à travers les zones, ils survivraient sinon indéfiniment (cf. code-reviewer).
+    for (const d of this.debugRarityDrops) if (d.active) d.destroy();
+    this.debugRarityDrops = [];
 
     // Zone graphics (map background, paths, walls, teleport highlights)
     if (this.zoneGraphics) {
