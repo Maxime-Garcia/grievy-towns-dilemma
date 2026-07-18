@@ -701,8 +701,8 @@ export class GameScene extends Phaser.Scene {
    *  un équipement aléatoire tiré parmi ARSENAL_ITEM_TYPES pour chaque rareté,
    *  en rangée devant le joueur (perpendiculaire à facingAngle) — revue VFX. */
   private debugSpawnRarityDrops(): void {
-    const SPACING = 110;
-    const FORWARD_DIST = 100;
+    const SPACING = 48;
+    const FORWARD_DIST = 56;
     const cx = this.player.x + Math.cos(this.facingAngle) * FORWARD_DIST;
     const cy = this.player.y + Math.sin(this.facingAngle) * FORWARD_DIST;
     const perpAngle = this.facingAngle + Math.PI / 2;
@@ -725,9 +725,30 @@ export class GameScene extends Phaser.Scene {
         rarity: itemRarityToRarityKey(item.rarity),
       });
       this.debugRarityDrops.push(drop);
+      this.wireDropPickup(drop, item);
       spawned++;
     });
     this.events.emit('show_notification', `[DEBUG] ${spawned}/${RARITY_ORDER.length} drops de rareté générés`);
+  }
+
+  /** Ramassage en marchant dessus. L'overlap Arcade redéclenche CHAQUE frame tant
+   *  que les deux corps se chevauchent — `overlap.destroy()` en tout premier dans
+   *  le callback (synchrone, avant qu'une autre frame ne repasse) est le garde
+   *  contre un double ramassage pendant les ~220ms de l'animation de collect(). */
+  private wireDropPickup(drop: FloatingItemDrop, item: import('../types').Item): void {
+    const overlap = this.physics.add.overlap(this.player, drop, () => {
+      overlap.destroy();
+      drop.collect(this.player, () => {
+        const added = LootSystem.addToInventory(this.gameState.player, item, 1, this.gameState.world);
+        this.events.emit('player_update', this.gameState.player);
+        // item_looted (pas show_notification) : seul chemin qui déclenche le toast
+        // coloré par rareté + le libellé de Résonance dans UIScene.onItemLooted —
+        // tous les autres points de loot du jeu passent par là (cf. code-reviewer).
+        if (added) this.events.emit('item_looted', { item, quantity: 1 });
+        else this.events.emit('show_notification', `[DEBUG] Sac plein — ${item.name} perdu`);
+      });
+    });
+    this.physicsColliders.push(overlap);
   }
 
   /** Même chaîne de repli que InventoryScene.resolveIcon/RunBagScene.resolveIcon —

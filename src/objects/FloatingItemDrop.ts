@@ -10,21 +10,23 @@ export interface FloatingItemDropOptions {
   rarity: RarityKey;
 }
 
-const PICKUP_RADIUS = 28;
-const BOB_AMPLITUDE = 15;
+// Toutes les tailles sont calées sur l'échelle perso 32x32 : aura (couche la
+// plus large) ~54px de diamètre, soit ~1.7x la largeur du joueur.
+const PICKUP_RADIUS = 12;
+const BOB_AMPLITUDE = 6;
 const BOB_DURATION = 1400;
-const ORBIT_RADIUS = 60;
+const ORBIT_RADIUS = 24;
 // Vitesse orbitale de base (rad/s) avant application de ringSpeedMul.
 const ORBIT_BASE_SPEED = Phaser.Math.DegToRad(40);
-const OUTER_RING_RADIUS = 48;
-const GRAVED_CIRCLE_RADIUS = 39;
-const INNER_RING_RADIUS = 31;
-const CARDINAL_RADIUS = 54;
-const CARDINAL_HALF_SIZE = 4.5;
-const AURA_DIAMETER = 134;
-const CORE_OUTER_DIAMETER = 60;
-const CORE_INNER_DIAMETER = 36;
-const CULL_PADDING = 90;
+const OUTER_RING_RADIUS = 19;
+const GRAVED_CIRCLE_RADIUS = 16;
+const INNER_RING_RADIUS = 12;
+const CARDINAL_RADIUS = 22;
+const CARDINAL_HALF_SIZE = 2;
+const AURA_DIAMETER = 54;
+const CORE_OUTER_DIAMETER = 24;
+const CORE_INNER_DIAMETER = 14;
+const CULL_PADDING = 40;
 
 export class FloatingItemDrop extends Phaser.GameObjects.Container {
   // Container ne déclare pas `body` (contrairement à Sprite/Image) — physics.add.existing()
@@ -55,9 +57,9 @@ export class FloatingItemDrop extends Phaser.GameObjects.Container {
   private innerRingTween?: Phaser.Tweens.Tween;
   private readonly persistentTweens: Phaser.Tweens.Tween[] = [];
 
-  private baseSwordScale = 1.7;
+  private baseSwordScale = 0.7;
   // Capturée après setDisplaySize() — le tween scaleX de l'ombre doit rester
-  // relatif à cette base (76x17), pas écraser la valeur absolue. Seul scaleX
+  // relatif à cette base (30x7), pas écraser la valeur absolue. Seul scaleX
   // respire (spec) ; scaleY reste figé à sa valeur de setDisplaySize.
   private shadowBaseScaleX = 1;
   private collected = false;
@@ -128,12 +130,12 @@ export class FloatingItemDrop extends Phaser.GameObjects.Container {
   // ── Construction ──────────────────────────────────────────────────────
 
   private buildShadow(scene: Phaser.Scene): Phaser.GameObjects.Image {
-    const img = scene.add.image(0, 46, GLOW_TEXTURE);
+    const img = scene.add.image(0, 18, GLOW_TEXTURE);
     img.setTint(0x000000);
     img.setBlendMode(Phaser.BlendModes.NORMAL);
     img.setAlpha(0.55);
-    // 76x17 : texture ronde étirée en ellipse plate.
-    img.setDisplaySize(76, 17);
+    // 30x7 : texture ronde étirée en ellipse plate.
+    img.setDisplaySize(30, 7);
     this.shadowBaseScaleX = img.scaleX;
     return img;
   }
@@ -167,7 +169,8 @@ export class FloatingItemDrop extends Phaser.GameObjects.Container {
 
   private buildTickRing(scene: Phaser.Scene, radius: number, tickEveryDeg: number): Phaser.GameObjects.Graphics {
     const g = scene.add.graphics();
-    g.lineStyle(1.5, this.cfg.color, 1);
+    // 1px (pas 1.5) : à ce rayon réduit, plus épais fusionne les ticks en anneau plein.
+    g.lineStyle(1, this.cfg.color, 1);
     const innerR = radius * 0.6;
     for (let deg = 0; deg < 360; deg += tickEveryDeg) {
       const a = Phaser.Math.DegToRad(deg);
@@ -220,7 +223,7 @@ export class FloatingItemDrop extends Phaser.GameObjects.Container {
       const img = scene.add.image(0, 0, SPARK_TEXTURE);
       img.setBlendMode(Phaser.BlendModes.ADD);
       img.setTint(this.cfg.color);
-      img.setScale(0.6);
+      img.setScale(0.35);
       this.entourage.add(img);
       this.orbitSparks.push(img);
       this.orbitAngles.push((Math.PI * 2 * i) / count);
@@ -245,11 +248,11 @@ export class FloatingItemDrop extends Phaser.GameObjects.Container {
     return scene.add.particles(0, 0, SPARK_TEXTURE, {
       blendMode: Phaser.BlendModes.ADD,
       tint: [0xffffff, this.cfg.color],
-      emitZone: { type: 'edge', source: new Phaser.Geom.Circle(0, 0, 46), quantity: 48 },
+      emitZone: { type: 'edge', source: new Phaser.Geom.Circle(0, 0, 18), quantity: 48 },
       quantity: 1,
       frequency,
       lifespan: { min: 1600, max: 2200 },
-      scale: { values: [0, 1, 0] },
+      scale: { values: [0, 0.5, 0] },
       alpha: { values: [0, 1, 0] },
       rotate: { start: 0, end: 90 },
     });
@@ -257,16 +260,16 @@ export class FloatingItemDrop extends Phaser.GameObjects.Container {
 
   private buildDustEmitter(scene: Phaser.Scene): Phaser.GameObjects.Particles.ParticleEmitter {
     const frequency = Math.round(600 / this.cfg.sparkRate);
-    return scene.add.particles(0, 18, SQUARE_TEXTURE, {
+    return scene.add.particles(0, 7, SQUARE_TEXTURE, {
       blendMode: Phaser.BlendModes.ADD,
       tint: this.cfg.color,
-      x: { min: -10, max: 10 },
-      y: { min: -4, max: 4 },
-      speedY: { min: -40, max: -20 },
-      speedX: { min: -4, max: 4 },
+      x: { min: -4, max: 4 },
+      y: { min: -2, max: 2 },
+      speedY: { min: -16, max: -8 },
+      speedX: { min: -2, max: 2 },
       lifespan: { min: 2600, max: 3000 },
       alpha: { start: 1, end: 0 },
-      scale: { min: 0.75, max: 1 },
+      scale: { min: 0.5, max: 0.75 },
       quantity: 1,
       frequency,
     });
@@ -394,7 +397,7 @@ export class FloatingItemDrop extends Phaser.GameObjects.Container {
 
   private updateCulling(): void {
     const view = this.scene.cameras.main.worldView;
-    // Marge : le sceau déborde de ~60px autour de (x,y) — sans elle, les
+    // Marge : le sceau déborde de ~27px autour de (x,y) — sans elle, les
     // emitters "popent" visiblement au bord de l'écran.
     const visible = this.x > view.x - CULL_PADDING && this.x < view.right + CULL_PADDING
       && this.y > view.y - CULL_PADDING && this.y < view.bottom + CULL_PADDING;
@@ -515,7 +518,7 @@ export class FloatingItemDrop extends Phaser.GameObjects.Container {
       const img = this.scene.add.image(0, 0, SPARK_TEXTURE);
       img.setBlendMode(Phaser.BlendModes.ADD);
       img.setTint(this.cfg.color);
-      img.setScale(0.6);
+      img.setScale(0.35);
       this.entourage.add(img);
       this.entourage.bringToTop(img);
       this.orbitSparks.push(img);
@@ -540,7 +543,7 @@ export class FloatingItemDrop extends Phaser.GameObjects.Container {
 
   private redrawRing(g: Phaser.GameObjects.Graphics, radius: number, tickEveryDeg: number): void {
     g.clear();
-    g.lineStyle(1.5, this.cfg.color, 1);
+    g.lineStyle(1, this.cfg.color, 1);
     const innerR = radius * 0.6;
     for (let deg = 0; deg < 360; deg += tickEveryDeg) {
       const a = Phaser.Math.DegToRad(deg);

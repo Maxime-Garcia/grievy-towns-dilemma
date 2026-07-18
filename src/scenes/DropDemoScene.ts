@@ -34,7 +34,7 @@ export class DropDemoScene extends Phaser.Scene {
   create(): void {
     this.cameras.main.setBackgroundColor(0x0a0a14);
 
-    const spacing = 130;
+    const spacing = 100;
     const startX = 960 / 2 - (spacing * (RARITY_ORDER.length - 1)) / 2;
     const y = 260;
 
@@ -43,7 +43,7 @@ export class DropDemoScene extends Phaser.Scene {
         texture: WPN_SWORD_TEXTURE,
         rarity: key,
       });
-      this.add.text(drop.x, y + 90, RARITY_VFX[key].label, {
+      this.add.text(drop.x, y + 44, RARITY_VFX[key].label, {
         fontFamily: 'monospace',
         fontSize: '12px',
         color: RARITY_VFX[key].colorHex,
