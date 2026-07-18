@@ -145,10 +145,11 @@ export function getIconInkMetrics(scene: Phaser.Scene, key: string, frame?: stri
 // repli 1×1) ne doit jamais produire un facteur délirant qui ferait disparaître
 // ou exploser visuellement un item.
 const MIN_SCALE = 0.5;
-// Remonté de 2.2 (hérité de l'ancienne métrique en racine carrée) à 3.0 : en
-// footprint linéaire, une icône très filiforme peut légitimement avoir besoin
-// d'un facteur plus élevé pour rattraper la référence sans rester trop petite.
-const MAX_SCALE = 3.0;
+// Remonté à 3.0 par précaution (théorique, sans preuve) lors du passage à la
+// métrique footprint — retour créateur en jeu : Épique et Caché ressortaient
+// trop gros avec ce plafond. Revenu à 2.2 (dernière valeur réellement
+// validée) plutôt que de deviner un nouveau chiffre sans retour concret.
+const MAX_SCALE = 2.2;
 
 /**
  * Facteur multiplicatif à appliquer à l'échelle "native" d'une icône pour que
