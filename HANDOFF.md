@@ -87,7 +87,7 @@ n'a encore été implémenté** :
 4. **Titre "SAC DE RUN" → "SAC"** (raccourci).
 5. **Supprimer entièrement le sous-titre instructionnel** ("Clique un consommable pour le
    boire...") — le joueur doit comprendre sans texte d'aide.
-6. **Supprimer les libellés "SÛRS"/"ORDINAIRES"** — la distinction visuelle (bordure dorése vs
+6. **Supprimer les libellés "SÛRS"/"ORDINAIRES"** — la distinction visuelle (bordure dorée vs
    grise, regroupement spatial) doit suffire, pas besoin de texte.
 7. **Changer la répartition du sac : 5 sûrs / 15 ordinaires** (au lieu de 4/16 actuellement) — sac
    total inchangé à 20. Touche `PlayerState.runSafeSlotCapacity` (défaut 4 → 5 dans
@@ -96,19 +96,18 @@ n'a encore été implémenté** :
    `ROGUELITE_POC.md` déjà corrigé une fois dans ce sens) — c'est le créateur qui change à nouveau
    le chiffre lui-même, pas une erreur à corriger, juste à appliquer et à refléter dans
    `ROGUELITE_POC.md` §3 pour que la doc reste synchronisée avec le code.
-8. **Les boulettes d'expérience"** — le créateur veut qu'elles soient satisfaisantes à voir et à collecter,
-  faire intervenir les agents de gamefeel, vfx, ui/ux sur ce sujet
-9. **Les bulles d'objets à ramasser par terre toujours pas faite** - même demande que le point 8 : 
-faire intervenir les agents cités.
+8. **Les boulettes d'expérience** — le créateur veut qu'elles soient satisfaisantes à voir et à
+   collecter, faire intervenir les agents de gamefeel, vfx, ui/ux sur ce sujet.
+9. **Les bulles d'objets à ramasser par terre, toujours pas faites** — même demande que le point 8 :
+   faire intervenir les agents cités.
 
 Tout ça est de la **polish d'écran**, pas des bugs fonctionnels — mais assez conséquent (icônes +
 équipement depuis le sac de run) pour mériter son propre passage réfléchi plutôt qu'un rustinage
-rapide. Possiblement du ressort d'un passage `ux-agent` pour les décisions de layout/hiérarchie
-visuelle, avec `dev-agent` pour le câblage (équiper depuis le sac de run touche
-`InventorySystem.equip`, qui ne connaît aujourd'hui que `player.inventory`/`player.equipment` — il
-faudra un chemin équivalent pour `run.safeBag`/`ordinaryBag`, même distinction que le loot déjà
-faite pour `addToRunBag`). Le créateur souhaite faire intervenir les agents d'UI/UX, de gamedesign,
-gamefeel
+rapide. `ux-agent` pour les décisions de layout/hiérarchie visuelle, `dev-agent` pour le câblage
+(équiper depuis le sac de run touche `InventorySystem.equip`, qui ne connaît aujourd'hui que
+`player.inventory`/`player.equipment` — il faudra un chemin équivalent pour
+`run.safeBag`/`ordinaryBag`, même distinction que le loot déjà faite pour `addToRunBag`), et
+`gamefeel-agent`/`design-agent` pour les points 8-9 (orbes XP, bulles de loot).
 
 ## 5. AUTRES POINTS OUVERTS (non bloquants, notés)
 
