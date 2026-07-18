@@ -151,7 +151,8 @@ export class ProgressionSystem {
       passiveStacks: {},
       firstStrikeReady: true,
       runBagCapacity: 20,
-      runSafeSlotCapacity: 4,
+      // 5 sûrs / 15 ordinaires (révisé le 18/07 par le créateur — était 4/16).
+      runSafeSlotCapacity: 5,
     };
     // L'arme de départ doit contribuer aux stats affichées dès l'écran de
     // personnage, pas seulement une fois le premier combat/level-up recalculé.

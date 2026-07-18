@@ -161,7 +161,8 @@ const MIGRATION_MAP: Record<string, (state: GameState) => GameState> = {
     player: {
       ...state.player,
       runBagCapacity: (state.player as any).runBagCapacity ?? 20,
-      runSafeSlotCapacity: (state.player as any).runSafeSlotCapacity ?? 4,
+      // 5 sûrs / 15 ordinaires (révisé le 18/07 par le créateur — était 4/16).
+      runSafeSlotCapacity: (state.player as any).runSafeSlotCapacity ?? 5,
     },
   }),
 };

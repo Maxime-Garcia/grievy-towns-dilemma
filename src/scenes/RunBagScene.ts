@@ -1,36 +1,48 @@
 import Phaser from 'phaser';
 import { GameScene } from './GameScene';
-import { Consumable, ElementType, Item, ItemType, RARITY_COLORS, RunBagSlot } from '../types';
+import { Consumable, ElementType, Equipment, Item, ItemType, RARITY_COLORS, RunBagSlot } from '../types';
 import { LootSystem } from '../systems/LootSystem';
 import { RunSystem } from '../systems/RunSystem';
 import { RunBagSystem } from '../systems/RunBagSystem';
 import { InventorySystem } from '../systems/InventorySystem';
+import { itemTextureKey } from '../utils/ItemAssets';
 import {
   UI, TYPE, drawGlowPanel, drawCard, drawSlot, uiStyle, titleStyle,
-  addCloseButton, openScreenTransition, closeScreenTransition,
+  addCloseButton, openScreenTransition, closeScreenTransition, fitText,
 } from '../utils/UITheme';
 
 // Écran de sac de run (RunSystem, docs/design/ROGUELITE_POC.md §3) — UNE seule
 // scène pour les trois moments qui utilisent la même mécanique de fond (choisir
-// quoi emporter/garder/consommer dans un nombre fixe d'emplacements) :
+// quoi emporter/garder/consommer/équiper dans un nombre fixe d'emplacements) :
 //
 // 'pack'    (avant de descendre) : choisir 3-4 consommables dans la banque.
-// 'view'    (touche Inventaire pendant une run) : consulter/consommer le sac de
-//            run en cours — remplace InventoryScene (la banque de GT) tant
+// 'view'    (touche Inventaire pendant une run) : consulter/consommer/équiper le
+//            sac de run en cours — remplace InventoryScene (la banque de GT) tant
 //            qu'une run est active, cf. GameScene.inventoryKey.
-// 'extract' (après le boss)      : arbitrer les 4 emplacements sûrs du sac 20/4,
-//                                   puis S'exfiltrer ou Continuer.
+// 'extract' (après le boss) : arbitrer les emplacements sûrs du sac,
+//            puis S'exfiltrer ou Continuer.
 //
-// Volontairement simple visuellement pour cette tranche (pas d'icônes, cartes
-// texte) — la polish complète de "l'inventaire intra-run" est son propre lot
-// (feat/roguelite-ui, cf. HANDOFF.md). Le patron overlay (scene.launch +
-// setPaused + openScreenTransition/closeScreenTransition + close() guardé) est
-// le même que PityScene/InventoryScene.
+// Patron overlay identique à PityScene/InventoryScene (scene.launch + setPaused +
+// openScreenTransition/closeScreenTransition + close() guardé).
 
 const MAX_LOADOUT = 4;
 const ROW_H = 40;
 const SLOT = 56;
 const SLOT_GAP = 10;
+const EQUIP_SLOT = 40;
+const EQUIP_GAP = 6;
+
+/** Ordre d'affichage de la bande d'équipement — mêmes 10 slots que InventoryScene. */
+const EQUIP_SLOTS: (keyof Equipment)[] = [
+  'weapon', 'helm', 'chest', 'legs', 'boots', 'gloves', 'cape', 'ring1', 'ring2', 'amulet',
+];
+
+/** Types équipables directement depuis le sac de run — tout le reste (consommables,
+ *  matériaux, objets-clés) passe par consumeItem()/le réarrangement sûr↔ordinaire. */
+const EQUIPPABLE_TYPES = new Set<ItemType>([
+  ItemType.WEAPON, ItemType.HELM, ItemType.CHEST, ItemType.LEGS, ItemType.BOOTS,
+  ItemType.GLOVES, ItemType.CAPE, ItemType.RING, ItemType.AMULET,
+]);
 
 type RunBagMode = 'pack' | 'view' | 'extract';
 
@@ -88,6 +100,37 @@ export class RunBagScene extends Phaser.Scene {
     return go;
   }
 
+  /** Même chaîne de repli que InventoryScene.resolveIcon : icône spécifique de
+   *  l'objet → sprite de type d'arme → icône générique de catégorie → null
+   *  (l'appelant dessine alors un carré coloré par rareté). */
+  private resolveIcon(item: Item): string | null {
+    if (this.textures.exists(item.icon)) return item.icon;
+    if ('weaponType' in item && item.weaponType) {
+      const key = `wpn_${String(item.weaponType).toLowerCase()}`;
+      if (this.textures.exists(key)) return key;
+    }
+    const typeKey = itemTextureKey(item.id, item.type, k => this.textures.exists(k));
+    if (typeKey !== 'item_type_generic' && this.textures.exists(typeKey)) return typeKey;
+    if (this.textures.exists('item_type_generic')) return 'item_type_generic';
+    return null;
+  }
+
+  /** Dessine l'icône d'un objet centrée sur (cx, cy), ou un carré coloré par
+   *  rareté si aucune texture ne se résout — jamais de texte qui pourrait déborder. */
+  private renderItemIcon(item: Item, cx: number, cy: number, size: number): void {
+    const iconKey = this.resolveIcon(item);
+    const rarHex = parseInt((RARITY_COLORS[item.rarity] ?? '#888888').slice(1), 16);
+    if (iconKey) {
+      try {
+        this.track(this.add.image(cx, cy, iconKey).setDisplaySize(size, size));
+        return;
+      } catch { /* fallback ci-dessous */ }
+    }
+    const sq = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
+    sq.fillStyle(rarHex, 0.55);
+    sq.fillRoundedRect(cx - size / 2, cy - size / 2, size, size, 3);
+  }
+
   // ── MODE PACK ────────────────────────────────────────────────
 
   private renderPack() {
@@ -123,8 +166,10 @@ export class RunBagScene extends Phaser.Scene {
       const rowG = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
       const color = parseInt((RARITY_COLORS[slot.item.rarity] ?? '#888888').slice(1), 16);
       drawCard(rowG, listX, rowY, listW, ROW_H - 6, { accent: color, radius: 4 });
-      this.track(this.add.text(listX + 12, rowY + (ROW_H - 6) / 2, `${slot.item.name}  ×${remaining}`,
-        uiStyle(TYPE.BODY, UI.TXT_PARCHMENT, { wordWrapWidth: listW - 20 })).setOrigin(0, 0.5));
+      this.renderItemIcon(slot.item, listX + 20, rowY + (ROW_H - 6) / 2, 26);
+      const nameStyle = uiStyle(TYPE.BODY, UI.TXT_PARCHMENT);
+      const label = fitText(this, `${slot.item.name}  ×${remaining}`, nameStyle, listW - 48);
+      this.track(this.add.text(listX + 40, rowY + (ROW_H - 6) / 2, label, nameStyle).setOrigin(0, 0.5));
       const hit = this.track(this.add.rectangle(listX + listW / 2, rowY + (ROW_H - 6) / 2, listW, ROW_H - 6, 0, 0)
         .setInteractive({ useHandCursor: true })) as Phaser.GameObjects.Rectangle;
       hit.on('pointerdown', () => {
@@ -147,10 +192,7 @@ export class RunBagScene extends Phaser.Scene {
       const g = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
       const color = item ? parseInt((RARITY_COLORS[item.rarity] ?? '#888888').slice(1), 16) : UI.SLOT_BORDER;
       drawSlot(g, sx, sy, SLOT, color, { occupied: !!item });
-      if (item) {
-        this.track(this.add.text(sx + SLOT / 2, sy + SLOT / 2, item.name.slice(0, 8),
-          uiStyle(TYPE.SMALL, UI.TXT_PARCHMENT, { align: 'center', wordWrapWidth: SLOT - 6 })).setOrigin(0.5));
-      }
+      if (item) this.renderItemIcon(item, sx + SLOT / 2, sy + SLOT / 2, Math.round(SLOT * 0.65));
       const hit = this.track(this.add.rectangle(sx + SLOT / 2, sy + SLOT / 2, SLOT, SLOT, 0, 0)
         .setInteractive({ useHandCursor: !!item })) as Phaser.GameObjects.Rectangle;
       hit.on('pointerdown', () => {
@@ -208,35 +250,55 @@ export class RunBagScene extends Phaser.Scene {
 
     const isExtract = this.mode === 'extract';
     this.track(this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88));
-    const PANEL_W = 620, PANEL_H = isExtract ? 520 : 480;
+    const PANEL_W = 660;
+    const cols = 5;
+    const safeRows = Math.ceil(run.safeBag.length / cols);
+    const ordinaryRows = Math.ceil(run.ordinaryBag.length / cols);
+    const gridRowsH = (safeRows + ordinaryRows) * (SLOT + SLOT_GAP) - SLOT_GAP;
+    const PANEL_H = 96 + EQUIP_SLOT + 20 + gridRowsH + 40 + (isExtract ? 50 : 0);
     const px = (W - PANEL_W) / 2, py = (H - PANEL_H) / 2;
     const frame = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
     drawGlowPanel(frame, px, py, PANEL_W, PANEL_H, parseInt(UI.TXT_GOLD.slice(1), 16), UI.BG_DEEP, 8, 0.95);
 
-    const title = isExtract ? 'BOSS VAINCU' : 'SAC DE RUN';
+    // Titre court — pas de sous-titre : la distinction sûr/ordinaire se lit à la
+    // bordure (dorée/grise) et au regroupement spatial, pas à du texte (retour
+    // créateur, 18/07 — "le joueur comprendra").
+    const title = isExtract ? 'BOSS VAINCU' : 'SAC';
     this.track(this.add.text(W / 2, py + 16, title, titleStyle(UI.TXT_GOLD, { stroke: true })).setOrigin(0.5, 0));
-    const subtitle = isExtract
-      ? `${run.safeBag.filter(s => s).length}/${run.safeBag.length} emplacements sûrs remplis — le reste est perdu à l'exfiltration`
-      : 'Clique un consommable pour le boire. Clique un objet puis un emplacement sûr pour le protéger.';
-    this.track(this.add.text(W / 2, py + 44, subtitle,
-      uiStyle(TYPE.SMALL, UI.TXT_MUTED, { align: 'center', wordWrapWidth: PANEL_W - 48 })).setOrigin(0.5, 0));
     if (!isExtract) {
       const closeBtn = addCloseButton(this, px + PANEL_W - 24, py + 24, () => this.close());
       this.track(closeBtn.glyph); this.track(closeBtn.hit);
     }
 
-    const cols = 5;
-    const gridX = px + (PANEL_W - (cols * (SLOT + SLOT_GAP) - SLOT_GAP)) / 2;
-    const safeY = py + (isExtract ? 84 : 96);
-    const ordinaryY = safeY + SLOT + SLOT_GAP + 28;
+    // Bande d'équipement actuel — "un vrai côté stuff équipé" (retour créateur) :
+    // visualiser ce qui est équipé pour comparer avec ce que le sac contient.
+    // Purement consultatif ici (pas de déséquiper vers le sac dans cette passe).
+    const equipY = py + 56;
+    const equipW = EQUIP_SLOTS.length * (EQUIP_SLOT + EQUIP_GAP) - EQUIP_GAP;
+    const equipX = px + (PANEL_W - equipW) / 2;
+    const player = this.gameScene.gameState.player;
+    for (let i = 0; i < EQUIP_SLOTS.length; i++) {
+      const sx = equipX + i * (EQUIP_SLOT + EQUIP_GAP);
+      const item = player.equipment[EQUIP_SLOTS[i]] as Item | undefined;
+      const g = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
+      const color = item ? parseInt((RARITY_COLORS[item.rarity] ?? '#888888').slice(1), 16) : UI.SLOT_BORDER;
+      drawSlot(g, sx, equipY, EQUIP_SLOT, color, { occupied: !!item, radius: 4 });
+      if (item) this.renderItemIcon(item, sx + EQUIP_SLOT / 2, equipY + EQUIP_SLOT / 2, Math.round(EQUIP_SLOT * 0.7));
+    }
 
-    this.track(this.add.text(gridX, safeY - 18, 'SÛRS', uiStyle(TYPE.SMALL, UI.TXT_GOLD, { bold: true })));
+    const dividerY = equipY + EQUIP_SLOT + 14;
+    const dividerG = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
+    dividerG.lineStyle(1, UI.SEPARATOR, 0.6);
+    dividerG.lineBetween(px + 24, dividerY, px + PANEL_W - 24, dividerY);
+
+    const gridX = px + (PANEL_W - (cols * (SLOT + SLOT_GAP) - SLOT_GAP)) / 2;
+    const safeY = dividerY + 16;
+    const ordinaryY = safeY + safeRows * (SLOT + SLOT_GAP) + 16;
+
     for (let i = 0; i < run.safeBag.length; i++) {
       const col = i % cols, row = Math.floor(i / cols);
       this.renderBagSlot('safe', i, gridX + col * (SLOT + SLOT_GAP), safeY + row * (SLOT + SLOT_GAP), run.safeBag[i]);
     }
-    this.track(this.add.text(gridX, ordinaryY - 18, isExtract ? 'ORDINAIRES (perdus)' : 'ORDINAIRES',
-      uiStyle(TYPE.SMALL, UI.TXT_MUTED)));
     for (let i = 0; i < run.ordinaryBag.length; i++) {
       const col = i % cols, row = Math.floor(i / cols);
       this.renderBagSlot('ordinary', i, gridX + col * (SLOT + SLOT_GAP), ordinaryY + row * (SLOT + SLOT_GAP), run.ordinaryBag[i]);
@@ -255,14 +317,52 @@ export class RunBagScene extends Phaser.Scene {
     const baseColor = kind === 'safe' ? parseInt(UI.TXT_GOLD.slice(1), 16) : UI.SLOT_BORDER;
     const color = slot ? parseInt((RARITY_COLORS[slot.item.rarity] ?? '#888888').slice(1), 16) : baseColor;
     drawSlot(g, x, y, SLOT, isSelected ? 0xffffff : color, { occupied: !!slot, borderAlpha: isSelected ? 1 : undefined });
+
     if (slot) {
-      const label = slot.quantity > 1 ? `${slot.item.name.slice(0, 7)} ×${slot.quantity}` : slot.item.name.slice(0, 8);
-      this.track(this.add.text(x + SLOT / 2, y + SLOT / 2, label,
-        uiStyle(TYPE.SMALL, UI.TXT_PARCHMENT, { align: 'center', wordWrapWidth: SLOT - 6 })).setOrigin(0.5));
+      this.renderItemIcon(slot.item, x + SLOT / 2, y + SLOT / 2, Math.round(SLOT * 0.65));
+      if (slot.quantity > 1) {
+        this.track(this.add.text(x + SLOT - 4, y + SLOT - 4, `×${slot.quantity}`,
+          uiStyle(TYPE.SMALL, UI.TXT_GOLD, { bold: true, stroke: true })).setOrigin(1, 1));
+      }
     }
+
     const hit = this.track(this.add.rectangle(x + SLOT / 2, y + SLOT / 2, SLOT, SLOT, 0, 0)
       .setInteractive({ useHandCursor: true })) as Phaser.GameObjects.Rectangle;
     hit.on('pointerdown', () => this.onBagSlotClicked(kind, index));
+
+    // Badge "équiper" — objets équipables uniquement. Hit zone SÉPARÉE et
+    // au-dessus de celle du slot (ajoutée après = prioritaire à l'input Phaser),
+    // stopPropagation() empêche le clic de retomber sur le slot en dessous
+    // (sinon un clic sur le badge sélectionnerait AUSSI le slot pour un échange).
+    if (slot && EQUIPPABLE_TYPES.has(slot.item.type)) {
+      const br = 9;
+      const bx = x + SLOT - br - 2, by = y + br + 2;
+      const badgeG = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
+      badgeG.fillStyle(UI.ACCENT_ARCANE, 0.95);
+      badgeG.fillCircle(bx, by, br);
+      badgeG.lineStyle(1, 0x000000, 0.6);
+      badgeG.strokeCircle(bx, by, br);
+      this.track(this.add.text(bx, by, 'E', uiStyle(TYPE.SMALL, '#0a0a18', { bold: true })).setOrigin(0.5));
+      const badgeHit = this.track(this.add.rectangle(bx, by, br * 2 + 6, br * 2 + 6, 0, 0)
+        .setInteractive({ useHandCursor: true })) as Phaser.GameObjects.Rectangle;
+      badgeHit.on('pointerdown', (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: { stopPropagation: () => void }) => {
+        event.stopPropagation();
+        this.onEquipClicked(kind, index);
+      });
+    }
+  }
+
+  /** Équipe directement l'objet du slot cliqué (badge "E") — l'ancien équipement
+   *  revient dans le MÊME emplacement du sac (cf. InventorySystem.equipFromRunBag). */
+  private onEquipClicked(kind: 'safe' | 'ordinary', index: number) {
+    const run = this.gameScene.gameState.run;
+    if (!run) return;
+    const player = this.gameScene.gameState.player;
+    if (InventorySystem.equipFromRunBag(player, run, kind, index)) {
+      this.gameScene.events.emit('player_update', player);
+      this.selected = null;
+      this.refresh();
+    }
   }
 
   private onBagSlotClicked(kind: 'safe' | 'ordinary', index: number) {

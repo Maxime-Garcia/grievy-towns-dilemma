@@ -1,4 +1,4 @@
-import { PlayerState, Item, ItemType, ItemRarity, Weapon, Armor, Accessory, Consumable, ConsumableEffect, Equipment, InventorySlot } from '../types';
+import { PlayerState, Item, ItemType, ItemRarity, Weapon, Armor, Accessory, Consumable, ConsumableEffect, Equipment, InventorySlot, RunState, RunBagSlot } from '../types';
 import { LootSystem } from './LootSystem';
 import { StatsSystem } from './StatsSystem';
 import { PassiveSystem } from './PassiveSystem';
@@ -139,6 +139,33 @@ export class InventorySystem {
     if (!added) return false;
 
     (player.equipment as any)[slot] = undefined;
+    this.recalcStats(player);
+    return true;
+  }
+
+  /**
+   * Équipe directement un objet trouvé EN RUN (RunSystem, `RunBagScene` mode
+   * 'view'/'extract') — jamais via la banque. L'ancien équipement revient dans
+   * le MÊME emplacement du sac de run (jamais vers `player.inventory`, jamais
+   * perdu) : un swap net-neutre en taille de sac, pas de cas "sac plein" possible
+   * puisque l'index libéré est celui qu'on vient de vider.
+   *
+   * Choix de design assumé : équiper depuis le sac de run RETIRE l'objet du sac
+   * (donc de la perte à la mort/l'exfiltration partielle) — l'équiper, c'est le
+   * garder à coup sûr, contrairement à le laisser dans un slot ordinaire. C'est
+   * un vrai arbitrage stratégique du roguelite, pas un bug.
+   */
+  static equipFromRunBag(player: PlayerState, run: RunState, kind: 'safe' | 'ordinary', index: number): boolean {
+    const bag = kind === 'safe' ? run.safeBag : run.ordinaryBag;
+    const slot = bag[index];
+    if (!slot) return false;
+
+    const equipSlot = this.getEquipSlot(slot.item, player);
+    if (!equipSlot) return false;
+
+    const current = (player.equipment as any)[equipSlot] as Item | undefined;
+    bag[index] = current ? ({ item: current, quantity: 1 } as RunBagSlot) : null;
+    (player.equipment as any)[equipSlot] = slot.item;
     this.recalcStats(player);
     return true;
   }
