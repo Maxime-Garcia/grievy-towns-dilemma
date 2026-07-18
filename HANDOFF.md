@@ -131,10 +131,14 @@ ordinaires — vérifié dans le code, dimensions strictement identiques (`RB_SL
 probablement un effet de poids visuel déjà atténué (alpha du "+" réduit puis "+" supprimé). Pas de
 retour de confirmation finale du créateur sur ce point précis au moment de cette écriture.
 
-**Refactor évoqué, pas commencé** : extraire un `EquipmentPanel` partagé (`InventoryScene`/
-`RunBagScene` dupliquent encore le rendu du paperdoll, alors que `StatsPanel.ts` a déjà prouvé que
-le partage marche pour les stats) — proposé par le créateur le 19/07, je recommande de le faire
-APRÈS validation finale de cette refonte inventaire, pas en même temps.
+**Refactor `EquipmentPanel` — FAIT (commit `5d38ccc`)** : `InventoryScene`/`RunBagScene` partagent
+désormais le rendu du paperdoll via `utils/EquipmentPanel.ts` (même principe que `StatsPanel.ts`).
+Le rendu d'un slot OCCUPÉ reste scene-specific (callback) — InventoryScene garde son interactivité
+(cadre asset, survol, clic→détail, flash tap-equip), RunBagScene reste purement visuel. Deux
+différences pré-existantes délibérément pas unifiées (documentées dans le fichier) : `colInset`
+(14 vs 16) et position du nom/niveau (sous le paperdoll vs bas du panneau). Code-reviewer : 0
+BLOCKER, 0 BUG, formules de layout vérifiées identiques ligne à ligne contre l'ancien code.
+**Pas encore retesté en jeu après ce refactor** — aucun changement visuel attendu, mais à confirmer.
 
 ## 5. AUTRES POINTS OUVERTS (non bloquants, notés)
 
@@ -186,11 +190,11 @@ plusieurs allers-retours de playtest — pas un one-shot comme `FloatingItemDrop
 
 ## 7. PROCHAINE ACTION CONCRÈTE
 
-1. **Confirmation finale du créateur** sur la refonte inventaire (§4) — les défauts trouvés au
-   premier test sont corrigés, en attente d'un dernier passage en jeu pour clore ce chantier.
-2. Décider avec le créateur : refactor `EquipmentPanel` partagé (§4bis) avant ou après le merge de
-   `feat/roguelite-run-system` — puis reprendre le badge équiper/icônes/grille 5-15 du sac de run
-   (déjà testés une fois avant cette refonte visuelle, à revérifier que rien n'a régressé).
+1. **Confirmation finale du créateur** sur la refonte inventaire (§4) ET le refactor `EquipmentPanel`
+   (§4, fait le 19/07) — les défauts trouvés au premier test sont corrigés, en attente d'un dernier
+   passage en jeu pour clore ce chantier et merger `feat/roguelite-run-system`.
+2. Reprendre le badge équiper/icônes/grille 5-15 du sac de run (déjà testés une fois avant cette
+   refonte visuelle, à revérifier que rien n'a régressé).
 3. Une fois ce qui précède mergé : proposer le chantier VFX armes (§5bis) — pas avant, pour éviter
    de faire bouger `GameScene.ts` sur deux fronts en parallèle.
 4. Plus loin : `balance-agent` sur le quota/l'escalade du RunSystem, puis les lots suivants du pivot
