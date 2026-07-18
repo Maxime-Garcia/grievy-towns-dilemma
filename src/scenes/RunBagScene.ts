@@ -689,8 +689,14 @@ export class RunBagScene extends Phaser.Scene {
         g.strokeRoundedRect(x, y, RB_SLOT, RB_SLOT, 5);
       } else {
         // Le pointillé doré seul suffit à signaler "slot sûr vide" — le "+" ne
-        // servait à rien de plus (retiré à la demande du créateur).
-        strokeDashedRect(g, x, y, RB_SLOT, RB_SLOT, goldHex, { alpha: 0.5, lineWidth: 1 });
+        // servait à rien de plus (retiré à la demande du créateur). Alpha
+        // remonté (0.5→0.85) + léger glow pour le mettre en valeur ("shiny") ;
+        // même couleur, juste plus vif — cf. addGlowSafe de FloatingItemDrop
+        // pour le même patron try/catch (postFX indisponible en Canvas).
+        strokeDashedRect(g, x, y, RB_SLOT, RB_SLOT, goldHex, { alpha: 0.85, lineWidth: 1.5 });
+        try {
+          (g as unknown as { postFX: Phaser.GameObjects.Components.FX }).postFX.addGlow(goldHex, 0.6);
+        } catch { /* Canvas : pas de pipeline FX, dégradation silencieuse */ }
       }
     } else {
       const rarHex = slot ? parseInt((RARITY_COLORS[slot.item.rarity] ?? '#888888').slice(1), 16) : UI.SLOT_BORDER;
