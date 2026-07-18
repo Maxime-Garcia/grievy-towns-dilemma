@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { GameScene } from './GameScene';
-import { Consumable, ElementType, Equipment, Item, ItemType, RARITY_COLORS, RunBagSlot, RunState } from '../types';
+import { Consumable, ElementType, Item, ItemType, RARITY_COLORS, RunBagSlot, RunState } from '../types';
 import { LootSystem } from '../systems/LootSystem';
 import { RunSystem } from '../systems/RunSystem';
 import { RunBagSystem } from '../systems/RunBagSystem';
@@ -8,10 +8,11 @@ import { InventorySystem } from '../systems/InventorySystem';
 import { itemTextureKey } from '../utils/ItemAssets';
 import {
   UI, TYPE, LAYOUT, drawGlowPanel, drawCard, drawSlot, drawDivider, uiStyle, titleStyle,
-  addCloseButton, openScreenTransition, closeScreenTransition, fitText, wrapLabel, strokeDashedRect,
+  addCloseButton, openScreenTransition, closeScreenTransition, fitText, strokeDashedRect,
 } from '../utils/UITheme';
 import { SearchField, matchesSearch } from '../utils/SearchField';
 import { renderStatsSections } from '../utils/StatsPanel';
+import { renderEquipmentPanel, renderPlayerSprite, EQ_SLOT } from '../utils/EquipmentPanel';
 import { t, localizeItem } from '../i18n';
 
 // Écran de sac de run (RunSystem, docs/design/ROGUELITE_POC.md §3) — UNE seule
@@ -46,8 +47,7 @@ const MARGIN   = 8;
 const HEADER_H = 40;
 const FOOTER_H = 20;
 const GAP      = 6;
-const EQ_SLOT  = 48;   // slot d'équipement (paperdoll 2 colonnes)
-const EQ_GAP_Y = 14;
+// EQ_SLOT importé de utils/EquipmentPanel (partagé avec InventoryScene).
 const RB_SLOT  = 48;   // slot du sac de run
 const RB_GAP   = 8;
 const RB_STRIDE = RB_SLOT + RB_GAP;
@@ -57,20 +57,9 @@ const BAG_TITLE_H = 22;
 const RB_TABS_H   = 34;
 const RB_SEARCH_H = LAYOUT.TOUCH_MIN;
 
-/** Paperdoll 2 colonnes × 5 rangées, sprite du joueur au centre (capture
- *  créateur 18/07) — même disposition que le paperdoll de InventoryScene :
- *    casque   | arme
- *    plastron | cape
- *    jambes   | bague 1
- *    bottes   | bague 2
- *    gants    | amulette */
-const RUN_PAPERDOLL: ReadonlyArray<{ key: keyof Equipment; col: 0 | 1; row: number }> = [
-  { key: 'helm',   col: 0, row: 0 }, { key: 'weapon', col: 1, row: 0 },
-  { key: 'chest',  col: 0, row: 1 }, { key: 'cape',   col: 1, row: 1 },
-  { key: 'legs',   col: 0, row: 2 }, { key: 'ring1',  col: 1, row: 2 },
-  { key: 'boots',  col: 0, row: 3 }, { key: 'ring2',  col: 1, row: 3 },
-  { key: 'gloves', col: 0, row: 4 }, { key: 'amulet', col: 1, row: 4 },
-];
+// Paperdoll 2 colonnes × 5 rangées (casque/arme, plastron/cape, jambes/bague 1,
+// bottes/bague 2, gants/amulette) — disposition + ordre partagés avec
+// InventoryScene via utils/EquipmentPanel (EQ_ORDER/PAPERDOLL_POS).
 
 /** Types équipables directement depuis le sac de run — tout le reste (consommables,
  *  matériaux, objets-clés) passe par consumeItem()/le réarrangement sûr↔ordinaire. */
@@ -391,19 +380,12 @@ export class RunBagScene extends Phaser.Scene {
     drawDivider(titleSep, this.eqB.x + 10, this.eqB.y + 26, this.eqB.w - 20, UI.ACCENT_ARCANE, 0.22);
     drawDivider(titleSep, this.stB.x + 8,  this.stB.y + 26, this.stB.w - 16, UI.ACCENT_ARCANE, 0.22);
 
-    // Sprite du joueur entre les deux colonnes d'équipement (capture créateur).
-    // Échelle ENTIÈRE uniquement : le rendu est en NEAREST, tout facteur
-    // fractionnaire produirait des colonnes de pixels irrégulières.
-    const cxSprite = this.eqB.x + this.eqB.w / 2;
-    const cySprite = Math.round((this.equipRowY(0) + this.equipRowY(4) + EQ_SLOT) / 2);
-    // `player_idle` est une SPRITESHEET : sans index de frame, l'image entière
-    // (toutes les frames côte à côte) serait affichée — frame 0 explicite.
-    const img = this.textures.exists('player_idle')
-      ? this.add.image(cxSprite, cySprite, 'player_idle', 0)
-      : this.textures.exists('player')
-        ? this.add.image(cxSprite, cySprite, 'player')
-        : null;
-    if (img) img.setScale(Math.max(2, Math.floor(120 / Math.max(1, img.height))));
+    // Sprite du joueur entre les deux colonnes d'équipement — partagé avec
+    // InventoryScene (utils/EquipmentPanel.renderPlayerSprite). Statique : posé
+    // une seule fois ici (comme le reste de createBagStatics, aucun de ces
+    // objets n'est suivi dans un tableau — nettoyage via l'arrêt natif de la
+    // scène, jamais dans refresh()/renderBagGrid()).
+    renderPlayerSprite(this, this.eqB, () => {});
 
     // Champ de recherche du sac — créé UNE FOIS (jamais dans refresh()). Sa
     // position dépend du nombre de rangées sûres : même calcul que le rendu
@@ -439,11 +421,6 @@ export class RunBagScene extends Phaser.Scene {
     }
   }
 
-  /** Y de la rangée r du paperdoll (0-4) — partagé statique/dynamique. */
-  private equipRowY(row: number): number {
-    return this.eqB.y + 38 + row * (EQ_SLOT + EQ_GAP_Y);
-  }
-
   private renderBagGrid() {
     const run = this.gameScene.gameState.run;
     if (!run) { this.close(); return; }
@@ -461,34 +438,18 @@ export class RunBagScene extends Phaser.Scene {
   private renderEquipmentColumn(): void {
     const player = this.gameScene.gameState.player;
     const { x: PX, w: PW } = this.eqB;
-    const colX: [number, number] = [PX + 16, PX + PW - 16 - EQ_SLOT];
 
-    for (const { key, col, row } of RUN_PAPERDOLL) {
-      const sx = colX[col];
-      const sy = this.equipRowY(row);
-      const item = player.equipment[key] as Item | undefined;
-      const g = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
-
-      if (item) {
-        // Bordure ET fond teintés par la rareté (drawSlot occupé)
-        const rarHex = parseInt((RARITY_COLORS[item.rarity] ?? '#666666').slice(1), 16);
+    // Paperdoll partagé avec InventoryScene (utils/EquipmentPanel) — seul le
+    // rendu d'un slot OCCUPÉ reste propre à cette scène (pas d'interactivité
+    // ici, contrairement à InventoryScene qui ouvre le détail au clic).
+    renderEquipmentPanel(this, this.eqB, player, go => this.track(go), {
+      colInset: 16,
+      renderOccupied: ({ sx, sy, item, rarHex }) => {
+        const g = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
         drawSlot(g, sx, sy, EQ_SLOT, rarHex, { occupied: true });
         this.renderItemIcon(item, sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, Math.round(EQ_SLOT * 0.7));
-      } else {
-        // Slot vide : bordure POINTILLÉE grise + libellé fantôme (capture)
-        g.fillStyle(UI.SLOT_BG, 0.94);
-        g.fillRoundedRect(sx, sy, EQ_SLOT, EQ_SLOT, 5);
-        strokeDashedRect(g, sx, sy, EQ_SLOT, EQ_SLOT, UI.SLOT_BORDER, { alpha: 1, lineWidth: 1 });
-        const style = uiStyle(TYPE.SMALL, UI.TXT_HINT, { bold: true, align: 'center' });
-        const full = t(`inventory.slot_short.${key}`).toUpperCase();
-        // Nom de slot TOUJOURS complet (capture créateur : jamais de « CO… ») :
-        // ce qui ne tient pas sur une ligne de 44 px passe sur 2-3 lignes
-        // mesurées — « BAGUE / 1 », « COLL / IER » (wrapLabel, jamais fitText :
-        // l'ellipse est réservée aux textes disponibles en entier ailleurs).
-        const label = wrapLabel(this, full, style, EQ_SLOT - 4);
-        this.track(this.add.text(sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, label, style).setOrigin(0.5));
-      }
-    }
+      },
+    });
 
     // Identité — nom + niveau tout en bas de la colonne (capture créateur)
     const nameY = this.eqB.y + this.eqB.h - 64;

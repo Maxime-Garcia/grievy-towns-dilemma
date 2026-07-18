@@ -12,10 +12,14 @@ import {
   drawDivider, addCloseButton, uiStyle, titleStyle, fitText, openScreenTransition,
   closeScreenTransition,
   resonanceColor, formatRangedStatBounds, lineQuality, formatResonanceLine,
-  drawSlotRarityTint, strokeDashedRect, wrapLabel,
+  drawSlotRarityTint,
 } from '../utils/UITheme';
 import { SearchField, matchesSearch } from '../utils/SearchField';
 import { renderStatsSections } from '../utils/StatsPanel';
+import {
+  renderEquipmentPanel, renderPlayerSprite, equipRowY, EQ_SLOT, EQ_ORDER,
+  type EquipSlotKey,
+} from '../utils/EquipmentPanel';
 import { itemTextureKey } from '../utils/ItemAssets';
 import { t, localizeItem } from '../i18n';
 
@@ -42,7 +46,7 @@ const MARGIN     = 8;
 const HEADER_H   = 40;    // titre d'écran en police Boss (18 px) + respiration
 const FOOTER_H   = 20;
 const GAP        = 6;
-const EQ_SLOT    = 48;    // slot d'équipement — grille séparée du sac, pas concernée par l'aération ci-dessous
+// EQ_SLOT importé de utils/EquipmentPanel (partagé avec RunBagScene).
 // 48 → 40 (retour créateur 17/07 : grille du sac "trop dense", capsules à réduire
 // pour mieux distinguer les bordures de rareté) + INV_GAP introduit pour de
 // l'espace RÉEL entre chaque capsule (avant : 0px, les slots se touchaient).
@@ -111,27 +115,9 @@ const CATEGORY_LABEL_KEYS: Record<InventoryCategory, string> = {
 type ScrollableGO = { setY(y: number): unknown; setMask(m: Phaser.Display.Masks.GeometryMask): unknown };
 type RegisterFn = (go: ScrollableGO & Phaser.GameObjects.GameObject, baseY: number) => void;
 
-// Excludes 'skins' which is not a display slot
-type EquipSlotKey = 'helm' | 'cape' | 'chest' | 'gloves' | 'weapon' | 'legs' | 'boots' | 'ring1' | 'ring2' | 'amulet';
-const EQ_ORDER: EquipSlotKey[] = [
-  'helm', 'cape', 'chest', 'gloves', 'weapon', 'legs', 'boots', 'ring1', 'ring2', 'amulet',
-];
-
-// ── Paperdoll : 2 colonnes × 5 rangées, sprite du joueur au centre ───────────
-// Disposition EXACTE de la capture de référence du créateur (18/07) — la même
-// que la colonne Équipement de RunBagScene ('view'), cohérence inter-écrans :
-//   casque   | arme
-//   plastron | cape
-//   jambes   | bague 1
-//   bottes   | bague 2
-//   gants    | amulette
-const PAPERDOLL_POS: Record<EquipSlotKey, { col: 0 | 1; row: number }> = {
-  helm:   { col: 0, row: 0 }, weapon: { col: 1, row: 0 },
-  chest:  { col: 0, row: 1 }, cape:   { col: 1, row: 1 },
-  legs:   { col: 0, row: 2 }, ring1:  { col: 1, row: 2 },
-  boots:  { col: 0, row: 3 }, ring2:  { col: 1, row: 3 },
-  gloves: { col: 0, row: 4 }, amulet: { col: 1, row: 4 },
-};
+// EquipSlotKey/EQ_ORDER/PAPERDOLL_POS partagés avec RunBagScene — importés de
+// utils/EquipmentPanel (2 col × 5 rangées, casque/arme, plastron/cape, jambes/
+// bague 1, bottes/bague 2, gants/amulette, capture créateur 18/07).
 
 // Item types that have a direct equipment slot (used by doMainAction + renderItemDetail)
 const EQUIP_TYPES: ItemType[] = [
@@ -404,95 +390,44 @@ export class InventoryScene extends Phaser.Scene {
   //   gants    | amulette
   private renderEquipment() {
     const { x: PX, y: PY, w: PW, h: PH } = this.eqBounds;
-    const TITLE_H = 28;   // titre 14 px + filet à y + 26
-    const GAP_Y   = 14;   // respiration verticale — 5 rangées dans le canvas 720
-    const colX: [number, number] = [
-      PX + 14,                       // colonne gauche
-      PX + PW - 14 - EQ_SLOT,        // colonne droite
-    ];
-    const rowY = (r: number) => PY + TITLE_H + 10 + r * (EQ_SLOT + GAP_Y);
 
-    // ── Sprite du joueur entre les deux colonnes (capture créateur) ────────
-    // Échelle ENTIÈRE uniquement (rendu NEAREST : tout facteur fractionnaire
-    // produirait des colonnes de pixels irrégulières). `player_idle` est une
-    // SPRITESHEET : frame 0 explicite, sinon la sheet entière s'afficherait.
-    const cx = PX + PW / 2;
-    const cySprite = Math.round((rowY(0) + rowY(4) + EQ_SLOT) / 2);
-    const sprite = this.textures.exists('player_idle')
-      ? this.add.image(cx, cySprite, 'player_idle', 0)
-      : this.textures.exists('player')
-        ? this.add.image(cx, cySprite, 'player')
-        : null;
-    if (sprite) {
-      sprite.setScale(Math.max(2, Math.floor(120 / Math.max(1, sprite.height))));
-      this.dynamicObjs.push(sprite);
-    } else {
-      // Repli : silhouette procédurale (teinte arcane) si aucune texture joueur
-      const silG = this.add.graphics();
-      silG.fillStyle(UI.ACCENT_ARCANE, 0.05);
-      silG.fillCircle(cx, rowY(0) + 20, 22);
-      silG.lineStyle(1, UI.ACCENT_ARCANE, 0.14);
-      silG.strokeCircle(cx, rowY(0) + 20, 22);
-      const bodyTop = rowY(0) + 44;
-      const bodyBot = rowY(4) + EQ_SLOT - 8;
-      silG.fillStyle(UI.ACCENT_ARCANE, 0.04);
-      silG.fillRoundedRect(cx - 22, bodyTop, 44, bodyBot - bodyTop, 20);
-      silG.lineStyle(1, UI.ACCENT_ARCANE, 0.11);
-      silG.strokeRoundedRect(cx - 22, bodyTop, 44, bodyBot - bodyTop, 20);
-      this.dynamicObjs.push(silG);
-    }
+    // Sprite du joueur + paperdoll (positions/slot vide) partagés avec
+    // RunBagScene (utils/EquipmentPanel) — seul le rendu d'un slot OCCUPÉ reste
+    // ici : cadre asset + teinte de rareté + interactivité (survol/clic/détail
+    // + flash de confirmation tap-equip), propres à cet écran hors run.
+    renderPlayerSprite(this, this.eqBounds, go => this.dynamicObjs.push(go));
 
-    // ── Slots ──────────────────────────────────────────────────────────────
-    EQ_ORDER.forEach((key) => {
-      const pos  = PAPERDOLL_POS[key];
-      const sx   = colX[pos.col];
-      const sy   = rowY(pos.row);
-      const item = this.player.equipment[key] as Item | undefined;
-      const rarHex = item
-        ? parseInt((RARITY_COLORS[item.rarity] ?? '#666666').replace('#', ''), 16)
-        : UI.SLOT_BORDER;
-
-      // Slot arrondi moderne — bordure = couleur de rareté (règle §7.5),
-      // fond teinté par la rareté quand le slot est occupé (drawSlot).
-      // Slot VIDE : bordure POINTILLÉE grise + libellé fantôme (capture
-      // créateur 18/07) — le cadre asset n'est plus posé sur les slots vides,
-      // le pointillé EST leur langage visuel désormais.
-      const bg = this.add.graphics();
-      if (item) {
+    renderEquipmentPanel(this, this.eqBounds, this.player, go => this.dynamicObjs.push(go), {
+      colInset: 14,
+      renderOccupied: ({ sx, sy, key, item, rarHex }) => {
+        // Slot arrondi moderne — bordure = couleur de rareté (règle §7.5),
+        // fond teinté par la rareté (drawSlot).
+        const bg = this.add.graphics();
         drawSlot(bg, sx, sy, EQ_SLOT, rarHex, { occupied: true });
-      } else {
-        bg.fillStyle(UI.SLOT_BG, 0.94);
-        bg.fillRoundedRect(sx, sy, EQ_SLOT, EQ_SLOT, 5);
-        strokeDashedRect(bg, sx, sy, EQ_SLOT, EQ_SLOT, UI.SLOT_BORDER, { alpha: 1, lineWidth: 1 });
-      }
-      this.dynamicObjs.push(bg);
+        this.dynamicObjs.push(bg);
 
-      // Cadre pixel art réel (Retro Inventory) par-dessus le fond — occupé
-      // uniquement (cf. ci-dessus). L'intérieur du cadre est un gris OPAQUE :
-      // la teinte de rareté est reposée PAR-DESSUS (drawSlotRarityTint), sinon
-      // le « fond coloré par rareté » de la capture resterait invisible.
-      const frame = item
-        ? addUiFrame(this, sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, EQ_SLOT, EQ_SLOT, 'ui_slot_frame')
-        : null;
-      if (frame) {
-        this.dynamicObjs.push(frame);
-        const tintG = this.add.graphics();
-        drawSlotRarityTint(tintG, sx, sy, EQ_SLOT, rarHex);
-        this.dynamicObjs.push(tintG);
-      }
+        // Cadre pixel art réel (Retro Inventory) par-dessus le fond. L'intérieur
+        // du cadre est un gris OPAQUE : la teinte de rareté est reposée
+        // PAR-DESSUS (drawSlotRarityTint), sinon le « fond coloré par rareté »
+        // de la capture resterait invisible.
+        const frame = addUiFrame(this, sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, EQ_SLOT, EQ_SLOT, 'ui_slot_frame');
+        if (frame) {
+          this.dynamicObjs.push(frame);
+          const tintG = this.add.graphics();
+          drawSlotRarityTint(tintG, sx, sy, EQ_SLOT, rarHex);
+          this.dynamicObjs.push(tintG);
+        }
 
-      // Anneau de rareté/survol au-dessus du cadre (slots occupés uniquement —
-      // un slot vide garde la bordure discrète de drawSlot sous le cadre).
-      const ring = this.add.graphics();
-      const drawRing = (color: number) => {
-        ring.clear();
-        ring.lineStyle(2, color, 1);
-        ring.strokeRoundedRect(sx, sy, EQ_SLOT, EQ_SLOT, 5);
-      };
-      if (item) drawRing(rarHex);
-      this.dynamicObjs.push(ring);
+        // Anneau de rareté/survol au-dessus du cadre.
+        const ring = this.add.graphics();
+        const drawRing = (color: number) => {
+          ring.clear();
+          ring.lineStyle(2, color, 1);
+          ring.strokeRoundedRect(sx, sy, EQ_SLOT, EQ_SLOT, 5);
+        };
+        drawRing(rarHex);
+        this.dynamicObjs.push(ring);
 
-      if (item) {
         const iconKey = this.resolveIcon(item);
         if (iconKey) {
           try {
@@ -504,23 +439,8 @@ export class InventoryScene extends Phaser.Scene {
         } else {
           this.addColorSquare(sx + 4, sy + 4, EQ_SLOT - 8, rarHex);
         }
-      } else {
-        // Slot vide : libellé fantôme COURT (`inventory.slot_short.*`) rendu
-        // TOUJOURS en entier (capture créateur : jamais de « CO… ») — ce qui ne
-        // tient pas sur une ligne de 44 px passe sur 2-3 lignes mesurées via
-        // wrapLabel (« BAGUE / 1 », « COLL / IER »), jamais fitText : l'ellipse
-        // est réservée aux textes disponibles en entier ailleurs (§1.1).
-        // Mesure INTERIM en attendant les icônes de slot (assets à fournir).
-        const style = uiStyle(TYPE.SMALL, UI.TXT_HINT, { bold: true, align: 'center' });
-        const full  = t(`inventory.slot_short.${key}`).toUpperCase();
-        const label = wrapLabel(this, full, style, EQ_SLOT - 4);
-        this.dynamicObjs.push(
-          this.add.text(sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, label, style).setOrigin(0.5),
-        );
-      }
 
-      // Hit zone (occupé → détail) — élargie de +4 px au-delà du visuel
-      if (item) {
+        // Hit zone → détail — élargie de +4 px au-delà du visuel
         const hit = this.add.rectangle(
           sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, EQ_SLOT + 8, EQ_SLOT + 8, 0x000000, 0,
         ).setInteractive({ useHandCursor: true });
@@ -546,11 +466,11 @@ export class InventoryScene extends Phaser.Scene {
             onComplete: () => { if (flash.active) flash.destroy(); },
           });
         }
-      }
+      },
     });
 
     // ── Identité du personnage sous le paperdoll ──────────────────────────
-    const infoY = rowY(4) + EQ_SLOT + 16;
+    const infoY = equipRowY(this.eqBounds, 4) + EQ_SLOT + 16;
     const sepG  = this.add.graphics();
     drawDivider(sepG, PX + 10, infoY, PW - 20, UI.ACCENT_ARCANE, 0.22);
     this.dynamicObjs.push(sepG);
