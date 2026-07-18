@@ -70,9 +70,11 @@ fonctionnels — liste pour mémoire, ne pas re-découvrir :
 9. 50% HP au retour à Grievy Town après une mort en run — n'avait aucun sens (sac déjà perdu, GT
    est une zone sûre). PV pleins pour ce chemin ; le respawn legacy (même zone) garde 50%.
 
-**5 passages code-reviewer reçus, tous BLOCKER/BUG appliqués.** Un **6e tourne en arrière-plan**
-sur le commit `ddb9a6b` (équipement sac de run + icônes + polish UI, §4 ci-dessous) — vérifier s'il
-y a une notification en attente avant de continuer, appliquer tout BLOCKER/BUG trouvé en premier.
+**6 passages code-reviewer reçus, tous BLOCKER/BUG appliqués.** Le 6e (commit `ddb9a6b` —
+équipement sac de run + icônes + polish UI, §4 ci-dessous) est revenu **clean** (0 BLOCKER, 0 BUG) —
+vérifié en profondeur (source Phaser 3.90 relue pour confirmer `stopPropagation`, cas limite
+ring1/ring2 tracé, dimensionnement dynamique du panneau recalculé à la main). Un commentaire
+obsolète corrigé au passage (`RunBagSystem.ts`, "4 sûrs" → "5 sûrs").
 
 ## 4. RETOURS UI/UX DU 18/07 (RunBagScene) — TRAITÉS
 
@@ -129,10 +131,9 @@ différents), rendu des icônes (vraies textures vs carré de repli), lisibilit�
 
 ## 7. PROCHAINE ACTION CONCRÈTE
 
-1. Vérifier si la revue de code en arrière-plan (commit `ddb9a6b`) a rendu un résultat — appliquer
-   tout BLOCKER/BUG trouvé.
-2. Faire tester au créateur le badge équiper + les icônes + la grille 5/15 (§4, jamais vérifié en
-   jeu par un humain pour l'instant).
-3. Une fois §4 validé en jeu : envisager le passage `balance-agent` sur le quota/l'escalade (encore
+1. **Faire tester au créateur** le badge équiper + les icônes + la grille 5/15 (§4) — code complet
+   et revu (6 passages, clean), mais **jamais vérifié en jeu par un humain** pour l'instant. C'est
+   le vrai prochain jalon, pas de code à écrire avant ce retour.
+2. Une fois §4 validé en jeu : envisager le passage `balance-agent` sur le quota/l'escalade (encore
    des valeurs volontairement provisoires), puis les lots suivants du pivot (Boss mise en scène,
    Gamefeel, Nettoyage, Consommables étape 5) une fois cette tranche jugée aboutie par le créateur.
