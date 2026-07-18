@@ -3,6 +3,11 @@
 import Phaser from 'phaser';
 import { RARITY_VFX, RARITY_ORDER, type RarityKey, type RarityVFXConfig } from '../config/rarities';
 import { ensureVFXTextures, SPARK_TEXTURE, GLOW_TEXTURE, SQUARE_TEXTURE, GLOW_TEXTURE_SIZE } from '../vfx/textures';
+import { getIconInkMetrics, getIconInkScale } from '../utils/IconInk';
+
+// Icône de référence pour la normalisation par surface d'encre (cf. buildSword) —
+// wpn_sword est garantie chargée (PreloaderScene) et déjà validée visuellement.
+const REFERENCE_ICON_KEY = 'wpn_sword';
 
 export interface FloatingItemDropOptions {
   texture: string;
@@ -209,6 +214,16 @@ export class FloatingItemDrop extends Phaser.GameObjects.Container {
   private buildSword(scene: Phaser.Scene, textureKey: string, frame?: string | number): Phaser.GameObjects.Sprite {
     const sprite = scene.add.sprite(0, 0, textureKey, frame);
     sprite.setOrigin(0.5);
+    // Normalise par SURFACE D'ENCRE (pixels opaques), pas par dimensions de
+    // canvas : une icône fine/centrée (ex: une clé) paraissait minuscule à côté
+    // d'une épée qui remplit tout son cadre 32×32, à scale nominale identique.
+    // wpn_sword sert de référence — c'est l'icône déjà validée visuellement à
+    // baseSwordScale=0.9 (cf. retours du créateur en jeu). Ce facteur est
+    // ENSUITE multiplié dans baseSwordScale : la boucle de flip (update()) qui
+    // relit ce champ chaque frame reste donc correcte sans changement.
+    const targetInk = getIconInkMetrics(scene, REFERENCE_ICON_KEY).inkArea;
+    const inkScale = getIconInkScale(scene, textureKey, frame, targetInk);
+    this.baseSwordScale *= inkScale;
     sprite.setScale(this.baseSwordScale);
     this.addGlowSafe(sprite, this.cfg.glow * 0.5);
     return sprite;
