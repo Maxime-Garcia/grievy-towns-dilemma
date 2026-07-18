@@ -1806,6 +1806,17 @@ export class GameScene extends Phaser.Scene {
     return this.playerModifiers;
   }
 
+  /** RunBagScene enchaîne close() (fondu ~170ms) puis travelToZone() (fondu
+   *  ~400ms+) sur confirmDescend/confirmExfiltrate/confirmContinue — sans ce
+   *  garde, le shutdown() du fondu court réactive la physique (setPaused(false))
+   *  EN PLEIN MILIEU du fondu long, qui compte justement sur la physique en
+   *  pause pendant tout le chargement (cf. l'invariant documenté plus haut dans
+   *  performZoneTransition). Exposé en lecture seule, jamais écrit hors de
+   *  travelToZone/performZoneTransition. */
+  public get isTravelingNow(): boolean {
+    return this.isTraveling;
+  }
+
   public openInventory() {
     if (this.scene.isActive('InventoryScene')) return;
     if (this.scene.isActive('SkillScene')) { this.setPaused(false); this.scene.stop('SkillScene'); }

@@ -4,17 +4,18 @@ import {
   StatBonus, RARITY_COLORS, EquipStats, ElementType, InventorySlot,
 } from '../types';
 import { InventorySystem, InventoryCategory } from '../systems/InventorySystem';
-import { StatsSystem, BASE_CRIT_PCT, CRIT_PER_AGI_PCT, BASE_CRIT_MULT } from '../systems/StatsSystem';
+import { StatsSystem } from '../systems/StatsSystem';
 import { StatRollSystem, isEquipableItem } from '../systems/StatRollSystem';
-import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { getPassiveEffectLabel } from '../data/passiveEffects';
 import {
   UI, TYPE, LAYOUT, drawGlowPanel, drawCard, drawSlot, addUiFrame,
   drawDivider, addCloseButton, uiStyle, titleStyle, fitText, openScreenTransition,
   closeScreenTransition,
   resonanceColor, formatRangedStatBounds, lineQuality, formatResonanceLine,
+  drawSlotRarityTint, strokeDashedRect,
 } from '../utils/UITheme';
 import { SearchField, matchesSearch } from '../utils/SearchField';
+import { renderStatsSections } from '../utils/StatsPanel';
 import { itemTextureKey } from '../utils/ItemAssets';
 import { t, localizeItem } from '../i18n';
 
@@ -116,13 +117,20 @@ const EQ_ORDER: EquipSlotKey[] = [
   'helm', 'cape', 'chest', 'gloves', 'weapon', 'legs', 'boots', 'ring1', 'ring2', 'amulet',
 ];
 
-// ── Paperdoll (style Dofus) : silhouette centrale + slots autour ─────────────
-// colonne 0 = gauche, 1 = centre (sur la silhouette), 2 = droite ; rangée 0-3.
-const PAPERDOLL_POS: Record<EquipSlotKey, { col: 0 | 1 | 2; row: number }> = {
-  amulet: { col: 0, row: 0 }, helm:  { col: 1, row: 0 }, cape:   { col: 2, row: 0 },
-  weapon: { col: 0, row: 1 }, chest: { col: 1, row: 1 }, gloves: { col: 2, row: 1 },
-  ring1:  { col: 0, row: 2 }, legs:  { col: 1, row: 2 }, ring2:  { col: 2, row: 2 },
-  boots:  { col: 1, row: 3 },
+// ── Paperdoll : 2 colonnes × 5 rangées, sprite du joueur au centre ───────────
+// Disposition EXACTE de la capture de référence du créateur (18/07) — la même
+// que la colonne Équipement de RunBagScene ('view'), cohérence inter-écrans :
+//   casque   | arme
+//   plastron | cape
+//   jambes   | bague 1
+//   bottes   | bague 2
+//   gants    | amulette
+const PAPERDOLL_POS: Record<EquipSlotKey, { col: 0 | 1; row: number }> = {
+  helm:   { col: 0, row: 0 }, weapon: { col: 1, row: 0 },
+  chest:  { col: 0, row: 1 }, cape:   { col: 1, row: 1 },
+  legs:   { col: 0, row: 2 }, ring1:  { col: 1, row: 2 },
+  boots:  { col: 0, row: 3 }, ring2:  { col: 1, row: 3 },
+  gloves: { col: 0, row: 4 }, amulet: { col: 1, row: 4 },
 };
 
 // Item types that have a direct equipment slot (used by doMainAction + renderItemDetail)
@@ -228,9 +236,11 @@ export class InventoryScene extends Phaser.Scene {
     const sideW = W - (MARGIN + 2) * 2 - bagW - GAP * 2;
     const eqW   = Math.round(sideW * 0.42);
     const stW   = sideW - eqW;
-    const eqX   = MARGIN + 2;
+    // ORDRE DES COLONNES (correction créateur 18/07) : SAC | ÉQUIPEMENT | STATS
+    // — même ordre que RunBagScene 'view', cohérence inter-écrans.
+    const bagX  = MARGIN + 2;
+    const eqX   = bagX + bagW + GAP;
     const stX   = eqX + eqW + GAP;
-    const bagX  = stX + stW + GAP;
 
     this.eqBounds  = { x: eqX,  y: CONT_Y, w: eqW,  h: CONT_H };
     this.stBounds  = { x: stX,  y: CONT_Y, w: stW,  h: CONT_H };
@@ -385,39 +395,52 @@ export class InventoryScene extends Phaser.Scene {
     return this.search?.clear() ?? false;
   }
 
-  // ── Equipment paperdoll (left panel, style Dofus) ─────────────────────────
-  // Silhouette centrale + slots positionnés autour (PAPERDOLL_POS) :
-  //   amulette | casque | cape
-  //   arme     | plastron | gants
-  //   anneau 1 | jambes  | anneau 2
-  //            | bottes  |
+  // ── Equipment paperdoll (2 col × 5 rangées + sprite central) ──────────────
+  // Disposition de la capture créateur (18/07) — cf. PAPERDOLL_POS :
+  //   casque   | arme
+  //   plastron | cape
+  //   jambes   | bague 1
+  //   bottes   | bague 2
+  //   gants    | amulette
   private renderEquipment() {
     const { x: PX, y: PY, w: PW, h: PH } = this.eqBounds;
     const TITLE_H = 28;   // titre 14 px + filet à y + 26
-    const GAP_Y   = 16;   // respiration verticale (le canvas 720 la permet)
-    const colX: [number, number, number] = [
-      PX + 12,                       // gauche
-      PX + (PW - EQ_SLOT) / 2,       // centre (sur la silhouette)
-      PX + PW - 12 - EQ_SLOT,        // droite
+    const GAP_Y   = 14;   // respiration verticale — 5 rangées dans le canvas 720
+    const colX: [number, number] = [
+      PX + 14,                       // colonne gauche
+      PX + PW - 14 - EQ_SLOT,        // colonne droite
     ];
     const rowY = (r: number) => PY + TITLE_H + 10 + r * (EQ_SLOT + GAP_Y);
 
-    // ── Silhouette du personnage — teinte arcane, effet « projection » ────
-    const cx   = colX[1] + EQ_SLOT / 2;
-    const silG = this.add.graphics();
-    // Tête
-    silG.fillStyle(UI.ACCENT_ARCANE, 0.05);
-    silG.fillCircle(cx, rowY(0) + EQ_SLOT / 2, 26);
-    silG.lineStyle(1, UI.ACCENT_ARCANE, 0.14);
-    silG.strokeCircle(cx, rowY(0) + EQ_SLOT / 2, 26);
-    // Corps (capsule verticale : torse → bottes)
-    const bodyTop = rowY(0) + EQ_SLOT + 2;
-    const bodyBot = rowY(3) + EQ_SLOT - 4;
-    silG.fillStyle(UI.ACCENT_ARCANE, 0.04);
-    silG.fillRoundedRect(cx - 26, bodyTop, 52, bodyBot - bodyTop, 22);
-    silG.lineStyle(1, UI.ACCENT_ARCANE, 0.11);
-    silG.strokeRoundedRect(cx - 26, bodyTop, 52, bodyBot - bodyTop, 22);
-    this.dynamicObjs.push(silG);
+    // ── Sprite du joueur entre les deux colonnes (capture créateur) ────────
+    // Échelle ENTIÈRE uniquement (rendu NEAREST : tout facteur fractionnaire
+    // produirait des colonnes de pixels irrégulières). `player_idle` est une
+    // SPRITESHEET : frame 0 explicite, sinon la sheet entière s'afficherait.
+    const cx = PX + PW / 2;
+    const cySprite = Math.round((rowY(0) + rowY(4) + EQ_SLOT) / 2);
+    const sprite = this.textures.exists('player_idle')
+      ? this.add.image(cx, cySprite, 'player_idle', 0)
+      : this.textures.exists('player')
+        ? this.add.image(cx, cySprite, 'player')
+        : null;
+    if (sprite) {
+      sprite.setScale(Math.max(2, Math.floor(120 / Math.max(1, sprite.height))));
+      this.dynamicObjs.push(sprite);
+    } else {
+      // Repli : silhouette procédurale (teinte arcane) si aucune texture joueur
+      const silG = this.add.graphics();
+      silG.fillStyle(UI.ACCENT_ARCANE, 0.05);
+      silG.fillCircle(cx, rowY(0) + 20, 22);
+      silG.lineStyle(1, UI.ACCENT_ARCANE, 0.14);
+      silG.strokeCircle(cx, rowY(0) + 20, 22);
+      const bodyTop = rowY(0) + 44;
+      const bodyBot = rowY(4) + EQ_SLOT - 8;
+      silG.fillStyle(UI.ACCENT_ARCANE, 0.04);
+      silG.fillRoundedRect(cx - 22, bodyTop, 44, bodyBot - bodyTop, 20);
+      silG.lineStyle(1, UI.ACCENT_ARCANE, 0.11);
+      silG.strokeRoundedRect(cx - 22, bodyTop, 44, bodyBot - bodyTop, 20);
+      this.dynamicObjs.push(silG);
+    }
 
     // ── Slots ──────────────────────────────────────────────────────────────
     EQ_ORDER.forEach((key) => {
@@ -430,19 +453,33 @@ export class InventoryScene extends Phaser.Scene {
         : UI.SLOT_BORDER;
 
       // Slot arrondi moderne — bordure = couleur de rareté (règle §7.5),
-      // halo interne de rareté quand le slot est occupé (drawSlot)
+      // fond teinté par la rareté quand le slot est occupé (drawSlot).
+      // Slot VIDE : bordure POINTILLÉE grise + libellé fantôme (capture
+      // créateur 18/07) — le cadre asset n'est plus posé sur les slots vides,
+      // le pointillé EST leur langage visuel désormais.
       const bg = this.add.graphics();
-      drawSlot(bg, sx, sy, EQ_SLOT, rarHex, { occupied: !!item });
+      if (item) {
+        drawSlot(bg, sx, sy, EQ_SLOT, rarHex, { occupied: true });
+      } else {
+        bg.fillStyle(UI.SLOT_BG, 0.94);
+        bg.fillRoundedRect(sx, sy, EQ_SLOT, EQ_SLOT, 5);
+        strokeDashedRect(bg, sx, sy, EQ_SLOT, EQ_SLOT, UI.SLOT_BORDER, { alpha: 1, lineWidth: 1 });
+      }
       this.dynamicObjs.push(bg);
 
-      // Cadre pixel art réel (Retro Inventory) par-dessus le fond — cf. grille.
-      // Slot VIDE → variante `ui_slot_frame_empty` (bakée au boot) : même cadre,
-      // même gris, mais SANS l'emblème d'épée gravé au centre de l'asset — sur
-      // un slot vide il se lisait comme une arme déjà équipée et noyait le
-      // libellé fantôme (bug UX reporté). Cf. PreloaderScene.generateEmptySlotFrame.
-      const frame = addUiFrame(this, sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, EQ_SLOT, EQ_SLOT,
-        item ? 'ui_slot_frame' : 'ui_slot_frame_empty');
-      if (frame) this.dynamicObjs.push(frame);
+      // Cadre pixel art réel (Retro Inventory) par-dessus le fond — occupé
+      // uniquement (cf. ci-dessus). L'intérieur du cadre est un gris OPAQUE :
+      // la teinte de rareté est reposée PAR-DESSUS (drawSlotRarityTint), sinon
+      // le « fond coloré par rareté » de la capture resterait invisible.
+      const frame = item
+        ? addUiFrame(this, sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, EQ_SLOT, EQ_SLOT, 'ui_slot_frame')
+        : null;
+      if (frame) {
+        this.dynamicObjs.push(frame);
+        const tintG = this.add.graphics();
+        drawSlotRarityTint(tintG, sx, sy, EQ_SLOT, rarHex);
+        this.dynamicObjs.push(tintG);
+      }
 
       // Anneau de rareté/survol au-dessus du cadre (slots occupés uniquement —
       // un slot vide garde la bordure discrète de drawSlot sous le cadre).
@@ -515,7 +552,7 @@ export class InventoryScene extends Phaser.Scene {
     });
 
     // ── Identité du personnage sous le paperdoll ──────────────────────────
-    const infoY = rowY(3) + EQ_SLOT + 16;
+    const infoY = rowY(4) + EQ_SLOT + 16;
     const sepG  = this.add.graphics();
     drawDivider(sepG, PX + 10, infoY, PW - 20, UI.ACCENT_ARCANE, 0.22);
     this.dynamicObjs.push(sepG);
@@ -559,97 +596,11 @@ export class InventoryScene extends Phaser.Scene {
     drawDivider(sepTop, PX + 8, PY + 26, PW - 16, UI.ACCENT_ARCANE, 0.22);
     this.dynamicObjs.push(sepTop);
 
-    // TOUTES les valeurs viennent de StatsSystem.computeAll (source de vérité) :
-    // cs.atk/matk incluent DÉJÀ la main stat de l'arme — ne rien réadditionner.
-    // Les dérivées critDmg / aspd / elemBonus / lifesteal influencent réellement
-    // CombatSystem + GameScene et sont désormais affichées (refonte 07/2026).
-    const cs = StatsSystem.computeAll(this.player);
-    // Baseline "sans aucun équipement" (mêmes formules que StatsSystem.computeAll,
-    // juste sans la contribution du gear) — sert uniquement à savoir quelles
-    // stats afficher en gras/doré parce qu'un équipement les booste réellement.
-    const base = ProgressionSystem.computeBaseStats(this.player.level, this.player.attributes);
-    const baseCrit    = BASE_CRIT_PCT + this.player.attributes.agi * CRIT_PER_AGI_PCT;
-    const baseCritDmg = BASE_CRIT_MULT;
-    const baseAspd    = 1;
-    const hexOf = (c: string) => parseInt(c.replace('#', ''), 16);
-
-    type Row = { label: string; value: string; boosted: boolean };
-    interface Section { title: string; titleColor: string; accent: number; rows: Row[] }
-    const sections: Section[] = [
-      {
-        title: t('stats.section_offense'),
-        titleColor: UI.TXT_ORANGE, accent: hexOf(UI.TXT_ORANGE),
-        rows: [
-          { label: t('stats.atk'),        value: String(cs.atk),                     boosted: cs.atk > base.atk },
-          { label: t('stats.matk'),       value: String(cs.matk),                    boosted: cs.matk > base.magicAtk },
-          { label: t('stats.crit_rate'),  value: `${cs.crit.toFixed(1)}%`,           boosted: cs.crit > baseCrit },
-          { label: t('stats.crit_dmg'),   value: `×${cs.critDmg.toFixed(2)}`,        boosted: cs.critDmg > baseCritDmg },
-          { label: t('stats.aspd'),       value: `×${cs.aspd.toFixed(2)}`,           boosted: cs.aspd > baseAspd },
-          { label: t('stats.elem_bonus'), value: `+${cs.elemBonus.toFixed(0)}%`,     boosted: cs.elemBonus > 0 },
-        ],
-      },
-      {
-        title: t('stats.section_defense'),
-        titleColor: UI.TXT_BLUE, accent: hexOf(UI.TXT_BLUE),
-        rows: [
-          { label: t('stats.def'),    value: String(cs.def),    boosted: cs.def > base.def },
-          { label: t('stats.mdef'),   value: String(cs.magicDef), boosted: cs.magicDef > base.magicDef },
-          { label: t('stats.hp_max'), value: String(cs.hp),     boosted: cs.hp > base.maxHp },
-          { label: t('stats.mp_max'), value: String(cs.mana),   boosted: cs.mana > base.maxMana },
-        ],
-      },
-      {
-        title: t('stats.section_utility'),
-        titleColor: UI.TXT_CYAN, accent: UI.ACCENT_ARCANE,
-        rows: [
-          { label: t('stats.speed'),     value: String(cs.spd), boosted: cs.spd > base.spd },
-          { label: t('stats.lifesteal'), value: `${cs.lifesteal.toFixed(0)}%`, boosted: cs.lifesteal > 0 },
-        ],
-      },
-    ];
-
-    const COL1  = PX + 16;
-    const COL2  = PX + PW - 16;
-    // 26 px de ligne pour un texte de 14 px : 12 px d'air. L'ancien ROW_H = 22
-    // datait d'un texte de 10/11 px et collait les lignes les unes aux autres.
-    const ROW_H = 26;
-    let   y     = PY + 36;
-
-    for (const sec of sections) {
-      // En-tête de section : pastille d'accent + label coloré + filet
-      const hdrGfx = this.add.graphics();
-      hdrGfx.fillStyle(sec.accent, 0.9);
-      hdrGfx.fillRoundedRect(PX + 10, y + 1, 3, 10, 1.5);
-      this.dynamicObjs.push(hdrGfx);
-
-      const title = this.add.text(PX + 18, y, sec.title, uiStyle(TYPE.SMALL, sec.titleColor, { bold: true }));
-      this.dynamicObjs.push(title);
-      drawDivider(hdrGfx, PX + 24 + title.width, y + 6, COL2 - (PX + 24 + title.width), sec.accent, 0.18);
-
-      y += 22;
-
-      sec.rows.forEach((row, i) => {
-        // Zébrage discret une ligne sur deux — lecture rapide en colonne
-        if (i % 2 === 0) {
-          const zebra = this.add.graphics();
-          zebra.fillStyle(0xffffff, 0.02);
-          zebra.fillRoundedRect(PX + 8, y - 4, PW - 16, ROW_H - 2, 3);
-          this.dynamicObjs.push(zebra);
-        }
-        // Libellé et valeur à la MÊME taille (TYPE.LABEL/BODY = 14 : la grille
-        // de 7 px n'offre pas de palier entre 10 et 14) — la hiérarchie passe
-        // par la couleur et la graisse : libellé muted maigre, valeur grasse
-        // (or si un équipement la booste réellement, parchemin sinon).
-        this.dynamicObjs.push(
-          this.add.text(COL1, y, row.label, uiStyle(TYPE.LABEL, UI.TXT_MUTED)),
-          this.add.text(COL2, y, row.value, uiStyle(TYPE.BODY, row.boosted ? UI.TXT_GOLD : UI.TXT_PARCHMENT, { bold: true }))
-            .setOrigin(1, 0),
-        );
-        y += ROW_H;
-      });
-
-      y += 12; // respiration entre sections
-    }
+    // Sections OFFENSE / DÉFENSE / UTILITAIRE — rendu PARTAGÉ avec RunBagScene
+    // (utils/StatsPanel.ts) : la capture de référence du créateur (18/07) exige
+    // exactement le même panneau dans les deux inventaires. Toutes les valeurs
+    // viennent de StatsSystem.computeAll (source de vérité) — voir le composant.
+    renderStatsSections(this, this.player, PX, PW, PY + 36, go => this.dynamicObjs.push(go));
 
     this.dynamicObjs.push(
       this.add.text(PX + PW / 2, PY + PH - 12, t('inventory.tap_hint'), uiStyle(TYPE.SMALL, UI.TXT_HINT)).setOrigin(0.5, 1),
@@ -1294,7 +1245,16 @@ export class InventoryScene extends Phaser.Scene {
     const frame = addUiFrame(
       this, sx + (INV_SLOT - 2) / 2, midY, INV_SLOT - 2, INV_SLOT - 2, 'ui_slot_frame_empty',
     );
-    if (frame) reg(frame, midY);
+    if (frame) {
+      reg(frame, midY);
+      // Fond teinté par la rareté PAR-DESSUS le cadre asset (intérieur gris
+      // opaque — il masquerait la teinte que drawSlot pose dessous). Règle
+      // « bordure + fond colorés par rareté » de la capture créateur (18/07).
+      const tintG = this.add.graphics();
+      drawSlotRarityTint(tintG, sx, 0, INV_SLOT - 2, rarHex);
+      tintG.setY(topY);
+      reg(tintG, topY);
+    }
 
     // Anneau de rareté/survol AU-DESSUS du cadre (la bordure de drawSlot passe
     // sous le cadre asset) — les handlers hover redessinent cet anneau, plus
@@ -1705,6 +1665,11 @@ export class InventoryScene extends Phaser.Scene {
     if (slotFrame) {
       slotFrame.setDepth(depth + 1);
       this.consumePopupObjects.push(slotFrame);
+      // Fond teinté par la rareté par-dessus le cadre asset — même raison que
+      // renderInventorySlot (l'intérieur du cadre est opaque).
+      const tintGfx = this.add.graphics().setDepth(depth + 1);
+      drawSlotRarityTint(tintGfx, slotX, slotY, ICON_SIZE, rarHex);
+      this.consumePopupObjects.push(tintGfx);
     }
 
     // Anneau de rareté AU-DESSUS du cadre (sinon le cadre asset le recouvre) —

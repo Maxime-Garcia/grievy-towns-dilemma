@@ -482,13 +482,68 @@ export function drawSlot(
   g.fillRoundedRect(x, y, size, size, radius);
 
   if (occupied) {
-    // Halo interne de rareté — lisible sans crier
-    g.fillStyle(borderColor, 0.10);
-    g.fillRoundedRect(x + 2, y + 2, size - 4, size - 4, Math.max(2, radius - 2));
+    // Fond teinté à la couleur de rareté, pleine surface — règle « bordure fine
+    // colorée par rareté + fond légèrement teinté de cette même couleur » de la
+    // capture de référence du créateur (18/07). L'ancien halo inset à 0.10
+    // était trop discret pour se lire comme un fond.
+    g.fillStyle(borderColor, RARITY_TINT_ALPHA);
+    g.fillRoundedRect(x + 1, y + 1, size - 2, size - 2, Math.max(2, radius - 1));
   }
 
   g.lineStyle(occupied ? 2 : 1, borderColor, borderAlpha);
   g.strokeRoundedRect(x, y, size, size, radius);
+}
+
+/** Alpha standard du fond teinté par rareté d'un slot occupé — partagé entre
+ *  drawSlot (fond natif) et drawSlotRarityTint (surcouche au-dessus d'un cadre
+ *  asset) : les deux chemins de rendu doivent donner exactement la même teinte. */
+export const RARITY_TINT_ALPHA = 0.16;
+
+/**
+ * Surcouche de fond teinté par rareté, à poser AU-DESSUS d'un cadre asset
+ * (`addUiFrame`) : l'intérieur de `ui_slot_frame`/`ui_slot_frame_empty` est un
+ * gris OPAQUE qui masque le fond teinté que drawSlot dessine dessous — sans
+ * cette surcouche, la règle « fond coloré par rareté » (capture créateur 18/07)
+ * resterait invisible partout où le cadre asset est chargé. Inset de 3 px : la
+ * teinte reste à l'intérieur de la bordure du cadre, sous l'icône.
+ */
+export function drawSlotRarityTint(
+  g: Phaser.GameObjects.Graphics,
+  x: number, y: number, size: number,
+  color: number,
+  alpha: number = RARITY_TINT_ALPHA,
+  radius = 3,
+): void {
+  const INSET = 3;
+  g.fillStyle(color, alpha);
+  g.fillRoundedRect(x + INSET, y + INSET, size - INSET * 2, size - INSET * 2, radius);
+}
+
+/**
+ * Bordure POINTILLÉE d'un slot vide (slot d'équipement sans pièce, emplacement
+ * sûr libre du sac de run — capture créateur 18/07) : Phaser Graphics n'a pas
+ * de dash natif, on trace donc des segments réguliers sur les quatre côtés.
+ * Les coins sont laissés ouverts (2 px) en écho à l'arrondi des slots pleins.
+ */
+export function strokeDashedRect(
+  g: Phaser.GameObjects.Graphics,
+  x: number, y: number, w: number, h: number,
+  color: number,
+  opts: { alpha?: number; lineWidth?: number; dash?: number; gap?: number } = {},
+): void {
+  const { alpha = 0.8, lineWidth = 1, dash = 4, gap = 3 } = opts;
+  g.lineStyle(lineWidth, color, alpha);
+  const step = dash + gap;
+  for (let dx = 2; dx < w - 2; dx += step) {
+    const end = Math.min(dx + dash, w - 2);
+    g.lineBetween(x + dx, y, x + end, y);
+    g.lineBetween(x + dx, y + h, x + end, y + h);
+  }
+  for (let dy = 2; dy < h - 2; dy += step) {
+    const end = Math.min(dy + dash, h - 2);
+    g.lineBetween(x, y + dy, x, y + end);
+    g.lineBetween(x + w, y + dy, x + w, y + end);
+  }
 }
 
 /**

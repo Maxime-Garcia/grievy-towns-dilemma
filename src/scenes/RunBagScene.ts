@@ -1,15 +1,18 @@
 import Phaser from 'phaser';
 import { GameScene } from './GameScene';
-import { Consumable, ElementType, Equipment, Item, ItemType, RARITY_COLORS, RunBagSlot } from '../types';
+import { Consumable, ElementType, Equipment, Item, ItemType, RARITY_COLORS, RunBagSlot, RunState } from '../types';
 import { LootSystem } from '../systems/LootSystem';
 import { RunSystem } from '../systems/RunSystem';
 import { RunBagSystem } from '../systems/RunBagSystem';
 import { InventorySystem } from '../systems/InventorySystem';
 import { itemTextureKey } from '../utils/ItemAssets';
 import {
-  UI, TYPE, drawGlowPanel, drawCard, drawSlot, uiStyle, titleStyle,
-  addCloseButton, openScreenTransition, closeScreenTransition, fitText,
+  UI, TYPE, LAYOUT, drawGlowPanel, drawCard, drawSlot, drawDivider, uiStyle, titleStyle,
+  addCloseButton, openScreenTransition, closeScreenTransition, fitText, strokeDashedRect,
 } from '../utils/UITheme';
+import { SearchField, matchesSearch } from '../utils/SearchField';
+import { renderStatsSections } from '../utils/StatsPanel';
+import { t, localizeItem } from '../i18n';
 
 // Écran de sac de run (RunSystem, docs/design/ROGUELITE_POC.md §3) — UNE seule
 // scène pour les trois moments qui utilisent la même mécanique de fond (choisir
@@ -22,19 +25,51 @@ import {
 // 'extract' (après le boss) : arbitrer les emplacements sûrs du sac,
 //            puis S'exfiltrer ou Continuer.
 //
+// Depuis la capture de référence du créateur (18/07), 'view' et 'extract'
+// partagent une mise en page PLEIN ÉCRAN en trois colonnes, dans cet ordre
+// (correction créateur du même jour) :
+//   SAC (gauche : slots sûrs dorés + onglets + recherche + grille ordinaire)
+//   ÉQUIPEMENT (milieu : 2 col × 5 slots + sprite du joueur + nom/niveau)
+//   STATISTIQUES (droite : OFFENSE/DÉFENSE/UTILITAIRE — rendu partagé
+//   utils/StatsPanel.ts, exactement le même panneau que InventoryScene).
+//
 // Patron overlay identique à PityScene/InventoryScene (scene.launch + setPaused +
 // openScreenTransition/closeScreenTransition + close() guardé).
 
 const MAX_LOADOUT = 4;
 const ROW_H = 40;
-const SLOT = 56;
+const SLOT = 56;      // slots du mode 'pack' (loadout de consommables)
 const SLOT_GAP = 10;
-const EQUIP_SLOT = 40;
-const EQUIP_GAP = 6;
 
-/** Ordre d'affichage de la bande d'équipement — mêmes 10 slots que InventoryScene. */
-const EQUIP_SLOTS: (keyof Equipment)[] = [
-  'weapon', 'helm', 'chest', 'legs', 'boots', 'gloves', 'cape', 'ring1', 'ring2', 'amulet',
+// ── Layout plein écran 'view'/'extract' (mêmes gabarits que InventoryScene) ──
+const MARGIN   = 8;
+const HEADER_H = 40;
+const FOOTER_H = 20;
+const GAP      = 6;
+const EQ_SLOT  = 48;   // slot d'équipement (paperdoll 2 colonnes)
+const EQ_GAP_Y = 14;
+const RB_SLOT  = 48;   // slot du sac de run
+const RB_GAP   = 8;
+const RB_STRIDE = RB_SLOT + RB_GAP;
+const RB_COLS  = 5;    // 5 colonnes (capture créateur : rangée sûre + grille 5×3)
+const RB_GRID_W = RB_COLS * RB_STRIDE - RB_GAP;
+const BAG_TITLE_H = 22;
+const RB_TABS_H   = 34;
+const RB_SEARCH_H = LAYOUT.TOUCH_MIN;
+
+/** Paperdoll 2 colonnes × 5 rangées, sprite du joueur au centre (capture
+ *  créateur 18/07) — même disposition que le paperdoll de InventoryScene :
+ *    casque   | arme
+ *    plastron | cape
+ *    jambes   | bague 1
+ *    bottes   | bague 2
+ *    gants    | amulette */
+const RUN_PAPERDOLL: ReadonlyArray<{ key: keyof Equipment; col: 0 | 1; row: number }> = [
+  { key: 'helm',   col: 0, row: 0 }, { key: 'weapon', col: 1, row: 0 },
+  { key: 'chest',  col: 0, row: 1 }, { key: 'cape',   col: 1, row: 1 },
+  { key: 'legs',   col: 0, row: 2 }, { key: 'ring1',  col: 1, row: 2 },
+  { key: 'boots',  col: 0, row: 3 }, { key: 'ring2',  col: 1, row: 3 },
+  { key: 'gloves', col: 0, row: 4 }, { key: 'amulet', col: 1, row: 4 },
 ];
 
 /** Types équipables directement depuis le sac de run — tout le reste (consommables,
@@ -44,7 +79,25 @@ const EQUIPPABLE_TYPES = new Set<ItemType>([
   ItemType.GLOVES, ItemType.CAPE, ItemType.RING, ItemType.AMULET,
 ]);
 
+// ── Onglets de filtrage de la grille ordinaire (capture créateur 18/07) ──────
+// Libellés courts EXACTS de la capture. Le filtre + la recherche ESTOMPENT les
+// slots non concernés (alpha réduit) au lieu de les masquer : le sac de run est
+// POSITIONNEL (échanges sûr↔ordinaire par index), retirer des cases casserait
+// la lecture spatiale et les échanges en cours.
+// NB : la scène est historiquement en français en dur (comme tout RunBagScene) —
+// dette i18n préexistante, signalée, pas aggravée par choix de libellés dérivés.
+type RunBagFilter = 'ALL' | 'EQUIP' | 'CONSUMABLE' | 'MATERIAL' | 'MISC';
+const RUN_BAG_TABS: ReadonlyArray<{ id: RunBagFilter; label: string; types: ReadonlySet<ItemType> | null }> = [
+  { id: 'ALL',        label: 'TOUT',   types: null },
+  { id: 'EQUIP',      label: 'ARMES',  types: EQUIPPABLE_TYPES },
+  { id: 'CONSUMABLE', label: 'CONSO',  types: new Set([ItemType.CONSUMABLE]) },
+  { id: 'MATERIAL',   label: 'MATER',  types: new Set([ItemType.MATERIAL]) },
+  { id: 'MISC',       label: 'DIVERS', types: new Set([ItemType.KEY_ITEM, ItemType.SKIN]) },
+];
+
 type RunBagMode = 'pack' | 'view' | 'extract';
+
+interface PanelBounds { x: number; y: number; w: number; h: number }
 
 export class RunBagScene extends Phaser.Scene {
   private gameScene!: GameScene;
@@ -57,6 +110,18 @@ export class RunBagScene extends Phaser.Scene {
 
   // mode 'extract'/'view' — slot actuellement sélectionné pour un échange.
   private selected: { kind: 'safe' | 'ordinary'; index: number } | null = null;
+
+  // Panneaux du layout plein écran 'view'/'extract' (calculés dans createBagStatics)
+  private bagB!: PanelBounds;
+  private eqB!: PanelBounds;
+  private stB!: PanelBounds;
+
+  // Onglet actif + recherche de la grille ordinaire ('view'/'extract').
+  // Le champ est créé UNE FOIS dans createBagStatics() et survit aux refresh()
+  // (le recréer détruirait le <input> DOM qui a le focus — cf. InventoryScene).
+  private bagFilter: RunBagFilter = 'ALL';
+  private search: SearchField | null = null;
+  private searchQuery = '';
 
   constructor() { super({ key: 'RunBagScene' }); }
 
@@ -76,11 +141,15 @@ export class RunBagScene extends Phaser.Scene {
     this.dynamicObjs = [];
     this.loadout = new Array(MAX_LOADOUT).fill(null);
     this.selected = null;
+    this.bagFilter = 'ALL';
+    this.search = null;
+    this.searchQuery = '';
   }
 
   create() {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
     openScreenTransition(this);
+    if (this.mode !== 'pack') this.createBagStatics();
     this.refresh();
   }
 
@@ -116,19 +185,21 @@ export class RunBagScene extends Phaser.Scene {
   }
 
   /** Dessine l'icône d'un objet centrée sur (cx, cy), ou un carré coloré par
-   *  rareté si aucune texture ne se résout — jamais de texte qui pourrait déborder. */
-  private renderItemIcon(item: Item, cx: number, cy: number, size: number): void {
+   *  rareté si aucune texture ne se résout — jamais de texte qui pourrait
+   *  déborder. Renvoie l'objet créé (pour l'estompage des slots filtrés). */
+  private renderItemIcon(item: Item, cx: number, cy: number, size: number):
+    Phaser.GameObjects.Image | Phaser.GameObjects.Graphics | null {
     const iconKey = this.resolveIcon(item);
     const rarHex = parseInt((RARITY_COLORS[item.rarity] ?? '#888888').slice(1), 16);
     if (iconKey) {
       try {
-        this.track(this.add.image(cx, cy, iconKey).setDisplaySize(size, size));
-        return;
+        return this.track(this.add.image(cx, cy, iconKey).setDisplaySize(size, size));
       } catch { /* fallback ci-dessous */ }
     }
     const sq = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
     sq.fillStyle(rarHex, 0.55);
     sq.fillRoundedRect(cx - size / 2, cy - size / 2, size, size, 3);
+    return sq;
   }
 
   // ── MODE PACK ────────────────────────────────────────────────
@@ -214,7 +285,7 @@ export class RunBagScene extends Phaser.Scene {
   private addToLoadout(item: Item): boolean {
     const freeIdx = this.loadout.findIndex(l => l === null);
     if (freeIdx === -1) {
-      this.events.emit('show_notification', 'Sac emporté plein (4 max)');
+      this.gameScene.events.emit('show_notification', 'Sac emporté plein (4 max)');
       return false;
     }
     this.loadout[freeIdx] = item;
@@ -241,92 +312,340 @@ export class RunBagScene extends Phaser.Scene {
     this.gameScene.travelToZone('ignis_reach', 0, 0);
   }
 
-  // ── MODE VIEW / EXTRACT (même grille, cadrage différent) ─────
+  // ── MODES VIEW / EXTRACT — layout plein écran 3 colonnes ─────
+  //
+  // Partie STATIQUE (une fois, dans create) : overlay, cadre, titre, fonds et
+  // titres des trois panneaux, sprite du joueur, champ de recherche, boutons
+  // Exfiltrer/Continuer (extract). Partie DYNAMIQUE (refresh) : slots
+  // d'équipement, sections de stats, onglets, slots du sac, compteurs.
+
+  private createBagStatics(): void {
+    const { width: W, height: H } = this.cameras.main;
+    const isExtract = this.mode === 'extract';
+
+    const CONT_Y = HEADER_H + 4;
+    const CONT_H = H - CONT_Y - FOOTER_H - MARGIN;
+
+    // Largeurs dérivées de l'écran — seule la grille du sac (5 col × 48 px) est
+    // une contrainte rigide ; équipement et stats se partagent le reste.
+    // ORDRE DES COLONNES (correction créateur 18/07) : SAC | ÉQUIPEMENT | STATS.
+    const bagW = RB_GRID_W + 16;
+    const sideW = W - (MARGIN + 2) * 2 - bagW - GAP * 2;
+    const eqW = Math.round(sideW * 0.42);
+    const stW = sideW - eqW;
+    const bagX = MARGIN + 2;
+    const eqX = bagX + bagW + GAP;
+    const stX = eqX + eqW + GAP;
+
+    this.bagB = { x: bagX, y: CONT_Y, w: bagW, h: CONT_H };
+    this.eqB  = { x: eqX,  y: CONT_Y, w: eqW,  h: CONT_H };
+    this.stB  = { x: stX,  y: CONT_Y, w: stW,  h: CONT_H };
+
+    // Overlay + cadre externe (mêmes valeurs que InventoryScene : 0.88 / arcane)
+    this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88);
+    const frameGfx = this.add.graphics();
+    drawGlowPanel(frameGfx, MARGIN, MARGIN, W - MARGIN * 2, H - MARGIN * 2,
+      isExtract ? parseInt(UI.TXT_GOLD.slice(1), 16) : UI.ACCENT_ARCANE, UI.BG_DEEP, 10, 0.92);
+
+    // Titre d'écran — 'view' EST l'inventaire pendant une run (capture :
+    // fenêtre « INVENTAIRE ») ; 'extract' garde son titre de moment fort.
+    this.add.text(W / 2, MARGIN + 6, isExtract ? 'BOSS VAINCU' : t('inventory.title'),
+      titleStyle(UI.TXT_GOLD, { stroke: true })).setOrigin(0.5, 0);
+    const sepGfx = this.add.graphics();
+    drawDivider(sepGfx, MARGIN + 4, HEADER_H, W - (MARGIN + 4) * 2, UI.ACCENT_ARCANE, 0.35);
+
+    if (!isExtract) {
+      addCloseButton(this, W - MARGIN - 20, MARGIN + 16, () => this.close());
+      // Hint de fermeture (footer) — même libellé que InventoryScene ([I] Fermer)
+      this.add.text(W / 2, H - MARGIN - 4, t('inventory.close'), uiStyle(9, UI.TXT_HINT))
+        .setOrigin(0.5, 1)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => this.close());
+    }
+
+    // Fonds des trois panneaux
+    for (const b of [this.bagB, this.eqB, this.stB]) {
+      const g = this.add.graphics();
+      drawGlowPanel(g, b.x, b.y, b.w, b.h, UI.ACCENT_ARCANE, UI.BG_MID, 8, 0.55);
+    }
+
+    // Titres des panneaux (cyan = structure, cf. guidelines §6.2)
+    this.add.text(this.bagB.x + this.bagB.w / 2, this.bagB.y + 4, t('inventory.bag'),
+      uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true })).setOrigin(0.5, 0);
+    this.add.text(this.eqB.x + this.eqB.w / 2, this.eqB.y + 6, t('inventory.equipment'),
+      uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true })).setOrigin(0.5, 0);
+    this.add.text(this.stB.x + this.stB.w / 2, this.stB.y + 6, t('inventory.stats'),
+      uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true })).setOrigin(0.5, 0);
+    const titleSep = this.add.graphics();
+    drawDivider(titleSep, this.eqB.x + 10, this.eqB.y + 26, this.eqB.w - 20, UI.ACCENT_ARCANE, 0.22);
+    drawDivider(titleSep, this.stB.x + 8,  this.stB.y + 26, this.stB.w - 16, UI.ACCENT_ARCANE, 0.22);
+
+    // Sprite du joueur entre les deux colonnes d'équipement (capture créateur).
+    // Échelle ENTIÈRE uniquement : le rendu est en NEAREST, tout facteur
+    // fractionnaire produirait des colonnes de pixels irrégulières.
+    const cxSprite = this.eqB.x + this.eqB.w / 2;
+    const cySprite = Math.round((this.equipRowY(0) + this.equipRowY(4) + EQ_SLOT) / 2);
+    // `player_idle` est une SPRITESHEET : sans index de frame, l'image entière
+    // (toutes les frames côte à côte) serait affichée — frame 0 explicite.
+    const img = this.textures.exists('player_idle')
+      ? this.add.image(cxSprite, cySprite, 'player_idle', 0)
+      : this.textures.exists('player')
+        ? this.add.image(cxSprite, cySprite, 'player')
+        : null;
+    if (img) img.setScale(Math.max(2, Math.floor(120 / Math.max(1, img.height))));
+
+    // Champ de recherche du sac — créé UNE FOIS (jamais dans refresh()). Sa
+    // position dépend du nombre de rangées sûres : même calcul que le rendu
+    // dynamique (cf. bagLayoutYs), sinon le champ chevaucherait la grille.
+    const safeCount = this.gameScene.gameState.run?.safeBag.length ?? RB_COLS;
+    this.search = new SearchField(this, {
+      x: this.bagB.x + 8,
+      y: this.bagLayoutYs(safeCount).searchY,
+      w: RB_GRID_W,
+      h: RB_SEARCH_H,
+      placeholder: t('search.placeholder_bag'),
+      // Même raison que InventoryScene : la touche Inventaire ouvre ET ferme cet
+      // écran — un champ auto-focalisé avalerait le `I` de fermeture.
+      autoFocus: false,
+      domId: 'runbag',
+      onChange: (q) => {
+        this.searchQuery = q;
+        this.refresh(); // le champ n'est PAS dans dynamicObjs, il survit
+      },
+      // Échap champ vide + focalisé : 'view' se ferme ; 'pack'/'extract' sont
+      // bloquants (cf. currentMode), Échap n'y ferme rien.
+      onEscape: () => { if (this.mode === 'view') this.close(); },
+    });
+
+    // Boutons de choix post-boss — statiques (leurs handlers sont guardés par
+    // this.closing) ; en bas du panneau de droite = zone de pouce.
+    if (isExtract) {
+      const btnW = 170, btnH = 44, btnGap = 12;
+      const cxPanel = this.stB.x + this.stB.w / 2;
+      const btnY = this.stB.y + this.stB.h - 14 - btnH / 2;
+      this.renderChoiceButton(cxPanel - (btnW + btnGap) / 2, btnY, btnW, btnH, "S'EXFILTRER", UI.TXT_GOLD, () => this.confirmExfiltrate());
+      this.renderChoiceButton(cxPanel + (btnW + btnGap) / 2, btnY, btnW, btnH, 'CONTINUER', UI.TXT_RED, () => this.confirmContinue());
+    }
+  }
+
+  /** Y de la rangée r du paperdoll (0-4) — partagé statique/dynamique. */
+  private equipRowY(row: number): number {
+    return this.eqB.y + 38 + row * (EQ_SLOT + EQ_GAP_Y);
+  }
 
   private renderBagGrid() {
-    const { width: W, height: H } = this.cameras.main;
     const run = this.gameScene.gameState.run;
     if (!run) { this.close(); return; }
 
-    const isExtract = this.mode === 'extract';
-    this.track(this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88));
-    const PANEL_W = 660;
-    const cols = 5;
-    const safeRows = Math.ceil(run.safeBag.length / cols);
-    const ordinaryRows = Math.ceil(run.ordinaryBag.length / cols);
-    const gridRowsH = (safeRows + ordinaryRows) * (SLOT + SLOT_GAP) - SLOT_GAP;
-    const PANEL_H = 96 + EQUIP_SLOT + 20 + gridRowsH + 40 + (isExtract ? 50 : 0);
-    const px = (W - PANEL_W) / 2, py = (H - PANEL_H) / 2;
-    const frame = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
-    drawGlowPanel(frame, px, py, PANEL_W, PANEL_H, parseInt(UI.TXT_GOLD.slice(1), 16), UI.BG_DEEP, 8, 0.95);
+    this.renderEquipmentColumn();
+    // Sections de stats — rendu PARTAGÉ avec InventoryScene (utils/StatsPanel.ts) :
+    // exactement le même panneau dans les deux inventaires (capture créateur).
+    renderStatsSections(this, this.gameScene.gameState.player,
+      this.stB.x, this.stB.w, this.stB.y + 36, go => this.track(go));
+    this.renderBagColumn(run);
+  }
 
-    // Titre court — pas de sous-titre : la distinction sûr/ordinaire se lit à la
-    // bordure (dorée/grise) et au regroupement spatial, pas à du texte (retour
-    // créateur, 18/07 — "le joueur comprendra").
-    const title = isExtract ? 'BOSS VAINCU' : 'SAC';
-    this.track(this.add.text(W / 2, py + 16, title, titleStyle(UI.TXT_GOLD, { stroke: true })).setOrigin(0.5, 0));
-    if (!isExtract) {
-      const closeBtn = addCloseButton(this, px + PANEL_W - 24, py + 24, () => this.close());
-      this.track(closeBtn.glyph); this.track(closeBtn.hit);
-    }
+  // ── Colonne ÉQUIPEMENT (2 col × 5 slots + identité) ──────────
 
-    // Bande d'équipement actuel — "un vrai côté stuff équipé" (retour créateur) :
-    // visualiser ce qui est équipé pour comparer avec ce que le sac contient.
-    // Purement consultatif ici (pas de déséquiper vers le sac dans cette passe).
-    const equipY = py + 56;
-    const equipW = EQUIP_SLOTS.length * (EQUIP_SLOT + EQUIP_GAP) - EQUIP_GAP;
-    const equipX = px + (PANEL_W - equipW) / 2;
+  private renderEquipmentColumn(): void {
     const player = this.gameScene.gameState.player;
-    for (let i = 0; i < EQUIP_SLOTS.length; i++) {
-      const sx = equipX + i * (EQUIP_SLOT + EQUIP_GAP);
-      const item = player.equipment[EQUIP_SLOTS[i]] as Item | undefined;
+    const { x: PX, w: PW } = this.eqB;
+    const colX: [number, number] = [PX + 16, PX + PW - 16 - EQ_SLOT];
+
+    for (const { key, col, row } of RUN_PAPERDOLL) {
+      const sx = colX[col];
+      const sy = this.equipRowY(row);
+      const item = player.equipment[key] as Item | undefined;
       const g = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
-      const color = item ? parseInt((RARITY_COLORS[item.rarity] ?? '#888888').slice(1), 16) : UI.SLOT_BORDER;
-      drawSlot(g, sx, equipY, EQUIP_SLOT, color, { occupied: !!item, radius: 4 });
-      if (item) this.renderItemIcon(item, sx + EQUIP_SLOT / 2, equipY + EQUIP_SLOT / 2, Math.round(EQUIP_SLOT * 0.7));
+
+      if (item) {
+        // Bordure ET fond teintés par la rareté (drawSlot occupé)
+        const rarHex = parseInt((RARITY_COLORS[item.rarity] ?? '#666666').slice(1), 16);
+        drawSlot(g, sx, sy, EQ_SLOT, rarHex, { occupied: true });
+        this.renderItemIcon(item, sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, Math.round(EQ_SLOT * 0.7));
+      } else {
+        // Slot vide : bordure POINTILLÉE grise + libellé fantôme (capture)
+        g.fillStyle(UI.SLOT_BG, 0.94);
+        g.fillRoundedRect(sx, sy, EQ_SLOT, EQ_SLOT, 5);
+        strokeDashedRect(g, sx, sy, EQ_SLOT, EQ_SLOT, UI.SLOT_BORDER, { alpha: 1, lineWidth: 1 });
+        const style = uiStyle(TYPE.SMALL, UI.TXT_HINT, { bold: true, align: 'center' });
+        const full = t(`inventory.slot_short.${key}`).toUpperCase();
+        // « BAGUE 1 » passe sur deux lignes : le numéro survit toujours (cf.
+        // InventoryScene.renderEquipment — jamais de slice(n), fitText en pixels).
+        const numbered = full.match(/^(.*\S)\s+(\d+)$/);
+        const label = numbered
+          ? `${fitText(this, numbered[1]!, style, EQ_SLOT - 6)}\n${numbered[2]}`
+          : fitText(this, full, style, EQ_SLOT - 6);
+        this.track(this.add.text(sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, label, style).setOrigin(0.5));
+      }
     }
 
-    const dividerY = equipY + EQUIP_SLOT + 14;
-    const dividerG = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
-    dividerG.lineStyle(1, UI.SEPARATOR, 0.6);
-    dividerG.lineBetween(px + 24, dividerY, px + PANEL_W - 24, dividerY);
+    // Identité — nom + niveau tout en bas de la colonne (capture créateur)
+    const nameY = this.eqB.y + this.eqB.h - 64;
+    const sepG = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
+    drawDivider(sepG, PX + 10, nameY - 10, PW - 20, UI.ACCENT_ARCANE, 0.22);
+    const nameStyle = uiStyle(TYPE.BODY, UI.TXT_GOLD, { bold: true });
+    this.track(this.add.text(PX + PW / 2, nameY,
+      fitText(this, player.name, nameStyle, PW - 24), nameStyle).setOrigin(0.5, 0));
+    this.track(this.add.text(PX + PW / 2, nameY + 22,
+      t('inventory.level').replace('{level}', String(player.level)),
+      uiStyle(TYPE.SMALL, UI.TXT_PARCHMENT)).setOrigin(0.5, 0));
+  }
 
-    const gridX = px + (PANEL_W - (cols * (SLOT + SLOT_GAP) - SLOT_GAP)) / 2;
-    const safeY = dividerY + 16;
-    const ordinaryY = safeY + safeRows * (SLOT + SLOT_GAP) + 16;
+  // ── Colonne SAC (slots sûrs PUIS onglets + recherche PUIS grille) ──
+
+  /** Ordonnées de la colonne SAC — capture créateur (18/07), de haut en bas :
+   *  bandeau + rangée des slots SÛRS, onglets, recherche, grille ordinaire.
+   *  Partagé entre createBagStatics (position du champ de recherche, statique)
+   *  et renderBagColumn (tout le reste, dynamique) : les deux DOIVENT dériver
+   *  des mêmes chiffres. */
+  private bagLayoutYs(safeCount: number): { safeHdrY: number; safeY: number; tabsY: number; searchY: number; ordY: number } {
+    const safeRows = Math.max(1, Math.ceil(safeCount / RB_COLS));
+    const safeHdrY = this.bagB.y + BAG_TITLE_H + 6;
+    const safeY    = safeHdrY + 20;
+    const tabsY    = safeY + safeRows * RB_STRIDE - RB_GAP + 12;
+    const searchY  = tabsY + RB_TABS_H + 4;
+    const ordY     = searchY + RB_SEARCH_H + 10;
+    return { safeHdrY, safeY, tabsY, searchY, ordY };
+  }
+
+  private renderBagColumn(run: RunState): void {
+    const bx = this.bagB.x + 8;
+    const { safeHdrY, safeY, tabsY, ordY } = this.bagLayoutYs(run.safeBag.length);
+
+    // Bandeau des slots sûrs : libellé à gauche, compteur gardés/total à droite
+    const safeFilled = run.safeBag.filter(s => s !== null).length;
+    this.track(this.add.text(bx, safeHdrY, '◆ SLOTS SÛRS',
+      uiStyle(TYPE.SMALL, UI.TXT_GOLD, { bold: true })).setOrigin(0, 0));
+    this.track(this.add.text(bx + RB_GRID_W, safeHdrY,
+      `GARDÉS À L'EXTRACTION : ${safeFilled}/${run.safeBag.length}`,
+      uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setOrigin(1, 0));
 
     for (let i = 0; i < run.safeBag.length; i++) {
-      const col = i % cols, row = Math.floor(i / cols);
-      this.renderBagSlot('safe', i, gridX + col * (SLOT + SLOT_GAP), safeY + row * (SLOT + SLOT_GAP), run.safeBag[i]);
-    }
-    for (let i = 0; i < run.ordinaryBag.length; i++) {
-      const col = i % cols, row = Math.floor(i / cols);
-      this.renderBagSlot('ordinary', i, gridX + col * (SLOT + SLOT_GAP), ordinaryY + row * (SLOT + SLOT_GAP), run.ordinaryBag[i]);
+      const col = i % RB_COLS, row = Math.floor(i / RB_COLS);
+      this.renderBagSlot('safe', i, bx + col * RB_STRIDE, safeY + row * RB_STRIDE, run.safeBag[i]);
     }
 
-    if (isExtract) {
-      const btnY = py + PANEL_H - 36;
-      this.renderChoiceButton(W / 2 - 110, btnY, "S'EXFILTRER", UI.TXT_GOLD, () => this.confirmExfiltrate());
-      this.renderChoiceButton(W / 2 + 110, btnY, 'CONTINUER', UI.TXT_RED, () => this.confirmContinue());
+    // Onglets + (champ de recherche statique juste en dessous, cf. createBagStatics)
+    this.renderRunBagTabs(bx, tabsY, RB_GRID_W);
+
+    for (let i = 0; i < run.ordinaryBag.length; i++) {
+      const col = i % RB_COLS, row = Math.floor(i / RB_COLS);
+      this.renderBagSlot('ordinary', i, bx + col * RB_STRIDE, ordY + row * RB_STRIDE, run.ordinaryBag[i]);
     }
+
+    // Compteur de remplissage de la grille ordinaire (capture : « 15 / 15
+    // EMPLACEMENTS »)
+    const ordRows = Math.ceil(run.ordinaryBag.length / RB_COLS);
+    const ordFilled = run.ordinaryBag.filter(s => s !== null).length;
+    this.track(this.add.text(bx + RB_GRID_W / 2, ordY + ordRows * RB_STRIDE - RB_GAP + 10,
+      `${ordFilled} / ${run.ordinaryBag.length} EMPLACEMENTS`,
+      uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setOrigin(0.5, 0));
+  }
+
+  /** Onglets texte TOUT/ARMES/CONSO/MATER/DIVERS — même vocabulaire visuel que
+   *  les onglets du sac de InventoryScene (pilule sombre, actif = fond BG_MID +
+   *  liseré et bande basse arcane, hit zone 44 px). */
+  private renderRunBagTabs(x: number, y: number, w: number): void {
+    const TAB_GAP = 4;
+    const tw = Math.floor((w - TAB_GAP * (RUN_BAG_TABS.length - 1)) / RUN_BAG_TABS.length);
+
+    RUN_BAG_TABS.forEach((tab, i) => {
+      const tx = x + i * (tw + TAB_GAP);
+      const active = tab.id === this.bagFilter;
+      const cx = tx + tw / 2;
+      const cy = y + RB_TABS_H / 2;
+
+      const g = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
+      g.fillStyle(active ? UI.BG_MID : UI.BG_DEEP, 1);
+      g.fillRoundedRect(tx, y, tw, RB_TABS_H, 4);
+      g.lineStyle(1, active ? UI.ACCENT_ARCANE : UI.SEPARATOR, active ? 0.9 : 1);
+      g.strokeRoundedRect(tx, y, tw, RB_TABS_H, 4);
+      if (active) {
+        g.fillStyle(UI.ACCENT_ARCANE, 0.9);
+        g.fillRect(tx + 4, y + RB_TABS_H - 3, tw - 8, 2);
+      }
+
+      const tabStyle = uiStyle(TYPE.SMALL, active ? UI.TXT_CYAN : UI.TXT_MUTED, { bold: active });
+      this.track(this.add.text(cx, cy, fitText(this, tab.label, tabStyle, tw - 6), tabStyle).setOrigin(0.5));
+
+      const hit = this.track(this.add.rectangle(cx, cy, tw + TAB_GAP, 44, 0, 0)
+        .setInteractive({ useHandCursor: true })) as Phaser.GameObjects.Rectangle;
+      hit.on('pointerdown', () => {
+        if (this.bagFilter === tab.id) return;
+        this.bagFilter = tab.id;
+        this.refresh(); // l'état actif EST le feedback (cf. InventoryScene)
+      });
+    });
+  }
+
+  /** Vrai si l'objet passe l'onglet actif ET la recherche — les slots qui ne
+   *  passent pas sont ESTOMPÉS (jamais masqués : le sac est positionnel). */
+  private matchesFilter(item: Item): boolean {
+    const tab = RUN_BAG_TABS.find(tb => tb.id === this.bagFilter) ?? RUN_BAG_TABS[0]!;
+    if (tab.types && !tab.types.has(item.type)) return false;
+    if (this.searchQuery.length === 0) return true;
+    return matchesSearch(this.searchQuery, localizeItem(item).name, t(`rarity.${item.rarity}`));
   }
 
   private renderBagSlot(kind: 'safe' | 'ordinary', index: number, x: number, y: number, slot: RunBagSlot | null) {
     const isSelected = this.selected?.kind === kind && this.selected.index === index;
+    const goldHex = UI.SLOT_ACTIVE; // 0xc8a030 — même or que les rivets/titres
+    // Filtre/recherche : uniquement sur la grille ordinaire (les onglets et le
+    // champ sont posés SOUS la rangée sûre — c'est leur périmètre visuel).
+    const dimmed = kind === 'ordinary' && !!slot && !this.matchesFilter(slot.item);
+    const DIM_ALPHA = 0.25;
+    const dim = (go: { setAlpha(alpha: number): unknown } | null): void => {
+      if (dimmed && go) go.setAlpha(DIM_ALPHA);
+    };
+
     const g = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
-    const baseColor = kind === 'safe' ? parseInt(UI.TXT_GOLD.slice(1), 16) : UI.SLOT_BORDER;
-    const color = slot ? parseInt((RARITY_COLORS[slot.item.rarity] ?? '#888888').slice(1), 16) : baseColor;
-    drawSlot(g, x, y, SLOT, isSelected ? 0xffffff : color, { occupied: !!slot, borderAlpha: isSelected ? 1 : undefined });
+    if (kind === 'safe') {
+      // Slot SÛR (capture créateur) : fond légèrement doré ; plein = bordure
+      // dorée ÉPAISSE + badge d'index ; vide = pointillé doré fin + « + ».
+      g.fillStyle(UI.SLOT_BG, 0.94);
+      g.fillRoundedRect(x, y, RB_SLOT, RB_SLOT, 5);
+      g.fillStyle(goldHex, slot ? 0.13 : 0.05);
+      g.fillRoundedRect(x + 1, y + 1, RB_SLOT - 2, RB_SLOT - 2, 4);
+      if (slot) {
+        g.lineStyle(3, isSelected ? 0xffffff : goldHex, 1);
+        g.strokeRoundedRect(x, y, RB_SLOT, RB_SLOT, 5);
+      } else {
+        strokeDashedRect(g, x, y, RB_SLOT, RB_SLOT, goldHex, { alpha: 0.75, lineWidth: 1 });
+        // Affordance « tu peux en mettre plus ici »
+        this.track(this.add.text(x + RB_SLOT / 2, y + RB_SLOT / 2, '+',
+          uiStyle(TYPE.HEADING, UI.TXT_GOLD)).setOrigin(0.5).setAlpha(0.55));
+      }
+    } else {
+      const rarHex = slot ? parseInt((RARITY_COLORS[slot.item.rarity] ?? '#888888').slice(1), 16) : UI.SLOT_BORDER;
+      // Bordure fine + fond teinté par la rareté (drawSlot occupé — règle
+      // généralisée par la capture créateur, cf. UITheme.RARITY_TINT_ALPHA)
+      drawSlot(g, x, y, RB_SLOT, isSelected ? 0xffffff : rarHex,
+        { occupied: !!slot, borderAlpha: isSelected ? 1 : undefined });
+      dim(g);
+    }
 
     if (slot) {
-      this.renderItemIcon(slot.item, x + SLOT / 2, y + SLOT / 2, Math.round(SLOT * 0.65));
+      dim(this.renderItemIcon(slot.item, x + RB_SLOT / 2, y + RB_SLOT / 2, Math.round(RB_SLOT * 0.65)));
       if (slot.quantity > 1) {
-        this.track(this.add.text(x + SLOT - 4, y + SLOT - 4, `×${slot.quantity}`,
-          uiStyle(TYPE.SMALL, UI.TXT_GOLD, { bold: true, stroke: true })).setOrigin(1, 1));
+        dim(this.track(this.add.text(x + RB_SLOT - 4, y + RB_SLOT - 4, `×${slot.quantity}`,
+          uiStyle(TYPE.SMALL, UI.TXT_GOLD, { bold: true, stroke: true })).setOrigin(1, 1)));
+      }
+      if (kind === 'safe') {
+        // Badge d'INDEX du slot sûr (1..N), coin haut-gauche — la capture montre
+        // un petit badge numéroté à cet endroit ; l'index d'emplacement est la
+        // seule donnée réelle qui lui corresponde (cf. rapport).
+        const bg = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
+        bg.fillStyle(UI.BG_DEEP, 0.92);
+        bg.fillCircle(x + 10, y + 10, 8);
+        bg.lineStyle(1, goldHex, 0.8);
+        bg.strokeCircle(x + 10, y + 10, 8);
+        this.track(this.add.text(x + 10, y + 10, String(index + 1),
+          uiStyle(TYPE.SMALL, UI.TXT_GOLD, { bold: true })).setOrigin(0.5));
       }
     }
 
-    const hit = this.track(this.add.rectangle(x + SLOT / 2, y + SLOT / 2, SLOT, SLOT, 0, 0)
+    const hit = this.track(this.add.rectangle(x + RB_SLOT / 2, y + RB_SLOT / 2, RB_SLOT + 4, RB_SLOT + 4, 0, 0)
       .setInteractive({ useHandCursor: true })) as Phaser.GameObjects.Rectangle;
     hit.on('pointerdown', () => this.onBagSlotClicked(kind, index));
 
@@ -336,13 +655,14 @@ export class RunBagScene extends Phaser.Scene {
     // (sinon un clic sur le badge sélectionnerait AUSSI le slot pour un échange).
     if (slot && EQUIPPABLE_TYPES.has(slot.item.type)) {
       const br = 9;
-      const bx = x + SLOT - br - 2, by = y + br + 2;
+      const bx = x + RB_SLOT - br - 2, by = y + br + 2;
       const badgeG = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
       badgeG.fillStyle(UI.ACCENT_ARCANE, 0.95);
       badgeG.fillCircle(bx, by, br);
       badgeG.lineStyle(1, 0x000000, 0.6);
       badgeG.strokeCircle(bx, by, br);
-      this.track(this.add.text(bx, by, 'E', uiStyle(TYPE.SMALL, '#0a0a18', { bold: true })).setOrigin(0.5));
+      dim(badgeG);
+      dim(this.track(this.add.text(bx, by, 'E', uiStyle(TYPE.SMALL, '#0a0a18', { bold: true })).setOrigin(0.5)));
       const badgeHit = this.track(this.add.rectangle(bx, by, br * 2 + 6, br * 2 + 6, 0, 0)
         .setInteractive({ useHandCursor: true })) as Phaser.GameObjects.Rectangle;
       badgeHit.on('pointerdown', (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: { stopPropagation: () => void }) => {
@@ -425,7 +745,7 @@ export class RunBagScene extends Phaser.Scene {
     // retrait diffère (slot du sac de run ici, LootSystem côté banque).
     const applied = InventorySystem.applyConsumableEffect(player, effect, this.gameScene.getPlayerModifiers());
     if (!applied) {
-      this.events.emit('show_notification', 'Effet de cet objet pas encore pris en charge en run.');
+      this.gameScene.events.emit('show_notification', 'Effet de cet objet pas encore pris en charge en run.');
       return;
     }
     this.gameScene.events.emit('player_update', player);
@@ -434,12 +754,13 @@ export class RunBagScene extends Phaser.Scene {
     this.refresh();
   }
 
-  private renderChoiceButton(cx: number, y: number, label: string, color: string, onClick: () => void) {
-    const w = 190, h = 40;
-    const g = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
-    drawCard(g, cx - w / 2, y - h / 2, w, h, { accent: parseInt(color.slice(1), 16), radius: 6 });
-    this.track(this.add.text(cx, y, label, uiStyle(TYPE.BODY, color, { bold: true })).setOrigin(0.5));
-    const hit = this.track(this.add.rectangle(cx, y, w, h, 0, 0).setInteractive({ useHandCursor: true })) as Phaser.GameObjects.Rectangle;
+  /** Bouton de choix post-boss — STATIQUE (créé une fois dans createBagStatics,
+   *  jamais dans refresh) : les handlers sont guardés par this.closing. */
+  private renderChoiceButton(cx: number, cy: number, w: number, h: number, label: string, color: string, onClick: () => void) {
+    const g = this.add.graphics();
+    drawCard(g, cx - w / 2, cy - h / 2, w, h, { accent: parseInt(color.slice(1), 16), radius: 6 });
+    this.add.text(cx, cy, label, uiStyle(TYPE.BODY, color, { bold: true })).setOrigin(0.5);
+    const hit = this.add.rectangle(cx, cy, w + 6, Math.max(44, h), 0, 0).setInteractive({ useHandCursor: true });
     hit.on('pointerdown', onClick);
   }
 
@@ -450,7 +771,7 @@ export class RunBagScene extends Phaser.Scene {
     if (!run) return;
     const failed = RunSystem.exfiltrate(player, run, this.gameScene.gameState.world);
     if (failed.length > 0) {
-      this.events.emit('show_notification', `Banque pleine — ${failed.length} objet(s) restent dans le sac de run`);
+      this.gameScene.events.emit('show_notification', `Banque pleine — ${failed.length} objet(s) restent dans le sac de run`);
       this.refresh();
       return;
     }
@@ -475,6 +796,15 @@ export class RunBagScene extends Phaser.Scene {
   }
 
   shutdown() {
-    this.gameScene?.setPaused(false);
+    // Le champ de recherche possède un <input> DOM dans <body> et un listener de
+    // resize sur le Scale Manager — Phaser n'en sait rien : sans ce destroy(),
+    // l'input survivrait à la fermeture du sac de run (invisible mais
+    // focalisable, il avalerait les frappes du jeu). Cf. guidelines §3.14bis.
+    if (this.search) { this.search.destroy(); this.search = null; }
+    // confirmDescend/confirmExfiltrate/confirmContinue enchaînent close() puis
+    // travelToZone() — si une transition de zone est déjà en cours, sa propre
+    // gestion pause/resume de la physique fait autorité ; réactiver ici la
+    // resortirait de pause en plein fondu (cf. GameScene.isTravelingNow).
+    if (!this.gameScene?.isTravelingNow) this.gameScene?.setPaused(false);
   }
 }

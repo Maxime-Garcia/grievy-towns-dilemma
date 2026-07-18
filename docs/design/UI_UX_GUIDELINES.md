@@ -371,10 +371,22 @@ jamais sur un composant répété en liste.
 Hauteur minimum de la **hit zone** d'un bouton : **44 px**. Le visuel peut descendre à 32 px.
 
 ### 3.11 Slot d'item
-Fond `SLOT_BG`, **bordure = couleur de rareté** (`RARITY_COLORS`, alpha 0.3–0.55 si vide, 1 si occupé),
-icône 32×32 centrée (fallback : carré de couleur rareté alpha 0.5 via `resolveIcon()` +
-`addColorSquare()`), badge quantité 10 px bold + stroke en bas-droite (origin (1,1)),
-survol = bordure blanche. Slot vide du paperdoll : abréviation fantôme 9 px bold `TXT_HINT` centrée.
+Fond `SLOT_BG`, **bordure = couleur de rareté** (`RARITY_COLORS`, alpha 0.3–0.55 si vide, 1 si occupé)
+**ET fond teinté de cette même couleur quand le slot est occupé** (`RARITY_TINT_ALPHA = 0.16`,
+capture de référence du créateur 18/07 — `drawSlot` le fait nativement ; si un cadre asset
+`addUiFrame` recouvre le fond, poser `drawSlotRarityTint()` PAR-DESSUS le cadre, son intérieur
+gris est opaque). Icône 32×32 centrée (fallback : carré de couleur rareté alpha 0.5 via
+`resolveIcon()` + `addColorSquare()`), badge quantité 10 px bold + stroke en bas-droite
+(origin (1,1)), survol = bordure blanche. **Slot vide** : bordure POINTILLÉE (`strokeDashedRect`,
+gris `SLOT_BORDER` pour l'équipement, or pour les emplacements sûrs du sac de run avec un « + »
+central) + abréviation fantôme `TXT_HINT` centrée.
+
+### 3.11bis `renderStatsSections` (`src/utils/StatsPanel.ts`) — panneau de stats partagé
+Sections OFFENSE / DÉFENSE / UTILITAIRE (pastille d'accent + zébrage + valeurs boostées en or),
+UNIQUE source de rendu pour InventoryScene ET RunBagScene ('view'/'extract') — la capture de
+référence exige exactement le même panneau dans les deux inventaires. Signature :
+`renderStatsSections(scene, player, px, pw, startY, push)` — `push` remet chaque GameObject à
+l'appelant (cycle de vie dynamicObjs/track propre à chaque scène).
 
 ### 3.12 Notifications (HUD)
 File FIFO, une seule visible à la fois, au-dessus des skill slots, centrée. 12 px bold + stroke,
@@ -554,7 +566,12 @@ Hérite de tout §1–5. Spécifique :
   texte monospace 8 px vert clair sur bande translucide sombre + tick vert 3 px, alpha 0.85.
 
 ### 6.2 InventoryScene
-Layout 3 panneaux fixes : **paperdoll 180 px | stats/détail 220 px | grille** (largeur restante, 7 col × 48 px).
+Layout 3 panneaux, ordre **SAC (gauche) | ÉQUIPEMENT (milieu) | STATISTIQUES/détail (droite)**
+(correction créateur 18/07 — même ordre que RunBagScene 'view', cohérence inter-écrans).
+Largeurs dérivées de l'écran ; la grille du sac (7 col, pas de 48 px = 40 px de slot + 8 px de marge) est la seule contrainte rigide.
+**Paperdoll : 2 colonnes × 5 rangées** (casque|arme, plastron|cape, jambes|bague 1, bottes|bague 2,
+gants|amulette) avec le **sprite du joueur** (frame 0 de `player_idle`, échelle ENTIÈRE) au centre
+— disposition de la capture de référence du créateur (18/07), partagée avec RunBagScene.
 - **Header** : titre `INVENTAIRE` 15 px bold doré + stroke, **bouton × standard haut-droite**
   (`addCloseButton`), encadré or (130×24, valeur 11 px bold) à gauche du ×.
 - **Paperdoll style Dofus** (panneau gauche) : silhouette stylisée semi-transparente (tête + capsule

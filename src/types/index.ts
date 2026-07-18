@@ -668,7 +668,7 @@ export interface PlayerState {
   /** Capacité totale du sac de run (RunSystem) — 20 par défaut. Futur upgrade
    *  marchand (hors scope tranche 1) incrémentera ce nombre, jamais une constante. */
   runBagCapacity: number;
-  /** Sous-ensemble de runBagCapacity qui survit à l'exfiltration — 4 par défaut. */
+  /** Sous-ensemble de runBagCapacity qui survit à l'exfiltration — 5 par défaut. */
   runSafeSlotCapacity: number;
 }
 
