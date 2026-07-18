@@ -12,7 +12,7 @@ import {
   drawDivider, addCloseButton, uiStyle, titleStyle, fitText, openScreenTransition,
   closeScreenTransition,
   resonanceColor, formatRangedStatBounds, lineQuality, formatResonanceLine,
-  drawSlotRarityTint, strokeDashedRect,
+  drawSlotRarityTint, strokeDashedRect, wrapLabel,
 } from '../utils/UITheme';
 import { SearchField, matchesSearch } from '../utils/SearchField';
 import { renderStatsSections } from '../utils/StatsPanel';
@@ -505,17 +505,15 @@ export class InventoryScene extends Phaser.Scene {
           this.addColorSquare(sx + 4, sy + 4, EQ_SLOT - 8, rarHex);
         }
       } else {
-        // Slot vide : libellé fantôme COURT (`inventory.slot_short.*`, ≤ 7
-        // caractères — « Poitrine »/« Amulette » sortaient tronqués en
-        // « POITRI… ») + fitText en filet de sécurité (jamais de slice(n)).
-        // Les slots numérotés passent sur deux lignes : le numéro survit toujours.
+        // Slot vide : libellé fantôme COURT (`inventory.slot_short.*`) rendu
+        // TOUJOURS en entier (capture créateur : jamais de « CO… ») — ce qui ne
+        // tient pas sur une ligne de 44 px passe sur 2-3 lignes mesurées via
+        // wrapLabel (« BAGUE / 1 », « COLL / IER »), jamais fitText : l'ellipse
+        // est réservée aux textes disponibles en entier ailleurs (§1.1).
         // Mesure INTERIM en attendant les icônes de slot (assets à fournir).
-        const style    = uiStyle(TYPE.SMALL, UI.TXT_HINT, { bold: true, align: 'center' });
-        const full     = t(`inventory.slot_short.${key}`).toUpperCase();
-        const numbered = full.match(/^(.*\S)\s+(\d+)$/);
-        const label    = numbered
-          ? `${fitText(this, numbered[1]!, style, EQ_SLOT - 6)}\n${numbered[2]}`
-          : fitText(this, full, style, EQ_SLOT - 6);
+        const style = uiStyle(TYPE.SMALL, UI.TXT_HINT, { bold: true, align: 'center' });
+        const full  = t(`inventory.slot_short.${key}`).toUpperCase();
+        const label = wrapLabel(this, full, style, EQ_SLOT - 4);
         this.dynamicObjs.push(
           this.add.text(sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, label, style).setOrigin(0.5),
         );

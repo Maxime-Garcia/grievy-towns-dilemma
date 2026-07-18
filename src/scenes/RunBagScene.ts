@@ -8,7 +8,7 @@ import { InventorySystem } from '../systems/InventorySystem';
 import { itemTextureKey } from '../utils/ItemAssets';
 import {
   UI, TYPE, LAYOUT, drawGlowPanel, drawCard, drawSlot, drawDivider, uiStyle, titleStyle,
-  addCloseButton, openScreenTransition, closeScreenTransition, fitText, strokeDashedRect,
+  addCloseButton, openScreenTransition, closeScreenTransition, fitText, wrapLabel, strokeDashedRect,
 } from '../utils/UITheme';
 import { SearchField, matchesSearch } from '../utils/SearchField';
 import { renderStatsSections } from '../utils/StatsPanel';
@@ -80,19 +80,24 @@ const EQUIPPABLE_TYPES = new Set<ItemType>([
 ]);
 
 // ── Onglets de filtrage de la grille ordinaire (capture créateur 18/07) ──────
-// Libellés courts EXACTS de la capture. Le filtre + la recherche ESTOMPENT les
-// slots non concernés (alpha réduit) au lieu de les masquer : le sac de run est
-// POSITIONNEL (échanges sûr↔ordinaire par index), retirer des cases casserait
-// la lecture spatiale et les échanges en cours.
-// NB : la scène est historiquement en français en dur (comme tout RunBagScene) —
-// dette i18n préexistante, signalée, pas aggravée par choix de libellés dérivés.
+// ICÔNES + tooltip, PAS de labels texte : la colonne fait 272 px utiles, soit
+// 51 px par onglet — même les libellés courts de la capture (« ARMES »,
+// « DIVERS ») y sortaient tronqués en « AR… »/« DIV… ». C'est très exactement
+// le problème déjà tranché sur les onglets du sac d'InventoryScene (D13) :
+// mêmes glyphes `bagtab_*` bakés au boot, `labelKey` = tooltip au survol +
+// fallback texte si la sheet d'icônes manque — cohérence entre les deux façons
+// de filtrer le même genre de sac.
+// Le filtre + la recherche ESTOMPENT les slots non concernés (alpha réduit) au
+// lieu de les masquer : le sac de run est POSITIONNEL (échanges sûr↔ordinaire
+// par index), retirer des cases casserait la lecture spatiale et les échanges
+// en cours.
 type RunBagFilter = 'ALL' | 'EQUIP' | 'CONSUMABLE' | 'MATERIAL' | 'MISC';
-const RUN_BAG_TABS: ReadonlyArray<{ id: RunBagFilter; label: string; types: ReadonlySet<ItemType> | null }> = [
-  { id: 'ALL',        label: 'TOUT',   types: null },
-  { id: 'EQUIP',      label: 'ARMES',  types: EQUIPPABLE_TYPES },
-  { id: 'CONSUMABLE', label: 'CONSO',  types: new Set([ItemType.CONSUMABLE]) },
-  { id: 'MATERIAL',   label: 'MATER',  types: new Set([ItemType.MATERIAL]) },
-  { id: 'MISC',       label: 'DIVERS', types: new Set([ItemType.KEY_ITEM, ItemType.SKIN]) },
+const RUN_BAG_TABS: ReadonlyArray<{ id: RunBagFilter; labelKey: string; icon: string; types: ReadonlySet<ItemType> | null }> = [
+  { id: 'ALL',        labelKey: 'inventory.tab_all',        icon: 'bagtab_all',        types: null },
+  { id: 'EQUIP',      labelKey: 'inventory.tab_equip',      icon: 'bagtab_equip',      types: EQUIPPABLE_TYPES },
+  { id: 'CONSUMABLE', labelKey: 'inventory.tab_consumable', icon: 'bagtab_consumable', types: new Set([ItemType.CONSUMABLE]) },
+  { id: 'MATERIAL',   labelKey: 'inventory.tab_material',   icon: 'bagtab_material',   types: new Set([ItemType.MATERIAL]) },
+  { id: 'MISC',       labelKey: 'inventory.tab_misc',       icon: 'bagtab_misc',       types: new Set([ItemType.KEY_ITEM, ItemType.SKIN]) },
 ];
 
 type RunBagMode = 'pack' | 'view' | 'extract';
@@ -122,6 +127,8 @@ export class RunBagScene extends Phaser.Scene {
   private bagFilter: RunBagFilter = 'ALL';
   private search: SearchField | null = null;
   private searchQuery = '';
+  // Tooltip texte des onglets à icônes (un seul à la fois — cf. InventoryScene).
+  private tabTooltip: Phaser.GameObjects.Container | null = null;
 
   constructor() { super({ key: 'RunBagScene' }); }
 
@@ -144,6 +151,7 @@ export class RunBagScene extends Phaser.Scene {
     this.bagFilter = 'ALL';
     this.search = null;
     this.searchQuery = '';
+    this.tabTooltip = null;
   }
 
   create() {
@@ -160,6 +168,9 @@ export class RunBagScene extends Phaser.Scene {
   }
 
   private clearDynamic(): void {
+    // Un refresh() peut survenir tooltip affiché (le hit survolé est détruit
+    // sans que pointerout ne parte) — jamais de tooltip orphelin.
+    this.hideTabTooltip();
     for (const go of this.dynamicObjs) if (go.active) go.destroy();
     this.dynamicObjs = [];
   }
@@ -470,12 +481,11 @@ export class RunBagScene extends Phaser.Scene {
         strokeDashedRect(g, sx, sy, EQ_SLOT, EQ_SLOT, UI.SLOT_BORDER, { alpha: 1, lineWidth: 1 });
         const style = uiStyle(TYPE.SMALL, UI.TXT_HINT, { bold: true, align: 'center' });
         const full = t(`inventory.slot_short.${key}`).toUpperCase();
-        // « BAGUE 1 » passe sur deux lignes : le numéro survit toujours (cf.
-        // InventoryScene.renderEquipment — jamais de slice(n), fitText en pixels).
-        const numbered = full.match(/^(.*\S)\s+(\d+)$/);
-        const label = numbered
-          ? `${fitText(this, numbered[1]!, style, EQ_SLOT - 6)}\n${numbered[2]}`
-          : fitText(this, full, style, EQ_SLOT - 6);
+        // Nom de slot TOUJOURS complet (capture créateur : jamais de « CO… ») :
+        // ce qui ne tient pas sur une ligne de 44 px passe sur 2-3 lignes
+        // mesurées — « BAGUE / 1 », « COLL / IER » (wrapLabel, jamais fitText :
+        // l'ellipse est réservée aux textes disponibles en entier ailleurs).
+        const label = wrapLabel(this, full, style, EQ_SLOT - 4);
         this.track(this.add.text(sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, label, style).setOrigin(0.5));
       }
     }
@@ -513,13 +523,27 @@ export class RunBagScene extends Phaser.Scene {
     const bx = this.bagB.x + 8;
     const { safeHdrY, safeY, tabsY, ordY } = this.bagLayoutYs(run.safeBag.length);
 
-    // Bandeau des slots sûrs : libellé à gauche, compteur gardés/total à droite
+    // Bandeau des slots sûrs : libellé à gauche, compteur gardés/total à droite,
+    // sur UNE seule ligne SANS chevauchement (capture créateur). La version
+    // longue de la capture (« GARDÉS À L'EXTRACTION : 0/5 », ~27 glyphes de
+    // Minimal 10) ne tient PAS avec le titre dans les 272 px de la colonne —
+    // les deux textes se superposaient. On garde le libellé le plus complet qui
+    // tient RÉELLEMENT (largeurs MESURÉES sur les Text rendus, jamais estimées),
+    // avec dégradation progressive jusqu'au compteur nu qui tient toujours.
     const safeFilled = run.safeBag.filter(s => s !== null).length;
-    this.track(this.add.text(bx, safeHdrY, '◆ SLOTS SÛRS',
-      uiStyle(TYPE.SMALL, UI.TXT_GOLD, { bold: true })).setOrigin(0, 0));
-    this.track(this.add.text(bx + RB_GRID_W, safeHdrY,
+    const safeTitle = this.track(this.add.text(bx, safeHdrY, '◆ SLOTS SÛRS',
+      uiStyle(TYPE.SMALL, UI.TXT_GOLD, { bold: true })).setOrigin(0, 0)) as Phaser.GameObjects.Text;
+    const counterLabels = [
       `GARDÉS À L'EXTRACTION : ${safeFilled}/${run.safeBag.length}`,
-      uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setOrigin(1, 0));
+      `GARDÉS : ${safeFilled}/${run.safeBag.length}`,
+      `${safeFilled}/${run.safeBag.length}`,
+    ];
+    const safeCounter = this.track(this.add.text(bx + RB_GRID_W, safeHdrY, '',
+      uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setOrigin(1, 0)) as Phaser.GameObjects.Text;
+    for (const label of counterLabels) {
+      safeCounter.setText(label);
+      if (safeTitle.width + 8 + safeCounter.width <= RB_GRID_W) break;
+    }
 
     for (let i = 0; i < run.safeBag.length; i++) {
       const col = i % RB_COLS, row = Math.floor(i / RB_COLS);
@@ -543,9 +567,11 @@ export class RunBagScene extends Phaser.Scene {
       uiStyle(TYPE.SMALL, UI.TXT_MUTED)).setOrigin(0.5, 0));
   }
 
-  /** Onglets texte TOUT/ARMES/CONSO/MATER/DIVERS — même vocabulaire visuel que
-   *  les onglets du sac de InventoryScene (pilule sombre, actif = fond BG_MID +
-   *  liseré et bande basse arcane, hit zone 44 px). */
+  /** Onglets de filtrage à ICÔNES (glyphes `bagtab_*`, tooltip texte au survol,
+   *  fallback label si la sheet manque) — même solution que les onglets du sac
+   *  de InventoryScene (D13) : à 51 px par onglet, aucun label texte ne tient
+   *  sans troncature. Pilule sombre, actif = fond BG_MID + liseré et bande
+   *  basse arcane + glyphe alpha plein, hit zone 44 px. */
   private renderRunBagTabs(x: number, y: number, w: number): void {
     const TAB_GAP = 4;
     const tw = Math.floor((w - TAB_GAP * (RUN_BAG_TABS.length - 1)) / RUN_BAG_TABS.length);
@@ -566,17 +592,68 @@ export class RunBagScene extends Phaser.Scene {
         g.fillRect(tx + 4, y + RB_TABS_H - 3, tw - 8, 2);
       }
 
-      const tabStyle = uiStyle(TYPE.SMALL, active ? UI.TXT_CYAN : UI.TXT_MUTED, { bold: active });
-      this.track(this.add.text(cx, cy, fitText(this, tab.label, tabStyle, tw - 6), tabStyle).setOrigin(0.5));
+      // Glyphe 32×32 à sa taille NATIVE (bake ×2 de la grille 16 px — tout
+      // redimensionnement non entier réintroduirait du flou NEAREST).
+      const inactiveAlpha = 0.45;
+      let icon: Phaser.GameObjects.Image | null = null;
+      if (this.textures.exists(tab.icon)) {
+        icon = this.track(this.add.image(cx, cy, tab.icon).setAlpha(active ? 1 : inactiveAlpha)) as Phaser.GameObjects.Image;
+      } else {
+        // Fallback texte (sheet ui_icons_16 absente) — clampé en pixels, le
+        // label complet reste toujours lisible via le tooltip.
+        const tabStyle = uiStyle(TYPE.SMALL, active ? UI.TXT_CYAN : UI.TXT_MUTED, { bold: active });
+        this.track(this.add.text(cx, cy, fitText(this, t(tab.labelKey), tabStyle, tw - 6), tabStyle).setOrigin(0.5));
+      }
 
       const hit = this.track(this.add.rectangle(cx, cy, tw + TAB_GAP, 44, 0, 0)
         .setInteractive({ useHandCursor: true })) as Phaser.GameObjects.Rectangle;
+      hit.on('pointerover', () => {
+        if (icon && !active) icon.setAlpha(0.8);
+        this.showTabTooltip(cx, y, t(tab.labelKey));
+      });
+      hit.on('pointerout', () => {
+        if (icon && tab.id !== this.bagFilter) icon.setAlpha(inactiveAlpha);
+        this.hideTabTooltip();
+      });
       hit.on('pointerdown', () => {
+        this.hideTabTooltip();
         if (this.bagFilter === tab.id) return;
         this.bagFilter = tab.id;
         this.refresh(); // l'état actif EST le feedback (cf. InventoryScene)
       });
     });
+  }
+
+  /** Tooltip du survol d'un onglet à icône — nom complet du filtre, panneau
+   *  OPAQUE au-dessus de la rangée (depth 30, §2.5), un seul à la fois, clampé
+   *  dans le cadre. Porté de InventoryScene.showTabTooltip (mêmes raisons : un
+   *  texte nu se superposerait au champ de recherche voisin). */
+  private showTabTooltip(cx: number, tabTopY: number, label: string): void {
+    this.hideTabTooltip();
+
+    const PAD_X = 8;
+    const PAD_Y = 4;
+    const txt = this.add.text(0, 0, label,
+      uiStyle(TYPE.SMALL, UI.TXT_PARCHMENT, { bold: true })).setOrigin(0.5);
+    const w = txt.width  + PAD_X * 2;
+    const h = txt.height + PAD_Y * 2;
+
+    const bg = this.add.graphics();
+    bg.fillStyle(UI.BG_DEEP, 1);
+    bg.fillRoundedRect(-w / 2, -h / 2, w, h, 3);
+    bg.lineStyle(1, UI.ACCENT_ARCANE, 0.7);
+    bg.strokeRoundedRect(-w / 2, -h / 2, w, h, 3);
+
+    this.tabTooltip = this.add.container(cx, tabTopY - 4 - h / 2, [bg, txt]).setDepth(30);
+
+    const W = this.cameras.main.width;
+    const min = MARGIN + 4 + w / 2;
+    const max = W - MARGIN - 4 - w / 2;
+    this.tabTooltip.setX(Phaser.Math.Clamp(cx, Math.min(min, max), max));
+  }
+
+  private hideTabTooltip(): void {
+    if (this.tabTooltip) { this.tabTooltip.destroy(); this.tabTooltip = null; }
   }
 
   /** Vrai si l'objet passe l'onglet actif ET la recherche — les slots qui ne

@@ -361,6 +361,67 @@ export function fitText(
 }
 
 /**
+ * Passe un libellé COURT sur plusieurs lignes pour qu'il tienne dans `maxWidth`
+ * PIXELS — sans JAMAIS d'ellipse, contrairement à `fitText`.
+ *
+ * À utiliser quand le texte n'est disponible NULLE PART ailleurs (règle
+ * guidelines §1.1) : libellés fantômes des slots d'équipement vides
+ * (« COLLIER », « BAGUE 1 »), où un « CO… » ne veut rien dire. Le découpage est
+ * MESURÉ (mêmes sondes que fitText, jamais de compte de caractères) :
+ *   1. le texte entier tient → une ligne ;
+ *   2. sinon, coupure aux espaces (« BAGUE 1 » → « BAGUE / 1 ») ;
+ *   3. un mot seul trop large est coupé en K morceaux ÉQUILIBRÉS (le plus
+ *      petit K dont TOUS les morceaux tiennent) — « COLLIER » → « COLL / IER ».
+ * Réservé aux libellés de 1-2 mots dans des conteneurs assez hauts pour 2-3
+ * lignes (un slot de 48 px absorbe 3 lignes de Minimal 10) — pour du texte
+ * long, c'est `wordWrapWidth` qui s'applique.
+ */
+export function wrapLabel(
+  scene: Phaser.Scene,
+  text: string,
+  style: Phaser.Types.GameObjects.Text.TextStyle,
+  maxWidth: number,
+): string {
+  // Même sonde monoligne que fitText : `wordWrap` fausserait la mesure.
+  const probeStyle = { ...style };
+  delete probeStyle.wordWrap;
+  const probe = scene.make.text({ text: '', style: probeStyle }, false);
+  const fits = (s: string): boolean => { probe.setText(s); return probe.width <= maxWidth; };
+
+  if (fits(text)) { probe.destroy(); return text; }
+
+  const splitWord = (word: string): string[] => {
+    if (fits(word) || word.length <= 1) return [word];
+    for (let k = 2; k <= word.length; k++) {
+      const len = Math.ceil(word.length / k);
+      const chunks: string[] = [];
+      for (let i = 0; i < word.length; i += len) chunks.push(word.slice(i, i + len));
+      if (chunks.every(fits)) return chunks;
+    }
+    return word.split(''); // dégénéré (glyphe > maxWidth) — jamais atteint en pratique
+  };
+
+  const lines: string[] = [];
+  let current = '';
+  for (const word of text.split(/\s+/)) {
+    const chunks = splitWord(word);
+    if (chunks.length > 1) {
+      // Un mot coupé occupe SES propres lignes — recoller le morceau suivant à
+      // un autre mot (« UE 1 ») se lirait comme un mot qui n'existe pas.
+      if (current) { lines.push(current); current = ''; }
+      lines.push(...chunks);
+      continue;
+    }
+    const candidate = current ? `${current} ${word}` : word;
+    if (fits(candidate)) current = candidate;
+    else { if (current) lines.push(current); current = word; }
+  }
+  if (current) lines.push(current);
+  probe.destroy();
+  return lines.join('\n');
+}
+
+/**
  * Draw a modern glow panel: dark rounded fill + fine outer separator line +
  * fine inner accent line at 30% alpha. The "pixel art + modern UI" look
  * (Hyper Light Drifter / Dead Cells / Hades) — subtle glow instead of

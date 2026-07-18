@@ -119,7 +119,8 @@ const EN_MANUAL: Record<string, string> = {
   // ── SEARCH (shared field: Arsenal / Bestiary / Bag — src/utils/SearchField.ts) ──
   'search.placeholder_item':   'Search gear…',
   'search.placeholder_enemy':  'Search creatures…',
-  'search.placeholder_bag':    'Search the bag…',
+  // Shortened like fr.ts: the 272 px run-bag field truncated the long form.
+  'search.placeholder_bag':    'Search…',
   'search.no_results':         'No results',
   'search.no_results_hint':    'Nothing matches “{q}”',
 

@@ -6,7 +6,13 @@
 > Les tokens de ce document sont extraits du code réel (`src/utils/UITheme.ts`, `src/types/index.ts`,
 > `src/main.ts`) — si le code et ce doc divergent, corriger l'un ou l'autre, jamais ignorer.
 
-**Dernière synchro avec le code :** refonte « hiérarchie, aération, débordements »
+**Dernière synchro avec le code :** passe « zéro troncature sac de run / inventaire »
+(2026-07-18) — nouveau helper **`wrapLabel()`** (§2.2 : passage à la ligne MESURÉ, sans
+ellipse, pour les libellés indisponibles ailleurs — slots d'équipement vides), onglets du
+sac de run alignés sur les onglets à icônes `bagtab_*` d'InventoryScene (51 px/onglet :
+aucun label texte ne tient), bandeau « SLOTS SÛRS » à compteur dégradé par mesure réelle,
+`search.placeholder_bag` raccourci (« Rechercher… »).
+Précédente : refonte « hiérarchie, aération, débordements »
 (2026-07-13) — canvas **960×720** (zoom caméra monde à **1** : un zoom fractionnaire
 réintroduisait le flou, cf. §0bis), polices **Neatpixels** avec **une grille par variante**
 (Standard 7 / Minimal 10 / Boss 18) et échelle refondue (§2.2), nouveaux helpers
@@ -245,6 +251,11 @@ Règles :
   nombre de caractères ne veut rien dire (`MMMM` et `iiii` n'ont pas la même largeur) et ignore la
   police. C'était la cause **structurelle** des débordements : chaque changement de typo les faisait
   tous réapparaître.
+- **Libellé court qui n'existe NULLE PART ailleurs** (nom d'un slot d'équipement vide, badge sans
+  panneau détail) → **`wrapLabel(scene, text, style, maxWidth)`** : passage sur 2-3 lignes MESURÉ
+  (coupure aux espaces, puis coupe équilibrée d'un mot seul trop large — « COLLIER » → « COLL/IER »),
+  **jamais d'ellipse** : un « CO… » qui ne renvoie à rien viole §1.1. `fitText` reste le bon outil
+  quand le texte complet est lisible ailleurs (détail, tooltip, long-press).
 - Texte long → `{ wordWrapWidth: ... }`. **Zéro débordement**, sans exception.
 - Texte superposé à une barre, un sprite ou une icône → `{ stroke: true }`.
 - Chiffres/valeurs à droite : `.setOrigin(1, 0)` ; titres centrés : `.setOrigin(0.5, 0)`.
@@ -596,6 +607,9 @@ gants|amulette) avec le **sprite du joueur** (frame 0 de `player_idle`, échelle
   `BG_MID` + liseré et bande basse arcane ; inactif = alpha 0.45. **Tooltip texte au survol**
   (accessibilité) + fallback label texte si la sheet d'icônes manque.
   Changer d'onglet reset le scroll et re-rend la grille filtrée.
+  **RunBagScene ('view'/'extract') réutilise les mêmes onglets à icônes + tooltip** (colonne SAC
+  de 272 px → 51 px par onglet : aucun label texte ne tient, même court — cohérence entre les deux
+  façons de filtrer le même genre de sac).
 - **Grille** : bordure de cellule = rareté (Graphics « ring » au-dessus du cadre asset `ui_slot_frame`
   quand il est chargé), badge quantité 10 px bold + stroke, scroll **wheel + drag
   vertical** (§5.4), tap avec `getDistance() > 10` ignoré (anti-scroll-tap).

@@ -100,7 +100,10 @@ export const FR: Record<string, string> = {
   // ── RECHERCHE (champ partagé Arsenal / Bestiaire / Sac — src/utils/SearchField.ts) ──
   'search.placeholder_item':   'Rechercher un équipement…',
   'search.placeholder_enemy':  'Rechercher une créature…',
-  'search.placeholder_bag':    'Rechercher dans le sac…',
+  // « Rechercher dans le sac… » débordait du champ de 272 px du sac de run
+  // (fitText le tronquait en « Rechercher dans l… ») — le contexte « sac » est
+  // déjà porté par le panneau, le verbe seul suffit.
+  'search.placeholder_bag':    'Rechercher…',
   'search.no_results':         'Aucun résultat',
   'search.no_results_hint':    'Aucune entrée ne correspond à « {q} »',
 
