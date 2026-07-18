@@ -71,6 +71,14 @@ fonctionnels — liste pour mémoire, ne pas re-découvrir :
 8. Sac vide à la création + aucun équipement = injouable. Épée de Fer équipée d'office désormais.
 9. 50% HP au retour à Grievy Town après une mort en run — n'avait aucun sens (sac déjà perdu, GT
    est une zone sûre). PV pleins pour ce chemin ; le respawn legacy (même zone) garde 50%.
+10. **Run active fantôme après un chargement de save** (19/07) : `run.active` restait `true` même
+    en zone `grievy_town` si le joueur empruntait le réseau de téléports LEGACY (pré-RunSystem,
+    toujours actif en parallèle) pour rentrer en ville sans passer par "S'exfiltrer"/la mort — la
+    touche Inventaire ouvrait alors `RunBagScene` (20 emplacements) au lieu de `InventoryScene`
+    (banque, 400 emplacements), incohérence qui se figeait dans la sauvegarde. Corrigé dans
+    `resolveZoneLayout()` (point de passage unique boot+transitions) : `run.active` + zone hors
+    `ignis_reach` → run clôturée (`run = null` + notification, différée d'une frame pour ne pas se
+    perdre au tout premier appel du boot, avant que `UIScene` écoute).
 
 **6 passages code-reviewer reçus sur la boucle de run**, tous BLOCKER/BUG appliqués. Le 6e (commit
 `ddb9a6b` — équipement sac de run + icônes + polish UI) est revenu **clean** (0 BLOCKER, 0 BUG).
