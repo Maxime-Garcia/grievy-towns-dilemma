@@ -7401,6 +7401,29 @@ export class GameScene extends Phaser.Scene {
    * explicite sur run.active plutôt que sur zoneId seul.
    */
   private resolveZoneLayout(zoneId: string): boolean {
+    // Run active mais on résout une zone HORS dungeon (`ignis_reach`) : soit le
+    // réseau de téléports legacy a été emprunté pour revenir en ville sans
+    // passer par "S'exfiltrer"/la mort (les deux seuls chemins qui nettoient
+    // `run` normalement), soit une sauvegarde a figé cet état incohérent (bug
+    // trouvé en playtest 19/07 — charger une save laissait `run.active` vrai
+    // alors que le joueur était en ville, donc la touche Inventaire rouvrait le
+    // sac de run limité au lieu de la banque). Aucun chemin propre ne permet de
+    // reprendre cette run depuis une zone hors dungeon — on la clôture ici,
+    // au point de passage unique de toute résolution de zone, pour que
+    // l'incohérence ne puisse plus jamais persister (ni en session, ni via une
+    // sauvegarde qui la figerait à nouveau).
+    if (this.gameState.run?.active && zoneId !== 'ignis_reach') {
+      this.gameState.run = null;
+      // delayedCall(0) : ce garde-fou tourne aussi au tout premier appel de
+      // resolveZoneLayout() dans create() (bootstrap après chargement d'une
+      // save) — à ce stade UIScene n'a pas encore lancé son create()
+      // (scene.launch('UIScene', ...) vient après), donc rien n'écoute encore
+      // 'show_notification' : le message se perdrait silencieusement dans
+      // EXACTEMENT le scénario que ce correctif cible. Même patron que
+      // 'zone_entered' un peu plus haut dans ce fichier.
+      this.time.delayedCall(0, () =>
+        this.events.emit('show_notification', 'Run abandonnée (retour en zone sûre) — sac de run perdu'));
+    }
     const run = this.gameState.run;
     const isRunZone = !!run?.active && zoneId === 'ignis_reach';
     if (isRunZone) {
