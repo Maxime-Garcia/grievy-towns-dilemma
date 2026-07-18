@@ -57,7 +57,7 @@ export class FloatingItemDrop extends Phaser.GameObjects.Container {
   private innerRingTween?: Phaser.Tweens.Tween;
   private readonly persistentTweens: Phaser.Tweens.Tween[] = [];
 
-  private baseSwordScale = 1.2;
+  private baseSwordScale = 0.9;
   // Capturée après setDisplaySize() — le tween scaleX de l'ombre doit rester
   // relatif à cette base (30x7), pas écraser la valeur absolue. Seul scaleX
   // respire (spec) ; scaleY reste figé à sa valeur de setDisplaySize.
