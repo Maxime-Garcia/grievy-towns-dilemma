@@ -688,10 +688,14 @@ export class RunBagScene extends Phaser.Scene {
         g.lineStyle(3, isSelected ? 0xffffff : goldHex, 1);
         g.strokeRoundedRect(x, y, RB_SLOT, RB_SLOT, 5);
       } else {
-        strokeDashedRect(g, x, y, RB_SLOT, RB_SLOT, goldHex, { alpha: 0.75, lineWidth: 1 });
-        // Affordance « tu peux en mettre plus ici »
+        // alpha/taille du "+" réduits (0.75→0.5, HEADING 21px→BODY 14px) : à poids
+        // visuel égal avec le contour fin des slots ordinaires vides (drawSlot,
+        // alpha 0.45, rien à l'intérieur), le slot sûr ne doit pas paraître plus
+        // "haut"/imposant alors qu'il fait exactement la même taille (RB_SLOT=48
+        // des deux côtés — vérifié, pas un bug de dimension).
+        strokeDashedRect(g, x, y, RB_SLOT, RB_SLOT, goldHex, { alpha: 0.5, lineWidth: 1 });
         this.track(this.add.text(x + RB_SLOT / 2, y + RB_SLOT / 2, '+',
-          uiStyle(TYPE.HEADING, UI.TXT_GOLD)).setOrigin(0.5).setAlpha(0.55));
+          uiStyle(TYPE.BODY, UI.TXT_GOLD)).setOrigin(0.5).setAlpha(0.45));
       }
     } else {
       const rarHex = slot ? parseInt((RARITY_COLORS[slot.item.rarity] ?? '#888888').slice(1), 16) : UI.SLOT_BORDER;
