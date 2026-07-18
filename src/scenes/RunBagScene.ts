@@ -694,7 +694,11 @@ export class RunBagScene extends Phaser.Scene {
         // "haut"/imposant alors qu'il fait exactement la même taille (RB_SLOT=48
         // des deux côtés — vérifié, pas un bug de dimension).
         strokeDashedRect(g, x, y, RB_SLOT, RB_SLOT, goldHex, { alpha: 0.5, lineWidth: 1 });
-        this.track(this.add.text(x + RB_SLOT / 2, y + RB_SLOT / 2, '+',
+        // +2px : la boîte de mesure de la police réserve de l'espace sous la ligne
+        // de base pour les descendantes (g/j/p/q/y), que "+" n'utilise jamais —
+        // setOrigin(0.5) centre donc cette boîte, pas l'encre du glyphe, qui remonte
+        // visuellement au-dessus du centre réel du slot sans ce nudge.
+        this.track(this.add.text(x + RB_SLOT / 2, y + RB_SLOT / 2 + 2, '+',
           uiStyle(TYPE.BODY, UI.TXT_GOLD)).setOrigin(0.5).setAlpha(0.45));
       }
     } else {
