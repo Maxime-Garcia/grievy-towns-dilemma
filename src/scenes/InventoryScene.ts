@@ -19,7 +19,7 @@ import {
   type EquipSlotKey,
 } from '../utils/EquipmentPanel';
 import {
-  renderItemDetailContent, getResonance, getMainStatLineView, getSubstatLineViews,
+  renderItemDetailContent, getResonance, getMainStatLineView, getSubstatLineViews, DOUBLE_CLICK_MS,
 } from '../utils/ItemDetailPanel';
 import { itemTextureKey } from '../utils/ItemAssets';
 import { t, localizeItem } from '../i18n';
@@ -162,6 +162,14 @@ export class InventoryScene extends Phaser.Scene {
   // (cf. docs/design/LOOT_STAT_ROLLS.md §9 step 8 audit).
   private selectedItem: Item | null = null;
 
+  // Détection du double-clic sur le paperdoll (même modèle que RunBagScene,
+  // retour créateur 19/07) : un second clic RAPPROCHÉ sur le MÊME slot déjà
+  // équipé déséquipe directement, sans repasser par le bouton "Déséquiper" du
+  // panneau de détail. `selectedItem` n'a pas d'origine (paperdoll vs sac) —
+  // on retient donc directement la clé de slot du dernier clic paperdoll.
+  private lastEquipDetailKey: EquipSlotKey | null = null;
+  private lastEquipDetailAt = 0;
+
   private keyZ?: Phaser.Input.Keyboard.Key;
 
   /** Recherche textuelle du sac — créée dans create(), détruite dans shutdown().
@@ -199,6 +207,8 @@ export class InventoryScene extends Phaser.Scene {
     this.gameScene   = data.gameScene;
     this.player      = data.gameScene.gameState.player;
     this.selectedItem = null;
+    this.lastEquipDetailKey = null;
+    this.lastEquipDetailAt  = 0;
     this.bagFilter    = 'ALL';
     this.search       = null;
     this.searchQuery  = '';
@@ -450,7 +460,32 @@ export class InventoryScene extends Phaser.Scene {
         // asset intacts, aucune commande de tracé ne s'empile.
         hit.on('pointerover', () => drawRing(0xffffff));
         hit.on('pointerout',  () => drawRing(rarHex));
-        hit.on('pointerdown', () => this.showDetail(item));
+        hit.on('pointerdown', () => {
+          // Même modèle premier-clic/double-clic que RunBagScene (retour créateur
+          // 19/07, étendu ici pour que le paperdoll hors run se comporte pareil) :
+          // un second clic RAPPROCHÉ sur ce MÊME slot déséquipe directement, sans
+          // repasser par le bouton "Déséquiper" du panneau de détail.
+          // `selectedItem === item` en plus du timestamp : contrairement à
+          // RunBagScene (dont `selectedDetail` est remis à null par TOUTE
+          // fermeture/action), InventoryScene n'a pas ce garde-fou naturel — sans
+          // cette vérification, fermer le détail (bouton Fermer/Vendre/Équiper un
+          // autre item) puis recliquer ce même slot <350ms plus tard déséquipait
+          // par erreur (cf. code-reviewer). Exiger que CE détail soit ENCORE
+          // affiché élimine toute la classe de faux positifs sans avoir à traquer
+          // chaque site qui remet selectedItem à null.
+          const isRapidSecondClick = this.selectedItem === item
+            && this.lastEquipDetailKey === key
+            && (this.time.now - this.lastEquipDetailAt) <= DOUBLE_CLICK_MS;
+
+          if (isRapidSecondClick) {
+            this.performUnequip(key, sx + EQ_SLOT / 2, sy - 14);
+            return;
+          }
+
+          this.lastEquipDetailKey = key;
+          this.lastEquipDetailAt = this.time.now;
+          this.showDetail(item);
+        });
 
         // White flash overlay — confirmation visuelle après un tap-equip.
         if (this.lastFlashSlotKey === key) {
@@ -590,22 +625,7 @@ export class InventoryScene extends Phaser.Scene {
         const rowY = btnY; // capturé AVANT addBtn (qui incrémente btnY) — sinon le
                             // toast se positionnerait sur la ligne du bouton SUIVANT.
         addBtn(t('inventory.unequip_hint'), UI.TXT_ORANGE, () => {
-          // unequip renvoie false si le sac est plein — improbable mais pas
-          // impossible avant que le sac de run à 20 emplacements arrive avec le
-          // RunSystem (le vrai fix, objet qui tombe au sol, est documenté et
-          // délibérément reporté à ce chantier-là, cf. ROGUELITE_POC.md). En
-          // attendant, ne pas échouer SILENCIEUSEMENT — le joueur doit comprendre
-          // pourquoi rien ne s'est passé plutôt que de croire le bouton cassé.
-          if (InventorySystem.unequip(this.player, equippedSlot)) {
-            this.selectedItem = null;
-            this.refresh();
-          } else {
-            // PAS this.gameScene.events.emit('show_notification', ...) : InventoryScene
-            // se rend au-dessus de UIScene (ordre fixe dans main.ts), son overlay
-            // 0.88 d'opacité rendrait ce toast invisible — le "ne pas échouer
-            // silencieusement" resterait silencieux. Toast local, garanti visible.
-            this.showLocalToast(t('inventory.unequip_bag_full'), BTN_X + BTN_W / 2, rowY - 14);
-          }
+          this.performUnequip(equippedSlot, BTN_X + BTN_W / 2, rowY - 14);
         });
       } else {
         addBtn(t('inventory.equip_hint'), UI.TXT_GREEN, () => {
@@ -639,6 +659,28 @@ export class InventoryScene extends Phaser.Scene {
       this.selectedItem = null;
       this.refresh();
     });
+  }
+
+  /** Déséquipe un slot vers la banque — code partagé entre le bouton
+   *  "Déséquiper" du panneau de détail et le double-clic direct sur le
+   *  paperdoll (cf. renderGrid, callback renderOccupied). */
+  private performUnequip(slot: EquipSlotKey, toastX: number, toastY: number): void {
+    // unequip renvoie false si le sac est plein — improbable mais pas impossible
+    // avant que le sac de run à 20 emplacements arrive avec le RunSystem (le vrai
+    // fix, objet qui tombe au sol, est documenté et délibérément reporté à ce
+    // chantier-là, cf. ROGUELITE_POC.md). En attendant, ne pas échouer
+    // SILENCIEUSEMENT — le joueur doit comprendre pourquoi rien ne s'est passé
+    // plutôt que de croire le bouton/double-clic cassé.
+    if (InventorySystem.unequip(this.player, slot)) {
+      this.selectedItem = null;
+      this.refresh();
+    } else {
+      // PAS this.gameScene.events.emit('show_notification', ...) : InventoryScene
+      // se rend au-dessus de UIScene (ordre fixe dans main.ts), son overlay
+      // 0.88 d'opacité rendrait ce toast invisible — le "ne pas échouer
+      // silencieusement" resterait silencieux. Toast local, garanti visible.
+      this.showLocalToast(t('inventory.unequip_bag_full'), toastX, toastY);
+    }
   }
 
   /** Message éphémère au-dessus d'un bouton, garanti visible (contrairement à un

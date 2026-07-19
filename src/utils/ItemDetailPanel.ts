@@ -18,6 +18,12 @@ import { t, localizeItem } from '../i18n';
 
 export interface PanelBounds { x: number; y: number; w: number; h: number }
 
+// Fenêtre de détection du double-clic (premier clic = détail, second clic
+// RAPPROCHÉ sur le MÊME slot = action directe) — partagée entre InventoryScene
+// (paperdoll hors run) et RunBagScene (sac + paperdoll intra-run), pour que les
+// deux écrans se comportent IDENTIQUEMENT (retour créateur 19/07).
+export const DOUBLE_CLICK_MS = 350;
+
 /** Résonance globale (§4/§7.2 LOOT_STAT_ROLLS.md) — null si l'item n'a pas
  *  d'equipRanges calculables (jamais affichée dans ce cas, pas un défaut). */
 export function getResonance(item: Item): number | null {

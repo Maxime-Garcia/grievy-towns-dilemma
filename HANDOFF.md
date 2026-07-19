@@ -204,6 +204,23 @@ reste utilisable en parallèle). `lastDetailShownAt` est PARTAGÉ entre sac et p
 risque de croisement : les deux gardes vérifient `origin.kind` (`'bag'` vs `'equip'`) ET l'identité
 exacte du slot avant de comparer le timestamp (vérifié par code-reviewer, 0 BLOCKER/BUG).
 
+**Étendu à `InventoryScene` (hors run) le même soir** : le créateur a signalé "ça ne marche pas dans
+l'inventaire hors run" — le double-clic n'existait que dans `RunBagScene`. Même modèle porté vers le
+paperdoll d'`InventoryScene` (`performUnequip()` propre à cette scène, `DOUBLE_CLICK_MS` déplacé en
+constante PARTAGÉE dans `utils/ItemDetailPanel.ts` pour que les deux scènes restent synchronisées).
+**1 BUG trouvé et corrigé par code-reviewer** : `InventoryScene.selectedItem` n'a pas d'origine
+discriminée comme `RunBagScene.selectedDetail` — sans garde supplémentaire, fermer le détail (bouton
+Fermer/Vendre/Équiper un autre item) puis recliquer le MÊME slot paperdoll <350ms plus tard
+déséquipait par erreur (le timestamp/la clé n'étaient jamais nettoyés par ces autres actions). Corrigé
+en exigeant AUSSI `this.selectedItem === item` dans la garde de double-clic (le détail doit être
+ENCORE affiché sur cet item précis, pas juste "un clic est survenu il y a peu"). Note : la grille
+principale du SAC d'`InventoryScene` garde son modèle preexistant tap-immédiat/appui-long (500ms) —
+volontairement pas touchée, le créateur parlait spécifiquement de déséquiper (paperdoll). **4 modèles
+d'interaction cohabitent maintenant dans le jeu** (sac RunBagScene = double-clic, paperdoll
+RunBagScene = double-clic, sac InventoryScene = tap/long-press, paperdoll InventoryScene =
+double-clic) — signalé par code-reviewer comme incohérence UX à arbitrer avec le créateur, pas
+tranché unilatéralement ici.
+
 ## 5. AUTRES POINTS OUVERTS (non bloquants, notés)
 
 - **Régression save/pity non résolue** : le créateur a signalé que la mémoire de pity disparaît

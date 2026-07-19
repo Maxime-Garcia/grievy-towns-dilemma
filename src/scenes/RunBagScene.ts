@@ -13,7 +13,7 @@ import {
 import { SearchField, matchesSearch } from '../utils/SearchField';
 import { renderStatsSections } from '../utils/StatsPanel';
 import { renderEquipmentPanel, renderPlayerSprite, EQ_SLOT, type EquipSlotKey } from '../utils/EquipmentPanel';
-import { renderItemDetailContent, addDetailActionButton, DETAIL_BTN_H, DETAIL_BTN_GAP } from '../utils/ItemDetailPanel';
+import { renderItemDetailContent, addDetailActionButton, DETAIL_BTN_H, DETAIL_BTN_GAP, DOUBLE_CLICK_MS } from '../utils/ItemDetailPanel';
 import { t, localizeItem } from '../i18n';
 
 // Écran de sac de run (RunSystem, docs/design/ROGUELITE_POC.md §3) — UNE seule
@@ -55,11 +55,10 @@ const RB_STRIDE = RB_SLOT + RB_GAP;
 const RB_COLS  = 5;    // 5 colonnes (capture créateur : rangée sûre + grille 5×3)
 const RB_GRID_W = RB_COLS * RB_STRIDE - RB_GAP;
 const BAG_TITLE_H = 22;
-// Fenêtre de détection du double-clic (RunBagScene.onBagSlotClicked) — deux
-// pointerdown sur le MÊME slot du sac en deçà de ce délai déclenchent l'action
-// directe (consommer/équiper) ; au-delà, chaque clic ne fait qu'afficher la
-// description, comme un double-clic OS standard.
-const DOUBLE_CLICK_MS = 350;
+// DOUBLE_CLICK_MS importé de utils/ItemDetailPanel (partagé avec InventoryScene,
+// pour que sac/paperdoll intra-run et paperdoll hors run se comportent
+// identiquement — deux pointerdown sur le MÊME slot en deçà de ce délai
+// déclenchent l'action directe, au-delà chaque clic n'affiche que la description).
 const RB_TABS_H   = 34;
 const RB_SEARCH_H = LAYOUT.TOUCH_MIN;
 
