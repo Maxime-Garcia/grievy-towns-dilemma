@@ -6968,6 +6968,10 @@ export class GameScene extends Phaser.Scene {
       // (même raison que la touche Inventaire, cf. BLOCKER trouvé en revue).
       if (this.scene.isActive('RunBagScene')) {
         const bag = this.scene.get('RunBagScene') as RunBagScene;
+        // handleEscape() : le panneau de détail d'un item a une chance de
+        // consommer l'appui (le referme) avant de fermer tout l'écran — même
+        // patron qu'InventoryScene juste en dessous.
+        if (bag.handleEscape()) return;
         if (bag.currentMode === 'view') bag.close();
         return;
       }

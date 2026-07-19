@@ -1,17 +1,15 @@
 import { GameScene } from './GameScene';
 import {
-  PlayerState, Item, ItemType, Weapon, Armor, Accessory, Consumable,
-  StatBonus, RARITY_COLORS, EquipStats, ElementType, InventorySlot,
+  PlayerState, Item, ItemType, Consumable,
+  RARITY_COLORS, ElementType, InventorySlot,
 } from '../types';
 import { InventorySystem, InventoryCategory } from '../systems/InventorySystem';
-import { StatsSystem } from '../systems/StatsSystem';
-import { StatRollSystem, isEquipableItem } from '../systems/StatRollSystem';
 import { getPassiveEffectLabel } from '../data/passiveEffects';
 import {
   UI, TYPE, LAYOUT, drawGlowPanel, drawCard, drawSlot, addUiFrame,
   drawDivider, addCloseButton, uiStyle, titleStyle, fitText, openScreenTransition,
   closeScreenTransition,
-  resonanceColor, formatRangedStatBounds, lineQuality, formatResonanceLine,
+  resonanceColor, formatResonanceLine,
   drawSlotRarityTint,
 } from '../utils/UITheme';
 import { SearchField, matchesSearch } from '../utils/SearchField';
@@ -20,6 +18,9 @@ import {
   renderEquipmentPanel, renderPlayerSprite, equipRowY, EQ_SLOT, EQ_ORDER,
   type EquipSlotKey,
 } from '../utils/EquipmentPanel';
+import {
+  renderItemDetailContent, getResonance, getMainStatLineView, getSubstatLineViews,
+} from '../utils/ItemDetailPanel';
 import { itemTextureKey } from '../utils/ItemAssets';
 import { t, localizeItem } from '../i18n';
 
@@ -533,118 +534,14 @@ export class InventoryScene extends Phaser.Scene {
   // display is meaningless if this reads the wrong object.
   private renderItemDetail(item: Item) {
     const { x: PX, y: PY, w: PW, h: PH } = this.stBounds;
-    const locItem  = localizeItem(item);
-    const rarColor = RARITY_COLORS[item.rarity] ?? UI.TXT_PARCHMENT;
 
-    // ── Header ───────────────────────────────────────────────────────────
-    // Lien retour avec hit zone élargie à 44 px de haut — le texte seul
-    // (10 px) était très en dessous de la norme tactile.
-    const back = this.add.text(PX + 12, PY + 8, t('inventory.back_stats'), uiStyle(TYPE.SMALL, UI.TXT_BLUE, { bold: true }));
-    const backHit = this.add.rectangle(
-      PX + 12 + back.width / 2, PY + 8 + back.height / 2,
-      back.width + 24, 44, 0x000000, 0,
-    )
-      .setInteractive({ useHandCursor: true })
-      .on('pointerover', () => back.setColor(UI.TXT_GOLD))
-      .on('pointerout',  () => back.setColor(UI.TXT_BLUE))
-      .on('pointerdown', () => { this.selectedItem = null; this.refresh(); });
-    this.dynamicObjs.push(back, backHit);
-
-    this.dynamicObjs.push(
-      this.add.text(PX + PW / 2, PY + 6, t('inventory.detail'), uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true })).setOrigin(0.5, 0),
-    );
-
-    const sepTop = this.add.graphics();
-    drawDivider(sepTop, PX + 8, PY + 26, PW - 16, UI.ACCENT_ARCANE, 0.22);
-    this.dynamicObjs.push(sepTop);
-
-    // ── Item identity ─────────────────────────────────────────────────────
-    let curY = PY + 38;
-
-    this.dynamicObjs.push(
-      this.add.text(PX + PW / 2, curY, `[${t(`rarity.${item.rarity}`)}]`, uiStyle(TYPE.SMALL, rarColor, { bold: true })).setOrigin(0.5, 0),
-    );
-    curY += 18;
-
-    // Le NOM est le héros du panneau : TYPE.HEADING (21), couleur de rareté —
-    // un vrai cran au-dessus des stats (14) et de la description (10).
-    const nameTxt = this.add.text(PX + PW / 2, curY, locItem.name, uiStyle(TYPE.HEADING, rarColor, {
-      bold: true, stroke: true, wordWrapWidth: PW - 24, align: 'center',
-    })).setOrigin(0.5, 0);
-    this.dynamicObjs.push(nameTxt);
-    curY += nameTxt.height + 10;
-
-    // ── Résonance globale (§4/§7.2) — instance réellement possédée uniquement,
-    // absente si l'item n'a pas d'equipRanges calculables (skip silencieux). ──
-    const resonance = this.getResonance(item);
-    if (resonance !== null) {
-      const resTxt = this.add.text(
-        PX + PW / 2, curY, formatResonanceLine(resonance),
-        uiStyle(9, resonanceColor(resonance), { bold: true }),
-      ).setOrigin(0.5, 0);
-      this.dynamicObjs.push(resTxt);
-      curY += resTxt.height + 6;
-    }
-
-    // ── Main stat (valeur rollée en gras/doré + teinte de qualité locale,
-    // fourchette catalogue en petit gris juste après — §7.2) ───────────────
-    const mainView = this.getMainStatLineView(item);
-    if (mainView) {
-      const valueTxt = this.add.text(0, curY, mainView.text, uiStyle(TYPE.BODY, mainView.color, { bold: true, stroke: true }));
-      let pairW = valueTxt.width;
-      let rangeTxt: Phaser.GameObjects.Text | undefined;
-      if (mainView.rangeText) {
-        rangeTxt = this.add.text(0, curY + 3, mainView.rangeText, uiStyle(TYPE.SMALL, UI.TXT_MUTED));
-        pairW += 4 + rangeTxt.width;
-      }
-      let lx = PX + PW / 2 - pairW / 2;
-      valueTxt.setPosition(lx, curY);
-      lx += valueTxt.width + 4;
-      if (rangeTxt) rangeTxt.setPosition(lx, curY + 4);
-      this.dynamicObjs.push(valueTxt);
-      if (rangeTxt) this.dynamicObjs.push(rangeTxt);
-      curY += valueTxt.height + 10;
-    }
-
-    const sepMid = this.add.graphics();
-    drawDivider(sepMid, PX + 8, curY, PW - 16, UI.BORDER_LIT, 0.3);
-    this.dynamicObjs.push(sepMid);
-    curY += 10;
-
-    // ── Substats (teinte de qualité locale par ligne + fourchette en petit
-    // gris — §7.2) ──────────────────────────────────────────────────────────
-    for (const view of this.getSubstatLineViews(item)) {
-      const bulletTxt = this.add.text(PX + 16, curY, `• ${view.text}`, uiStyle(TYPE.BODY, view.color));
-      this.dynamicObjs.push(bulletTxt);
-      if (view.rangeText) {
-        this.dynamicObjs.push(
-          this.add.text(PX + 16 + bulletTxt.width + 6, curY + 3, view.rangeText, uiStyle(TYPE.SMALL, UI.TXT_MUTED)),
-        );
-      }
-      curY += 20;   // 14 px de texte + 6 d'air — l'ancien 17 collait les puces
-    }
-    curY += 8;
-
-    // ── Passif — ENTRE les stats et la description, en bleu clair gras :
-    // c'est l'info décisive d'un équipement (Hidden en particulier), elle doit
-    // ressortir au lieu de se fondre dans l'italique muted du lore. Même
-    // convention que le popup de confirmation (showActionConfirmPopup).
-    const detailPassive = ('passiveEffect' in item && item.passiveEffect)
-      ? getPassiveEffectLabel(item.passiveEffect)
-      : undefined;
-    if (detailPassive) {
-      const passiveTxt = this.add.text(PX + 14, curY,
-        `${t('arsenal.passive_label')} ${detailPassive}`,
-        uiStyle(TYPE.SMALL, UI.TXT_BLUE, { bold: true, wordWrapWidth: PW - 28, lineSpacing: 4 }));
-      this.dynamicObjs.push(passiveTxt);
-      curY += passiveTxt.height + 8;
-    }
-
-    // ── Description ───────────────────────────────────────────────────────
-    const descTxt = this.add.text(PX + 14, curY, locItem.description, uiStyle(TYPE.SMALL, UI.TXT_MUTED, {
-      italic: true, wordWrapWidth: PW - 28, lineSpacing: 4,
-    }));
-    this.dynamicObjs.push(descTxt);
+    // Contenu (en-tête, rareté, nom, résonance, stats, passif, description)
+    // partagé avec RunBagScene — cf. utils/ItemDetailPanel.ts. Seuls les
+    // boutons d'action ci-dessous restent propres à cette scène.
+    renderItemDetailContent(this, item, this.stBounds, go => this.dynamicObjs.push(go), () => {
+      this.selectedItem = null;
+      this.refresh();
+    });
 
     // ── Action buttons (bottom of panel — zone de pouce) ─────────────────
     const isEquip = EQUIP_TYPES.includes(item.type);
@@ -1294,74 +1191,10 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   /**
-   * Résonance globale (0–100) de l'INSTANCE, si calculable (docs/design/
-   * LOOT_STAT_ROLLS.md §4/§7.2). Priorité au cache `rollQuality` (posé par
-   * `StatRollSystem.rollItem` à l'acquisition — évite un recalcul dans les
-   * listes) ; recalcule via `computeQuality` sinon. `null` — et donc AUCUNE
-   * ligne Résonance affichée — si l'item n'a pas d'`equipRanges`/`equipStats`
-   * exploitables (catalogue incomplet, item non équipable).
+   * getResonance/getMainStatLineView/getSubstatLineViews sont maintenant
+   * partagées avec RunBagScene — cf. utils/ItemDetailPanel.ts (importées
+   * en tête de fichier). Ne rien redéclarer ici.
    */
-  private getResonance(item: Item): number | null {
-    if (typeof item.rollQuality === 'number') return item.rollQuality;
-    if (!isEquipableItem(item) || !item.equipStats || !item.equipRanges) return null;
-    return StatRollSystem.computeQuality(item.equipStats, item.equipRanges);
-  }
-
-  /**
-   * Returns the main stat line for the detail panel, as the INSTANCE's rolled
-   * value (never the catalogue centre — caller must pass the real object).
-   * Colored by local roll quality (§7.2) when `equipRanges` is available on
-   * the instance ; `rangeText` is the catalogue fourchette suffix, e.g. "(91–150)".
-   */
-  private getMainStatLineView(item: Item): { text: string; color: string; rangeText?: string } | null {
-    const es = (item as { equipStats?: EquipStats }).equipStats;
-    if (es) {
-      const range = isEquipableItem(item) ? item.equipRanges?.mainStat : undefined;
-      const text  = StatsSystem.formatStat(es.mainStat.key, es.mainStat.value, es.mainStat.isPercentage);
-      const color = range ? resonanceColor(lineQuality(es.mainStat.value, range.min, range.max) * 100) : UI.TXT_GOLD;
-      return { text, color, rangeText: range ? formatRangedStatBounds(range) : undefined };
-    }
-    if ('damage'  in item) return { text: `ATK : ${(item as Weapon).damage}`, color: UI.TXT_GOLD };
-    if ('defense' in item) return { text: `DEF : ${(item as Armor).defense}`, color: UI.TXT_GOLD };
-    if (item.type === ItemType.CONSUMABLE) {
-      const e = (item as Consumable).effect;
-      if (e.hpRestore)   return { text: `HP + ${e.hpRestore}`, color: UI.TXT_GOLD };
-      if (e.manaRestore) return { text: `MP + ${e.manaRestore}`, color: UI.TXT_GOLD };
-    }
-    return null;
-  }
-
-  /**
-   * Returns sub-stat line views for the detail panel (instance values — same
-   * caveat as `getMainStatLineView`). Prefers `equipStats.substats`, falls
-   * back to legacy `bonusStats` (fixed, never rolled — §1.3 of the design doc).
-   */
-  private getSubstatLineViews(item: Item): { text: string; color: string; rangeText?: string }[] {
-    const es = (item as { equipStats?: EquipStats }).equipStats;
-    if (es && es.substats.length > 0) {
-      const ranges = isEquipableItem(item) ? item.equipRanges?.substats : undefined;
-      return es.substats.map((s, i) => {
-        const range = ranges?.[i];
-        const text  = StatsSystem.formatStat(s.key, s.value, s.isPercentage);
-        const color = range ? resonanceColor(lineQuality(s.value, range.min, range.max) * 100) : UI.TXT_PARCHMENT;
-        return { text, color, rangeText: range ? formatRangedStatBounds(range) : undefined };
-      });
-    }
-
-    if (!('bonusStats' in item)) return [];
-    const bonus  = (item as Weapon | Armor | Accessory).bonusStats;
-    const NAMES: Record<string, string> = {
-      hp: 'HP', mana: 'Mana', atk: 'ATK', def: 'DEF', spd: 'SPD',
-      magicAtk: 'MATK', magicDef: 'MDEF',
-      str: 'FOR', int: 'INT', agi: 'AGI', vit: 'VIT', end: 'END',
-    };
-    const lines: { text: string; color: string }[] = [];
-    for (const [k, v] of Object.entries(bonus as StatBonus)) {
-      if (v == null || v === 0) continue;
-      lines.push({ text: `${NAMES[k] ?? k} : ${v > 0 ? '+' : ''}${v}`, color: UI.TXT_PARCHMENT });
-    }
-    return lines;
-  }
 
   // ── Action helpers ─────────────────────────────────────────────────────────
 
@@ -1476,7 +1309,7 @@ export class InventoryScene extends Phaser.Scene {
     // l'affichage rendait un Hidden à 7 lignes strictement identique à un RARE à 3,
     // et effaçait la hiérarchie que toute la table de raretés sert à établir.
     // La hauteur du panneau est déjà dérivée de substatCount, il s'adapte donc seul.
-    const substatCount = isEquip ? this.getSubstatLineViews(item).length : 0;
+    const substatCount = isEquip ? getSubstatLineViews(item).length : 0;
     const passiveLabel = ('passiveEffect' in item && item.passiveEffect)
       ? getPassiveEffectLabel(item.passiveEffect)
       : undefined;
@@ -1502,7 +1335,7 @@ export class InventoryScene extends Phaser.Scene {
     }
     // Résonance (instance réellement possédée) : une ligne compacte sous le nom,
     // seulement pour les équipements et si calculable.
-    const resonance = isEquip ? this.getResonance(item) : null;
+    const resonance = isEquip ? getResonance(item) : null;
     const hasResonanceLine = resonance !== null;
 
     // ── Hauteur du bandeau d'en-tête — MESURÉE, plus supposée ──
@@ -1653,7 +1486,7 @@ export class InventoryScene extends Phaser.Scene {
         this.add.text(textX, bodyLineY, effectLine, uiStyle(10, UI.TXT_GREEN)).setDepth(depth + 1),
       );
     } else {
-      const mainView = this.getMainStatLineView(item);
+      const mainView = getMainStatLineView(item);
       if (mainView) {
         const mainTxt = this.add.text(textX, bodyLineY, mainView.text, uiStyle(10, mainView.color, { bold: true })).setDepth(depth + 1);
         this.consumePopupObjects.push(mainTxt);
@@ -1673,7 +1506,7 @@ export class InventoryScene extends Phaser.Scene {
     // ── Equip-only: substats + description (the "lore etc." the popup lacked) ──
     if (isEquip) {
       let bodyY = py + headerH + 6;
-      for (const view of this.getSubstatLineViews(item)) {
+      for (const view of getSubstatLineViews(item)) {
         const lineTxt = this.add.text(px + MARGIN, bodyY, `• ${view.text}`, uiStyle(TYPE.SMALL, view.color)).setDepth(depth + 1);
         this.consumePopupObjects.push(lineTxt);
         if (view.rangeText) {

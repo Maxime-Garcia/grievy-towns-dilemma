@@ -12,7 +12,8 @@ import {
 } from '../utils/UITheme';
 import { SearchField, matchesSearch } from '../utils/SearchField';
 import { renderStatsSections } from '../utils/StatsPanel';
-import { renderEquipmentPanel, renderPlayerSprite, EQ_SLOT } from '../utils/EquipmentPanel';
+import { renderEquipmentPanel, renderPlayerSprite, EQ_SLOT, type EquipSlotKey } from '../utils/EquipmentPanel';
+import { renderItemDetailContent, addDetailActionButton, DETAIL_BTN_H, DETAIL_BTN_GAP } from '../utils/ItemDetailPanel';
 import { t, localizeItem } from '../i18n';
 
 // Écran de sac de run (RunSystem, docs/design/ROGUELITE_POC.md §3) — UNE seule
@@ -93,6 +94,13 @@ type RunBagMode = 'pack' | 'view' | 'extract';
 
 interface PanelBounds { x: number; y: number; w: number; h: number }
 
+/** D'où vient l'item affiché dans le panneau de détail — détermine les boutons
+ *  d'action proposés par renderItemDetail (Équiper/Consommer/Déplacer/Jeter
+ *  pour un item du sac, Déséquiper pour un item du paperdoll). */
+type DetailOrigin =
+  | { kind: 'equip'; slotKey: EquipSlotKey }
+  | { kind: 'bag'; bagKind: 'safe' | 'ordinary'; index: number };
+
 export class RunBagScene extends Phaser.Scene {
   private gameScene!: GameScene;
   private mode!: RunBagMode;
@@ -104,6 +112,12 @@ export class RunBagScene extends Phaser.Scene {
 
   // mode 'extract'/'view' — slot actuellement sélectionné pour un échange.
   private selected: { kind: 'safe' | 'ordinary'; index: number } | null = null;
+
+  // Item actuellement affiché dans le panneau STATISTIQUES (remplacé par le
+  // détail le temps de la consultation) — même patron qu'InventoryScene
+  // .selectedItem, avec en plus l'origine (paperdoll ou sac) pour savoir quels
+  // boutons d'action proposer (cf. renderItemDetail).
+  private selectedDetail: { item: Item; origin: DetailOrigin } | null = null;
 
   // Panneaux du layout plein écran 'view'/'extract' (calculés dans createBagStatics)
   private bagB!: PanelBounds;
@@ -130,6 +144,17 @@ export class RunBagScene extends Phaser.Scene {
    *  softlock permanent — aucun autre point du code ne rouvre cet écran). */
   public get currentMode(): RunBagMode { return this.mode; }
 
+  /**
+   * Échap : si le panneau de détail d'un item est ouvert, le referme d'abord
+   * (true = appui CONSOMMÉ, la scène reste ouverte) — sinon laisse l'appelant
+   * fermer l'écran (false). Même patron qu'InventoryScene.handleEscape,
+   * appelé par GameScene.escKey (propriétaire unique de l'ESC des overlays).
+   */
+  public handleEscape(): boolean {
+    if (this.selectedDetail) { this.selectedDetail = null; this.refresh(); return true; }
+    return false;
+  }
+
   init(data: { gameScene: GameScene; mode: RunBagMode }) {
     this.gameScene = data.gameScene;
     this.mode = data.mode;
@@ -137,6 +162,7 @@ export class RunBagScene extends Phaser.Scene {
     this.dynamicObjs = [];
     this.loadout = new Array(MAX_LOADOUT).fill(null);
     this.selected = null;
+    this.selectedDetail = null;
     this.bagFilter = 'ALL';
     this.search = null;
     this.searchQuery = '';
@@ -369,16 +395,16 @@ export class RunBagScene extends Phaser.Scene {
       drawGlowPanel(g, b.x, b.y, b.w, b.h, UI.ACCENT_ARCANE, UI.BG_MID, 8, 0.55);
     }
 
-    // Titres des panneaux (cyan = structure, cf. guidelines §6.2)
+    // Titres des panneaux (cyan = structure, cf. guidelines §6.2). Le titre
+    // STATISTIQUES n'est PAS ici : il devient dynamique (renderBagGrid), pour
+    // laisser la place au titre "DÉTAIL" du popup d'item quand un item est
+    // sélectionné — même patron qu'InventoryScene.renderStats/renderItemDetail.
     this.add.text(this.bagB.x + this.bagB.w / 2, this.bagB.y + 4, t('inventory.bag'),
       uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true })).setOrigin(0.5, 0);
     this.add.text(this.eqB.x + this.eqB.w / 2, this.eqB.y + 6, t('inventory.equipment'),
       uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true })).setOrigin(0.5, 0);
-    this.add.text(this.stB.x + this.stB.w / 2, this.stB.y + 6, t('inventory.stats'),
-      uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true })).setOrigin(0.5, 0);
     const titleSep = this.add.graphics();
     drawDivider(titleSep, this.eqB.x + 10, this.eqB.y + 26, this.eqB.w - 20, UI.ACCENT_ARCANE, 0.22);
-    drawDivider(titleSep, this.stB.x + 8,  this.stB.y + 26, this.stB.w - 16, UI.ACCENT_ARCANE, 0.22);
 
     // Sprite du joueur entre les deux colonnes d'équipement — partagé avec
     // InventoryScene (utils/EquipmentPanel.renderPlayerSprite). Statique : posé
@@ -426,11 +452,141 @@ export class RunBagScene extends Phaser.Scene {
     if (!run) { this.close(); return; }
 
     this.renderEquipmentColumn();
+    // Panneau de droite : détail d'un item sélectionné (paperdoll ou sac) si
+    // présent, sinon les stats — même dispatch qu'InventoryScene.renderCenter.
+    if (this.selectedDetail) {
+      this.renderItemDetail(this.selectedDetail);
+    } else {
+      this.renderStatsColumn();
+    }
+    this.renderBagColumn(run);
+  }
+
+  private renderStatsColumn(): void {
+    const { x: PX, y: PY, w: PW } = this.stB;
+    this.track(this.add.text(PX + PW / 2, PY + 6, t('inventory.stats'),
+      uiStyle(TYPE.BODY, UI.TXT_CYAN, { bold: true })).setOrigin(0.5, 0));
+    const sepTop = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
+    drawDivider(sepTop, PX + 8, PY + 26, PW - 16, UI.ACCENT_ARCANE, 0.22);
     // Sections de stats — rendu PARTAGÉ avec InventoryScene (utils/StatsPanel.ts) :
     // exactement le même panneau dans les deux inventaires (capture créateur).
     renderStatsSections(this, this.gameScene.gameState.player,
-      this.stB.x, this.stB.w, this.stB.y + 36, go => this.track(go));
-    this.renderBagColumn(run);
+      PX, PW, PY + 36, go => this.track(go));
+  }
+
+  /**
+   * Détail d'un item sélectionné (paperdoll OU sac de run) — contenu partagé
+   * avec InventoryScene (utils/ItemDetailPanel.ts), boutons d'action propres à
+   * cette scène : Équiper/Consommer/Déplacer/Jeter pour un item du sac,
+   * Déséquiper pour un item du paperdoll (jamais les deux à la fois, l'origine
+   * tranche). "Déplacer" arme this.selected et ferme le détail — le clic
+   * suivant sur un slot du sac termine l'échange via onBagSlotClicked, code
+   * inchangé (même mécanisme que le clic direct, juste déclenché depuis ici).
+   */
+  private renderItemDetail(detail: { item: Item; origin: DetailOrigin }): void {
+    const { item, origin } = detail;
+    const bounds = this.stB;
+    const run    = this.gameScene.gameState.run;
+    const player = this.gameScene.gameState.player;
+    const push   = (go: Phaser.GameObjects.GameObject) => this.track(go);
+    const isClosing = () => this.closing;
+
+    renderItemDetailContent(this, item, bounds, push, () => {
+      this.selectedDetail = null;
+      this.refresh();
+    });
+
+    const showEquip   = origin.kind === 'bag' && EQUIPPABLE_TYPES.has(item.type);
+    const showUnequip = origin.kind === 'equip';
+    const showConsume = origin.kind === 'bag' && item.type === ItemType.CONSUMABLE;
+    const showMove    = origin.kind === 'bag';
+    const showDrop    = origin.kind === 'bag';
+
+    const btnCount = [showEquip, showUnequip, showConsume, showMove, showDrop].filter(Boolean).length + 1; // +1 Fermer
+    let btnY = bounds.y + bounds.h - btnCount * (DETAIL_BTN_H + DETAIL_BTN_GAP) - 6;
+    const nextBtnY = () => { const y = btnY; btnY += DETAIL_BTN_H + DETAIL_BTN_GAP; return y; };
+
+    if (showEquip && origin.kind === 'bag') {
+      const { bagKind, index } = origin;
+      addDetailActionButton(this, bounds, nextBtnY(), t('inventory.equip_hint'), UI.TXT_GREEN, push, () => {
+        if (!run) return;
+        if (InventorySystem.equipFromRunBag(player, run, bagKind, index)) {
+          this.gameScene.events.emit('player_update', player);
+          this.selectedDetail = null;
+          this.refresh();
+        }
+      }, isClosing);
+    }
+
+    if (showUnequip && origin.kind === 'equip') {
+      const { slotKey } = origin;
+      // unequipToRunBag priorise un slot SÛR libre, mais tombe dans l'ordinaire
+      // (perdu à coup sûr à la mort/l'exfiltration) si aucun n'est libre — le
+      // libellé/couleur du bouton doit prévenir CE risque-là avant le clic,
+      // pas seulement après coup (cf. code-reviewer : même bouton/couleur que
+      // la version bancaire garantie sûre, un joueur ne s'y attendrait pas).
+      const hasSafeSlot = !!run && run.safeBag.some(s => s === null);
+      const unequipLabel = hasSafeSlot ? t('inventory.unequip_hint') : `${t('inventory.unequip_hint')} (sac ordinaire, risqué)`;
+      const unequipColor = hasSafeSlot ? UI.TXT_ORANGE : UI.TXT_RED;
+      const unequipBtnY = nextBtnY();
+      addDetailActionButton(this, bounds, unequipBtnY, unequipLabel, unequipColor, push, () => {
+        if (!run) return;
+        if (InventorySystem.unequipToRunBag(player, run, slotKey)) {
+          this.gameScene.events.emit('player_update', player);
+          this.selectedDetail = null;
+          this.refresh();
+        } else {
+          // Sac de run plein (20 emplacements fixes, contrairement à la banque) —
+          // ne jamais échouer silencieusement (cf. RunBagSystem). showLocalToast,
+          // PAS show_notification : invisible sous le propre overlay de la scène.
+          this.showLocalToast(t('inventory.runbag_unequip_full'), bounds.x + bounds.w / 2, unequipBtnY - 14);
+        }
+      }, isClosing);
+    }
+
+    if (showConsume && origin.kind === 'bag') {
+      const { bagKind, index } = origin;
+      addDetailActionButton(this, bounds, nextBtnY(), t('inventory.use_hint'), UI.TXT_GREEN, push, () => {
+        this.selectedDetail = null;
+        this.consumeItem(bagKind, index); // appelle déjà this.refresh()
+      }, isClosing);
+    }
+
+    if (showMove && origin.kind === 'bag') {
+      const { bagKind, index } = origin;
+      addDetailActionButton(this, bounds, nextBtnY(), t('inventory.move_hint'), UI.TXT_BLUE, push, () => {
+        // Arme la sélection comme un premier clic direct sur ce slot (cf.
+        // onBagSlotClicked) — le clic suivant sur un slot du sac termine
+        // l'échange/déplacement, code de swap inchangé.
+        this.selected = { kind: bagKind, index };
+        this.selectedDetail = null;
+        this.refresh();
+      }, isClosing);
+    }
+
+    if (showDrop && origin.kind === 'bag') {
+      const { bagKind, index } = origin;
+      addDetailActionButton(this, bounds, nextBtnY(), t('inventory.drop_hint'), UI.TXT_RED, push, () => {
+        if (run) {
+          const bag = bagKind === 'safe' ? run.safeBag : run.ordinaryBag;
+          const bagSlot = bag[index];
+          // Jette UNE unité à la fois — même granularité que consumeItem()/
+          // InventoryScene.sell() (1 clic = 1 unité), jamais tout le stack
+          // d'un coup (un slot de 20 matériaux ne doit pas partir en 1 clic).
+          if (bagSlot) {
+            bagSlot.quantity--;
+            if (bagSlot.quantity <= 0) bag[index] = null;
+          }
+        }
+        this.selectedDetail = null;
+        this.refresh();
+      }, isClosing);
+    }
+
+    addDetailActionButton(this, bounds, nextBtnY(), t('inventory.close_hint'), UI.TXT_MUTED, push, () => {
+      this.selectedDetail = null;
+      this.refresh();
+    }, isClosing);
   }
 
   // ── Colonne ÉQUIPEMENT (2 col × 5 slots + identité) ──────────
@@ -439,15 +595,23 @@ export class RunBagScene extends Phaser.Scene {
     const player = this.gameScene.gameState.player;
     const { x: PX, w: PW } = this.eqB;
 
-    // Paperdoll partagé avec InventoryScene (utils/EquipmentPanel) — seul le
-    // rendu d'un slot OCCUPÉ reste propre à cette scène (pas d'interactivité
-    // ici, contrairement à InventoryScene qui ouvre le détail au clic).
+    // Paperdoll partagé avec InventoryScene (utils/EquipmentPanel) — le rendu
+    // d'un slot OCCUPÉ reste propre à cette scène (pas de cadre asset/survol
+    // ici, contrairement à InventoryScene), mais ouvre désormais le même
+    // panneau de détail au clic (avec un bouton Déséquiper contextuel).
     renderEquipmentPanel(this, this.eqB, player, go => this.track(go), {
       colInset: 16,
-      renderOccupied: ({ sx, sy, item, rarHex }) => {
+      renderOccupied: ({ sx, sy, key, item, rarHex }) => {
         const g = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
         drawSlot(g, sx, sy, EQ_SLOT, rarHex, { occupied: true });
         this.renderItemIcon(item, sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, Math.round(EQ_SLOT * 0.7));
+
+        const hit = this.track(this.add.rectangle(sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, EQ_SLOT + 4, EQ_SLOT + 4, 0, 0)
+          .setInteractive({ useHandCursor: true })) as Phaser.GameObjects.Rectangle;
+        hit.on('pointerdown', () => {
+          this.selectedDetail = { item, origin: { kind: 'equip', slotKey: key } };
+          this.refresh();
+        });
       },
     });
 
@@ -713,6 +877,31 @@ export class RunBagScene extends Phaser.Scene {
         this.onEquipClicked(kind, index);
       });
     }
+
+    // Badge "détail" (i) — TOUT objet occupé, pas seulement les équipables :
+    // ouvre le panneau de détail partagé avec InventoryScene (stats, résonance,
+    // description) + les boutons Consommer/Déplacer/Jeter contextuels. Coin
+    // bas-gauche : le seul coin libre (haut-gauche = index sûr, haut-droite =
+    // badge E, bas-droite = quantité). Même patron stopPropagation que le
+    // badge E — sans ça le clic retomberait AUSSI sur le slot (swap/consommer).
+    if (slot) {
+      const br = 9;
+      const ibx = x + br + 2, iby = y + RB_SLOT - br - 2;
+      const infoG = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
+      infoG.fillStyle(parseInt(UI.TXT_BLUE.slice(1), 16), 0.95);
+      infoG.fillCircle(ibx, iby, br);
+      infoG.lineStyle(1, 0x000000, 0.6);
+      infoG.strokeCircle(ibx, iby, br);
+      dim(infoG);
+      dim(this.track(this.add.text(ibx, iby, 'i', uiStyle(TYPE.SMALL, '#0a0a18', { bold: true })).setOrigin(0.5)));
+      const infoHit = this.track(this.add.rectangle(ibx, iby, br * 2 + 6, br * 2 + 6, 0, 0)
+        .setInteractive({ useHandCursor: true })) as Phaser.GameObjects.Rectangle;
+      infoHit.on('pointerdown', (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: { stopPropagation: () => void }) => {
+        event.stopPropagation();
+        this.selectedDetail = { item: slot.item, origin: { kind: 'bag', bagKind: kind, index } };
+        this.refresh();
+      });
+    }
   }
 
   /** Équipe directement l'objet du slot cliqué (badge "E") — l'ancien équipement
@@ -724,6 +913,10 @@ export class RunBagScene extends Phaser.Scene {
     if (InventorySystem.equipFromRunBag(player, run, kind, index)) {
       this.gameScene.events.emit('player_update', player);
       this.selected = null;
+      // Une équipe/déséquipe ailleurs peut invalider ce que montrait le détail
+      // (ex: le slot qu'il décrivait vient de changer de contenu) — on ferme
+      // plutôt que de risquer un bouton qui agit sur le mauvais item.
+      this.selectedDetail = null;
       this.refresh();
     }
   }
@@ -732,6 +925,7 @@ export class RunBagScene extends Phaser.Scene {
     const run = this.gameScene.gameState.run;
     if (!run) return;
     const bag = kind === 'safe' ? run.safeBag : run.ordinaryBag;
+    this.selectedDetail = null;
 
     if (!this.selected) {
       const slot = bag[index];
@@ -794,6 +988,7 @@ export class RunBagScene extends Phaser.Scene {
     this.gameScene.events.emit('player_update', player);
     slot.quantity--;
     if (slot.quantity <= 0) bag[index] = null;
+    this.selectedDetail = null;
     this.refresh();
   }
 
@@ -807,6 +1002,17 @@ export class RunBagScene extends Phaser.Scene {
     hit.on('pointerdown', onClick);
   }
 
+  /** Message éphémère GARANTI visible (contrairement à un `show_notification`
+   *  cross-scène : RunBagScene pose son propre overlay 0.88 par-dessus UIScene,
+   *  cf. createBagStatics — le toast de UIScene s'y assombrit à ~12%, quasi
+   *  invisible). Même patron qu'InventoryScene.showLocalToast. Poussé dans
+   *  dynamicObjs pour être nettoyé au refresh(). */
+  private showLocalToast(msg: string, x: number, y: number) {
+    const txt = this.track(this.add.text(x, y, msg, uiStyle(TYPE.SMALL, UI.TXT_ORANGE, { bold: true }))
+      .setOrigin(0.5).setDepth(50)) as Phaser.GameObjects.Text;
+    this.tweens.add({ targets: txt, alpha: 0, delay: 1400, duration: 500, onComplete: () => { if (txt.active) txt.destroy(); } });
+  }
+
   private confirmExfiltrate() {
     if (this.closing) return;
     const player = this.gameScene.gameState.player;
@@ -814,7 +1020,12 @@ export class RunBagScene extends Phaser.Scene {
     if (!run) return;
     const failed = RunSystem.exfiltrate(player, run, this.gameScene.gameState.world);
     if (failed.length > 0) {
-      this.gameScene.events.emit('show_notification', `Banque pleine — ${failed.length} objet(s) restent dans le sac de run`);
+      // showLocalToast, PAS show_notification : le toast cross-scène de UIScene
+      // se retrouverait assombri sous le propre overlay 0.88 de cette scène
+      // (cf. code-reviewer) — garanti invisible pile au moment où l'échec
+      // compte le plus.
+      this.showLocalToast(`Banque pleine — ${failed.length} objet(s) restent dans le sac de run`,
+        this.stB.x + this.stB.w / 2, this.stB.y + this.stB.h - 70);
       this.refresh();
       return;
     }

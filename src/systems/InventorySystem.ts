@@ -1,5 +1,6 @@
 import { PlayerState, Item, ItemType, ItemRarity, Weapon, Armor, Accessory, Consumable, ConsumableEffect, Equipment, InventorySlot, RunState, RunBagSlot } from '../types';
 import { LootSystem } from './LootSystem';
+import { RunBagSystem } from './RunBagSystem';
 import { StatsSystem } from './StatsSystem';
 import { PassiveSystem } from './PassiveSystem';
 import { TalentModifiers } from './TalentSystem';
@@ -166,6 +167,42 @@ export class InventorySystem {
     const current = (player.equipment as any)[equipSlot] as Item | undefined;
     bag[index] = current ? ({ item: current, quantity: 1 } as RunBagSlot) : null;
     (player.equipment as any)[equipSlot] = slot.item;
+    this.recalcStats(player);
+    return true;
+  }
+
+  /**
+   * Déséquipe un objet EN RUN vers le sac de run (jamais vers la banque) —
+   * symétrique de `equipFromRunBag` pour le sens inverse : "je retire ma pièce
+   * sans en remettre une autre". Contrairement à `equip()`/`unequip()` (banque),
+   * PAS de swap net-neutre possible ici : le sac de run peut être plein (20
+   * emplacements fixes), donc l'ajout peut légitimement échouer — l'appelant
+   * doit vérifier le retour et prévenir le joueur plutôt que de perdre l'objet
+   * silencieusement (cf. RunBagSystem, "jamais d'échec silencieux").
+   *
+   * PRIORITÉ à un slot SÛR libre (trouvé en revue de code) : `RunBagSystem
+   * .addToRunBag` route toujours vers le sac ORDINAIRE, perdu à coup sûr à la
+   * mort ET à toute exfiltration (même réussie) — alors qu'un objet ÉQUIPÉ
+   * n'était, lui, jamais en danger. Router en priorité vers un slot sûr libre
+   * évite de dégrader silencieusement la sécurité d'un objet en cliquant un
+   * bouton "Déséquiper" qui porte le même libellé/couleur que la version
+   * bancaire, elle, garantie sûre. Ne tombe dans l'ordinaire (toujours à
+   * risque) que si aucun slot sûr n'est libre — l'appelant doit alors le
+   * signaler distinctement (cf. RunBagScene.renderItemDetail).
+   */
+  static unequipToRunBag(player: PlayerState, run: RunState, slot: keyof Equipment): boolean {
+    const item = player.equipment[slot] as Item | undefined;
+    if (!item) return false;
+
+    const freeSafeIdx = run.safeBag.findIndex(s => s === null);
+    if (freeSafeIdx !== -1) {
+      run.safeBag[freeSafeIdx] = { item, quantity: 1 };
+    } else {
+      const result = RunBagSystem.addToRunBag(run, item, 1);
+      if (!result.ok) return false;
+    }
+
+    (player.equipment as any)[slot] = undefined;
     this.recalcStats(player);
     return true;
   }
