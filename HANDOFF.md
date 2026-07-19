@@ -320,6 +320,12 @@ subis (`applyEnemyMeleeDamage` ET `applyDamageToPlayer`, donc aussi les trous) t
 évite qu'une mort accidentelle interrompe une session de test. Notification à chaque bascule. Visible
 dans l'indicateur de debug ci-dessus (`god=true/false`).
 
+**🔧 Légende des outils de debug — coin bas-droit (nouveau, 19/07).** Petite bulle statique (créée une
+fois, jamais mise à jour — contrairement à l'indicateur en direct) qui résume TOUTES les touches de
+debug disponibles : G/T/M/P/Y/L/U/N/H avec une description courte de chacune. Même garde
+`DEBUG_CHEAT_KEYS_ENABLED`. Penser à y ajouter une ligne à chaque nouvelle touche de debug créée —
+sinon la bulle devient incomplète silencieusement.
+
 **📌 BACKLOG (root cause non trouvée, créateur OK pour reporter) — les trous (pits) ne déclenchent
 jamais la chute.** Le créateur confirme : ça échoue MÊME en marchant lentement, à froid, en plein
 centre du trou — élimine l'hypothèse i-frames/dash. Code relu en profondeur (`checkPitFall`,

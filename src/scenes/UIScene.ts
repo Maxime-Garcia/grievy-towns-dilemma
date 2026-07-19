@@ -134,7 +134,7 @@ export class UIScene extends Phaser.Scene {
     // Vite (__BUILD_HASH__, cf. vite.config.ts) : l'écrire à la main était voué
     // à mentir, puisqu'un hash n'existe qu'une fois le commit fait — et l'écrire
     // dans le code refait le commit.
-    const BUILD_LABEL = `DEBUG: triches ON par defaut + mode invincible (H) (${__BUILD_HASH__})`;
+    const BUILD_LABEL = `DEBUG: legende des touches en bas a droite (${__BUILD_HASH__})`;
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',
@@ -211,6 +211,36 @@ export class UIScene extends Phaser.Scene {
       this.debugSnapshotText = this.add.text(4, PANEL_TOP + PANEL_H + 4, '', {
         fontSize: '9px', color: '#ffcc66', fontFamily: 'monospace',
       }).setDepth(200).setAlpha(0.9);
+    }
+
+    // ── Légende des outils de debug (coin bas-droit) — demande créateur 19/07 :
+    // "résumer tous les outils de débug à ma disposition". Statique (créée une
+    // fois, jamais mise à jour) : la liste des touches ne change pas frame par
+    // frame, contrairement à l'indicateur ci-dessus. Même garde
+    // DEBUG_CHEAT_KEYS_ENABLED — absente en dehors de la phase de dev.
+    if (DEBUG_CHEAT_KEYS_ENABLED) {
+      const DEBUG_KEYS: [string, string][] = [
+        ['G', 'tout l\'équipement'],
+        ['T', 'mannequins d\'essai'],
+        ['M', 'avance la pity'],
+        ['P', '+20 points de talent'],
+        ['Y', 'ennemis de test + boss'],
+        ['L', 'drops (1/rareté)'],
+        ['U', 'écran de pack (run)'],
+        ['N', 'fixture propre'],
+        ['H', 'mode invincible'],
+      ];
+      const lines = ['[DEBUG]', ...DEBUG_KEYS.map(([k, d]) => `${k} — ${d}`)];
+      const legendStyle = { fontSize: '9px', color: '#ffcc66', fontFamily: 'monospace', align: 'left' as const };
+      const legendText = this.add.text(0, 0, lines.join('\n'), legendStyle).setDepth(200).setAlpha(0.9);
+      const legendPad = 6;
+      const legendX = W - legendText.width - legendPad * 2 - 8;
+      const legendY = H - legendText.height - legendPad * 2 - 8;
+      this.add.rectangle(legendX, legendY, legendText.width + legendPad * 2, legendText.height + legendPad * 2, 0x02160a, 0.75)
+        .setOrigin(0, 0).setDepth(199);
+      this.add.rectangle(legendX, legendY, legendText.width + legendPad * 2, 3, 0x00cc55, 1)
+        .setOrigin(0, 0).setDepth(199);
+      legendText.setPosition(legendX + legendPad, legendY + legendPad);
     }
 
     // ── Chip Pity v3 (à droite du panneau stats) ────
