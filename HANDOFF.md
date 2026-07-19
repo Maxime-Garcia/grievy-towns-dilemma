@@ -8,8 +8,8 @@
 ## 1. ÉTAT EN UNE MINUTE
 
 Chantier en cours : **RunSystem** (tranche 1 du pivot roguelite, spec =
-`docs/design/ROGUELITE_POC.md`). Branche `feat/roguelite-run-system` (greffée sur
-`feat/roguelite`), **poussée sur origin, pas encore mergée**.
+`docs/design/ROGUELITE_POC.md`). **`feat/roguelite-run-system` MERGÉE dans `feat/roguelite`** (fast-forward,
+0 conflit, branche supprimée locale+distante) — `master` reste intact et à part.
 
 Code de base complet (9 phases), **7 passages code-reviewer** (2 BLOCKER + 13 BUG trouvés et
 corrigés au total), **3 sessions de playtest manuel** par le créateur. Dernier chantier : refonte
@@ -18,8 +18,6 @@ complète de l'inventaire hors run (`InventoryScene`) ET intra-run (`RunBagScene
 plein écran 3 colonnes **SAC | ÉQUIPEMENT | STATISTIQUES**, paperdoll 2×5 + sprite joueur central,
 rareté généralisée (bordure dorée fine + fond teinté par rareté), onglets + recherche sur le sac de
 run. **7e revue de code reçue et appliquée (2 BUG), pas encore testé en jeu par le créateur.**
-
-`master` intact, `feat/roguelite` intact — rien de ce chantier n'y est encore mergé.
 
 **Corrigé (19/07, plus tard dans la nuit)** : les 3 retours de playtest sur la popup d'item
 intra-run (`RunBagScene`) — voir §4bis, code-reviewer passé (0 BLOCKER/BUG), poussé. **Pas encore
@@ -382,6 +380,29 @@ substituer les fonctions de dessin.
 déjà ce fichier. Proposer une fois §4/§5bis-refactor validés et mergés. Prévoir plusieurs passes
 (dev-agent pour l'architecture/primitives, gamefeel-agent pour le polish des 33 compositions) et
 plusieurs allers-retours de playtest — pas un one-shot comme `FloatingItemDrop`.
+
+## 5ter. BACKLOG — écran de mort (Game Over), spec prête (pas commencé)
+
+Le créateur a produit `EcranMort_Phaser_Prompt.md` (racine du repo, non commité — même statut que
+`VFX_Phaser_Prompt.md`/`GAMEPLAY.md`/`PITY/`/`BULLE.md`, maintenu par lui) : spec complète d'une
+scène `GameOverScene`/`PlayerDeathOverlay` — révélation en cascade façon "Vous êtes mort" (blason,
+titre Silkscreen, trait doré qui se trace, stats de run ÉTAGE/OR/DURÉE, invite "Touchez pour
+continuer"), braises montantes en particules, vignette pulsée, fondu au noir sur n'importe quel input
+→ callback `onContinue`. Timings précis (~2.6s de révélation totale) et critères d'acceptation
+détaillés dans le fichier — ne pas retranscrire de mémoire, le lire en premier le jour où ce chantier
+démarre.
+
+**Lien avec le travail de cette nuit** : la notification texte ajoutée à la mort en run
+("Vous êtes mort — le sac de run est perdu...", cf. §4ter) est un pansement minimal en attendant cet
+écran — pas en concurrence avec lui, à remplacer/compléter le jour où `GameOverScene` existe (garder
+le hook `onContinue` compatible avec le retour vers Grievy Town déjà câblé dans
+`GameScene.onPlayerDeath()`).
+
+**Volontairement pas lancé maintenant** — même raison que le chantier VFX (§5bis) : proposer une fois
+`feat/roguelite` stabilisé par un vrai playtest, pas en parallèle d'un autre chantier qui bouge
+`GameScene.ts`. Portée plus petite que le VFX (une scène autonome, pas un re-câblage du système de
+combo) — candidat raisonnable à lancer AVANT le VFX si le créateur veut une victoire rapide sur du
+gamefeel/polish visuel.
 
 ## 6. PIÈGES CONNUS — ne pas y retomber
 
