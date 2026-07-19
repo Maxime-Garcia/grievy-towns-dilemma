@@ -25,11 +25,14 @@ run. **7e revue de code reçue et appliquée (2 BUG), pas encore testé en jeu p
 intra-run (`RunBagScene`) — voir §4bis, code-reviewer passé (0 BLOCKER/BUG), poussé. **Pas encore
 testé en jeu par le créateur.**
 
-**Premier vrai playtest de la boucle complète (19/07 nuit)** — voir §4ter : 6 retours, 2 corrigés
-(potion du pack invisible en run, aucune notification à la mort), 1 tranché par balance-agent +
-design-agent (pity ne doit jamais reset — probable régression save déjà connue, pas un choix de
-design), 3 en attente de clarification du créateur (mort en run, trous qui ne déclenchent pas,
-touche U) avant de coder un correctif à l'aveugle.
+**Premier vrai playtest de la boucle complète (19/07 nuit)** — voir §4ter : 6 retours. 3 fermés
+(potion du pack invisible en run + aucune notification à la mort, corrigés ; épée du début perdue à
+la mort, confirmé comportement voulu). 1 tranché par balance-agent + design-agent (pity ne doit
+jamais reset — probable régression save déjà connue, pas un choix de design). **2 mis au BACKLOG sur
+demande du créateur** (root cause non trouvée malgré recherche approfondie, pas de correctif à
+l'aveugle) : les trous qui ne déclenchent jamais la chute, et la touche U qui rouvre le pack pendant
+une run active — les deux nécessiteraient un indicateur de debug en direct pour capturer une vraie
+preuve au prochain repro.
 
 ---
 
@@ -296,45 +299,47 @@ design supplémentaire. J'ai vérifié la piste technique de balance-agent (`Sav
 version courante (1.9.0), donc PAS la cause active pour une partie jouée ce soir — la vraie cause
 reste à trouver dans une session dédiée.
 
-**❓ À CLARIFIER — mort en run : "comme si rien n'avait changé", perte de l'épée du début, PV pleins.**
-Code relu (`GameScene.onPlayerDeath`, `RunSystem.onPlayerDeath`) : structurellement correct pour le
-cas standard (sac wipé, retour GT, PV pleins — "PV pleins" dans le rapport du créateur COLLE avec le
-fix §3 point 9, pas une anomalie). Hypothèse la plus probable : le joueur avait équipé une MEILLEURE
-arme trouvée en run (`equipFromRunBag` renvoie l'Épée de Fer dans le sac), et c'est CETTE épée
-démodée — désormais dans le sac wipé à la mort — qui a disparu ; l'arme réellement équipée au moment
-de la mort n'a, elle, jamais dû bouger (`RunBagSystem.wipe()` ne touche jamais `player.equipment`).
-Si c'est bien ça, ce n'est pas un bug — la notification ajoutée ci-dessus devrait suffire à clarifier
-l'expérience. À confirmer : l'arme équipée après la mort a-t-elle changé, ou est-ce vraiment l'Épée de
-Fer de départ qui manquait de l'ÉQUIPEMENT (pas juste absente du sac wipé) ?
+**✅ RÉSOLU (comportement voulu) — mort en run, perte de l'épée du début.** Confirmé par le créateur :
+il avait équipé une meilleure arme trouvée en run, l'Épée de Fer de départ avait été reléguée dans le
+sac (via `equipFromRunBag`) et a été perdue avec le reste au wipe de mort — pas un bug,
+`RunBagSystem.wipe()` ne touche jamais `player.equipment`. La notification de mort ajoutée ci-dessus
+devrait suffire à clarifier l'expérience à l'avenir. Fermé.
 
-**❓ À CLARIFIER — les trous (pits) ne déclenchent toujours pas la chute.** Relu `checkPitFall()`
-(test géométrique direct, `GameScene.ts`) et `applyDamageToPlayer`/`mitigatePlayerDamage` : aucune
-réduction générique de DEF n'existe sur les dégâts subis par le joueur (seulement des passifs
-spécifiques — Garde de Magma, boucliers temporisés — absents sur un personnage de base), donc les 14
-dégâts fixes d'un trou (`DEFAULT_IGNIS_PARAMS.pitDamage`) devraient toujours s'appliquer intégralement
-et déclencher la téléportation de sécurité. Rien d'évident trouvé en lecture statique. Pistes à
-vérifier avec le créateur : la chute ne se produit-elle QUE juste après avoir pris un coup d'ennemi
-(fenêtre d'i-frames de 800ms qui bloquerait aussi les dégâts de trou), ou en traversant en dash
-(comportement VOULU, un dash traverse un trou sans dégât) ? Ou bien échoue-t-elle même en marchant
-lentement, à froid, en plein centre du trou ?
+**📌 BACKLOG (root cause non trouvée, créateur OK pour reporter) — les trous (pits) ne déclenchent
+jamais la chute.** Le créateur confirme : ça échoue MÊME en marchant lentement, à froid, en plein
+centre du trou — élimine l'hypothèse i-frames/dash. Code relu en profondeur (`checkPitFall`,
+`applyDamageToPlayer`, `mitigatePlayerDamage`, `rollAutoDodge`/`rollTrueDodge`, le cycle de vie
+d'`isDashing`) : rien d'évident trouvé en lecture statique pour un personnage de base sans passif
+spécial. Seul suspect théorique restant, non confirmé : si un dash récent n'a pas fini proprement son
+tween d'alpha (300ms, interrompu par une pause/un autre effet touchant `player.alpha`), `isDashing`
+pourrait rester bloqué à `true` et bloquer TOUS les dégâts (pas seulement les trous) — mais le
+créateur n'a signalé aucune invincibilité face aux ennemis, donc peu probable. **Prochaine étape
+proposée, pas encore faite** : ajouter un petit indicateur de debug (visible créateur uniquement)
+affichant `run.active`/nombre de trous chargés/`isDashing` en direct, pour capturer une vraie preuve
+au prochain test plutôt que deviner. Mis de côté pour l'instant sur demande du créateur.
 
-**❓ À CLARIFIER — touche U pendant une run affiche l'écran de pack (bug ou conséquence ?).** Le garde
-`!this.gameState.run?.active` existe déjà sur la touche debug U (`GameScene.ts` ligne ~728) et
-DEVRAIT empêcher toute réouverture du pack pendant une run active. Hypothèse la plus probable :
-CE N'EST PAS un état de run fantôme, mais une conséquence normale du bug consumableLoadout
-ci-dessus — si la run précédente s'est terminée (mort) avec la potion invisible jamais récupérée, la
-banque était réellement vide au moment de rouvrir le pack, d'où "Aucun consommable dans la banque"
-perçu comme un bug. À revérifier maintenant que le fix consumableLoadout est en place.
+**📌 BACKLOG (root cause non trouvée, créateur OK pour reporter) — touche U pendant une run active
+affiche quand même l'écran de pack.** Le créateur confirme qu'il explorait ENCORE activement le
+donjon (`ignis_reach`) au moment d'appuyer sur U — élimine l'hypothèse "conséquence du bug
+consumableLoadout après une mort déjà passée". Le garde `!this.gameState.run?.active` existe pourtant
+bien sur LES DEUX points d'entrée de `openRunBagScene('pack')` (touche debug U, flag NPC `start_run`).
+Recherche exhaustive de tout ce qui pourrait mettre `run.active`/`gameState.run` à faux PENDANT une
+exploration active (mort, exfiltration, garde-fou de zone dans `resolveZoneLayout`, réseau de
+téléports legacy) : AUCUN chemin trouvé qui pourrait se déclencher sans que le joueur meure/exfiltre/
+quitte réellement `ignis_reach` — et confirmé que la carte générée d'une run n'a de toute façon AUCUN
+téléporteur (`MapGenSystem` produit `teleports: []`), donc pas de téléporteur legacy accessible en
+run. Root cause non identifiée malgré une recherche approfondie. **Même prochaine étape que les
+trous** : un indicateur de debug de `run.active` en direct capturerait l'état exact au moment du bug.
+Mis de côté pour l'instant sur demande du créateur.
 
-**❓ À CLARIFIER — save/load en cours de run → Grievy Town avec le même inventaire.** Code relu
-(`SaveSystem`, `GameScene.create()`/`resolveZoneLayout()`) : la restauration d'une run active
-(`currentZone='ignis_reach'` + `run.active=true` → régénère la carte depuis le seed sauvegardé) est
-déjà câblée et documentée comme fix d'un bug antérieur similaire (softlock BLOCKER, cf. §3). Hypothèse
-la plus probable : ceci décrit en fait la MÊME séquence que le point "mort en run" ci-dessus (mort →
-correctement renvoyé à GT avec le sac de run déjà perdu → sauvegarde → Menu → recharge → GT avec
-l'inventaire de BANQUE, inchangé depuis avant la descente) plutôt qu'un vrai bug de persistance
-distinct. À confirmer : au moment de sauvegarder, le joueur était-il ENCORE physiquement dans
-`ignis_reach` avec une run active, ou déjà de retour à Grievy Town suite à une mort ?
+**✅ Vraisemblablement expliqué (pas un bug distinct) — save/load en cours de run → Grievy Town avec
+le même inventaire.** Pas reposé séparément au créateur (fortement probable que ce soit la MÊME
+séquence que "mort en run" ci-dessus : mort → correctement renvoyé à GT avec le sac déjà perdu →
+sauvegarde → Menu → recharge → GT avec l'inventaire de BANQUE inchangé depuis avant la descente).
+`SaveSystem`/`GameScene.create()`/`resolveZoneLayout()` relus : la restauration d'une run VRAIMENT
+active est déjà correctement câblée (régénère la carte depuis le seed sauvegardé). À revalider avec
+le créateur seulement si le symptôme revient après un save fait alors qu'il est CONFIRMÉ toujours en
+run active (pas juste après une mort).
 
 ## 5. AUTRES POINTS OUVERTS (non bloquants, notés)
 
@@ -386,20 +391,20 @@ plusieurs allers-retours de playtest — pas un one-shot comme `FloatingItemDrop
 
 ## 7. PROCHAINE ACTION CONCRÈTE
 
-0. **EN PREMIER** : obtenir du créateur les 3 clarifications de §4ter (mort en run/épée du début,
-   trous qui ne déclenchent pas, touche U) — la root cause n'est pas certaine à 100% depuis la seule
-   lecture du code (pas de playtest automatisé), chaque point liste une hypothèse précise à confirmer
-   ou infirmer avant de coder un correctif supplémentaire.
-1. Faire tester en jeu les 2 fix de §4ter (potion du pack visible en run, notification de mort) ET
-   le modèle double-clic du sac/paperdoll intra-run (§4bis, jamais testé en jeu depuis son écriture).
-2. **Confirmation finale du créateur** sur la refonte inventaire (§4) ET le refactor `EquipmentPanel`
+0. **EN PREMIER** : faire tester en jeu les 2 fix de §4ter (potion du pack visible en run,
+   notification de mort) ET le modèle double-clic du sac/paperdoll intra-run (§4bis, jamais testé en
+   jeu depuis son écriture).
+1. **Confirmation finale du créateur** sur la refonte inventaire (§4) ET le refactor `EquipmentPanel`
    (§4, fait le 19/07) — les défauts trouvés au premier test sont corrigés, en attente d'un dernier
    passage en jeu pour clore ce chantier et merger `feat/roguelite-run-system`.
-3. Reprendre le badge équiper/icônes/grille 5-15 du sac de run (déjà testés une fois avant cette
+2. Reprendre le badge équiper/icônes/grille 5-15 du sac de run (déjà testés une fois avant cette
    refonte visuelle, à revérifier que rien n'a régressé).
-4. Régression save/pity (§5) : dev-agent dédié maintenant que balance-agent/design-agent ont confirmé
+3. Régression save/pity (§5) : dev-agent dédié maintenant que balance-agent/design-agent ont confirmé
    que ce n'est PAS un choix de design — la piste `SaveSystem.ts:151` s'est révélée être un chemin de
    migration mort pour les saves déjà en 1.9.0, la vraie cause reste à trouver.
+4. Backlog non bloquant (§4ter) : indicateur de debug en direct pour capturer une vraie preuve sur
+   les trous qui ne déclenchent jamais la chute et la touche U qui rouvre le pack en run active —
+   pas urgent, le créateur a choisi de reporter.
 5. Une fois ce qui précède mergé : proposer le chantier VFX armes (§5bis) — pas avant, pour éviter
    de faire bouger `GameScene.ts` sur deux fronts en parallèle.
 6. Plus loin : `balance-agent` sur le quota/l'escalade du RunSystem (dont la contrepartie potions
