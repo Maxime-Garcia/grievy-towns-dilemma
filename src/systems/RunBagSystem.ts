@@ -46,6 +46,14 @@ export class RunBagSystem {
     return { ok: true };
   }
 
+  /** Dry-run d'addToRunBag, sans muter le sac — pour décider AVANT de jouer une
+   *  animation de ramassage si l'item va effectivement rentrer. */
+  static canAddToRunBag(run: RunState, item: Item): boolean {
+    const bag = run.ordinaryBag;
+    if ('stackable' in item && (item as any).stackable && bag.some(s => s && s.item.id === item.id)) return true;
+    return bag.some(s => s === null);
+  }
+
   /** Déplace le contenu d'un slot ordinaire vers un slot sûr précis (échange si occupé). */
   static moveToSafe(run: RunState, ordinaryIndex: number, safeIndex: number): boolean {
     if (ordinaryIndex < 0 || ordinaryIndex >= run.ordinaryBag.length) return false;

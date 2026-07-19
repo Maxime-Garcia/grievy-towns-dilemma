@@ -221,6 +221,10 @@ export class GameScene extends Phaser.Scene {
   // code-reviewer — bug trouvé une première fois sur les drops de debug,
   // applicable à l'identique au vrai loot).
   private activeItemDrops: FloatingItemDrop[] = [];
+  // Throttle de la notif "Sac plein" en marchant sur un drop : l'overlap Arcade
+  // redéclenche chaque frame tant que le joueur reste dessus (le drop n'est plus
+  // détruit dans ce cas, cf. wireDropPickup) — sans ce garde, ~60 toasts/s.
+  private nextBagFullNoticeAt = 0;
 
   private xpOrbs!: Phaser.Physics.Arcade.Group;
   private readonly XP_ATTRACT_RANGE = 96;
@@ -1049,14 +1053,17 @@ export class GameScene extends Phaser.Scene {
    * Ramassage en marchant dessus — ajoute réellement l'item au sac de run actif
    * ou à la banque (même règle que tout autre chemin de loot du jeu, cf.
    * onEnemyKilled) et notifie comme il se doit (item_looted pour un vrai
-   * ramassage, show_notification si le sac est plein). L'overlap Arcade
+   * ramassage). Sac plein : vérifié AVANT de jouer l'animation de collect() —
+   * le drop reste au sol, lootable dès qu'une place se libère, au lieu d'être
+   * consommé puis annoncé perdu (cf. RunBagSystem.canAddToRunBag/
+   * LootSystem.canAddToInventory, dry-run sans mutation). L'overlap Arcade
    * redéclenche CHAQUE frame tant que les deux corps se chevauchent —
-   * `overlap.destroy()` en tout premier dans le callback (synchrone, avant
-   * qu'une autre frame ne repasse) est le garde contre un double ramassage
-   * pendant les ~220ms de l'animation de collect(). Le corps du drop reste de
-   * toute façon désactivé pendant sa chute+rebond (cf. FloatingItemDrop) :
-   * cet overlap ne peut physiquement pas se déclencher avant que l'animation
-   * d'apparition soit visuellement terminée.
+   * `overlap.destroy()` (une fois la place confirmée) en tout premier dans le
+   * callback est le garde contre un double ramassage pendant les ~220ms de
+   * l'animation de collect(). Le corps du drop reste de toute façon désactivé
+   * pendant sa chute+rebond (cf. FloatingItemDrop) : cet overlap ne peut
+   * physiquement pas se déclencher avant que l'animation d'apparition soit
+   * visuellement terminée.
    *
    * @param enemyId  Renseigné pour un vrai kill (révèle le drop au Bestiaire) —
    *                 absent pour les drops de la touche debug.
@@ -1070,11 +1077,27 @@ export class GameScene extends Phaser.Scene {
     enemyId?: string, isPityPaid?: boolean,
   ): void {
     const overlap = this.physics.add.overlap(this.player, drop, () => {
+      const activeRun = this.gameState.run?.active ? this.gameState.run : null;
+      const willFit = activeRun
+        ? RunBagSystem.canAddToRunBag(activeRun, item)
+        : LootSystem.canAddToInventory(this.gameState.player, item);
+      // Sac plein : on vérifie AVANT de jouer l'animation de ramassage — le drop
+      // reste au sol et lootable plus tard (juste une notif), plutôt que de le
+      // faire voler vers le joueur puis annoncer sa perte (demande créateur 19/07 :
+      // plus frustrant maintenant que le joueur a marché jusqu'au drop qu'à
+      // l'ancien ramassage instantané au kill).
+      if (!willFit) {
+        if (this.time.now >= this.nextBagFullNoticeAt) {
+          const reason = activeRun ? 'Sac de run plein' : 'Sac plein';
+          this.events.emit('show_notification', `${reason} — ${item.name} au sol`);
+          this.nextBagFullNoticeAt = this.time.now + 1500;
+        }
+        return;
+      }
       overlap.destroy();
       const idx = this.activeItemDrops.indexOf(drop);
       if (idx !== -1) this.activeItemDrops.splice(idx, 1);
       drop.collect(this.player, () => {
-        const activeRun = this.gameState.run?.active ? this.gameState.run : null;
         const added = activeRun
           ? RunBagSystem.addToRunBag(activeRun, item, quantity).ok
           : LootSystem.addToInventory(this.gameState.player, item, quantity, this.gameState.world);
@@ -1086,7 +1109,15 @@ export class GameScene extends Phaser.Scene {
           this.events.emit('item_looted', { item, quantity });
           if (enemyId) BestiarySystem.revealDrop(this.gameState.world, enemyId, item.id);
           if (isPityPaid) this.events.emit('pity_paid', item.rarity);
+          // onItemCollected doit se déclencher ICI (ramassage réel), pas au kill :
+          // sinon une quête COLLECT se valide même si le drop n'est jamais ramassé
+          // (bulle détruite par changement de zone) ou si le sac était plein.
+          const completed = QuestSystem.onItemCollected(this.gameState.player, item.id, quantity, this.gameState.world);
+          if (completed.length > 0) this.handleQuestCompletions(completed);
         } else {
+          // Ne devrait plus arriver (willFit vient d'être vérifié juste avant) —
+          // filet de sécurité si l'état a changé entre les deux frames (ex: un
+          // autre drop ramassé entre-temps a rempli le dernier slot libre).
           const reason = activeRun ? 'Sac de run plein' : 'Sac plein';
           this.events.emit('show_notification', `${reason} — ${item.name} perdu`);
         }
@@ -4317,10 +4348,9 @@ export class GameScene extends Phaser.Scene {
 
     this.spawnXpOrbs(deathX, deathY, Math.floor(loot.xp * xpMult));
 
+    // onItemCollected (quêtes COLLECT) se déclenche au RAMASSAGE réel du drop
+    // (wireDropPickup), pas ici — voir commentaire au-dessus de la boucle de spawn.
     const questCompleted = QuestSystem.onEnemyKilled(this.gameState.player, activeEnemy.enemyId, this.gameState.world);
-    for (const itemLoot of loot.items) {
-      QuestSystem.onItemCollected(this.gameState.player, itemLoot.item.id, itemLoot.quantity, this.gameState.world);
-    }
     if (questCompleted.length > 0) this.handleQuestCompletions(questCompleted);
 
     // RunSystem (Phase 4) — +1 kill vers le quota ; quota atteint fait disparaître

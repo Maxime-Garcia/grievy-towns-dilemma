@@ -465,6 +465,14 @@ export class LootSystem {
     return true;
   }
 
+  /** Dry-run d'addToInventory, sans muter la banque — pour décider AVANT de jouer
+   *  une animation de ramassage si l'item va effectivement rentrer. */
+  static canAddToInventory(player: PlayerState, item: Item): boolean {
+    const stackable = 'stackable' in item && (item as any).stackable;
+    if (stackable && player.inventory.some(s => s.item.id === item.id)) return true;
+    return player.inventory.length < LootSystem.MAX_SLOTS;
+  }
+
   static removeFromInventory(
     player: PlayerState,
     itemId: string,
