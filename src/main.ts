@@ -17,6 +17,7 @@ import { BestiaryScene }  from './scenes/BestiaryScene';
 import { ArsenalScene }   from './scenes/ArsenalScene';
 import { PityScene }      from './scenes/PityScene';
 import { RunBagScene }    from './scenes/RunBagScene';
+import { DropDemoScene }  from './scenes/DropDemoScene';
 import { setTextResolution } from './utils/UITheme';
 
 // Le monkeypatch qui forçait LINEAR sur la texture de chaque `add.text()` a été
@@ -106,8 +107,21 @@ const config: Phaser.Types.Core.GameConfig = {
     ArsenalScene,
     PityScene,
     RunBagScene,
+    // Démo FloatingItemDrop — enregistrée mais jamais auto-démarrée ici (seule
+    // la 1re scène du tableau, BootScene, l'est par défaut) : ne perturbe pas
+    // le flux de boot normal. `?dropdemo=1` la boot SEULE à la place (cf.
+    // ci-dessous), pour éviter de la lancer en parallèle du menu/HUD.
+    DropDemoScene,
   ],
 };
+
+// `?dropdemo=1` : ignore tout le flux de boot normal et démarre uniquement la
+// démo FloatingItemDrop — un simple `game.scene.start()` après READY laisserait
+// tourner BootScene -> MainMenuScene en parallèle (scènes actives multiples).
+const isDropDemo = import.meta.env.DEV && new URLSearchParams(window.location.search).has('dropdemo');
+if (isDropDemo) {
+  config.scene = [DropDemoScene];
+}
 
 /**
  * Attendre les polices AVANT de démarrer Phaser.
