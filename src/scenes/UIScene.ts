@@ -1,5 +1,5 @@
 import { PlayerState, Item, ItemRarity, RARITY_COLORS } from '../types';
-import { GameScene } from './GameScene';
+import { GameScene, DEBUG_CHEAT_KEYS_ENABLED } from './GameScene';
 import { SKILL_MAP } from '../data/skills';
 import { UI, drawGlowPanel, drawSlot, drawBar, addUiFrame, uiStyle, resonanceColor, TYPE, fitText, formatResonanceLine } from '../utils/UITheme';
 import { StatRollSystem } from '../systems/StatRollSystem';
@@ -90,6 +90,13 @@ export class UIScene extends Phaser.Scene {
   private comboShownAt = 0;
   private comboFading = false;
 
+  // Indicateur de debug (HANDOFF.md §4ter/§5, DEBUG_CHEAT_KEYS_ENABLED uniquement) —
+  // capture en direct l'état des 3 bugs backlogués (trous qui ne déclenchent jamais
+  // la chute, touche U qui rouvre le pack en run active, régression save/pity) pour
+  // avoir une vraie preuve au prochain repro plutôt que deviner. `null` si le flag
+  // est à `false` (comportement de prod inchangé).
+  private debugSnapshotText: Phaser.GameObjects.Text | null = null;
+
   private lerpHp          = 1;
   private lerpMp          = 1;
   /** Traîne "drain retardé" : suit le ratio HP réel avec du retard (lerp 6/s). */
@@ -127,7 +134,7 @@ export class UIScene extends Phaser.Scene {
     // Vite (__BUILD_HASH__, cf. vite.config.ts) : l'écrire à la main était voué
     // à mentir, puisqu'un hash n'existe qu'une fois le commit fait — et l'écrire
     // dans le code refait le commit.
-    const BUILD_LABEL = `RUN: potions du pack visibles + notif mort (${__BUILD_HASH__})`;
+    const BUILD_LABEL = `DEBUG: indicateur run/trous/pity (flag off) (${__BUILD_HASH__})`;
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',
@@ -194,6 +201,17 @@ export class UIScene extends Phaser.Scene {
     this.manaText = this.add.text(BAR_X + BAR_W / 2, this.MP_Y + MP_H / 2, '',
       uiStyle(9, UI.TXT_WHITE, { bold: true, stroke: true }),
     ).setOrigin(0.5).setDepth(1);
+
+    // ── Indicateur de debug (HANDOFF.md §4ter/§5) — juste sous le panneau de
+    // stats, même style monospace que le badge de build. Créé UNIQUEMENT si
+    // DEBUG_CHEAT_KEYS_ENABLED est à `true` dans GameScene.ts (le créateur le
+    // bascule localement quand il veut chasser un des 3 bugs backlogués) —
+    // `debugSnapshotText` reste `null` sinon, `update()` ne fait rien de plus.
+    if (DEBUG_CHEAT_KEYS_ENABLED) {
+      this.debugSnapshotText = this.add.text(4, PANEL_TOP + PANEL_H + 4, '', {
+        fontSize: '9px', color: '#ffcc66', fontFamily: 'monospace',
+      }).setDepth(200).setAlpha(0.9);
+    }
 
     // ── Chip Pity v3 (à droite du panneau stats) ────
     // Pilule discrète en permanence à l'écran (demande explicite du créateur :
@@ -429,6 +447,15 @@ export class UIScene extends Phaser.Scene {
 
   update(_t: number, delta: number) {
     this.updateComboPips();
+
+    if (this.debugSnapshotText) {
+      const s = this.gameScene.getDebugSnapshot();
+      const p = this.gameScene.gameState.player;
+      this.debugSnapshotText.setText(
+        `zone=${s.zone} run.active=${s.runActive} pits=${s.pitCount} dash=${s.isDashing} iframe=${s.iframeMsLeft}ms\n`
+        + `pity E/L/M sans=${p.killsWithoutEpic}/${p.killsWithoutLegendary}/${p.killsWithoutMythic}`,
+      );
+    }
 
     if (this.notifTimer > 0) {
       this.notifTimer -= delta;

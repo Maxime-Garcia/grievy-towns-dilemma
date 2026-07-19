@@ -67,7 +67,7 @@ import {
  * n'est pas une triche au même sens, c'est le seul point d'entrée du RunSystem
  * tant que le PNJ déclencheur n'est pas livré par content-agent.
  */
-const DEBUG_CHEAT_KEYS_ENABLED = false;
+export const DEBUG_CHEAT_KEYS_ENABLED = false;
 
 const ELEMENT_PROJECTILE_COLORS: Partial<Record<ElementType, number>> = {
   [ElementType.FIRE]:      0xff4400,
@@ -1953,6 +1953,22 @@ export class GameScene extends Phaser.Scene {
    *  soin du jeu (HEALING_RECEIVED_PCT) — champ privé, exposé en lecture seule. */
   public getPlayerModifiers(): TalentModifiers {
     return this.playerModifiers;
+  }
+
+  /** Snapshot en lecture seule pour l'indicateur de debug de UIScene
+   *  (DEBUG_CHEAT_KEYS_ENABLED) — capture l'état exact au moment où l'un des 3
+   *  bugs backlogués (trous qui ne déclenchent jamais la chute, touche U qui
+   *  rouvre le pack en run active, régression save/pity) se reproduit, cf.
+   *  HANDOFF.md §4ter/§5. Champs privés (isDashing/iframeUntil/layout) exposés
+   *  UNIQUEMENT via cette lecture agrégée — jamais d'accesseur individuel. */
+  public getDebugSnapshot() {
+    return {
+      zone: this.gameState.player.currentZone,
+      runActive: !!this.gameState.run?.active,
+      pitCount: this.layout?.pits?.length ?? 0,
+      isDashing: this.isDashing,
+      iframeMsLeft: Math.max(0, Math.round(this.iframeUntil - this.time.now)),
+    };
   }
 
   /** RunBagScene enchaîne close() (fondu ~170ms) puis travelToZone() (fondu
