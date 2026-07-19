@@ -21,10 +21,9 @@ run. **7e revue de code reçue et appliquée (2 BUG), pas encore testé en jeu p
 
 `master` intact, `feat/roguelite` intact — rien de ce chantier n'y est encore mergé.
 
-**En attente pour demain matin** : 3 retours de playtest du soir du 19/07 sur la popup d'item
-intra-run (`RunBagScene`) — clic simple qui consomme une potion sans confirmation, description pas
-affichée pour d'autres items, et un rejet explicite de l'approche "zone de clic séparée" (badge "i")
-au profit d'un double-clic sur le slot lui-même. Détail complet et non implémenté : §4bis.
+**Corrigé (19/07, plus tard dans la nuit)** : les 3 retours de playtest sur la popup d'item
+intra-run (`RunBagScene`) — voir §4bis, code-reviewer passé (0 BLOCKER/BUG), poussé. **Pas encore
+testé en jeu par le créateur.**
 
 ---
 
@@ -153,10 +152,14 @@ différences pré-existantes délibérément pas unifiées (documentées dans le
 BLOCKER, 0 BUG, formules de layout vérifiées identiques ligne à ligne contre l'ancien code.
 **Pas encore retesté en jeu après ce refactor** — aucun changement visuel attendu, mais à confirmer.
 
-## 4bis. BUGS PLAYTEST 19/07 SOIR — popup item intra-run (À CORRIGER, PAS ENCORE FAIT)
+## 4bis. BUGS PLAYTEST 19/07 SOIR — popup item intra-run (CORRIGÉ, PAS ENCORE TESTÉ EN JEU)
 
 Trouvés par le créateur en testant `RunBagScene` juste après le fix loot-drop (commit `6192177`).
-**Rien de corrigé ce soir** — le créateur va dormir, reprendre ceci en premier demain.
+**Corrigé la même nuit** — le créateur a tranché sur la portée avant l'implémentation : le nouveau
+modèle premier-clic/double-clic s'applique à TOUS les types d'items du sac (pas seulement les
+consommables), pas seulement à l'équipement/matériaux. Code-reviewer passé (0 BLOCKER, 0 BUG),
+poussé. **Reste à tester en jeu par le créateur** (clic simple = description, double-clic rapproché
+sur le même slot = consommer/équiper, plus de badge "i").
 
 **Root cause identifiée** (lecture de `RunBagScene.onBagSlotClicked`, ligne ~924) : le clic sur la
 zone principale d'un slot occupé ne mène QUE rarement à `renderItemDetail` :
@@ -182,13 +185,18 @@ simple → action directe :
    sur le clic du slot lui-même, en mesurant le temps entre deux `pointerdown` consécutifs sur le
    MÊME slot (garder une trace du dernier slot cliqué + timestamp, comparer à `scene.time.now`).
 
-**Portée à clarifier demain** : le créateur n'a explicitement parlé QUE des consommables (potions).
-À décider avec lui si le double-clic doit aussi s'appliquer à l'équipement (aujourd'hui : clic
-simple = sélection pour échange, pas de description) ou si SEULE la branche consommable change de
-comportement et que le reste garde son clic simple actuel — ne pas supposer, demander.
+**Portée tranchée par le créateur** : le double-clic s'applique à TOUS les items (pas seulement les
+consommables) — clic simple = description pour n'importe quel slot occupé, second clic rapproché =
+action directe SI applicable (consommer pour un consommable, équiper via `onEquipClicked` pour un
+équipable ; matériaux/objets-clés n'ont pas d'action directe, le second clic ne fait alors rien de
+plus que garder la description affichée).
 
-**Ne pas réintroduire le badge "i"** en le déplaçant ou en le redimensionnant — c'est le principe
-d'une zone de clic séparée pour la description que le créateur rejette, pas son emplacement/taille.
+**Implémentation** (`RunBagScene.onBagSlotClicked`) : nouveau champ `lastBagDetailShownAt` (horodatage
+du dernier affichage de détail sur CE slot) comparé à `DOUBLE_CLICK_MS = 350` au clic suivant sur le
+même slot. Badge "i" séparé entièrement retiré (plus aucune zone de clic dédiée à la description) —
+**ne pas le réintroduire** en le déplaçant/redimensionnant, c'est le principe qui était rejeté, pas
+son emplacement/taille. Le paperdoll (équipement déjà porté) garde son clic simple → détail direct,
+non concerné par ce changement (le créateur ne parlait que du sac).
 
 ## 5. AUTRES POINTS OUVERTS (non bloquants, notés)
 
@@ -240,10 +248,9 @@ plusieurs allers-retours de playtest — pas un one-shot comme `FloatingItemDrop
 
 ## 7. PROCHAINE ACTION CONCRÈTE
 
-0. **EN PREMIER** : corriger les 3 retours de playtest du 19/07 soir sur la popup d'item intra-run
-   (§4bis) — double-clic pour consommer, clic simple pour voir la description, pas de zone séparée.
-   Clarifier avec le créateur si ça s'étend à l'équipement ou seulement aux consommables avant
-   d'implémenter.
+0. **EN PREMIER** : faire tester en jeu par le créateur le nouveau modèle double-clic du sac intra-run
+   (§4bis, codé et revu cette nuit, jamais lancé en jeu) — clic simple = description sur n'importe
+   quel item, double-clic rapproché = consommer/équiper, plus de badge "i".
 1. **Confirmation finale du créateur** sur la refonte inventaire (§4) ET le refactor `EquipmentPanel`
    (§4, fait le 19/07) — les défauts trouvés au premier test sont corrigés, en attente d'un dernier
    passage en jeu pour clore ce chantier et merger `feat/roguelite-run-system`.

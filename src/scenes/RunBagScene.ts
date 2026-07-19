@@ -55,6 +55,11 @@ const RB_STRIDE = RB_SLOT + RB_GAP;
 const RB_COLS  = 5;    // 5 colonnes (capture créateur : rangée sûre + grille 5×3)
 const RB_GRID_W = RB_COLS * RB_STRIDE - RB_GAP;
 const BAG_TITLE_H = 22;
+// Fenêtre de détection du double-clic (RunBagScene.onBagSlotClicked) — deux
+// pointerdown sur le MÊME slot du sac en deçà de ce délai déclenchent l'action
+// directe (consommer/équiper) ; au-delà, chaque clic ne fait qu'afficher la
+// description, comme un double-clic OS standard.
+const DOUBLE_CLICK_MS = 350;
 const RB_TABS_H   = 34;
 const RB_SEARCH_H = LAYOUT.TOUCH_MIN;
 
@@ -118,6 +123,14 @@ export class RunBagScene extends Phaser.Scene {
   // .selectedItem, avec en plus l'origine (paperdoll ou sac) pour savoir quels
   // boutons d'action proposer (cf. renderItemDetail).
   private selectedDetail: { item: Item; origin: DetailOrigin } | null = null;
+  // Horodatage du dernier affichage de détail déclenché par un clic sur un slot
+  // du SAC (pas le paperdoll) — sert à détecter un second clic rapproché sur le
+  // MÊME slot (double-clic = action directe) sans zone de clic séparée, cf.
+  // retour créateur 19/07 : "je ne veux pas [de zone séparée], je préfère [le]
+  // double clic […] rapprochés". Comparé à selectedDetail.origin pour identifier
+  // le slot, donc jamais désynchronisé des autres remises à null de selectedDetail
+  // (Fermer/Équiper/Consommer/Jeter/Déplacer/Échap) — pas de champ séparé à purger.
+  private lastBagDetailShownAt = 0;
 
   // Panneaux du layout plein écran 'view'/'extract' (calculés dans createBagStatics)
   private bagB!: PanelBounds;
@@ -878,30 +891,10 @@ export class RunBagScene extends Phaser.Scene {
       });
     }
 
-    // Badge "détail" (i) — TOUT objet occupé, pas seulement les équipables :
-    // ouvre le panneau de détail partagé avec InventoryScene (stats, résonance,
-    // description) + les boutons Consommer/Déplacer/Jeter contextuels. Coin
-    // bas-gauche : le seul coin libre (haut-gauche = index sûr, haut-droite =
-    // badge E, bas-droite = quantité). Même patron stopPropagation que le
-    // badge E — sans ça le clic retomberait AUSSI sur le slot (swap/consommer).
-    if (slot) {
-      const br = 9;
-      const ibx = x + br + 2, iby = y + RB_SLOT - br - 2;
-      const infoG = this.track(this.add.graphics()) as Phaser.GameObjects.Graphics;
-      infoG.fillStyle(parseInt(UI.TXT_BLUE.slice(1), 16), 0.95);
-      infoG.fillCircle(ibx, iby, br);
-      infoG.lineStyle(1, 0x000000, 0.6);
-      infoG.strokeCircle(ibx, iby, br);
-      dim(infoG);
-      dim(this.track(this.add.text(ibx, iby, 'i', uiStyle(TYPE.SMALL, '#0a0a18', { bold: true })).setOrigin(0.5)));
-      const infoHit = this.track(this.add.rectangle(ibx, iby, br * 2 + 6, br * 2 + 6, 0, 0)
-        .setInteractive({ useHandCursor: true })) as Phaser.GameObjects.Rectangle;
-      infoHit.on('pointerdown', (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: { stopPropagation: () => void }) => {
-        event.stopPropagation();
-        this.selectedDetail = { item: slot.item, origin: { kind: 'bag', bagKind: kind, index } };
-        this.refresh();
-      });
-    }
+    // Pas de badge "détail" séparé : le clic sur le slot lui-même affiche la
+    // description (premier clic) et un second clic rapproché déclenche l'action
+    // (cf. onBagSlotClicked) — le créateur a explicitement rejeté une zone de
+    // clic dédiée à la description (retour 19/07).
   }
 
   /** Équipe directement l'objet du slot cliqué (badge "E") — l'ancien équipement
@@ -925,23 +918,44 @@ export class RunBagScene extends Phaser.Scene {
     const run = this.gameScene.gameState.run;
     if (!run) return;
     const bag = kind === 'safe' ? run.safeBag : run.ordinaryBag;
-    this.selectedDetail = null;
 
     if (!this.selected) {
       const slot = bag[index];
-      if (!slot) return; // rien à sélectionner sur un slot vide
-      // Consommer directement au premier clic sur un consommable — cf. spec
-      // "clique pour boire". Rearranger un consommable reste possible via un
-      // second clic si un AUTRE slot est déjà sélectionné (branche plus bas).
-      if (slot.item.type === ItemType.CONSUMABLE) {
-        this.consumeItem(kind, index);
+      if (!slot) { this.selectedDetail = null; this.refresh(); return; } // slot vide : ferme un détail ouvert, rien à sélectionner
+
+      // Second clic RAPPROCHÉ sur le MÊME slot déjà en détail = action directe
+      // (consommer/équiper) — remplace l'ancien clic simple qui consommait/
+      // sélectionnait instantanément, et l'ancienne zone "i" séparée (rejetée
+      // par le créateur 19/07). Un clic isolé, ou sur un AUTRE slot, ne fait
+      // jamais qu'afficher la description (branche du bas), jamais d'action.
+      const isRapidSecondClick = !!this.selectedDetail
+        && this.selectedDetail.origin.kind === 'bag'
+        && this.selectedDetail.origin.bagKind === kind
+        && this.selectedDetail.origin.index === index
+        && (this.time.now - this.lastBagDetailShownAt) <= DOUBLE_CLICK_MS;
+
+      if (isRapidSecondClick) {
+        if (slot.item.type === ItemType.CONSUMABLE) {
+          this.selectedDetail = null;
+          this.consumeItem(kind, index); // appelle déjà this.refresh()
+          return;
+        }
+        if (EQUIPPABLE_TYPES.has(slot.item.type)) {
+          this.onEquipClicked(kind, index); // appelle déjà this.refresh()
+          return;
+        }
+        // Matériaux/objets-clés : aucune action directe définie — la
+        // description reste affichée, le second clic ne fait rien de plus.
         return;
       }
-      this.selected = { kind, index };
+
+      this.selectedDetail = { item: slot.item, origin: { kind: 'bag', bagKind: kind, index } };
+      this.lastBagDetailShownAt = this.time.now;
       this.refresh();
       return;
     }
 
+    this.selectedDetail = null;
     if (this.selected.kind === kind && this.selected.index === index) {
       this.selected = null; // re-clic sur le même slot = désélection
       this.refresh();
