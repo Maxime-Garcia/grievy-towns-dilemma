@@ -343,10 +343,17 @@ run active (pas juste après une mort).
 
 ## 5. AUTRES POINTS OUVERTS (non bloquants, notés)
 
-- **Régression save/pity non résolue** : le créateur a signalé que la mémoire de pity disparaît
-  après un cycle sauvegarder → Menu Principal → Charger partie. Migration `SAVE_VERSION` relue à
-  la main (chaîne complète), aucun bug trouvé côté migration — reste à investiguer en profondeur
-  (le créateur a demandé un passage dédié dev-agent + design-agent, pas un correctif à l'aveugle).
+- **Régression save/pity non résolue — BACKLOG (19/07 nuit)** : le créateur a signalé que la mémoire
+  de pity disparaît après un cycle sauvegarder → Menu Principal → Charger partie. balance-agent/
+  design-agent consultés (cf. §4ter) : confirment que ce n'est PAS un reset lié à la mort, très
+  probablement CETTE régression qui se manifeste autour de l'événement. Creusé plus loin ce soir :
+  migration `SAVE_VERSION` écartée (chemin mort pour une save déjà en 1.9.0, `SaveSystem.ts:151`
+  ne s'exécute jamais sur une partie jouée avec la version courante) ; autosave écarté (ne peut pas
+  se déclencher pendant une transition de mort, `isTraveling` bloque tout `update()`). Root cause non
+  trouvée sans pouvoir reproduire le cycle sauvegarder→charger soi-même (pas de playtest automatisé)
+  — **mis au backlog sur demande explicite du créateur**, comme les trous/touche U (§4ter). Prochaine
+  étape si repris : le créateur reproduit et donne les valeurs exactes des 3 compteurs (`PityScene`)
+  avant/après le cycle complet, avec et sans mort entre les deux, pour isoler la vraie cause.
 - **Indicateur de direction vers le boss** — aucun repère aujourd'hui pour savoir où il est sur la
   carte générée. Délégué à `design-agent`/`gamefeel-agent`.
 - **Consommables — gap partiel** : `buffStat`/`buffDuration`/`revive`/`statusCure` d'un
@@ -399,14 +406,14 @@ plusieurs allers-retours de playtest — pas un one-shot comme `FloatingItemDrop
    passage en jeu pour clore ce chantier et merger `feat/roguelite-run-system`.
 2. Reprendre le badge équiper/icônes/grille 5-15 du sac de run (déjà testés une fois avant cette
    refonte visuelle, à revérifier que rien n'a régressé).
-3. Régression save/pity (§5) : dev-agent dédié maintenant que balance-agent/design-agent ont confirmé
-   que ce n'est PAS un choix de design — la piste `SaveSystem.ts:151` s'est révélée être un chemin de
-   migration mort pour les saves déjà en 1.9.0, la vraie cause reste à trouver.
-4. Backlog non bloquant (§4ter) : indicateur de debug en direct pour capturer une vraie preuve sur
-   les trous qui ne déclenchent jamais la chute et la touche U qui rouvre le pack en run active —
-   pas urgent, le créateur a choisi de reporter.
-5. Une fois ce qui précède mergé : proposer le chantier VFX armes (§5bis) — pas avant, pour éviter
+3. Backlog non bloquant (§4ter, §5) : 3 bugs mis de côté sur demande explicite du créateur, tous
+   bloqués sur la même limite (root cause non trouvable sans reproduction en direct, pas de playtest
+   automatisé) — les trous qui ne déclenchent jamais la chute, la touche U qui rouvre le pack en run
+   active, et la régression save/pity. Reprendre avec le créateur quand il peut reproduire et donner
+   des valeurs/observations exactes (proposition : un indicateur de debug en direct pour les 3 d'un
+   coup, pas encore codé).
+4. Une fois ce qui précède mergé : proposer le chantier VFX armes (§5bis) — pas avant, pour éviter
    de faire bouger `GameScene.ts` sur deux fronts en parallèle.
-6. Plus loin : `balance-agent` sur le quota/l'escalade du RunSystem (dont la contrepartie potions
+5. Plus loin : `balance-agent` sur le quota/l'escalade du RunSystem (dont la contrepartie potions
    emportées/slots sûrs, §4ter), puis les lots suivants du pivot (Boss mise en scène, Gamefeel,
    Nettoyage, Consommables étape 5).
