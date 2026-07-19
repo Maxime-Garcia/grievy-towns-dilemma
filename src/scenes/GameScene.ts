@@ -4518,6 +4518,17 @@ export class GameScene extends Phaser.Scene {
           this.gameState.player.position = { x: 0, y: 0 };
           const targetZone = wasInRun ? 'grievy_town' : this.gameState.player.currentZone;
           this.performZoneTransition(targetZone, 0, 0);
+          // BUG (créateur 19/07) : "je suis mort... comme si rien n'avait changé" —
+          // la mort en run wipait bien le sac (comportement voulu, cf. commentaire
+          // ci-dessus) mais SANS AUCUN message : rien ne disait au joueur que sa
+          // run venait de se terminer. Léger différé après performZoneTransition
+          // (buildZone émet 'zone_entered' synchrone, contrairement au bootstrap
+          // de create() qui le diffère lui — cf. plus haut dans ce fichier) pour
+          // ne pas afficher les deux notifications sur la même frame.
+          if (wasInRun) {
+            this.time.delayedCall(50, () => this.events.emit('show_notification',
+              'Vous êtes mort — le sac de run est perdu. Retour à Grievy Town.'));
+          }
         });
       },
     );

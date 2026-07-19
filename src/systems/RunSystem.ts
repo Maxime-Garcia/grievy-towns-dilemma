@@ -38,6 +38,33 @@ export class RunSystem {
       player.runSafeSlotCapacity,
       player.runBagCapacity - player.runSafeSlotCapacity,
     );
+    // BUG (créateur, 19/07) : les consommables choisis dans l'écran "PRÉPARER LA
+    // DESCENTE" n'étaient jamais visibles ni utilisables en run — ils n'étaient
+    // stockés QUE dans `consumableLoadout`, un champ que RunBagScene n'a jamais
+    // rendu ni rendu interactif (aucun bouton Consommer/Jeter dessus). Le joueur
+    // les perdait donc silencieusement : soit rendus à l'exfiltration sans avoir
+    // jamais pu s'en servir, soit détruits à la mort sans avoir jamais existé
+    // pour lui. Fix minimal : placer directement le loadout dans les SLOTS SÛRS
+    // (mêmes garanties voulues pour `consumableLoadout` — revient à coup sûr à
+    // l'exfiltration, perdu à la mort — et réutilise l'UI déjà testée du sac de
+    // run au lieu d'une barre à part). Contrepartie à surveiller : emporter des
+    // consommables mange une partie des 5 slots sûrs normalement destinés au
+    // butin trouvé en run — compromis assumé pour corriger l'invisibilité
+    // totale, pas encore passé par balance-agent.
+    for (const item of consumableLoadout) {
+      if (!item) continue;
+      // Empile sur un slot existant du même item AVANT d'en ouvrir un nouveau —
+      // même convention que RunBagSystem.tryStack/LootSystem.addToInventory.
+      // Sans ça, choisir 2× la même potion dans "PRÉPARER LA DESCENTE" ouvrait
+      // 2 slots sûrs séparés au lieu d'empiler sur 1 seul (trouvé en revue),
+      // aggravant la contrepartie déjà assumée ci-dessus.
+      const maxStack = (item as any).maxStack ?? 99;
+      const stackSlot = safeBag.find(s => s && s.item.id === item.id && s.quantity < maxStack);
+      if (stackSlot) { stackSlot.quantity++; continue; }
+      const freeIdx = safeBag.findIndex(s => s === null);
+      if (freeIdx === -1) break; // ne devrait pas arriver (MAX_LOADOUT=4 <= capacité sûre par défaut 5)
+      safeBag[freeIdx] = { item, quantity: 1 };
+    }
     return {
       active: true,
       biome,
@@ -51,7 +78,11 @@ export class RunSystem {
       phase: 'exploring',
       safeBag,
       ordinaryBag,
-      consumableLoadout: consumableLoadout.map(item => item ? { item, quantity: 1 } : null),
+      // Laissé vide : le loadout vit désormais dans safeBag (ci-dessus). Le champ
+      // reste dans RunState (pas de migration de save nécessaire) — exfiltrate()/
+      // onPlayerDeath() continuent de le référencer sans risque (toujours vide,
+      // no-op garanti).
+      consumableLoadout: [],
       startedAt: Date.now(),
     };
   }
@@ -95,6 +126,9 @@ export class RunSystem {
       }
     };
     tryReturnAll(run.safeBag);
+    // consumableLoadout est TOUJOURS vide depuis startRun() (fix 19/07, cf. son
+    // commentaire) — appel gardé no-op pour ne rien casser si un ancien save
+    // (avant le fix) a encore des entrées dedans.
     tryReturnAll(run.consumableLoadout);
     run.ordinaryBag = run.ordinaryBag.map(() => null);
     if (allTransferred) run.active = false;

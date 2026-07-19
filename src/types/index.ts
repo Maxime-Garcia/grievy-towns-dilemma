@@ -703,7 +703,11 @@ export interface RunState {
   safeBag: (RunBagSlot | null)[];
   /** Longueur fixe = player.runBagCapacity - player.runSafeSlotCapacity. */
   ordinaryBag: (RunBagSlot | null)[];
-  /** 3-4 slots consommables choisis dans la banque avant de descendre. */
+  /** Toujours vide pour une run démarrée après le 19/07 (RunSystem.startRun place
+   *  désormais le loadout choisi directement dans safeBag, seul endroit où il est
+   *  réellement visible/consommable). Champ gardé pour la compatibilité d'une save
+   *  en cours de run faite AVANT ce fix (exfiltrate()/onPlayerDeath() le vident
+   *  encore correctement) — voir le commentaire de RunSystem.startRun. */
   consumableLoadout: (RunBagSlot | null)[];
   startedAt: number;
 }
