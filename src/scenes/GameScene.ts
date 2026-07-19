@@ -2131,6 +2131,7 @@ export class GameScene extends Phaser.Scene {
     // dé-pausé sous l'overlay. (Stopper la scène tue le tween de fermeture, donc
     // aucun onClosed orphelin ne survit à une bascule pendant l'animation.)
     this.inventoryKey.on('down', () => {
+      if (this.isTraveling) return; // cf. commentaire sur escKey, même garde
       // RunSystem : pendant une run active, la touche Inventaire ouvre le sac de
       // run (RunBagScene mode 'view') — JAMAIS la banque de Grievy Town. C'est
       // l'inventaire "intra-run" distinct demandé dès le début du chantier
@@ -2160,6 +2161,7 @@ export class GameScene extends Phaser.Scene {
       this.scene.launch('InventoryScene', { gameScene: this });
     });
     this.skillMenuKey.on('down', () => {
+      if (this.isTraveling) return; // cf. commentaire sur escKey, même garde
       // RunBagScene ('pack'/'extract' bloquants, ou 'view' consultatif) ne doit
       // jamais être empilée/masquée par un autre overlay — même raison que ci-dessus.
       if (this.scene.isActive('RunBagScene')) return;
@@ -2170,6 +2172,7 @@ export class GameScene extends Phaser.Scene {
       this.scene.launch('SkillScene', { gameScene: this });
     });
     this.pityKey.on('down', () => {
+      if (this.isTraveling) return; // cf. commentaire sur escKey, même garde
       if (this.scene.isActive('RunBagScene')) return;
       if (this.scene.isActive('PityScene')) { (this.scene.get('PityScene') as PityScene).close(); return; }
       // BASCULE (pas re-toggle) : stop() brut, PAS close() animé — même raison
@@ -7149,7 +7152,13 @@ export class GameScene extends Phaser.Scene {
     // ESC → ferme l'overlay actif ou ouvre le menu pause
     this.escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     this.escKey.on('down', () => {
-      if (this.isInDialogue) return;
+      // BUG (créateur 19/07, cf. le correctif menuOpen de buildZone()) : contrairement
+      // à attackHandler/altAttackHandler/interact, ces 4 touches qui ouvrent un menu
+      // n'avaient AUCUN garde contre isTraveling — un appui pendant le fondu de
+      // travelToZone() (~400ms+) pouvait ouvrir un overlay APRÈS que buildZone() ait
+      // déjà remis menuOpen à false, désynchronisant l'overlay visible (toujours
+      // affiché) de l'état réel du jeu (dépausé dessous). Trouvé en revue de code.
+      if (this.isInDialogue || this.isTraveling) return;
       // RunBagScene : 'view' (consultatif) se ferme normalement via ESC ; 'pack'/
       // 'extract' sont des écrans BLOQUANTS (packing avant descente, choix
       // post-boss) — ESC n'y fait rien plutôt que d'ouvrir Pause par-dessus
@@ -7679,6 +7688,20 @@ export class GameScene extends Phaser.Scene {
 
     // Physics was paused in travelToZone/onPlayerDeath — safe to resume now
     this.physics.world.resume();
+    // BUG (créateur 19/07) : "S'exfiltrer ne fait rien, ça freeze le jeu" — quand
+    // travelToZone() est déclenché DEPUIS un menu qui avait posé setPaused(true)
+    // (RunBagScene.confirmExfiltrate/confirmContinue/confirmDescend, ouverts via
+    // openRunBagScene qui appelle setPaused(true)), ce menu ne peut PAS appeler
+    // setPaused(false) à sa fermeture (son shutdown() le saute exprès via
+    // isTravelingNow, cf. commentaire sur isTravelingNow plus haut — pour ne pas
+    // dépauser la physique EN PLEIN fondu). Mais rien ne reprenait le relais une
+    // fois la transition terminée : `menuOpen` restait bloqué à `true` pour
+    // toujours (update() bloque tout tant qu'il est vrai), physique et fondu
+    // recommençaient à tourner mais plus aucun input/logique de jeu ne s'exécutait
+    // — d'où l'impression de freeze qui ne se lève qu'en ouvrant/fermant un AUTRE
+    // menu (Inventaire), qui repasse par setPaused(false) au bon moment. Une zone
+    // qui vient de finir de charger ne doit jamais rester en pause "menu".
+    this.menuOpen = false;
     // isTraveling stays true here — cleared in FADE_IN_COMPLETE (300ms later).
     // Clearing it early lets teleport overlaps fire on the very next physics step,
     // which immediately triggers another fade-out and causes the black-screen loop.
@@ -7707,6 +7730,7 @@ export class GameScene extends Phaser.Scene {
       console.error('[GameScene] performZoneTransition threw:', err);
       try { this.physics.world.resume(); } catch (_) {}
       this.isTraveling = false;
+      this.menuOpen = false; // même correctif que le chemin normal, cf. commentaire ci-dessus
       this.cameras.main.fadeIn(300, 0, 0, 0);
     }
   }

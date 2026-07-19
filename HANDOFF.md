@@ -359,6 +359,31 @@ active est déjà correctement câblée (régénère la carte depuis le seed sau
 le créateur seulement si le symptôme revient après un save fait alors qu'il est CONFIRMÉ toujours en
 run active (pas juste après une mort).
 
+## 4quater. PLAYTEST 20/07 — freeze après S'exfiltrer/Continuer/Descendre (CORRIGÉ)
+
+**✅ CORRIGÉ — "S'exfiltrer ne fait rien, ça freeze le jeu" (créateur, 20/07).** Symptôme :
+cliquer "S'EXFILTRER" ne semblait rien faire, le jeu restait figé — ouvrir puis fermer un autre menu
+(Inventaire) "défigeait" tout. Root cause : `GameScene.update()` bloque toute logique de jeu tant que
+`this.menuOpen` est `true` (posé par `setPaused(true)`, lui-même posé par `openRunBagScene()` à
+l'ouverture du sac de run). `RunBagScene.confirmExfiltrate()`/`confirmContinue()`/`confirmDescend()`
+enchaînent `close()` (fondu ~170ms) puis `travelToZone()` (fondu ~400ms+) dans la MÊME frame —
+`RunBagScene.shutdown()` saute EXPRÈS `setPaused(false)` pendant ce fondu long (garde
+`isTravelingNow`, pour ne pas dépauser la physique en plein milieu), mais **rien ne reprenait le
+relais une fois la transition terminée** : `buildZone()` reprenait la physique DIRECTEMENT
+(`physics.world.resume()`), sans jamais toucher `menuOpen`. Résultat : `menuOpen` restait bloqué à
+`true` pour toujours après une transition déclenchée depuis un menu déjà en pause — exactement le
+freeze rapporté. Affecte les 3 boutons (`S'exfiltrer`/`Continuer`/`Descendre`), pas seulement
+Exfiltrer, tous les 3 suivant le même patron.
+
+Fix : `this.menuOpen = false;` ajouté dans `buildZone()` (chemin normal ET le `catch` d'erreur),
+seul point de passage commun aux 3 boutons — corrige les 3 en un seul endroit. Code-reviewer a
+trouvé un 2e bug lié : les 4 touches qui ouvrent un menu (ESC/Inventaire/Talents/Pity) n'avaient
+AUCUN garde contre `isTraveling`, contrairement aux touches d'attaque/interaction — un appui pendant
+le fondu de transition pouvait ouvrir un overlay juste après que `buildZone()` ait déjà remis
+`menuOpen` à `false`, désynchronisant l'overlay affiché (toujours visible) de l'état réel (dépausé
+dessous, ennemis/joueur qui bougent invisiblement sous le menu). Corrigé en ajoutant
+`if (this.isTraveling) return;` aux 4 handlers, même garde que les touches d'attaque.
+
 ## 5. AUTRES POINTS OUVERTS (non bloquants, notés)
 
 - **Régression save/pity non résolue — BACKLOG (19/07 nuit)** : le créateur a signalé que la mémoire
