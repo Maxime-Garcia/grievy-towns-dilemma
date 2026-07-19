@@ -1,0 +1,2 @@
+Je veux que la pity fonctionne comme suit : 
+Le joueur tue des monstres, une interface graphique tient le compte du nombre de monstres tués et affiche le restant pour obtenir la pity de toutes les raretés supérieures à Epique. L'interface graphique a été prototypée dans ce sous-dossier : Pity Tracker.html, cela sera à adapter avec la DA du jeu conjointement avec les agents d'UI/UX et les autres. Ce compteur devra être conservée en sauvegardant le jeu. Il ne faut pas le perdre.

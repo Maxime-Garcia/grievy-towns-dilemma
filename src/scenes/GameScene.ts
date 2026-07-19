@@ -216,9 +216,11 @@ export class GameScene extends Phaser.Scene {
   private startRunDebugKey!: Phaser.Input.Keyboard.Key;
   private spawnRarityDropsKey!: Phaser.Input.Keyboard.Key;
   // GameScene reste la MÊME instance à travers les transitions de zone (pas de
-  // scene.restart()) — sans ce suivi, les drops de debug survivent à la zone où
-  // ils ont été créés (cf. destroyCurrentZoneObjects, code-reviewer).
-  private debugRarityDrops: FloatingItemDrop[] = [];
+  // scene.restart()) — sans ce suivi, les drops (debug ET vrai loot de kill)
+  // survivent à la zone où ils ont été créés (cf. destroyCurrentZoneObjects,
+  // code-reviewer — bug trouvé une première fois sur les drops de debug,
+  // applicable à l'identique au vrai loot).
+  private activeItemDrops: FloatingItemDrop[] = [];
 
   private xpOrbs!: Phaser.Physics.Arcade.Group;
   private readonly XP_ATTRACT_RANGE = 96;
@@ -1030,31 +1032,64 @@ export class GameScene extends Phaser.Scene {
       const y = cy + Math.sin(perpAngle) * offset;
 
       const drop = new FloatingItemDrop(this, x, y, {
-        texture: this.debugResolveDropTexture(item),
+        texture: this.resolveDropTexture(item),
         rarity: itemRarityToRarityKey(item.rarity),
       });
-      this.debugRarityDrops.push(drop);
-      this.wireDropPickup(drop, item);
+      this.activeItemDrops.push(drop);
+      // Touche debug : ramassage vers la banque (comportement historique), pas
+      // run-aware — ce chemin n'est de toute façon accessible que derrière
+      // DEBUG_CHEAT_KEYS_ENABLED, contrairement au vrai loot de kill ci-dessous.
+      this.wireDropPickup(drop, item, 1);
       spawned++;
     });
     this.events.emit('show_notification', `[DEBUG] ${spawned}/${RARITY_ORDER.length} drops de rareté générés`);
   }
 
-  /** Ramassage en marchant dessus. L'overlap Arcade redéclenche CHAQUE frame tant
-   *  que les deux corps se chevauchent — `overlap.destroy()` en tout premier dans
-   *  le callback (synchrone, avant qu'une autre frame ne repasse) est le garde
-   *  contre un double ramassage pendant les ~220ms de l'animation de collect(). */
-  private wireDropPickup(drop: FloatingItemDrop, item: import('../types').Item): void {
+  /**
+   * Ramassage en marchant dessus — ajoute réellement l'item au sac de run actif
+   * ou à la banque (même règle que tout autre chemin de loot du jeu, cf.
+   * onEnemyKilled) et notifie comme il se doit (item_looted pour un vrai
+   * ramassage, show_notification si le sac est plein). L'overlap Arcade
+   * redéclenche CHAQUE frame tant que les deux corps se chevauchent —
+   * `overlap.destroy()` en tout premier dans le callback (synchrone, avant
+   * qu'une autre frame ne repasse) est le garde contre un double ramassage
+   * pendant les ~220ms de l'animation de collect(). Le corps du drop reste de
+   * toute façon désactivé pendant sa chute+rebond (cf. FloatingItemDrop) :
+   * cet overlap ne peut physiquement pas se déclencher avant que l'animation
+   * d'apparition soit visuellement terminée.
+   *
+   * @param enemyId  Renseigné pour un vrai kill (révèle le drop au Bestiaire) —
+   *                 absent pour les drops de la touche debug.
+   * @param isPityPaid  true si CET item honore une garantie de pity (cf.
+   *                 loot.pityPaid) — la notif "Garantie honorée !" doit suivre
+   *                 le ramassage RÉEL, pas le moment du kill (le drop peut être
+   *                 laissé au sol, voire jamais ramassé).
+   */
+  private wireDropPickup(
+    drop: FloatingItemDrop, item: Item, quantity: number,
+    enemyId?: string, isPityPaid?: boolean,
+  ): void {
     const overlap = this.physics.add.overlap(this.player, drop, () => {
       overlap.destroy();
+      const idx = this.activeItemDrops.indexOf(drop);
+      if (idx !== -1) this.activeItemDrops.splice(idx, 1);
       drop.collect(this.player, () => {
-        const added = LootSystem.addToInventory(this.gameState.player, item, 1, this.gameState.world);
+        const activeRun = this.gameState.run?.active ? this.gameState.run : null;
+        const added = activeRun
+          ? RunBagSystem.addToRunBag(activeRun, item, quantity).ok
+          : LootSystem.addToInventory(this.gameState.player, item, quantity, this.gameState.world);
         this.events.emit('player_update', this.gameState.player);
         // item_looted (pas show_notification) : seul chemin qui déclenche le toast
         // coloré par rareté + le libellé de Résonance dans UIScene.onItemLooted —
         // tous les autres points de loot du jeu passent par là (cf. code-reviewer).
-        if (added) this.events.emit('item_looted', { item, quantity: 1 });
-        else this.events.emit('show_notification', `[DEBUG] Sac plein — ${item.name} perdu`);
+        if (added) {
+          this.events.emit('item_looted', { item, quantity });
+          if (enemyId) BestiarySystem.revealDrop(this.gameState.world, enemyId, item.id);
+          if (isPityPaid) this.events.emit('pity_paid', item.rarity);
+        } else {
+          const reason = activeRun ? 'Sac de run plein' : 'Sac plein';
+          this.events.emit('show_notification', `${reason} — ${item.name} perdu`);
+        }
       });
     });
     this.physicsColliders.push(overlap);
@@ -1062,8 +1097,8 @@ export class GameScene extends Phaser.Scene {
 
   /** Même chaîne de repli que InventoryScene.resolveIcon/RunBagScene.resolveIcon —
    *  copiée ici plutôt que partagée : ce n'est pas une scène UI, pas de dépendance
-   *  à ces scènes souhaitable pour un simple aide de debug. */
-  private debugResolveDropTexture(item: import('../types').Item): string {
+   *  à ces scènes souhaitable depuis GameScene. */
+  private resolveDropTexture(item: import('../types').Item): string {
     if (this.textures.exists(item.icon)) return item.icon;
     if ('weaponType' in item && item.weaponType) {
       const key = `wpn_${String(item.weaponType).toLowerCase()}`;
@@ -4224,40 +4259,33 @@ export class GameScene extends Phaser.Scene {
     );
 
     this.gameState.player.gold += loot.gold;
-    // Raretés dont un item a RÉELLEMENT rejoint l'inventaire ce kill-ci — sert à
-    // filtrer loot.pityPaid plus bas (même piège que item_looted : sac plein →
-    // l'item est jeté au sol, la notif « Garantie honorée ! » ne doit pas mentir
-    // en s'affichant quand même).
-    const addedRarities = new Set<ItemRarity>();
+    // Chaque item loot spawn désormais en FloatingItemDrop (bulle de loot,
+    // demande créateur 19/07) au lieu de rejoindre le sac/la banque à l'instant
+    // du kill — l'ajout réel (sac de run actif OU banque, cf. commentaire
+    // historique ci-dessous) + les notifications (item_looted/pity_paid) se
+    // déclenchent au RAMASSAGE (wireDropPickup), pas au kill : un drop peut
+    // rester au sol un moment, voire n'être jamais ramassé.
+    //
     // RunSystem : pendant une run, le butin va dans le sac de run (20/4, perdu à
     // l'exfiltration sauf slots sûrs) — JAMAIS dans la banque de Grievy Town tant
     // que la run n'est pas terminée. Gap critique trouvé au premier playtest : le
     // loot continuait d'atterrir dans player.inventory sans jamais passer par
-    // RunBagSystem, laissant le sac de run vide à l'extraction.
-    const activeRun = this.gameState.run?.active ? this.gameState.run : null;
+    // RunBagSystem, laissant le sac de run vide à l'extraction. (wireDropPickup
+    // relit gameState.run?.active à l'instant du RAMASSAGE, pas ici — une run
+    // peut se terminer entre le kill et le moment où le joueur marche dessus.)
+    //
+    // Dispersion légère (±SCATTER) pour qu'un kill à drops multiples ne les
+    // empile pas exactement au même pixel (chacun doit rester cliquable/visible).
+    const DROP_SCATTER = 24;
     for (const { item, quantity } of loot.items) {
-      // Le retour d'addToInventory/addToRunBag était ignoré : sac plein → l'item
-      // était jeté, MAIS la notification de loot s'affichait quand même. Le joueur
-      // voyait un drop qu'il ne recevait jamais. On ne notifie que ce qui est
-      // réellement pris.
-      const added = activeRun
-        ? RunBagSystem.addToRunBag(activeRun, item, quantity).ok
-        : LootSystem.addToInventory(this.gameState.player, item, quantity, this.gameState.world);
-      if (!added) {
-        const reason = activeRun ? 'Sac de run plein' : 'Sac plein';
-        this.events.emit('show_notification', `${reason} — ${item.name} laissé au sol !`);
-        continue;
-      }
-      addedRarities.add(item.rarity);
-      this.events.emit('item_looted', { item, quantity });
-      // Bestiaire — révéler les drops hidden au premier loot (progression globale
-      // du joueur, non concernée par la distinction run/banque — reste actif).
-      BestiarySystem.revealDrop(this.gameState.world, activeEnemy.enemyId, item.id);
-    }
-    // Notif « Garantie honorée ! » APRÈS la boucle d'inventaire (pas avant) —
-    // seulement pour les raretés dont l'item a survécu au test du sac plein.
-    for (const rarity of loot.pityPaid) {
-      if (addedRarities.has(rarity)) this.events.emit('pity_paid', rarity);
+      const dropX = deathX + Phaser.Math.Between(-DROP_SCATTER, DROP_SCATTER);
+      const dropY = deathY + Phaser.Math.Between(-DROP_SCATTER, DROP_SCATTER);
+      const drop = new FloatingItemDrop(this, dropX, dropY, {
+        texture: this.resolveDropTexture(item),
+        rarity: itemRarityToRarityKey(item.rarity),
+      });
+      this.activeItemDrops.push(drop);
+      this.wireDropPickup(drop, item, quantity, activeEnemy.enemyId, loot.pityPaid.includes(item.rarity));
     }
 
     // ⚠ DEV TOOL — Mannequin d'Essai (training_dummy_arsenal) : au lieu d'une table
@@ -4272,9 +4300,13 @@ export class GameScene extends Phaser.Scene {
         this.events.emit('show_notification', '[DEBUG] Équipez une arme : le Mannequin d\'Essai en rejoue le tirage.');
       } else {
         const rolled = StatRollSystem.rollItem(template, 0);
-        // Défense en profondeur : ce mannequin n'existe aujourd'hui que dans
-        // grievy_town (fixedEnemies), jamais atteignable en run — mais si un jour
-        // il l'était, son loot doit suivre la même règle que le reste (sac de run).
+        // Ajout instantané (PAS de FloatingItemDrop) — outil de reroll rapide,
+        // le ralentir avec un ramassage physique irait à l'encontre de son but
+        // (comparer des tirages en boucle, pas jouer la boucle de run). Défense
+        // en profondeur : ce mannequin n'existe aujourd'hui que dans grievy_town
+        // (fixedEnemies), jamais atteignable en run — mais si un jour il
+        // l'était, son loot doit suivre la même règle que le reste (sac de run).
+        const activeRun = this.gameState.run?.active ? this.gameState.run : null;
         const added = activeRun
           ? RunBagSystem.addToRunBag(activeRun, rolled, 1).ok
           : LootSystem.addToInventory(this.gameState.player, rolled, 1, this.gameState.world);
@@ -7385,11 +7417,13 @@ export class GameScene extends Phaser.Scene {
     this._finisherZones = [];
     this.weaponProjectiles?.clear(true, true);
 
-    // Drops de debug (touche L) — FloatingItemDrop ne se détruit que via collect()
-    // ou la destruction native de la scène ; comme GameScene reste la MÊME instance
-    // à travers les zones, ils survivraient sinon indéfiniment (cf. code-reviewer).
-    for (const d of this.debugRarityDrops) if (d.active) d.destroy();
-    this.debugRarityDrops = [];
+    // Drops au sol (debug ET vrai loot de kill) — FloatingItemDrop ne se détruit
+    // que via collect() ou la destruction native de la scène ; comme GameScene
+    // reste la MÊME instance à travers les zones, ils survivraient sinon
+    // indéfiniment (cf. code-reviewer — trouvé une première fois sur les drops
+    // de debug, applicable à l'identique au loot réel laissé au sol).
+    for (const d of this.activeItemDrops) if (d.active) d.destroy();
+    this.activeItemDrops = [];
 
     // Zone graphics (map background, paths, walls, teleport highlights)
     if (this.zoneGraphics) {

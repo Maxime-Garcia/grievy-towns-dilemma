@@ -32,6 +32,12 @@ const AURA_DIAMETER = 54;
 const CORE_OUTER_DIAMETER = 24;
 const CORE_INNER_DIAMETER = 14;
 const CULL_PADDING = 40;
+// Chute + rebond à l'apparition (demande créateur, 19/07) : l'ensemble
+// sceau+item tombe de FALL_HEIGHT au-dessus de sa position de repos et
+// rebondit dessus (Bounce.easeOut, qui a nativement l'overshoot+repos d'un
+// vrai rebond physique) — quelques frames, pas un vrai calcul de gravité.
+const FALL_HEIGHT = 20;
+const FALL_DURATION = 340;
 
 export class FloatingItemDrop extends Phaser.GameObjects.Container {
   // Container ne déclare pas `body` (contrairement à Sprite/Image) — physics.add.existing()
@@ -81,6 +87,13 @@ export class FloatingItemDrop extends Phaser.GameObjects.Container {
     // Container n'a pas d'origine sprite : son (x,y) EST déjà le pivot local (0,0),
     // donc un offset de -radius,-radius centre le cercle physique dessus.
     body.setCircle(PICKUP_RADIUS, -PICKUP_RADIUS, -PICKUP_RADIUS);
+    // Désactivé pendant la chute+rebond (cf. fin du constructeur) : un corps
+    // Arcade désactivé est ignoré par le monde physique, aucun overlap ne peut
+    // se déclencher tant qu'il n'est pas explicitement réactivé — le joueur ne
+    // peut donc pas ramasser le drop avant que l'animation d'apparition finisse,
+    // sans qu'aucun appelant n'ait à connaître cet état ("quelques frames" où
+    // le ramassage est désactivé, demande créateur 19/07).
+    body.enable = false;
 
     this.shadow = this.buildShadow(scene);
     this.add(this.shadow);
@@ -110,17 +123,33 @@ export class FloatingItemDrop extends Phaser.GameObjects.Container {
 
     this.startTweens(scene);
 
-    // Pop d'apparition : un drop qui s'annonce, plutôt que déjà posé au sol.
-    this.setScale(0.6);
+    // Chute + rebond : le sceau+item tombe de FALL_HEIGHT au-dessus de sa
+    // position de repos et rebondit dessus — SEUL `entourage` (sceau+épée+
+    // particules) bouge, `this.shadow` reste fixe à l'origine du container et
+    // sert d'ancrage "sol" (l'ombre ne tombe pas, elle EST le sol). Le
+    // container lui-même (donc le corps Arcade, cf. body.enable ci-dessus)
+    // ne bouge jamais : sa position monde est déjà la position de repos finale
+    // dès la construction, seul un enfant se décale visuellement.
+    this.entourage.setY(-FALL_HEIGHT);
     this.setAlpha(0);
-    const spawn = scene.tweens.add({
-      targets: this,
-      scale: 1,
-      alpha: 1,
-      duration: 260,
-      ease: 'Back.easeOut',
+    const fall = scene.tweens.add({
+      targets: this.entourage,
+      y: 0,
+      duration: FALL_DURATION,
+      ease: 'Bounce.easeOut',
+      // Réactivé seulement quand la chute+rebond est VISUELLEMENT finie, pas
+      // avant — sinon le ramassage redeviendrait possible pendant que l'item
+      // rebondit encore à l'écran (demande créateur : "quelques frames... et
+      // ensuite c'est good", pas "à mi-chute").
+      onComplete: () => { body.enable = true; },
     });
-    this.persistentTweens.push(spawn);
+    const fadeIn = scene.tweens.add({
+      targets: this,
+      alpha: 1,
+      duration: 120,
+      ease: 'Quad.easeOut',
+    });
+    this.persistentTweens.push(fall, fadeIn);
 
     // Container n'a pas de boucle preUpdate automatique (contrairement à
     // Sprite/Image) : il faut s'enregistrer explicitement pour faire tourner
@@ -317,7 +346,12 @@ export class FloatingItemDrop extends Phaser.GameObjects.Container {
     // Phase ET période jitterées par drop : sans ça, tous les sceaux à l'écran
     // pulsent/flippent en parfaite synchro — effet mécanique immédiat.
     const jitter = () => Phaser.Math.FloatBetween(0.92, 1.08);
-    const bobDelay = Phaser.Math.Between(0, BOB_DURATION);
+    // FALL_DURATION en tête du délai : le bob cible LE MÊME `entourage.y` que
+    // la chute+rebond (cf. fin du constructeur) — sans ce décalage, les deux
+    // tweens se disputeraient la propriété dès la frame 0 (jitter visuel,
+    // aucun des deux ne "gagnant" proprement). Le bob ne doit prendre le
+    // relais qu'une fois la chute visuellement terminée et posée à y=0.
+    const bobDelay = FALL_DURATION + Phaser.Math.Between(0, BOB_DURATION);
     const bob = scene.tweens.add({
       targets: this.entourage,
       y: -BOB_AMPLITUDE,
