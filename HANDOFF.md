@@ -191,12 +191,18 @@ action directe SI applicable (consommer pour un consommable, équiper via `onEqu
 équipable ; matériaux/objets-clés n'ont pas d'action directe, le second clic ne fait alors rien de
 plus que garder la description affichée).
 
-**Implémentation** (`RunBagScene.onBagSlotClicked`) : nouveau champ `lastBagDetailShownAt` (horodatage
-du dernier affichage de détail sur CE slot) comparé à `DOUBLE_CLICK_MS = 350` au clic suivant sur le
-même slot. Badge "i" séparé entièrement retiré (plus aucune zone de clic dédiée à la description) —
-**ne pas le réintroduire** en le déplaçant/redimensionnant, c'est le principe qui était rejeté, pas
-son emplacement/taille. Le paperdoll (équipement déjà porté) garde son clic simple → détail direct,
-non concerné par ce changement (le créateur ne parlait que du sac).
+**Implémentation** (`RunBagScene.onBagSlotClicked`) : champ `lastDetailShownAt` (horodatage du dernier
+affichage de détail sur CE slot) comparé à `DOUBLE_CLICK_MS = 350` au clic suivant sur le même slot.
+Badge "i" séparé entièrement retiré (plus aucune zone de clic dédiée à la description) — **ne pas le
+réintroduire** en le déplaçant/redimensionnant, c'est le principe qui était rejeté, pas son
+emplacement/taille.
+
+**Extension au paperdoll (même soir, sur demande explicite)** : le déséquipement suit maintenant le
+même modèle — clic simple sur un slot équipé = détail (inchangé), second clic rapproché sur le MÊME
+slot = déséquipe direct (nouveau, via `performUnequip()`, extrait du bouton "Déséquiper" existant qui
+reste utilisable en parallèle). `lastDetailShownAt` est PARTAGÉ entre sac et paperdoll mais sans
+risque de croisement : les deux gardes vérifient `origin.kind` (`'bag'` vs `'equip'`) ET l'identité
+exacte du slot avant de comparer le timestamp (vérifié par code-reviewer, 0 BLOCKER/BUG).
 
 ## 5. AUTRES POINTS OUVERTS (non bloquants, notés)
 
@@ -248,9 +254,10 @@ plusieurs allers-retours de playtest — pas un one-shot comme `FloatingItemDrop
 
 ## 7. PROCHAINE ACTION CONCRÈTE
 
-0. **EN PREMIER** : faire tester en jeu par le créateur le nouveau modèle double-clic du sac intra-run
-   (§4bis, codé et revu cette nuit, jamais lancé en jeu) — clic simple = description sur n'importe
-   quel item, double-clic rapproché = consommer/équiper, plus de badge "i".
+0. **EN PREMIER** : faire tester en jeu par le créateur le nouveau modèle double-clic du sac ET du
+   paperdoll intra-run (§4bis, codé et revu cette nuit, jamais lancé en jeu) — clic simple =
+   description sur n'importe quel item (équipé ou dans le sac), double-clic rapproché =
+   consommer/équiper/déséquiper, plus de badge "i".
 1. **Confirmation finale du créateur** sur la refonte inventaire (§4) ET le refactor `EquipmentPanel`
    (§4, fait le 19/07) — les défauts trouvés au premier test sont corrigés, en attente d'un dernier
    passage en jeu pour clore ce chantier et merger `feat/roguelite-run-system`.

@@ -124,13 +124,14 @@ export class RunBagScene extends Phaser.Scene {
   // boutons d'action proposer (cf. renderItemDetail).
   private selectedDetail: { item: Item; origin: DetailOrigin } | null = null;
   // Horodatage du dernier affichage de détail déclenché par un clic sur un slot
-  // du SAC (pas le paperdoll) — sert à détecter un second clic rapproché sur le
-  // MÊME slot (double-clic = action directe) sans zone de clic séparée, cf.
-  // retour créateur 19/07 : "je ne veux pas [de zone séparée], je préfère [le]
-  // double clic […] rapprochés". Comparé à selectedDetail.origin pour identifier
-  // le slot, donc jamais désynchronisé des autres remises à null de selectedDetail
-  // (Fermer/Équiper/Consommer/Jeter/Déplacer/Échap) — pas de champ séparé à purger.
-  private lastBagDetailShownAt = 0;
+  // (sac OU paperdoll) — sert à détecter un second clic rapproché sur le MÊME
+  // slot (double-clic = action directe : consommer/équiper/déséquiper) sans
+  // zone de clic séparée, cf. retour créateur 19/07 : "je ne veux pas [de zone
+  // séparée], je préfère [le] double clic […] rapprochés". Comparé à
+  // selectedDetail.origin pour identifier le slot, donc jamais désynchronisé des
+  // autres remises à null de selectedDetail (Fermer/Équiper/Consommer/Jeter/
+  // Déplacer/Déséquiper/Échap) — pas de champ séparé à purger.
+  private lastDetailShownAt = 0;
 
   // Panneaux du layout plein écran 'view'/'extract' (calculés dans createBagStatics)
   private bagB!: PanelBounds;
@@ -475,6 +476,31 @@ export class RunBagScene extends Phaser.Scene {
     this.renderBagColumn(run);
   }
 
+  /** Déséquipe un slot du paperdoll vers le sac de run — code partagé entre le
+   *  bouton "Déséquiper" du panneau de détail et le double-clic direct sur le
+   *  paperdoll (cf. renderEquipmentColumn). `unequipToRunBag` priorise un slot
+   *  SÛR libre mais tombe dans l'ordinaire (perdu à coup sûr à la mort/
+   *  l'exfiltration) si aucun n'est libre — le bouton prévient ce risque AVANT
+   *  le clic (libellé/couleur), le double-clic direct ne le peut pas (pas de
+   *  bouton à colorer) : accepté comme différence, cf. retour créateur —
+   *  le double-clic est un raccourci volontairement direct, comme pour
+   *  consommer/équiper depuis le sac. */
+  private performUnequip(slotKey: EquipSlotKey, toastX: number, toastY: number): void {
+    const run = this.gameScene.gameState.run;
+    if (!run) return;
+    const player = this.gameScene.gameState.player;
+    if (InventorySystem.unequipToRunBag(player, run, slotKey)) {
+      this.gameScene.events.emit('player_update', player);
+      this.selectedDetail = null;
+      this.refresh();
+    } else {
+      // Sac de run plein (20 emplacements fixes, contrairement à la banque) —
+      // ne jamais échouer silencieusement (cf. RunBagSystem). showLocalToast,
+      // PAS show_notification : invisible sous le propre overlay de la scène.
+      this.showLocalToast(t('inventory.runbag_unequip_full'), toastX, toastY);
+    }
+  }
+
   private renderStatsColumn(): void {
     const { x: PX, y: PY, w: PW } = this.stB;
     this.track(this.add.text(PX + PW / 2, PY + 6, t('inventory.stats'),
@@ -543,17 +569,7 @@ export class RunBagScene extends Phaser.Scene {
       const unequipColor = hasSafeSlot ? UI.TXT_ORANGE : UI.TXT_RED;
       const unequipBtnY = nextBtnY();
       addDetailActionButton(this, bounds, unequipBtnY, unequipLabel, unequipColor, push, () => {
-        if (!run) return;
-        if (InventorySystem.unequipToRunBag(player, run, slotKey)) {
-          this.gameScene.events.emit('player_update', player);
-          this.selectedDetail = null;
-          this.refresh();
-        } else {
-          // Sac de run plein (20 emplacements fixes, contrairement à la banque) —
-          // ne jamais échouer silencieusement (cf. RunBagSystem). showLocalToast,
-          // PAS show_notification : invisible sous le propre overlay de la scène.
-          this.showLocalToast(t('inventory.runbag_unequip_full'), bounds.x + bounds.w / 2, unequipBtnY - 14);
-        }
+        this.performUnequip(slotKey, bounds.x + bounds.w / 2, unequipBtnY - 14);
       }, isClosing);
     }
 
@@ -622,7 +638,21 @@ export class RunBagScene extends Phaser.Scene {
         const hit = this.track(this.add.rectangle(sx + EQ_SLOT / 2, sy + EQ_SLOT / 2, EQ_SLOT + 4, EQ_SLOT + 4, 0, 0)
           .setInteractive({ useHandCursor: true })) as Phaser.GameObjects.Rectangle;
         hit.on('pointerdown', () => {
+          // Même modèle premier-clic/double-clic que le sac (cf. onBagSlotClicked) :
+          // un second clic RAPPROCHÉ sur ce même slot du paperdoll déséquipe
+          // directement, sans repasser par le bouton "Déséquiper" du détail.
+          const isRapidSecondClick = !!this.selectedDetail
+            && this.selectedDetail.origin.kind === 'equip'
+            && this.selectedDetail.origin.slotKey === key
+            && (this.time.now - this.lastDetailShownAt) <= DOUBLE_CLICK_MS;
+
+          if (isRapidSecondClick) {
+            this.performUnequip(key, sx + EQ_SLOT / 2, sy - 14);
+            return;
+          }
+
           this.selectedDetail = { item, origin: { kind: 'equip', slotKey: key } };
+          this.lastDetailShownAt = this.time.now;
           this.refresh();
         });
       },
@@ -932,7 +962,7 @@ export class RunBagScene extends Phaser.Scene {
         && this.selectedDetail.origin.kind === 'bag'
         && this.selectedDetail.origin.bagKind === kind
         && this.selectedDetail.origin.index === index
-        && (this.time.now - this.lastBagDetailShownAt) <= DOUBLE_CLICK_MS;
+        && (this.time.now - this.lastDetailShownAt) <= DOUBLE_CLICK_MS;
 
       if (isRapidSecondClick) {
         if (slot.item.type === ItemType.CONSUMABLE) {
@@ -950,7 +980,7 @@ export class RunBagScene extends Phaser.Scene {
       }
 
       this.selectedDetail = { item: slot.item, origin: { kind: 'bag', bagKind: kind, index } };
-      this.lastBagDetailShownAt = this.time.now;
+      this.lastDetailShownAt = this.time.now;
       this.refresh();
       return;
     }
