@@ -232,11 +232,23 @@ corrigé en fr/en ("Clic = détail • Double-clic = action").
 
 **Les 4 zones du jeu se comportent maintenant IDENTIQUEMENT** : sac RunBagScene, paperdoll
 RunBagScene, sac InventoryScene, paperdoll InventoryScene = clic simple/détail, double-clic/action.
-Reste noté par code-reviewer (non bloquant, pas touché) : la touche clavier `Z` route encore vers
-`showActionConfirmPopup` (popup supplémentaire) alors qu'un double-clic souris/tactile agit
-instantanément sur le même item — écart clavier vs souris/tactile, à arbitrer si le créateur le juge
-gênant. De même, dans le panneau de détail docké, le bouton "Équiper" agit directement mais "Utiliser"
-ouvre encore `showActionConfirmPopup` — incohérence préexistante, ni introduite ni corrigée ici.
+
+**Derniers écarts corrigés aussi (même soir, sur confirmation du créateur)** : la touche `Z` et le
+bouton "Utiliser" du panneau docké routent maintenant vers `performQuickAction()` (action directe),
+comme le bouton "Équiper" et le double-clic. `doMainAction()`/`showActionConfirmPopup()` (l'ancien
+popup de confirmation flottant, ~400 lignes) sont devenus morts (0 appelant) et **entièrement
+supprimés** avec toute leur mécanique annexe (`closeConsumePopup`, `getConsumableEffectLine`,
+`addColorSquareAbove`, champs `consumePopupObjects`/`consumePopupTimer`/`consumePopupDismissHit`,
+imports orphelins). Fichier passé de 1801 à 1320 lignes. Code-reviewer : 0 BLOCKER/BUG — a confirmé
+au passage un effet de bord positif (le flash de confirmation à l'équipement se déclenche désormais
+aussi pour le bouton "Équiper", qui ne le faisait pas avant la fusion).
+
+**Notes de suivi (non bloquantes, pas dans ce diff)** : 3 commentaires dans `ArsenalScene.ts`,
+`BestiaryScene.ts`, `UITheme.ts` référencent encore `InventoryScene.showActionConfirmPopup()` (qui
+n'existe plus) comme convention visuelle — cosmétique, à corriger en passant si un de ces fichiers
+est retouché. 5 clés i18n (`inventory.use_item`/`equip_item`/`cancel`/`effect_revive`/`effect_cure`)
+sont désormais orphelines (n'étaient utilisées QUE par le popup supprimé) — laissées telles quelles
+(règle CLAUDE.md : `content/*` = data uniquement, pas de nettoyage i18n dans une PR `feat/*`).
 
 ## 5. AUTRES POINTS OUVERTS (non bloquants, notés)
 
