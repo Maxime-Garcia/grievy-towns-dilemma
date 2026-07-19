@@ -653,7 +653,7 @@ export class InventoryScene extends Phaser.Scene {
     // chantier-là, cf. ROGUELITE_POC.md). En attendant, ne pas échouer
     // SILENCIEUSEMENT — le joueur doit comprendre pourquoi rien ne s'est passé
     // plutôt que de croire le bouton/double-clic cassé.
-    if (InventorySystem.unequip(this.player, slot)) {
+    if (InventorySystem.unequip(this.player, slot, false, this.gameScene.isInCombat())) {
       this.selectedItem = null;
       this.refresh();
     } else {
@@ -1247,7 +1247,7 @@ export class InventoryScene extends Phaser.Scene {
       InventorySystem.useConsumable(this.player, item, this.gameScene.getPlayerModifiers());
     } else if (EQUIP_TYPES.includes(item.type)) {
       this.lastFlashSlotKey = this.getSlotKeyForItem(item);
-      InventorySystem.equip(this.player, item);
+      InventorySystem.equip(this.player, item, this.gameScene.isInCombat());
     } else {
       return;
     }

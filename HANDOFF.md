@@ -384,6 +384,32 @@ le fondu de transition pouvait ouvrir un overlay juste après que `buildZone()` 
 dessous, ennemis/joueur qui bougent invisiblement sous le menu). Corrigé en ajoutant
 `if (this.isTraveling) return;` aux 4 handlers, même garde que les touches d'attaque.
 
+## 4quinquies. PV conservés en ratio à l'équipement (20/07, CORRIGÉ)
+
+**✅ CORRIGÉ — "quand on équipe du stuff nos HP max augmentent mais j'aimerais que ça augmente
+aussi mes PV actuels" (créateur, 20/07).** Équiper une meilleure pièce ne relevait jamais les PV
+actuels — le % de vie baissait mécaniquement à chaque amélioration de gear. balance-agent +
+design-agent consultés, verdict tranché par le créateur : **conserver le RATIO de vie/mana HORS
+combat, le GELER en combat** (le max qui monte ne touche jamais les PV actuels pendant un combat —
+ferme un exploit de soin gratuit en équipant plusieurs pièces à PV max différents d'affilée en plein
+combat, simulé par balance-agent sur 200k+ tirages : 0 gain net sur tout aller-retour équiper/
+déséquiper avec la formule ratio+`floor`).
+
+Implémentation : `InventorySystem.recalcStats(player, inCombat = false)` + `rebalanceCurrent()`
+(ratio préservé par `floor` hors combat dans les 2 sens, gel strict en combat pour la hausse, clamp
+`Math.min` pour la baisse dans les 2 régimes). `equip()`/`unequip()` (banque), `equipFromRunBag()`/
+`unequipToRunBag()` (sac de run) prennent tous un paramètre `inCombat` optionnel, alimenté par
+`GameScene.isInCombat()` (nouveau, `activeEnemies.size > 0`) depuis chaque scène appelante
+(`InventoryScene`, `RunBagScene`, `SkillScene` pour respec/unlock de talent).
+
+**2 BUG trouvés et corrigés par code-reviewer** : (1) l'hypothèse initiale "la banque n'est jamais
+accessible en combat" était FAUSSE — le réseau de téléports legacy vers les zones classiques
+(`ignis_reach`, `terravast`...) reste pleinement accessible HORS run, avec des ennemis vivants
+(`zoneMaps.ts`/`zones.ts` confirmés), donc `InventoryScene.equip()`/`unequip()` avaient été laissés
+sans le paramètre `inCombat` par erreur — corrigé, threading identique à `RunBagScene`. (2) la touche
+debug N (`debugFullLoadoutEmptyBag`) appelait encore `recalcStats(player)` sans le paramètre —
+corrigé aussi.
+
 ## 5. AUTRES POINTS OUVERTS (non bloquants, notés)
 
 - **Régression save/pity non résolue — BACKLOG (19/07 nuit)** : le créateur a signalé que la mémoire

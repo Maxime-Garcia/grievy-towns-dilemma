@@ -912,7 +912,7 @@ export class GameScene extends Phaser.Scene {
       (player.equipment as any)[slot] = item;
       ArsenalSystem.discover(this.gameState.world, item.id);
     }
-    InventorySystem.recalcStats(player);
+    InventorySystem.recalcStats(player, this.isInCombat());
     this.events.emit('player_update', player);
     this.events.emit('show_notification', '[DEBUG] Équipement complet, sac vidé — prêt à tester le ramassage de loot');
   }
@@ -1966,6 +1966,15 @@ export class GameScene extends Phaser.Scene {
    *  soin du jeu (HEALING_RECEIVED_PCT) — champ privé, exposé en lecture seule. */
   public getPlayerModifiers(): TalentModifiers {
     return this.playerModifiers;
+  }
+
+  /** Même définition que `inCombatNow` dans update() (ligne ~819) — exposée en
+   *  lecture seule pour que RunBagScene/SkillScene sachent si un équipement/
+   *  déséquipement/talent est débloqué EN COMBAT, cf. InventorySystem.recalcStats
+   *  (verdict balance-agent + design-agent 20/07 : geler les PV actuels en
+   *  combat, ferme l'exploit multi-équipement). */
+  public isInCombat(): boolean {
+    return this.activeEnemies.size > 0;
   }
 
   /** Snapshot en lecture seule pour l'indicateur de debug de UIScene

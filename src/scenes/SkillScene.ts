@@ -876,7 +876,10 @@ export class SkillScene extends Phaser.Scene {
       // Le respec RETIRE tous les bonus de stats de talents : il faut
       // recalculer player.stats, sinon maxHp resterait gonflé après avoir
       // rendu les points (et hp serait clampé de travers au combat suivant).
-      InventorySystem.recalcStats(this.player);
+      // isInCombat() : même règle que l'équipement (verdict balance-agent/
+      // design-agent 20/07) — un respec-panique en plein combat ne doit pas
+      // pouvoir soigner via un gain de PV max, cf. InventorySystem.recalcStats.
+      InventorySystem.recalcStats(this.player, this.gameScene.isInCombat());
       // playerModifiers (meleeDmgMult, comboStackDmg, windupArmor, etc.) n'est
       // JAMAIS recalculé par GameScene lui-même — sans cet appel, les flags
       // spéciaux resteraient sur leurs anciennes valeurs jusqu'au rechargement
@@ -907,7 +910,8 @@ export class SkillScene extends Phaser.Scene {
     // player.stats.maxHp/def/maxMana que via recalcStats — sans cet appel,
     // débloquer +25% HP ne relèverait la barre qu'au prochain changement
     // d'équipement. (atk/crit/lifesteal, eux, sont lus live via computeAll.)
-    InventorySystem.recalcStats(this.player);
+    // isInCombat() : cf. commentaire de doRespec() ci-dessus, même garde.
+    InventorySystem.recalcStats(this.player, this.gameScene.isInCombat());
     // Même raison que dans doRespec() ci-dessus : playerModifiers ne se
     // recalcule jamais tout seul côté GameScene.
     this.gameScene.refreshTalentModifiers();

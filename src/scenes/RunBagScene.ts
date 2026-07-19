@@ -488,7 +488,7 @@ export class RunBagScene extends Phaser.Scene {
     const run = this.gameScene.gameState.run;
     if (!run) return;
     const player = this.gameScene.gameState.player;
-    if (InventorySystem.unequipToRunBag(player, run, slotKey)) {
+    if (InventorySystem.unequipToRunBag(player, run, slotKey, this.gameScene.isInCombat())) {
       this.gameScene.events.emit('player_update', player);
       this.selectedDetail = null;
       this.refresh();
@@ -548,7 +548,7 @@ export class RunBagScene extends Phaser.Scene {
       const { bagKind, index } = origin;
       addDetailActionButton(this, bounds, nextBtnY(), t('inventory.equip_hint'), UI.TXT_GREEN, push, () => {
         if (!run) return;
-        if (InventorySystem.equipFromRunBag(player, run, bagKind, index)) {
+        if (InventorySystem.equipFromRunBag(player, run, bagKind, index, this.gameScene.isInCombat())) {
           this.gameScene.events.emit('player_update', player);
           this.selectedDetail = null;
           this.refresh();
@@ -932,7 +932,7 @@ export class RunBagScene extends Phaser.Scene {
     const run = this.gameScene.gameState.run;
     if (!run) return;
     const player = this.gameScene.gameState.player;
-    if (InventorySystem.equipFromRunBag(player, run, kind, index)) {
+    if (InventorySystem.equipFromRunBag(player, run, kind, index, this.gameScene.isInCombat())) {
       this.gameScene.events.emit('player_update', player);
       this.selected = null;
       // Une équipe/déséquipe ailleurs peut invalider ce que montrait le détail

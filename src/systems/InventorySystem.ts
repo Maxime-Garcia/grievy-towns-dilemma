@@ -84,7 +84,7 @@ export class InventorySystem {
       }));
   }
 
-  static equip(player: PlayerState, item: Item): boolean {
+  static equip(player: PlayerState, item: Item, inCombat = false): boolean {
     // BLOCKER (loot stat rolls, risque n°1 de docs/design/LOOT_STAT_ROLLS.md) :
     // l'appelant transmet désormais l'INSTANCE réelle du slot cliqué, jamais un
     // itemId seul — deux instances non-stackables du même item peuvent porter
@@ -113,7 +113,7 @@ export class InventorySystem {
     // ci-dessus), donc le retour de l'ancien est autorisé même au-delà du cap.
     const current = (player.equipment as any)[slot];
     if (current) {
-      const swappedOut = this.unequip(player, slot, true);
+      const swappedOut = this.unequip(player, slot, true, inCombat);
       if (!swappedOut) {
         // Impossible de rendre l'ancien équipement : on annule tout plutôt que de
         // le détruire — le nouvel item retourne dans le sac, l'équipement est inchangé.
@@ -123,7 +123,7 @@ export class InventorySystem {
     }
 
     (player.equipment as any)[slot] = item;
-    this.recalcStats(player);
+    this.recalcStats(player, inCombat);
     return true;
   }
 
@@ -131,8 +131,13 @@ export class InventorySystem {
    * @param ignoreCap true uniquement depuis equip() (swap net-neutre, cf. ci-dessus).
    *   Un déséquipement « sec » reste soumis au cap : refuser est correct là, puisqu'il
    *   fait bel et bien grossir le sac d'un item.
+   * @param inCombat cf. recalcStats — transmis par l'appelant (InventoryScene.isInCombat()),
+   *   jamais par défaut assumé "hors combat" : le réseau de téléports legacy vers les
+   *   zones classiques (ignis_reach, terravast...) reste accessible EN DEHORS d'une run,
+   *   avec des ennemis vivants, donc la banque N'EST PAS hors combat par construction
+   *   (trouvé en revue de code — hypothèse initiale fausse, cf. HANDOFF.md).
    */
-  static unequip(player: PlayerState, slot: keyof Equipment, ignoreCap = false): boolean {
+  static unequip(player: PlayerState, slot: keyof Equipment, ignoreCap = false, inCombat = false): boolean {
     const item = player.equipment[slot];
     if (!item) return false;
 
@@ -140,7 +145,7 @@ export class InventorySystem {
     if (!added) return false;
 
     (player.equipment as any)[slot] = undefined;
-    this.recalcStats(player);
+    this.recalcStats(player, inCombat);
     return true;
   }
 
@@ -156,7 +161,7 @@ export class InventorySystem {
    * garder à coup sûr, contrairement à le laisser dans un slot ordinaire. C'est
    * un vrai arbitrage stratégique du roguelite, pas un bug.
    */
-  static equipFromRunBag(player: PlayerState, run: RunState, kind: 'safe' | 'ordinary', index: number): boolean {
+  static equipFromRunBag(player: PlayerState, run: RunState, kind: 'safe' | 'ordinary', index: number, inCombat = false): boolean {
     const bag = kind === 'safe' ? run.safeBag : run.ordinaryBag;
     const slot = bag[index];
     if (!slot) return false;
@@ -167,7 +172,7 @@ export class InventorySystem {
     const current = (player.equipment as any)[equipSlot] as Item | undefined;
     bag[index] = current ? ({ item: current, quantity: 1 } as RunBagSlot) : null;
     (player.equipment as any)[equipSlot] = slot.item;
-    this.recalcStats(player);
+    this.recalcStats(player, inCombat);
     return true;
   }
 
@@ -190,7 +195,7 @@ export class InventorySystem {
    * risque) que si aucun slot sûr n'est libre — l'appelant doit alors le
    * signaler distinctement (cf. RunBagScene.renderItemDetail).
    */
-  static unequipToRunBag(player: PlayerState, run: RunState, slot: keyof Equipment): boolean {
+  static unequipToRunBag(player: PlayerState, run: RunState, slot: keyof Equipment, inCombat = false): boolean {
     const item = player.equipment[slot] as Item | undefined;
     if (!item) return false;
 
@@ -203,7 +208,7 @@ export class InventorySystem {
     }
 
     (player.equipment as any)[slot] = undefined;
-    this.recalcStats(player);
+    this.recalcStats(player, inCombat);
     return true;
   }
 
@@ -310,9 +315,24 @@ export class InventorySystem {
    * reached player.stats, no matter what the item's tooltip promised.
    * Public so ProgressionSystem can re-apply gear bonuses after a level-up
    * recomputes base stats (see ProgressionSystem.addXp).
+   *
+   * BUG (créateur 19/07) : "quand on équipe du stuff nos HP max augmentent mais
+   * j'aimerais que ça augmente aussi mes PV actuels" — équiper une meilleure
+   * pièce faisait mécaniquement BAISSER le pourcentage de vie (max qui monte,
+   * PV actuels inchangés). Verdict balance-agent + design-agent (20/07) :
+   * conserver le RATIO hors combat (`rebalanceCurrent`), mais le GELER en
+   * combat — sinon équiper plusieurs pièces à PV max différents D'AFFILÉE en
+   * plein combat (sans même déséquiper) fait grimper les PV actuels à chaque
+   * équipement (le ratio reste constant sur un max qui grossit à chaque pièce)
+   * : un soin gratuit et répétable tant qu'il reste des pièces à fort PV max en
+   * stock. `inCombat` ferme cette faille : les PV actuels ne bougent JAMAIS à
+   * la hausse pendant un combat, seul le clamp vers le bas (déséquiper) reste
+   * actif — même prix qu'avant, mais confiné au combat.
    */
-  static recalcStats(player: PlayerState): void {
+  static recalcStats(player: PlayerState, inCombat = false): void {
     const cs = StatsSystem.computeAll(player);
+    const prevMaxHp   = player.stats.maxHp;
+    const prevMaxMana = player.stats.maxMana;
     player.stats.maxHp    = cs.hp;
     player.stats.maxMana  = cs.mana;
     player.stats.atk      = cs.atk;
@@ -320,8 +340,23 @@ export class InventorySystem {
     player.stats.spd      = cs.spd;
     player.stats.magicAtk = cs.matk;
     player.stats.magicDef = cs.magicDef;
-    player.stats.hp   = Math.min(player.stats.hp,   player.stats.maxHp);
-    player.stats.mana = Math.min(player.stats.mana, player.stats.maxMana);
+    player.stats.hp   = this.rebalanceCurrent(player.stats.hp,   prevMaxHp,   player.stats.maxHp,   inCombat);
+    player.stats.mana = this.rebalanceCurrent(player.stats.mana, prevMaxMana, player.stats.maxMana, inCombat);
+  }
+
+  /**
+   * PV/mana actuels après un changement de max — cf. commentaire de recalcStats.
+   * Hors combat : ratio préservé dans les deux sens (`floor`, jamais `round` —
+   * tout arrondi doit désavantager le joueur, jamais l'avantager ; simulé par
+   * balance-agent sur 200k+ tirages, 0 dérive/gain sur un aller-retour équiper/
+   * déséquiper). En combat : le max qui MONTE ne touche jamais les PV actuels
+   * (gelés, ferme l'exploit multi-équipement) ; le max qui BAISSE reste clampé
+   * comme avant (`Math.min`, jamais un soin, juste une perte évitée).
+   */
+  private static rebalanceCurrent(current: number, maxOld: number, maxNew: number, inCombat: boolean): number {
+    if (maxOld <= 0 || maxNew === maxOld) return Math.min(current, maxNew);
+    if (maxNew > maxOld) return inCombat ? current : Math.min(maxNew, Math.floor(current * maxNew / maxOld));
+    return inCombat ? Math.min(current, maxNew) : Math.min(maxNew, Math.floor(current * maxNew / maxOld));
   }
 }
 
