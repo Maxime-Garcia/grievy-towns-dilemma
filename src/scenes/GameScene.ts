@@ -59,15 +59,16 @@ import {
 } from '../utils/EnemyAssets';
 
 /**
- * Bascule maître des touches de triche/debug (G/T/M/N/P/Y — équipement complet,
- * dummies, avance pity, points de talent, ennemis de test). `false` = désactivées
- * pour un playtest "propre" (retour créateur : elles polluaient l'état testé) —
- * gardées ICI, pas supprimées, pour réactivation en une ligne quand le besoin
- * revient. La touche U (packing de run direct) n'est PAS soumise à ce flag : ce
- * n'est pas une triche au même sens, c'est le seul point d'entrée du RunSystem
- * tant que le PNJ déclencheur n'est pas livré par content-agent.
+ * Bascule maître des touches de triche/debug (G/T/M/N/P/Y/H — équipement complet,
+ * dummies, avance pity, points de talent, ennemis de test, mode invincible). Laissée
+ * à `true` en phase de dev (retour créateur 19/07 : outils de test, pas des polluants
+ * tant qu'on n'est pas en playtest "propre" — repasser à `false` avant une vraie
+ * session de test utilisateur si besoin de l'état sans triches). La touche U
+ * (packing de run direct) n'est PAS soumise à ce flag : ce n'est pas une triche au
+ * même sens, c'est le seul point d'entrée du RunSystem tant que le PNJ déclencheur
+ * n'est pas livré par content-agent.
  */
-export const DEBUG_CHEAT_KEYS_ENABLED = false;
+export const DEBUG_CHEAT_KEYS_ENABLED = true;
 
 const ELEMENT_PROJECTILE_COLORS: Partial<Record<ElementType, number>> = {
   [ElementType.FIRE]:      0xff4400,
@@ -215,6 +216,12 @@ export class GameScene extends Phaser.Scene {
   private spawnTestEnemiesKey!: Phaser.Input.Keyboard.Key;
   private startRunDebugKey!: Phaser.Input.Keyboard.Key;
   private spawnRarityDropsKey!: Phaser.Input.Keyboard.Key;
+  private godModeKey!: Phaser.Input.Keyboard.Key;
+  /** Mode invincible (touche H, DEBUG_CHEAT_KEYS_ENABLED) — bloque TOUS les dégâts
+   *  subis (mêlée ET applyDamageToPlayer, donc aussi les trous) pour tester sans
+   *  qu'une mort accidentelle interrompe la session. Exposé dans getDebugSnapshot()
+   *  pour l'indicateur de UIScene. */
+  private debugGodMode = false;
   // GameScene reste la MÊME instance à travers les transitions de zone (pas de
   // scene.restart()) — sans ce suivi, les drops (debug ET vrai loot de kill)
   // survivent à la zone où ils ont été créés (cf. destroyCurrentZoneObjects,
@@ -715,6 +722,12 @@ export class GameScene extends Phaser.Scene {
       if (Phaser.Input.Keyboard.JustDown(this.spawnTestEnemiesKey)) this.debugSpawnTestEnemies();
       // Debug: press L to spawn one FloatingItemDrop per rarity in front of the player (VFX review aid)
       if (Phaser.Input.Keyboard.JustDown(this.spawnRarityDropsKey)) this.debugSpawnRarityDrops();
+      // Debug: press H to toggle god mode (dev-phase testing aid — pas de mort accidentelle)
+      if (Phaser.Input.Keyboard.JustDown(this.godModeKey)) {
+        this.debugGodMode = !this.debugGodMode;
+        this.events.emit('show_notification',
+          this.debugGodMode ? '[DEBUG] Mode invincible ACTIVÉ' : '[DEBUG] Mode invincible désactivé');
+      }
     }
     // N reste HORS du flag — fixture de test propre pour le RunSystem (équipement
     // modeste + 2 potions + sac vidé), pas une triche au même sens que les autres.
@@ -1968,6 +1981,7 @@ export class GameScene extends Phaser.Scene {
       pitCount: this.layout?.pits?.length ?? 0,
       isDashing: this.isDashing,
       iframeMsLeft: Math.max(0, Math.round(this.iframeUntil - this.time.now)),
+      godMode: this.debugGodMode,
     };
   }
 
@@ -3363,6 +3377,7 @@ export class GameScene extends Phaser.Scene {
   /** `knockbackForce` optionnel : certains patterns (ex. charge) veulent un
    *  recul plus fort que le standard PLAYER_KNOCKBACK_FORCE. */
   private applyEnemyMeleeDamage(ae: ActiveEnemy, damageMult: number, knockbackForce = GameScene.PLAYER_KNOCKBACK_FORCE) {
+    if (this.debugGodMode) return; // mode invincible (touche H, dev)
     if (this.inWindup && this.playerModifiers.windupArmor) return;
     if (damageMult <= 0) return; // summon pattern has damageMult 0
 
@@ -3586,6 +3601,7 @@ export class GameScene extends Phaser.Scene {
    *  subi (talents Partie 2) — absent pour les dégâts sans élément (AoE
    *  générique, dégâts scriptés, etc.). */
   private applyDamageToPlayer(damage: number, sourceX?: number, sourceY?: number, sourceElement?: ElementType) {
+    if (this.debugGodMode) return; // mode invincible (touche H, dev) — bloque aussi les trous
     if (damage <= 0) return;
     if (this.isDashing) return;
     if (this.time.now < this.iframeUntil) return; // iframes post-hit
@@ -7206,6 +7222,8 @@ export class GameScene extends Phaser.Scene {
     this.startRunDebugKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.U);
     // Debug: press L to spawn one FloatingItemDrop per rarity in front of the player (VFX review aid)
     this.spawnRarityDropsKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.L);
+    // Debug: press H to toggle god mode (blocks all incoming damage — dev-phase testing aid)
+    this.godModeKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.H);
     // Remaining keys (attack, dash, inventory, skill menu, skill slots)
     // are all wired by applyKeyBindings() called right after setupInput().
   }

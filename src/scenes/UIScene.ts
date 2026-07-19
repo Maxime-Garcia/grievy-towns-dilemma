@@ -134,7 +134,7 @@ export class UIScene extends Phaser.Scene {
     // Vite (__BUILD_HASH__, cf. vite.config.ts) : l'écrire à la main était voué
     // à mentir, puisqu'un hash n'existe qu'une fois le commit fait — et l'écrire
     // dans le code refait le commit.
-    const BUILD_LABEL = `DEBUG: indicateur run/trous/pity (flag off) (${__BUILD_HASH__})`;
+    const BUILD_LABEL = `DEBUG: triches ON par defaut + mode invincible (H) (${__BUILD_HASH__})`;
     const badgePad = 6;
     const badgeText = this.add.text(badgePad + 10, badgePad + 3, BUILD_LABEL, {
       fontSize: '9px', color: '#7dffa8', fontFamily: 'monospace',
@@ -452,7 +452,7 @@ export class UIScene extends Phaser.Scene {
       const s = this.gameScene.getDebugSnapshot();
       const p = this.gameScene.gameState.player;
       this.debugSnapshotText.setText(
-        `zone=${s.zone} run.active=${s.runActive} pits=${s.pitCount} dash=${s.isDashing} iframe=${s.iframeMsLeft}ms\n`
+        `zone=${s.zone} run.active=${s.runActive} pits=${s.pitCount} dash=${s.isDashing} iframe=${s.iframeMsLeft}ms god=${s.godMode}\n`
         + `pity E/L/M sans=${p.killsWithoutEpic}/${p.killsWithoutLegendary}/${p.killsWithoutMythic}`,
       );
     }

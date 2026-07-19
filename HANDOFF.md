@@ -306,10 +306,19 @@ devrait suffire à clarifier l'expérience à l'avenir. Fermé.
 **🔧 Indicateur de debug — FAIT (19/07, nuit suivante).** `GameScene.getDebugSnapshot()` (public,
 lecture seule) + un petit texte monospace dans `UIScene` juste sous le panneau de stats affichent en
 direct : `zone`, `run.active`, nombre de trous chargés (`pitCount`), `isDashing`, i-frames restantes
-(`iframeMsLeft`), et les 3 compteurs de pity. **Gardé derrière `DEBUG_CHEAT_KEYS_ENABLED`** (exporté
-depuis `GameScene.ts`, toujours `false` par défaut) — basculer ce flag à `true` localement pour le
-voir apparaître au prochain repro d'un des 3 bugs ci-dessous. Rien à activer côté UIScene, il se crée
+(`iframeMsLeft`), mode invincible (`godMode`), et les 3 compteurs de pity. **Gardé derrière
+`DEBUG_CHEAT_KEYS_ENABLED`** (exporté depuis `GameScene.ts`). Rien à activer côté UIScene, il se crée
 tout seul si le flag est `true` au boot.
+
+**🔧 `DEBUG_CHEAT_KEYS_ENABLED` passé à `true` par défaut (19/07, sur demande du créateur)** — on est
+en phase de dev, les touches de triche (G/T/M/N/P/Y + l'indicateur ci-dessus) sont désormais des
+outils de travail, pas des polluants à masquer. Repasser à `false` avant une vraie session de
+playtest "à l'aveugle" si besoin de tester l'expérience sans filet.
+
+**🔧 Mode invincible — touche `H` (nouveau, 19/07).** Bascule `debugGodMode` : bloque TOUS les dégâts
+subis (`applyEnemyMeleeDamage` ET `applyDamageToPlayer`, donc aussi les trous) tant qu'il est actif —
+évite qu'une mort accidentelle interrompe une session de test. Notification à chaque bascule. Visible
+dans l'indicateur de debug ci-dessus (`god=true/false`).
 
 **📌 BACKLOG (root cause non trouvée, créateur OK pour reporter) — les trous (pits) ne déclenchent
 jamais la chute.** Le créateur confirme : ça échoue MÊME en marchant lentement, à froid, en plein
@@ -320,7 +329,7 @@ spécial. Seul suspect théorique restant, non confirmé : si un dash récent n'
 tween d'alpha (300ms, interrompu par une pause/un autre effet touchant `player.alpha`), `isDashing`
 pourrait rester bloqué à `true` et bloquer TOUS les dégâts (pas seulement les trous) — mais le
 créateur n'a signalé aucune invincibilité face aux ennemis, donc peu probable. **Prochaine étape** :
-activer `DEBUG_CHEAT_KEYS_ENABLED` (ci-dessus) et regarder `pits`/`dash` au moment où ça échoue.
+regarder `pits`/`dash` dans l'indicateur de debug (déjà actif par défaut) au moment où ça échoue.
 
 **📌 BACKLOG (root cause non trouvée, créateur OK pour reporter) — touche U pendant une run active
 affiche quand même l'écran de pack.** Le créateur confirme qu'il explorait ENCORE activement le
@@ -332,8 +341,8 @@ exploration active (mort, exfiltration, garde-fou de zone dans `resolveZoneLayou
 téléports legacy) : AUCUN chemin trouvé qui pourrait se déclencher sans que le joueur meure/exfiltre/
 quitte réellement `ignis_reach` — et confirmé que la carte générée d'une run n'a de toute façon AUCUN
 téléporteur (`MapGenSystem` produit `teleports: []`), donc pas de téléporteur legacy accessible en
-run. Root cause non identifiée malgré une recherche approfondie. **Prochaine étape** : activer
-`DEBUG_CHEAT_KEYS_ENABLED` et regarder `run.active`/`zone` juste avant d'appuyer sur U.
+run. Root cause non identifiée malgré une recherche approfondie. **Prochaine étape** : regarder
+`run.active`/`zone` dans l'indicateur de debug (déjà actif par défaut) juste avant d'appuyer sur U.
 
 **✅ Vraisemblablement expliqué (pas un bug distinct) — save/load en cours de run → Grievy Town avec
 le même inventaire.** Pas reposé séparément au créateur (fortement probable que ce soit la MÊME
