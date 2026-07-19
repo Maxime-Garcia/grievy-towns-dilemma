@@ -398,6 +398,15 @@ démarre.
 le hook `onContinue` compatible avec le retour vers Grievy Town déjà câblé dans
 `GameScene.onPlayerDeath()`).
 
+**Précision du créateur (19/07, après coup)** : la séquence voulue est fondu au noir LENT (pas le
+`this.cameras.main.fade(500, 0, 0, 0)` actuel de `onPlayerDeath()`, bien trop rapide — la spec du
+fichier parle d'une révélation ~2.6s, donc le fondu qui la précède doit être du même ordre de
+grandeur, pas 500ms) **puis** apparition de `GameOverScene` par-dessus l'écran déjà noir. Câblage
+probable le jour venu : remplacer le fondu rapide + `performZoneTransition` immédiat par un fondu
+lent, puis lancer `GameOverScene` (avec les stats du run) une fois le noir atteint ; le retour vers
+Grievy Town (`performZoneTransition`) se fait EN ARRIÈRE-PLAN pendant que l'écran de mort est affiché,
+ou juste après son `onContinue` — à trancher au moment de l'implémentation, pas maintenant.
+
 **Volontairement pas lancé maintenant** — même raison que le chantier VFX (§5bis) : proposer une fois
 `feat/roguelite` stabilisé par un vrai playtest, pas en parallèle d'un autre chantier qui bouge
 `GameScene.ts`. Portée plus petite que le VFX (une scène autonome, pas un re-câblage du système de
