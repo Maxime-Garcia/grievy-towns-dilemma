@@ -245,7 +245,7 @@ const EN_MANUAL: Record<string, string> = {
   'inventory.back_stats': '← Stats',
   'inventory.level':      'Level {level}',
   'inventory.slot_hint':  'Tap a slot for details',
-  'inventory.tap_hint':   'Tap = action  •  Hold = details',
+  'inventory.tap_hint':   'Click = details  •  Double-click = action',
   'inventory.empty':      'Empty inventory',
   'inventory.category_weapon':     'Weapons',
   'inventory.category_armor':      'Armor',

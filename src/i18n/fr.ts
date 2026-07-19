@@ -230,7 +230,7 @@ export const FR: Record<string, string> = {
   'inventory.back_stats': '← Stats',
   'inventory.level':      'Niveau {level}',
   'inventory.slot_hint':  'Touchez un slot pour le détail',
-  'inventory.tap_hint':   'Tap = action  •  Maintenir = détail',
+  'inventory.tap_hint':   'Clic = détail  •  Double-clic = action',
   'inventory.empty':      'Inventaire vide',
   'inventory.category_weapon':     'Armes',
   'inventory.category_armor':      'Armures',

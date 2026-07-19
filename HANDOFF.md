@@ -215,11 +215,28 @@ déséquipait par erreur (le timestamp/la clé n'étaient jamais nettoyés par c
 en exigeant AUSSI `this.selectedItem === item` dans la garde de double-clic (le détail doit être
 ENCORE affiché sur cet item précis, pas juste "un clic est survenu il y a peu"). Note : la grille
 principale du SAC d'`InventoryScene` garde son modèle preexistant tap-immédiat/appui-long (500ms) —
-volontairement pas touchée, le créateur parlait spécifiquement de déséquiper (paperdoll). **4 modèles
-d'interaction cohabitent maintenant dans le jeu** (sac RunBagScene = double-clic, paperdoll
-RunBagScene = double-clic, sac InventoryScene = tap/long-press, paperdoll InventoryScene =
-double-clic) — signalé par code-reviewer comme incohérence UX à arbitrer avec le créateur, pas
-tranché unilatéralement ici.
+volontairement pas touchée à ce moment-là, le créateur parlait spécifiquement de déséquiper
+(paperdoll).
+
+**Grille du sac banque uniformisée aussi (même soir, suite)** : le créateur a signalé "je ne peux pas
+double clic pour équiper un objet" dans l'inventaire hors run — question de scope posée
+(`AskUserQuestion`), réponse : uniformiser entièrement. L'ancien modèle tap-immédiat (→
+`showActionConfirmPopup`, popup flottant Équiper/Utiliser + Annuler) / appui-long 500ms (→ détail) est
+**entièrement retiré** (`longPressTimer` et ses 4 sites d'usage supprimés). Nouveau : clic simple =
+détail (comme partout ailleurs), double-clic rapproché sur le MÊME item = action directe via
+`performQuickAction()` (équiper/consommer, sans passer par le popup de confirmation — le double-clic
+EST la confirmation). `doMainAction()`/`showActionConfirmPopup` restent utilisés par le raccourci
+clavier `Z` uniquement (pas touché). **1 BUG trouvé et corrigé par code-reviewer** : le texte d'aide
+`inventory.tap_hint` ("Tap = action • Maintenir = détail") contredisait le nouveau comportement —
+corrigé en fr/en ("Clic = détail • Double-clic = action").
+
+**Les 4 zones du jeu se comportent maintenant IDENTIQUEMENT** : sac RunBagScene, paperdoll
+RunBagScene, sac InventoryScene, paperdoll InventoryScene = clic simple/détail, double-clic/action.
+Reste noté par code-reviewer (non bloquant, pas touché) : la touche clavier `Z` route encore vers
+`showActionConfirmPopup` (popup supplémentaire) alors qu'un double-clic souris/tactile agit
+instantanément sur le même item — écart clavier vs souris/tactile, à arbitrer si le créateur le juge
+gênant. De même, dans le panneau de détail docké, le bouton "Équiper" agit directement mais "Utiliser"
+ouvre encore `showActionConfirmPopup` — incohérence préexistante, ni introduite ni corrigée ici.
 
 ## 5. AUTRES POINTS OUVERTS (non bloquants, notés)
 

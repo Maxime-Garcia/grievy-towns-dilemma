@@ -170,15 +170,20 @@ export class InventoryScene extends Phaser.Scene {
   private lastEquipDetailKey: EquipSlotKey | null = null;
   private lastEquipDetailAt = 0;
 
+  // Même modèle pour la grille du SAC (remplace l'ancien tap-immédiat/appui-long,
+  // retour créateur 19/07 : "je ne peux pas double clic pour équiper un objet" —
+  // uniformisé sur clic simple = détail / double-clic rapproché = action, comme
+  // le paperdoll et RunBagScene). Comparaison par IDENTITÉ d'item (pas de clé de
+  // slot fixe ici, contrairement au paperdoll).
+  private lastBagDetailItem: Item | null = null;
+  private lastBagDetailAt = 0;
+
   private keyZ?: Phaser.Input.Keyboard.Key;
 
   /** Recherche textuelle du sac — créée dans create(), détruite dans shutdown().
    *  Hors de `dynamicObjs` : elle doit survivre aux refresh() (cf. BAG_SEARCH_H). */
   private search: SearchField | null = null;
   private searchQuery = '';
-
-  // Long-press detection: single ref, cleared on pointerup / pointerout / shutdown
-  private longPressTimer: ReturnType<typeof setTimeout> | null = null;
   // Onglet de filtrage actif du sac (D13) — reset à 'ALL' à chaque ouverture
   private bagFilter: BagFilter = 'ALL';
   // Tooltip transient du survol d'un onglet à icône (accessibilité : le glyphe
@@ -209,6 +214,8 @@ export class InventoryScene extends Phaser.Scene {
     this.selectedItem = null;
     this.lastEquipDetailKey = null;
     this.lastEquipDetailAt  = 0;
+    this.lastBagDetailItem  = null;
+    this.lastBagDetailAt    = 0;
     this.bagFilter    = 'ALL';
     this.search       = null;
     this.searchQuery  = '';
@@ -924,11 +931,6 @@ export class InventoryScene extends Phaser.Scene {
         const dy = p.y - p.prevPosition.y;
         if (dy === 0) return;
         applyScroll(scrollY - dy);
-        // Un drag en cours annule le long-press (le doigt scrolle, il ne maintient pas)
-        if (p.getDistance() > 10 && this.longPressTimer !== null) {
-          clearTimeout(this.longPressTimer);
-          this.longPressTimer = null;
-        }
       });
     }
   }
@@ -1160,34 +1162,33 @@ export class InventoryScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
     reg(hit, midY);
 
-    // Tap → immediate action (equip / use / open detail for key items).
-    // Long-press ≥ 500 ms → always open the detail panel.
-    hit.on('pointerdown', () => {
-      this.longPressTimer = setTimeout(() => {
-        this.longPressTimer = null;
-        this.showDetail(slot.item);
-      }, 500);
-    });
+    // Clic simple → panneau de détail (comme le paperdoll/RunBagScene). Second
+    // clic RAPPROCHÉ (≤ DOUBLE_CLICK_MS) sur le MÊME item → action directe
+    // (équiper/consommer, cf. performQuickAction), retour créateur 19/07 :
+    // "je ne peux pas double clic pour équiper un objet" — uniformisé sur le
+    // modèle sac/paperdoll plutôt que l'ancien tap-immédiat/appui-long.
+    // pointerup (pas pointerdown) + vérif de distance : un drag de scroll qui
+    // démarre sur un slot ne doit déclencher NI le détail NI l'action.
     hit.on('pointerup', (p: Phaser.Input.Pointer) => {
-      if (this.longPressTimer !== null) {
-        clearTimeout(this.longPressTimer);
-        this.longPressTimer = null;
-        // Un déplacement > 10 px = scroll tactile, pas un tap → aucune action
-        if (p.getDistance() > 10) return;
-        // Pass screen coords so the popup can anchor near the tapped slot
-        const screenX = sx + INV_SLOT / 2 - 1;
-        const screenY = topY + INV_SLOT / 2 - 1;
-        this.doMainAction(slot.item, screenX, screenY);
+      if (p.getDistance() > 10) return; // scroll tactile, pas un clic
+
+      const isRapidSecondClick = this.selectedItem === slot.item
+        && this.lastBagDetailItem === slot.item
+        && (this.time.now - this.lastBagDetailAt) <= DOUBLE_CLICK_MS;
+
+      if (isRapidSecondClick) {
+        this.performQuickAction(slot.item);
+        return;
       }
+
+      this.lastBagDetailItem = slot.item;
+      this.lastBagDetailAt = this.time.now;
+      this.showDetail(slot.item);
     });
     // Survol : seul l'anneau est redessiné (clear + stroke) — le fond et le
     // cadre asset restent intacts, aucune commande de tracé ne s'empile.
     hit.on('pointerover', () => drawRing(0xffffff));
-    hit.on('pointerout',  () => {
-      // Cancel long-press if the pointer leaves before 500 ms
-      if (this.longPressTimer !== null) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
-      drawRing(rarHex);
-    });
+    hit.on('pointerout',  () => drawRing(rarHex));
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -1271,7 +1272,8 @@ export class InventoryScene extends Phaser.Scene {
    *     a compact detail view for gear — stats, element, description)
    *   - Key / other → open the detail panel
    *
-   * Called on quick tap in the grid and by the Z key shortcut in detail view.
+   * Called by the Z key shortcut (detail view) only — the bag grid's own click
+   * now goes through performQuickAction (double-clic direct, sans ce popup).
    */
   private doMainAction(item: Item, slotScreenX?: number, slotScreenY?: number): void {
     if (EQUIP_TYPES.includes(item.type) || item.type === ItemType.CONSUMABLE) {
@@ -1282,6 +1284,26 @@ export class InventoryScene extends Phaser.Scene {
       // Key items, materials, skins: open the detail panel
       this.showDetail(item);
     }
+  }
+
+  /** Action directe déclenchée par un second clic RAPPROCHÉ sur un slot du sac
+   *  déjà en détail (cf. renderInventorySlot) — équiper/consommer SANS passer
+   *  par showActionConfirmPopup, même principe que RunBagScene.onEquipClicked/
+   *  consumeItem (le double-clic EST la confirmation, pas de popup en plus).
+   *  Matériaux/objets-clés : aucune action directe définie, comme dans
+   *  RunBagScene — le second clic ne fait alors rien de plus que garder le
+   *  détail affiché. */
+  private performQuickAction(item: Item): void {
+    if (item.type === ItemType.CONSUMABLE) {
+      InventorySystem.useConsumable(this.player, item, this.gameScene.getPlayerModifiers());
+    } else if (EQUIP_TYPES.includes(item.type)) {
+      this.lastFlashSlotKey = this.getSlotKeyForItem(item);
+      InventorySystem.equip(this.player, item);
+    } else {
+      return;
+    }
+    this.selectedItem = null;
+    this.refresh();
   }
 
   // ── Action confirmation popup (consommables ET équipement) ────────────────
@@ -1787,11 +1809,6 @@ export class InventoryScene extends Phaser.Scene {
   shutdown() {
     const KB = this.input.keyboard;
     if (KB && this.keyZ) { this.keyZ.removeAllListeners(); KB.removeKey(this.keyZ); this.keyZ = undefined; }
-    // Cancel any in-flight long-press timer to prevent stale callbacks
-    if (this.longPressTimer !== null) {
-      clearTimeout(this.longPressTimer);
-      this.longPressTimer = null;
-    }
     this.input.off('wheel');
     this.input.off('pointermove');
     // Le champ de recherche possède un <input> DOM dans <body> et un listener de
