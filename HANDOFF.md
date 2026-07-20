@@ -410,6 +410,19 @@ sans le paramètre `inCombat` par erreur — corrigé, threading identique à `R
 debug N (`debugFullLoadoutEmptyBag`) appelait encore `recalcStats(player)` sans le paramètre —
 corrigé aussi.
 
+**✅ CORRIGÉ (même soir, suite) — "mes HP montent pas du tout dans GT mdr".** La logique de ratio
+ci-dessus était correcte (vérifiée), mais `InventoryScene` (banque, hors run) **n'émettait jamais
+`'player_update'`** après un équipement/déséquipement/consommation — 0 occurrence dans tout le
+fichier. Or la barre de PV du HUD (`UIScene.targetHp`) ne se rafraîchit QUE sur cet event, jamais en
+lisant `player.stats` en direct (`onPlayerUpdate`, déclenché uniquement par l'event). Les PV
+changeaient donc bien en interne (ratio préservé) mais la barre visible restait figée jusqu'à ce
+qu'un AUTRE event (dégât, regen hors-combat...) la force enfin à jour — d'où l'impression que "rien
+ne monte". Probablement un bug ancien, resté invisible avant ce chantier (les PV actuels ne
+changeaient jamais à l'équipement, donc rien n'aurait eu besoin d'être rafraîchi). `RunBagScene`, lui,
+émettait déjà correctement l'event à ses 3 points d'équipement/déséquipement (vérifié). Fix : ajout de
+`this.gameScene.events.emit('player_update', this.player);` dans `InventoryScene.performUnequip()`
+et `performQuickAction()` (les 2 seuls points d'appel d'equip/unequip/useConsumable du fichier).
+
 ## 5. AUTRES POINTS OUVERTS (non bloquants, notés)
 
 - **Régression save/pity non résolue — BACKLOG (19/07 nuit)** : le créateur a signalé que la mémoire

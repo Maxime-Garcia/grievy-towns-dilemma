@@ -654,6 +654,15 @@ export class InventoryScene extends Phaser.Scene {
     // SILENCIEUSEMENT — le joueur doit comprendre pourquoi rien ne s'est passé
     // plutôt que de croire le bouton/double-clic cassé.
     if (InventorySystem.unequip(this.player, slot, false, this.gameScene.isInCombat())) {
+      // BUG (créateur 20/07, "mes HP montent pas du tout dans GT") : InventoryScene
+      // ne remontait JAMAIS 'player_update' — le HUD (UIScene, barre de PV) ne se
+      // rafraîchit QUE sur cet event, jamais en pollant player.stats en direct. Les
+      // PV changeaient bien en interne (ratio préservé, cf. recalcStats) mais la
+      // barre du HUD restait figée tant qu'un AUTRE event (dégât, regen...) ne la
+      // forçait. RunBagScene l'émettait déjà correctement ; InventoryScene ne
+      // l'avait jamais fait, probablement invisible avant ce chantier (les PV
+      // actuels ne changeaient jamais à l'équipement, rien à rafraîchir).
+      this.gameScene.events.emit('player_update', this.player);
       this.selectedItem = null;
       this.refresh();
     } else {
@@ -1251,6 +1260,8 @@ export class InventoryScene extends Phaser.Scene {
     } else {
       return;
     }
+    // cf. commentaire sur performUnequip : le HUD ne se rafraîchit que sur cet event.
+    this.gameScene.events.emit('player_update', this.player);
     this.selectedItem = null;
     this.refresh();
   }
